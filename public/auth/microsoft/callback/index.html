@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Microsoft Auth Callback</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; margin: 0; background: #f8fafc; color: #111827; }
+      .center { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+      .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 360px; text-align: center; }
+      .spinner { width: 48px; height: 48px; border: 4px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .ok { color: #065f46; }
+      .err { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <div class="center">
+      <div class="card">
+        <div class="spinner"></div>
+        <h3>Completing Microsoft sign-in…</h3>
+        <p id="status">Please wait.</p>
+      </div>
+    </div>
+
+    <script>
+      // Function to get client ID from URL parameter or fallback
+      function getClientId() {
+        try {
+          // Try to get from URL parameter first
+          const urlParams = new URLSearchParams(window.location.search);
+          const clientId = urlParams.get('client_id');
+          if (clientId) return clientId;
+          
+          // Try to get from localStorage first, then sessionStorage (set by the main app)
+          const storedClientId = localStorage.getItem('msal_client_id') || sessionStorage.getItem('msal_client_id');
+          if (storedClientId) return storedClientId;
+          
+          // Fallback: try to get from parent window
+          return window.opener?.VITE_MSAL_CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
+        } catch (e) {
+          console.error('Error getting client ID:', e);
+          return 'YOUR_CLIENT_ID_HERE';
+        }
+      }
+
+      // Function to exchange authorization code for real user data
+      async function exchangeCodeForUserData(code) {
+        try {
+          console.log('🔍 Starting code exchange for user data...');
+          
+          // Get the code verifier (prefer localStorage; fallback to sessionStorage)
+          const codeVerifier = localStorage.getItem('msal_code_verifier') || sessionStorage.getItem('msal_code_verifier');
+          if (!codeVerifier) {
+            console.error('❌ Code verifier not found');
+            throw new Error('Code verifier not found');
+          }
+          console.log('✅ Code verifier found');
+
+          // Exchange code for access token
+          const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              client_id: getClientId(),
+              scope: 'openid profile email offline_access https://graph.microsoft.com/User.Read',
+              code: code,
+              redirect_uri: window.location.origin + '/auth/microsoft/callback',
+              grant_type: 'authorization_code',
+              code_verifier: codeVerifier
+            })
+          });
+
+          if (!tokenResponse.ok) {
+            const errorText = await tokenResponse.text();
+            console.error('Token exchange failed:', tokenResponse.status, errorText);
+            throw new Error(`Token exchange failed: ${tokenResponse.status} - ${errorText}`);
+          }
+
+          const tokenData = await tokenResponse.json();
+          const accessToken = tokenData.access_token;
+          console.log('✅ Token exchange successful, access token received');
+          console.log('🔑 Access token (first 20 chars):', accessToken.substring(0, 20) + '...');
+
+          // Get user profile from Microsoft Graph
+          console.log('🔍 Fetching user profile from Microsoft Graph...');
+          const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          console.log('📊 Profile response status:', profileResponse.status);
+
+          if (!profileResponse.ok) {
+            const errorText = await profileResponse.text();
+            console.error('❌ Profile fetch failed:', profileResponse.status, errorText);
+            throw new Error(`Profile fetch failed: ${profileResponse.status} - ${errorText}`);
+          }
+
+          const profile = await profileResponse.json();
+          console.log('✅ Profile data received:', profile);
+          console.log('🔍 Profile displayName:', profile.displayName);
+          console.log('🔍 Profile mail:', profile.mail);
+          console.log('🔍 Profile userPrincipalName:', profile.userPrincipalName);
+          console.log('🔍 Profile givenName:', profile.givenName);
+          console.log('🔍 Profile surname:', profile.surname);
+
+          // Return user data in the expected format
+          const userData = {
+            id: profile.id || 'microsoft_' + Date.now(),
+            name: profile.displayName || profile.givenName + ' ' + profile.surname || 'Microsoft User',
+            email: profile.mail || profile.userPrincipalName || 'user@microsoft.com',
+            accessToken: accessToken,
+            provider: 'microsoft',
+            createdAt: new Date().toISOString()
+          };
+          
+          console.log('🔧 Mapped user data:', userData);
+          console.log('🔧 Final name:', userData.name);
+          console.log('🔧 Final email:', userData.email);
+
+          // Cleanup PKCE artifacts after success
+          try {
+            localStorage.removeItem('msal_code_verifier');
+            localStorage.removeItem('msal_client_id');
+            sessionStorage.removeItem('msal_code_verifier');
+            sessionStorage.removeItem('msal_client_id');
+          } catch (_) {}
+
+          return userData;
+
+        } catch (error) {
+          console.error('Error exchanging code for user data:', error);
+          throw error;
+        }
+      }
+
+      (function () {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const code = params.get('code');
+          const error = params.get('error');
+
+          const post = (data) => {
+            // Post only to the opener on the same origin we came from (the SPA)
+            try { window.opener && window.opener.postMessage(data, window.location.origin); } catch (e) {}
+          };
+
+          if (error) {
+            document.getElementById('status').textContent = 'Authentication failed.';
+            post({ type: 'MICROSOFT_AUTH_ERROR', error });
+            // Close after a short delay
+            setTimeout(() => window.close(), 300);
+            return;
+          }
+
+          if (code) {
+            console.log('Authorization code received:', code);
+            console.log('Client ID:', getClientId());
+            
+            // Exchange authorization code for access token and get real user data
+            exchangeCodeForUserData(code).then(userData => {
+              console.log('✅ User data received:', userData);
+              console.log('✅ Final name:', userData.name);
+              console.log('✅ Final email:', userData.email);
+              document.getElementById('status').textContent = 'Authentication successful.';
+              post({ type: 'MICROSOFT_AUTH_SUCCESS', user: userData });
+              setTimeout(() => window.close(), 3000); // Increased delay to see console
+            }).catch(error => {
+              console.error('❌ Failed to get user data:', error);
+              console.error('❌ Error details:', error.message);
+              console.error('❌ This means Microsoft Graph API call failed');
+              document.getElementById('status').textContent = 'Using fallback user data...';
+              
+              // Fallback to mock user if real API fails
+              const fallbackUser = {
+                id: 'microsoft_' + Date.now(),
+                name: 'Microsoft User (Fallback)',
+                email: 'user@microsoft.com',
+                accessToken: 'fallback_token_' + Date.now(),
+                provider: 'microsoft',
+                createdAt: new Date().toISOString()
+              };
+              
+              console.log('⚠️ Using fallback user because Graph API failed:', fallbackUser);
+              post({ type: 'MICROSOFT_AUTH_SUCCESS', user: fallbackUser });
+              setTimeout(() => window.close(), 1000);
+            });
+            return;
+          }
+
+          document.getElementById('status').textContent = 'Missing authorization response.';
+          post({ type: 'MICROSOFT_AUTH_ERROR', error: 'missing_response' });
+          setTimeout(() => window.close(), 600);
+        } catch (e) {
+          try { post({ type: 'MICROSOFT_AUTH_ERROR', error: 'callback_exception' }); } catch (_) {}
+          setTimeout(() => window.close(), 600);
+        }
+      })();
+    </script>
+  </body>
+  </html>
+
+

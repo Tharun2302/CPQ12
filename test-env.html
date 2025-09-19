@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Environment Test</title>
+</head>
+<body>
+    <h1>Environment Variables Test</h1>
+    <div id="output"></div>
+    
+    <script>
+        // Test if environment variables are accessible
+        const output = document.getElementById('output');
+        
+        // Check if we can access the Microsoft Client ID
+        const clientId = process?.env?.REACT_APP_MSAL_CLIENT_ID || 'Not found';
+        
+        output.innerHTML = `
+            <p><strong>Microsoft Client ID:</strong> ${clientId}</p>
+            <p><strong>Current URL:</strong> ${window.location.href}</p>
+            <p><strong>Origin:</strong> ${window.location.origin}</p>
+            <p><strong>Redirect URI would be:</strong> ${window.location.origin}/auth/microsoft/callback</p>
+        `;
+        
+        console.log('Environment test - Client ID:', clientId);
+        console.log('All env vars:', process?.env);
+    </script>
+</body>
+</html>

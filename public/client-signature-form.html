@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client Signature Form - CloudFuze</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .signature-font-preview {
+            transition: all 0.2s ease;
+        }
+        .signature-font-preview:hover {
+            transform: scale(1.02);
+        }
+        .signature-font-preview.selected {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .success-highlight {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-2xl">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <div class="flex items-center justify-center mb-4">
+                <div class="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                    </svg>
+                </div>
+                <h1 class="text-3xl font-bold text-gray-900">Client Signature Form</h1>
+            </div>
+            <p class="text-gray-600">Please complete your signature details to finalize the document</p>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <p class="mt-4 text-gray-600">Loading signature form...</p>
+            <div class="mt-6 space-y-2">
+                <button 
+                    onclick="showFallbackForm()" 
+                    class="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+                >
+                    🚨 Debug: Show Form (if loading fails)
+                </button>
+                <button 
+                    onclick="testSuccessState()" 
+                    class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                >
+                    🧪 Debug: Test Success State
+                </button>
+                <button 
+                    onclick="testCompleteFlow()" 
+                    class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
+                >
+                    🔄 Debug: Test Complete Flow
+                </button>
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="hidden bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800" id="errorTitle">Error</h3>
+                    <p class="mt-2 text-sm text-red-700" id="errorMessage">An error occurred while loading the form.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Content -->
+        <div id="formContent" class="hidden">
+            <!-- Document Info -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Document Information</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Client Name</label>
+                        <p class="mt-1 text-sm text-gray-900" id="clientName">Loading...</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Client Email</label>
+                        <p class="mt-1 text-sm text-gray-900" id="clientEmail">Loading...</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Document Type</label>
+                        <p class="mt-1 text-sm text-gray-900" id="documentType">CloudFuze Purchase Agreement</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Status</label>
+                        <p class="mt-1 text-sm text-gray-900" id="documentStatus">Pending Signature</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Signature Form -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center mb-6">
+                    <div class="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center mr-3">
+                        <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                        </svg>
+                    </div>
+                    <h2 class="text-xl font-semibold text-gray-900">Your Signature Required</h2>
+                </div>
+
+                <form id="signatureForm" class="space-y-6">
+                    <!-- Signature Canvas -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-2">
+                            Draw Your Signature *
+                        </label>
+                        <div class="border-2 border-gray-300 rounded-xl overflow-hidden">
+                            <canvas 
+                                id="signatureCanvas" 
+                                width="500" 
+                                height="200" 
+                                class="w-full h-48 bg-white cursor-crosshair"
+                                style="touch-action: none;"
+                            ></canvas>
+                        </div>
+                        <div class="flex gap-2 mt-2">
+                            <button 
+                                type="button" 
+                                id="clearSignature" 
+                                class="px-4 py-2 text-sm bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                            >
+                                Clear Signature
+                            </button>
+                            <button 
+                                type="button" 
+                                id="saveSignature" 
+                                class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                Save Signature
+                            </button>
+                        </div>
+                        <input type="hidden" id="signatureImage" name="signatureImage" />
+                    </div>
+
+                    <!-- Text Signature (Alternative) -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-2">
+                            Or Type Your Signature
+                        </label>
+                        <input
+                            type="text"
+                            id="eSignature"
+                            name="eSignature"
+                            placeholder="Enter your signature as text"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+
+                    <!-- Signature Font Preview -->
+                    <div id="fontPreview" class="hidden">
+                        <label class="block text-sm font-semibold text-gray-800 mb-2">
+                            Choose your signature style:
+                        </label>
+                        <div class="space-y-2" id="fontOptions">
+                            <!-- Font options will be populated here -->
+                        </div>
+                    </div>
+
+                    <!-- Full Name -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-2">
+                            Full Name *
+                        </label>
+                        <input
+                            type="text"
+                            id="fullName"
+                            name="fullName"
+                            placeholder="Enter your full name"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            required
+                        />
+                    </div>
+
+                    <!-- Title -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-2">
+                            Title/Position *
+                        </label>
+                        <input
+                            type="text"
+                            id="title"
+                            name="title"
+                            placeholder="e.g., CEO, Director, Manager"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            required
+                        />
+                    </div>
+
+                    <!-- Date -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-800 mb-2">
+                            Date *
+                        </label>
+                        <input
+                            type="date"
+                            id="date"
+                            name="date"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            required
+                        />
+                    </div>
+
+                    <p class="text-sm text-gray-600">
+                        Please fill in all signature fields before submitting the form.
+                    </p>
+
+                    <!-- Action Buttons -->
+                    <div class="flex gap-4 pt-6 border-t border-gray-200">
+                        <button
+                            type="submit"
+                            id="submitBtn"
+                            class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors font-semibold flex items-center justify-center gap-2"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            Submit Signature
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+                         
+
+         </div>
+         
+         <!-- Success State (Outside formContent) -->
+         <div id="successState" class="hidden" style="animation: fadeIn 0.5s ease-in;">
+             <!-- Prominent Success Message -->
+             <div class="success-highlight">
+                 <div class="flex items-center justify-center mb-3">
+                     <svg class="h-8 w-8 text-white mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                     </svg>
+                     <h2 class="text-2xl font-bold">🎉 Signature Submitted Successfully!</h2>
+                 </div>
+                 <p class="text-lg">Your signature has been added to the document. You can now preview or download the final document.</p>
+             </div>
+             
+             <!-- Action Buttons -->
+             <div class="bg-white rounded-lg shadow-lg border border-gray-200 p-6 mt-6">
+                 <h3 class="text-lg font-semibold text-gray-900 mb-4">🚀 What would you like to do next?</h3>
+                 <div class="space-y-4">
+                     <button
+                         id="previewBtn"
+                         class="w-full flex items-center justify-center px-6 py-4 border border-transparent text-lg font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-200 transform hover:scale-105 shadow-lg"
+                     >
+                         <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                         </svg>
+                         👁️ Preview Final Document
+                     </button>
+                     <button
+                         id="downloadBtn"
+                         class="w-full flex items-center justify-center px-6 py-4 border border-transparent text-lg font-semibold rounded-xl text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-300 transition-all duration-200 transform hover:scale-105 shadow-lg"
+                     >
+                         <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                         </svg>
+                         📥 Download Completed Document
+                     </button>
+                 </div>
+             </div>
+         </div>
+            
+        </div>
+    </div>
+    
+    <!-- Template Preview Modal (Outside formContent) -->
+    <div id="previewModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">Final Document Preview</h2>
+                    <p class="text-gray-600">Preview the completed template with both signatures</p>
+                </div>
+                <button
+                    onclick="closePreviewModal()"
+                    class="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                    ✕
+                </button>
+            </div>
+            
+            <div id="previewContent" class="w-full">
+                <!-- Preview content will be loaded here -->
+            </div>
+            
+            <div class="flex justify-end mt-6 space-x-3">
+                <button
+                    onclick="closePreviewModal()"
+                    class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                    Close Preview
+                </button>
+                <button
+                    onclick="downloadFromPreview()"
+                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                    Download Document
+                </button>
+            </div>
+        </div>
+    </div>
+ 
+     <script>
+        // Signature font styles
+        const signatureFonts = [
+            { 
+                name: 'Cursive', 
+                fontFamily: '"Brush Script MT", cursive',
+                fontSize: '18px',
+                fontStyle: 'normal',
+                fontWeight: 'normal'
+            },
+            { 
+                name: 'Elegant', 
+                fontFamily: '"Palatino", "Times New Roman", serif',
+                fontSize: '16px',
+                fontStyle: 'italic',
+                fontWeight: 'normal'
+            },
+            { 
+                name: 'Modern', 
+                fontFamily: '"Arial", sans-serif',
+                fontSize: '16px',
+                fontStyle: 'normal',
+                fontWeight: 'bold'
+            },
+            { 
+                name: 'Classic', 
+                fontFamily: '"Georgia", serif',
+                fontSize: '16px',
+                fontStyle: 'normal',
+                fontWeight: 'normal'
+            },
+            { 
+                name: 'Handwriting', 
+                fontFamily: '"Comic Sans MS", cursive',
+                fontSize: '16px',
+                fontStyle: 'normal',
+                fontWeight: 'normal'
+            }
+        ];
+
+        let selectedFontStyle = 0;
+        let formData = null;
+        let formId = null;
+        let canvas = null;
+        let ctx = null;
+        let isDrawing = false;
+        let signatureImageData = null;
+
+        // Get form ID from URL
+        function getFormIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('formId');
+        }
+
+        // Load form data
+        async function loadFormData() {
+            try {
+                console.log('🔄 Starting to load form data...');
+                
+                formId = getFormIdFromUrl();
+                console.log('📋 Form ID from URL:', formId);
+                
+                if (!formId) {
+                    console.log('⚠️ No form ID found, showing fallback form');
+                    showFallbackForm();
+                    return;
+                }
+
+                console.log('🌐 Fetching form data from server...');
+                
+                // Add timeout to prevent hanging
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                
+                const response = await fetch(`http://localhost:3001/api/signature/form/${formId}`, {
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                console.log('📡 Server response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ Server error response:', errorText);
+                    throw new Error(`Server error: ${response.status} - ${errorText}`);
+                }
+
+                const result = await response.json();
+                console.log('📄 Server result:', result);
+
+                if (!result.success) {
+                    throw new Error(result.message || 'Failed to load form data');
+                }
+
+                formData = result.formData;
+                console.log('✅ Form data loaded successfully:', formData);
+                
+                displayFormData();
+                showFormContent();
+                
+            } catch (error) {
+                console.error('❌ Error loading form data:', error);
+                console.log('🔄 Showing fallback form due to error...');
+                showFallbackForm();
+            }
+        }
+
+        // Display form data
+        function displayFormData() {
+            console.log('🔄 Displaying form data:', formData);
+            document.getElementById('clientName').textContent = formData.clientName || 'N/A';
+            document.getElementById('clientEmail').textContent = formData.clientEmail || 'N/A';
+            document.getElementById('documentType').textContent = formData.quoteData?.plan || 'CloudFuze Purchase Agreement';
+            document.getElementById('documentStatus').textContent = formData.status === 'completed' ? 'Completed' : 'Pending Signature';
+            console.log('✅ Form data displayed successfully');
+        }
+
+        // Show form content
+        function showFormContent() {
+            console.log('🔄 Showing form content...');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('formContent').classList.remove('hidden');
+            console.log('✅ Form content should now be visible');
+        }
+
+        // Show error
+        function showError(title, message) {
+            console.log('❌ Showing error:', title, message);
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('errorTitle').textContent = title;
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorState').classList.remove('hidden');
+        }
+        
+        // Show fallback form for debugging
+        function showFallbackForm() {
+            console.log('🔄 Showing fallback form...');
+            document.getElementById('loadingState').classList.add('hidden');
+            
+            // Set fallback data
+            formData = {
+                clientName: 'Test Client',
+                clientEmail: 'test@example.com',
+                quoteData: { plan: 'CloudFuze Purchase Agreement' },
+                status: 'pending'
+            };
+            
+            displayFormData();
+            showFormContent();
+        }
+        
+        // Test success state for debugging
+        function testSuccessState() {
+            console.log('🧪 Testing success state...');
+            
+            // Hide loading state
+            document.getElementById('loadingState').classList.add('hidden');
+            
+            // Show success state directly
+            const successState = document.getElementById('successState');
+            successState.classList.remove('hidden');
+            console.log('✅ Success state should now be visible');
+            
+            // Verify buttons are present
+            const previewBtn = document.getElementById('previewBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            console.log('🔍 Preview button found:', !!previewBtn);
+            console.log('🔍 Download button found:', !!downloadBtn);
+            
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            console.log('✅ Scrolled to top');
+        }
+        
+        // Test complete flow for debugging
+        async function testCompleteFlow() {
+            console.log('🔄 Testing complete flow...');
+            
+            // Hide loading state
+            document.getElementById('loadingState').classList.add('hidden');
+            
+            // Show form content
+            const formContent = document.getElementById('formContent');
+            formContent.classList.remove('hidden');
+            
+            // Set test data
+            formData = {
+                clientName: 'Test Client',
+                clientEmail: 'test@example.com',
+                quoteData: { plan: 'CloudFuze Purchase Agreement' },
+                status: 'pending'
+            };
+            
+            displayFormData();
+            console.log('✅ Form content should now be visible');
+            
+            // Simulate form submission after 2 seconds
+            setTimeout(async () => {
+                console.log('🔄 Simulating form submission...');
+                
+                // Hide form content
+                formContent.classList.add('hidden');
+                
+                // Show success state
+                const successState = document.getElementById('successState');
+                successState.classList.remove('hidden');
+                console.log('✅ Success state should now be visible');
+                
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                console.log('✅ Complete flow test finished');
+            }, 2000);
+        }
+
+        // Update font preview
+        function updateFontPreview() {
+            const signature = document.getElementById('eSignature').value;
+            const fontPreview = document.getElementById('fontPreview');
+            const fontOptions = document.getElementById('fontOptions');
+
+            if (signature.trim()) {
+                fontPreview.classList.remove('hidden');
+                fontOptions.innerHTML = signatureFonts.map((font, index) => `
+                    <div 
+                        class="signature-font-preview p-3 border rounded-lg cursor-pointer transition-colors ${
+                            selectedFontStyle === index 
+                                ? 'selected border-blue-500 bg-blue-50' 
+                                : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                        }"
+                        onclick="selectFontStyle(${index})"
+                    >
+                        <span 
+                            class="text-gray-600 text-sm mr-3 min-w-[80px] inline-block"
+                            style="font-family: Arial, sans-serif;"
+                        >
+                            ${font.name}:
+                        </span>
+                        <span 
+                            style="
+                                font-family: ${font.fontFamily};
+                                font-size: ${font.fontSize};
+                                font-style: ${font.fontStyle};
+                                font-weight: ${font.fontWeight};
+                                color: #000000;
+                            "
+                        >
+                            ${signature}
+                        </span>
+                        ${selectedFontStyle === index ? `
+                            <div class="float-right">
+                                <div class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                                    <span class="text-white text-xs">✓</span>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            } else {
+                fontPreview.classList.add('hidden');
+            }
+        }
+
+        // Select font style
+        function selectFontStyle(index) {
+            selectedFontStyle = index;
+            updateFontPreview();
+        }
+
+        // Submit signature form
+        async function submitSignatureForm(event) {
+            event.preventDefault();
+            console.log('🔄 Form submission started...');
+
+            // Check if formId is available
+            if (!formId) {
+                console.error('❌ Form ID not found');
+                alert('❌ Form ID not found. Please refresh the page and try again.');
+                return;
+            }
+
+            console.log('🔄 Submitting signature form...');
+            console.log('📋 Form ID:', formId);
+
+            const form = event.target;
+            const submitBtn = document.getElementById('submitBtn');
+            const formData = new FormData(form);
+
+            // Validate form
+            const eSignature = formData.get('eSignature');
+            const fullName = formData.get('fullName');
+            const title = formData.get('title');
+            const date = formData.get('date');
+
+            // Check if either drawn signature or text signature is provided
+            if (!signatureImageData && !eSignature) {
+                alert('Please either draw your signature or type your signature.');
+                return;
+            }
+
+            if (!fullName || !title || !date) {
+                alert('Please fill in all required fields.');
+                return;
+            }
+
+            // Disable submit button
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `
+                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Submitting...
+            `;
+
+            try {
+                // Upload signature image if drawn
+                let uploadedImageData = null;
+                if (signatureImageData) {
+                    uploadedImageData = await uploadSignatureImage();
+                }
+
+                const signatureData = {
+                    eSignature: eSignature || 'Drawn Signature',
+                    fullName,
+                    title,
+                    date,
+                    selectedFontStyle,
+                    signatureImage: uploadedImageData
+                };
+
+                const response = await fetch('http://localhost:3001/api/signature/client-submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        formId,
+                        signatureData
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || 'Failed to submit signature');
+                }
+
+                console.log('✅ Signature submitted successfully');
+                
+                // Show success state with preview option
+                console.log('🔄 Transitioning to success state...');
+                
+                // Hide form content
+                const formContent = document.getElementById('formContent');
+                formContent.classList.add('hidden');
+                console.log('✅ Form content hidden');
+                
+                // Show success state
+                const successState = document.getElementById('successState');
+                if (!successState) {
+                    console.error('❌ Success state element not found');
+                    alert('❌ Success state not found. Please refresh the page and try again.');
+                    return;
+                }
+                
+                successState.classList.remove('hidden');
+                console.log('✅ Success state should now be visible');
+                
+                // Force a reflow to ensure the state change is applied
+                successState.offsetHeight;
+                
+                // Scroll to top to ensure success state is visible
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                console.log('✅ Scrolled to top');
+                
+                // Verify buttons are present
+                const previewBtn = document.getElementById('previewBtn');
+                const downloadBtn = document.getElementById('downloadBtn');
+                console.log('🔍 Preview button found:', !!previewBtn);
+                console.log('🔍 Download button found:', !!downloadBtn);
+                
+                if (!previewBtn || !downloadBtn) {
+                    console.error('❌ Preview or download buttons not found');
+                    alert('❌ Preview or download buttons not found. Please refresh the page and try again.');
+                    return;
+                }
+                
+                // Show success message after state change
+                setTimeout(() => {
+                    alert('✅ Signature submitted successfully!\n\nYour signature has been added to the document. You can now preview or download the final document.');
+                    console.log('✅ Success alert shown');
+                    
+                    // Double-check success state is visible after alert
+                    if (successState.classList.contains('hidden')) {
+                        console.log('🔄 Re-showing success state after alert');
+                        successState.classList.remove('hidden');
+                    }
+                }, 100);
+                
+                // Auto-generate preview of final template
+                try {
+                    await generateTemplatePreview();
+                    console.log('✅ Preview generated successfully');
+                } catch (previewError) {
+                    console.error('⚠️ Preview generation failed:', previewError);
+                    // Don't fail the whole submission if preview fails
+                    console.log('⚠️ Preview generation failed, but submission was successful');
+                }
+
+            } catch (error) {
+                console.error('Error submitting signature:', error);
+                alert(`Failed to submit signature: ${error.message}`);
+                
+                // Re-enable submit button
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    Submit Signature
+                `;
+            }
+        }
+
+        // Download completed document
+        async function downloadDocument() {
+            console.log('🔄 Download document function called');
+            
+            // Check if formId is available
+            if (!formId) {
+                console.error('❌ Form ID not found for download');
+                alert('❌ Form ID not found. Please refresh the page and try again.');
+                return;
+            }
+            
+            try {
+                console.log('🔄 Starting document download...');
+                console.log('📋 Form ID:', formId);
+                
+                const downloadBtn = document.getElementById('downloadBtn');
+                downloadBtn.disabled = true;
+                downloadBtn.innerHTML = `
+                    <div class="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div>
+                    Generating Final Document...
+                `;
+
+                // Call API to generate final template with both signatures
+                const response = await fetch('http://localhost:3001/api/signature/generate-final-template', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        formId: formId
+                    })
+                });
+                
+                console.log('📡 Download API Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ Download API Error Response:', errorText);
+                    throw new Error(`API Error: ${response.status} - ${errorText}`);
+                }
+
+                const result = await response.json();
+                console.log('📄 Download API Result:', result);
+
+                if (!result.success) {
+                    console.error('❌ Download API returned failure:', result);
+                    throw new Error(result.message || 'Failed to generate final document');
+                }
+
+                // Convert base64 to blob and download
+                const binaryString = atob(result.templateData);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], { type: 'application/pdf' });
+                
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = result.fileName || 'Final-Template.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                // Show success message
+                alert('✅ Final document downloaded successfully!\n\nThis document contains both user and client signatures and is ready for use.');
+
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = `
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Download Completed Document
+                `;
+
+            } catch (error) {
+                console.error('Error downloading document:', error);
+                alert(`Failed to download document: ${error.message}`);
+                
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = `
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Download Completed Document
+                `;
+            }
+        }
+
+        // Initialize signature canvas
+        function initializeSignatureCanvas() {
+            canvas = document.getElementById('signatureCanvas');
+            ctx = canvas.getContext('2d');
+            
+            // Set canvas properties
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            // Mouse events
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+            
+            // Touch events for mobile
+            canvas.addEventListener('touchstart', handleTouchStart);
+            canvas.addEventListener('touchmove', handleTouchMove);
+            canvas.addEventListener('touchend', stopDrawing);
+            
+            // Clear and save buttons
+            document.getElementById('clearSignature').addEventListener('click', clearCanvas);
+            document.getElementById('saveSignature').addEventListener('click', saveSignature);
+        }
+        
+        // Start drawing
+        function startDrawing(e) {
+            isDrawing = true;
+            draw(e);
+        }
+        
+        // Draw function
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            e.preventDefault();
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+        
+        // Stop drawing
+        function stopDrawing() {
+            isDrawing = false;
+            ctx.beginPath();
+        }
+        
+        // Handle touch start
+        function handleTouchStart(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            canvas.dispatchEvent(mouseEvent);
+        }
+        
+        // Handle touch move
+        function handleTouchMove(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousemove', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            canvas.dispatchEvent(mouseEvent);
+        }
+        
+        // Clear canvas
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            signatureImageData = null;
+        }
+        
+        // Save signature as image
+        function saveSignature() {
+            signatureImageData = canvas.toDataURL('image/png');
+            alert('Signature saved! You can now submit the form.');
+        }
+        
+        // Upload signature image to server
+        async function uploadSignatureImage() {
+            if (!signatureImageData) {
+                return null;
+            }
+            
+            try {
+                // Convert base64 to blob
+                const response = await fetch(signatureImageData);
+                const blob = await response.blob();
+                
+                // Create form data
+                const formData = new FormData();
+                formData.append('signatureImage', blob, 'signature.png');
+                formData.append('formId', formId);
+                formData.append('signatureType', 'client');
+                
+                // Upload to server
+                const uploadResponse = await fetch('http://localhost:3001/api/signature/upload-image', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await uploadResponse.json();
+                
+                if (!result.success) {
+                    throw new Error(result.message || 'Failed to upload signature image');
+                }
+                
+                console.log('✅ Signature image uploaded successfully');
+                return signatureImageData;
+                
+            } catch (error) {
+                console.error('❌ Error uploading signature image:', error);
+                throw error;
+            }
+        }
+
+        // Generate template preview
+        async function generateTemplatePreview() {
+            // Check if formId is available
+            if (!formId) {
+                console.error('❌ Form ID not found for preview generation');
+                throw new Error('Form ID not found. Please refresh the page and try again.');
+            }
+            
+            try {
+                console.log('🔄 Starting template preview generation...');
+                console.log('📋 Form ID:', formId);
+                
+                const previewBtn = document.getElementById('previewBtn');
+                previewBtn.disabled = true;
+                previewBtn.innerHTML = `
+                    <div class="w-4 h-4 border-2 border-blue-700 border-t-transparent rounded-full animate-spin"></div>
+                    Generating Preview...
+                `;
+
+                // Call API to generate final template with both signatures
+                const response = await fetch('http://localhost:3001/api/signature/generate-final-template', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        formId: formId
+                    })
+                });
+                
+                console.log('📡 API Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ API Error Response:', errorText);
+                    throw new Error(`API Error: ${response.status} - ${errorText}`);
+                }
+
+                const result = await response.json();
+                console.log('📄 API Result:', result);
+
+                if (!result.success) {
+                    console.error('❌ API returned failure:', result);
+                    throw new Error(result.message || 'Failed to generate preview');
+                }
+
+                // Store the template data for download
+                window.finalTemplateData = result.templateData;
+                window.finalTemplateFileName = result.fileName;
+
+                // Convert base64 to blob for preview
+                const binaryString = atob(result.templateData);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(blob);
+
+                // Create preview iframe
+                const previewContent = document.getElementById('previewContent');
+                previewContent.innerHTML = `
+                    <iframe 
+                        src="${url}" 
+                        width="100%" 
+                        height="600px" 
+                        style="border: 1px solid #ddd; border-radius: 8px;"
+                        title="Final Document Preview"
+                    ></iframe>
+                `;
+
+                // Re-enable preview button
+                previewBtn.disabled = false;
+                previewBtn.innerHTML = `
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    Preview Final Document
+                `;
+
+            } catch (error) {
+                console.error('Error generating preview:', error);
+                alert(`Failed to generate preview: ${error.message}`);
+                
+                const previewBtn = document.getElementById('previewBtn');
+                previewBtn.disabled = false;
+                previewBtn.innerHTML = `
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    Preview Final Document
+                `;
+            }
+        }
+
+        // Show preview modal
+        function showPreviewModal() {
+            console.log('🔄 Show preview modal function called');
+            
+            // Check if preview modal exists
+            const previewModal = document.getElementById('previewModal');
+            if (!previewModal) {
+                console.error('❌ Preview modal not found');
+                alert('❌ Preview modal not found. Please refresh the page and try again.');
+                return;
+            }
+            
+            previewModal.classList.remove('hidden');
+            console.log('✅ Preview modal should now be visible');
+            
+            // Check if preview content exists
+            const previewContent = document.getElementById('previewContent');
+            if (!previewContent) {
+                console.error('❌ Preview content not found');
+                alert('❌ Preview content not found. Please refresh the page and try again.');
+                return;
+            }
+            
+            console.log('✅ Preview modal and content found');
+        }
+
+        // Close preview modal
+        function closePreviewModal() {
+            document.getElementById('previewModal').classList.add('hidden');
+        }
+
+        // Download from preview
+        function downloadFromPreview() {
+            if (window.finalTemplateData && window.finalTemplateFileName) {
+                // Convert base64 to blob and download
+                const binaryString = atob(window.finalTemplateData);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], { type: 'application/pdf' });
+                
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = window.finalTemplateFileName || 'Final-Template.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                // Show success message
+                alert('✅ Final document downloaded successfully!\n\nThis document contains both user and client signatures and is ready for use.');
+                
+                // Close preview modal
+                closePreviewModal();
+            } else {
+                alert('❌ No document data available for download. Please try again.');
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Client signature form loaded successfully');
+            
+            // Set default date to today
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+
+            // Initialize signature canvas
+            initializeSignatureCanvas();
+
+            // Load form data
+            loadFormData();
+
+            // Add event listeners
+            document.getElementById('eSignature').addEventListener('input', updateFontPreview);
+            document.getElementById('signatureForm').addEventListener('submit', submitSignatureForm);
+            
+            // Use event delegation for dynamically created buttons
+            document.addEventListener('click', function(event) {
+                console.log('🖱️ Click detected on:', event.target.id, event.target.className);
+                
+                // Check for download button
+                if (event.target && event.target.id === 'downloadBtn') {
+                    console.log('📥 Download button clicked');
+                    event.preventDefault();
+                    event.stopPropagation();
+                    downloadDocument();
+                    return;
+                }
+                
+                // Check for preview button
+                if (event.target && event.target.id === 'previewBtn') {
+                    console.log('👁️ Preview button clicked');
+                    event.preventDefault();
+                    event.stopPropagation();
+                    showPreviewModal();
+                    return;
+                }
+                
+                // Check for button clicks within the buttons
+                const downloadBtn = event.target.closest('#downloadBtn');
+                if (downloadBtn) {
+                    console.log('📥 Download button (closest) clicked');
+                    event.preventDefault();
+                    event.stopPropagation();
+                    downloadDocument();
+                    return;
+                }
+                
+                const previewBtn = event.target.closest('#previewBtn');
+                if (previewBtn) {
+                    console.log('👁️ Preview button (closest) clicked');
+                    event.preventDefault();
+                    event.stopPropagation();
+                    showPreviewModal();
+                    return;
+                }
+            });
+            
+            // Add keyboard shortcuts for testing
+            document.addEventListener('keydown', function(event) {
+                if (event.ctrlKey && event.key === 'r') {
+                    console.log('🔄 Force refresh detected - clearing cache');
+                    window.location.reload(true);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

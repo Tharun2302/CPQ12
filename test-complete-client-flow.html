@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Client Information Flow Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .test-button {
+            display: inline-block;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: bold;
+            margin: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        .demo-button {
+            background: linear-gradient(45deg, #4834d4, #686de0);
+        }
+        .hubspot-button {
+            background: linear-gradient(45deg, #ff9ff3, #f368e0);
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .info-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .info-label {
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 5px;
+        }
+        .info-value {
+            color: #e8f4fd;
+        }
+        .description {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #ffd700;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        .feature-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .feature-list li:before {
+            content: "✅ ";
+            color: #4ade80;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Complete Client Information Flow Test</h1>
+        
+        <div class="description">
+            <h2>🎯 What This Test Demonstrates:</h2>
+            <p>This test shows how the CPQ application automatically fetches and displays comprehensive client information from HubSpot, including contact details, company information, and deal data.</p>
+        </div>
+
+        <div class="test-section">
+            <h2>🧪 Test Scenarios</h2>
+            
+            <h3>1. Demo Data (Localhost Testing)</h3>
+            <p>Test with pre-filled demo data to see how the client information section displays:</p>
+            <a href="http://localhost:5173/?dealId=TEST-12345&dealName=Test%20Deal%20-%20Cloud%20Migration&amount=25000&closeDate=2024-12-31&stage=Proposal&ownerId=user-456" 
+               class="test-button demo-button" target="_blank">
+                🎭 Test Demo Data
+            </a>
+            
+            <h3>2. Enhanced Demo Data (With Client Information)</h3>
+            <p>Test with comprehensive demo data including all client and company fields:</p>
+            <a href="http://localhost:5173/?dealId=ENHANCED-123&dealName=Enhanced%20Deal%20-%20Full%20Client%20Data&amount=50000&closeDate=2024-12-31&stage=Proposal&ownerId=user-789&company=CloudFuze%20Inc.&contactName=Sarah%20Johnson&contactEmail=sarah.johnson@cloudfuze.com&contactPhone=%2B1%20(555)%20987-6543&contactJobTitle=VP%20of%20Technology&companyDomain=cloudfuze.com&companyPhone=%2B1%20(555)%20123-4567&companyAddress=2500%20Regency%20Parkway%2C%20Cary%2C%20NC%2027518" 
+               class="test-button hubspot-button" target="_blank">
+                🌟 Test Enhanced Demo Data
+            </a>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 What You'll See in the Application:</h2>
+            
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-label">Deal Information Section:</div>
+                    <div class="info-value">• Deal ID, Name, Amount<br>• Stage, Close Date, Owner<br>• Contact & Company Info</div>
+                </div>
+                
+                <div class="info-card">
+                    <div class="info-label">Client Information Section:</div>
+                    <div class="info-value">• Client Name & Email<br>• Company Name & Domain<br>• Phone & Job Title</div>
+                </div>
+                
+                <div class="info-card">
+                    <div class="info-label">Configuration Tab:</div>
+                    <div class="info-value">• Auto-filled client details<br>• HubSpot sync indicator<br>• Professional layout</div>
+                </div>
+                
+                <div class="info-card">
+                    <div class="info-label">Quote Generation:</div>
+                    <div class="info-value">• Client info included<br>• Deal details preserved<br>• Complete data flow</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔄 How the Auto-Fill Works:</h2>
+            <ol class="feature-list">
+                <li><strong>URL Parameters:</strong> Client information passed via URL parameters</li>
+                <li><strong>Auto-Parse:</strong> Application automatically parses all parameters</li>
+                <li><strong>State Update:</strong> Deal and client state updated automatically</li>
+                <li><strong>Form Population:</strong> Configuration forms auto-filled</li>
+                <li><strong>Display Update:</strong> UI shows all client information</li>
+                <li><strong>HubSpot Sync:</strong> Real data fetched when connected to HubSpot</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h2>🔗 Real HubSpot Integration:</h2>
+            <p>When connected to real HubSpot:</p>
+            <ul class="feature-list">
+                <li>Click "Refresh" button to fetch latest data from HubSpot</li>
+                <li>All client information automatically updated from HubSpot</li>
+                <li>Forms re-populated with real-time data</li>
+                <li>Professional client information display</li>
+                <li>Seamless data synchronization</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h2>📱 Test Instructions:</h2>
+            <ol>
+                <li>Click one of the test buttons above</li>
+                <li>Application opens with pre-filled data</li>
+                <li>Navigate to "Deal" tab to see deal information</li>
+                <li>Look for "Contact & Company Information" section</li>
+                <li>Click "Use Deal Data" to go to Configure tab</li>
+                <li>See "Client Information" section with auto-filled data</li>
+                <li>Generate quote with complete client information</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h2>🎉 Expected Results:</h2>
+            <p>You should see:</p>
+            <ul class="feature-list">
+                <li>Complete deal information displayed</li>
+                <li>Client information section with all fields populated</li>
+                <li>Professional, color-coded information cards</li>
+                <li>Auto-filled forms in configuration tab</li>
+                <li>Seamless data flow from deal to quote generation</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactivity
+        document.addEventListener('DOMContentLoaded', function() {
+            const buttons = document.querySelectorAll('.test-button');
+            buttons.forEach(button => {
+                button.addEventListener('click', function() {
+                    this.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        this.style.transform = 'scale(1)';
+                    }, 150);
+                });
+            });
+        });
+    </script>
+</body>
+</html>
