@@ -968,6 +968,97 @@ Total Price: {{total price}}`;
     }
   };
 
+  // Handle PDF download from the generated agreement using document preview
+  const handleDownloadAgreementPDF = async () => {
+    if (!processedAgreement) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
+
+    try {
+      console.log('🔄 Starting Agreement PDF generation...');
+      
+      // Find the document preview content
+      let documentPreview = document.querySelector('.document-preview-content');
+      
+      // If not found, try to get content from iframe
+      if (!documentPreview) {
+        const iframe = document.querySelector('iframe[title="Agreement Document Preview"]') as HTMLIFrameElement;
+        if (iframe && iframe.contentDocument) {
+          documentPreview = iframe.contentDocument.body;
+        }
+      }
+      
+      if (!documentPreview) {
+        alert('Document preview not available. Please make sure the document is displayed first.');
+        return;
+      }
+
+      // Create a temporary container for PDF generation
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '0';
+      tempContainer.style.width = '1200px';
+      tempContainer.style.backgroundColor = 'white';
+      tempContainer.style.padding = '40px';
+      tempContainer.style.fontFamily = 'Arial, sans-serif';
+      document.body.appendChild(tempContainer);
+
+      // Clone the document preview content
+      const clonedContent = documentPreview.cloneNode(true) as HTMLElement;
+      tempContainer.appendChild(clonedContent);
+
+      // Wait for any images or fonts to load
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Generate PDF using html2canvas and jsPDF
+      const canvas = await html2canvas(tempContainer, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 1200,
+        height: clonedContent.scrollHeight
+      });
+
+      // Clean up temporary container
+      document.body.removeChild(tempContainer);
+
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 295; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+
+      let position = 0;
+
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Add additional pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      // Download the PDF
+      const fileName = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      
+      console.log('✅ Agreement PDF downloaded successfully');
+    } catch (error) {
+      console.error('❌ Error downloading agreement PDF:', error);
+      alert('Failed to download PDF. Please try again or contact support.');
+    }
+  };
+
   const handleViewInline = async () => {
     if (processedAgreement) {
       try {
@@ -2983,7 +3074,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               className="px-6 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-300 font-semibold flex items-center gap-2"
             >
               <Eye className="w-4 h-4" />
-              Edit
+              Back
             </button>
             <button 
               onClick={handleDownloadPDF}
@@ -2993,12 +3084,27 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               Download PDF
             </button>
             <button 
-              onClick={handleSendQuote}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 font-semibold flex items-center gap-2 shadow-lg"
+              onClick={handleGenerateAgreement}
+              disabled={!selectedTemplate || isGeneratingAgreement}
+              className={`px-6 py-3 rounded-xl transition-all duration-300 font-semibold flex items-center gap-2 shadow-lg ${
+                !selectedTemplate || isGeneratingAgreement
+                  ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700'
+              }`}
             >
-              <Send className="w-4 h-4" />
-              Generate PDF Quote
+              {isGeneratingAgreement ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <FileText className="w-4 h-4" />
+                  Generate Agreement
+                </>
+              )}
             </button>
+            {/* Generate PDF Quote button removed as requested */}
           </div>
         </div>
         <QuotePreview dealData={dealData} />
@@ -3169,27 +3275,27 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </span>
                   </button>
 
-            {/* Send to Deal Desk Button */}
+            {/* Send to Deal Desk Button (same behavior as preview) */}
             <button
               type="button"
-              onClick={handleSendToDealDesk}
-              disabled={isSendingToDealDesk}
+              onClick={handleEmailAgreement}
+              disabled={isEmailingAgreement}
               className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group ${
-                isSendingToDealDesk
+                isEmailingAgreement
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white hover:from-purple-700 hover:via-indigo-700 hover:to-blue-700 hover:scale-105 hover:shadow-2xl'
               }`}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
               <span className="relative flex items-center justify-center gap-3">
-                {isSendingToDealDesk ? (
+                {isEmailingAgreement ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Preparing Email...
+                    Sending...
                   </>
                 ) : (
                   <>
-                    <Briefcase className="w-5 h-5" />
+                    <Mail className="w-5 h-5" />
                     Send to Deal Desk
                     <Send className="w-5 h-5" />
                   </>
@@ -3444,7 +3550,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                           title="Agreement Document Preview"
                         />
                       ) : (
-                        <div ref={previewContainerRef} className="w-full h-full overflow-auto p-6 bg-white" />
+                        <div ref={previewContainerRef} className="document-preview-content w-full h-full overflow-auto p-6 bg-white" />
                       )
                     ) : (
                       <div className="h-full flex items-center justify-center">
@@ -3496,6 +3602,16 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       </svg>
                       📥 Download Agreement
                     </button>
+                    {/* Download PDF button with functionality */}
+                    <button
+                      onClick={handleDownloadAgreementPDF}
+                      className="flex items-center gap-3 px-10 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-bold text-xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1"
+                    >
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      📄 Download PDF
+                    </button>
                     <button
                       onClick={handleEmailAgreement}
                       disabled={isEmailingAgreement}
@@ -3513,7 +3629,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       ) : (
                         <>
                           <Mail className="w-7 h-7" />
-                          📧 Send to Client
+                          📧 Send to Deal Desk
                         </>
                       )}
                     </button>

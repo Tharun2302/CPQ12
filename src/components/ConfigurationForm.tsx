@@ -67,6 +67,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   // Discount state for proper display
   const [discountValue, setDiscountValue] = useState<string>('');
+  // Combination selection state
+  const [combination, setCombination] = useState<string>('');
 
   // Initialize contact info from deal data
   useEffect(() => {
@@ -147,6 +149,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     } catch {
       setDiscountValue('');
     }
+  }, []);
+
+  // Load saved combination from localStorage
+  useEffect(() => {
+    try {
+      const savedCombo = localStorage.getItem('cpq_combination');
+      if (savedCombo) setCombination(savedCombo);
+    } catch {}
   }, []);
 
 
@@ -364,18 +374,34 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </div>
                   Combination
                 </label>
-                {/* Restrict to SLACK TO TEAMS only */}
+                {/* Combination must be selected by user */}
                 <select
-                  value={'slack-to-teams'}
-                  onChange={() => { try { localStorage.setItem('cpq_combination', 'slack-to-teams'); } catch {} }}
+                  value={combination}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setCombination(value);
+                    try { localStorage.setItem('cpq_combination', value); } catch {}
+                    // Scroll to next section after selection
+                    setTimeout(() => {
+                      const target = document.querySelector('[data-section="project-configuration"]');
+                      if (target) (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 150);
+                  }}
                   className="w-full px-6 py-4 border-2 border-purple-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-purple-300 text-lg font-medium"
                 >
+                  <option value="">Select Combination</option>
                   <option value="slack-to-teams">SLACK TO TEAMS</option>
                 </select>
                 <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
                   <p className="text-sm text-purple-700">
-                    <strong>Selected:</strong> SLACK TO TEAMS
-                    <span className="block mt-1 text-purple-600">Templates for this combination will be auto-selected after you choose a plan.</span>
+                    {combination ? (
+                      <>
+                        <strong>Selected:</strong> {combination.replace(/-/g, ' ').toUpperCase()}
+                        <span className="block mt-1 text-purple-600">Templates for this combination will be auto-selected after you choose a plan.</span>
+                      </>
+                    ) : (
+                      <span>Please select a combination to continue.</span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -383,7 +409,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* Other Configuration Fields - Conditional Rendering */}
-          {config.migrationType && (
+          {config.migrationType && combination && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
@@ -508,12 +534,72 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     />
                   </div>
                 )}
+
+                {/* Discount Field moved inside Project Configuration */}
+                <div className="group md:col-span-2">
+                  <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
+                      <Percent className="w-4 h-4 text-white" />
+                    </div>
+                    Discount (%)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    step={0.01}
+                    value={discountValue}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      
+                      // Allow empty value for clearing
+                      if (raw === '') {
+                        setDiscountValue('');
+                        try { 
+                          localStorage.setItem('cpq_discount', '');
+                          window.dispatchEvent(new CustomEvent('discountUpdated'));
+                        } catch {}
+                        return;
+                      }
+                      
+                      const numValue = Number(raw);
+                      
+                      // Check if value exceeds 10%
+                      if (numValue > 10) {
+                        alert('Discount cannot be more than 10%');
+                        return; // Don't update the value
+                      }
+                      
+                      // Ensure value is not negative
+                      if (numValue < 0) {
+                        setDiscountValue('0');
+                        try { 
+                          localStorage.setItem('cpq_discount', '0');
+                          window.dispatchEvent(new CustomEvent('discountUpdated'));
+                        } catch {}
+                        return;
+                      }
+                      
+                      // Update the display value immediately
+                      setDiscountValue(raw);
+                      
+                      // Save to localStorage and notify other components
+                      try { 
+                        localStorage.setItem('cpq_discount', raw);
+                        window.dispatchEvent(new CustomEvent('discountUpdated'));
+                      } catch {}
+                    }}
+                    className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
+                    placeholder={`Enter discount percentage (max 10%)`}
+                  />
+                  <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 10%.</p>
+                </div>
               </div>
             </div>
           )}
 
-          {/* Calculate Pricing Button - Only show when migration type and template are selected */}
-          {config.migrationType && selectedTemplate && (
+          {/* Calculate Pricing Button - Show only after combination is selected */}
+          {config.migrationType && combination && (
             <>
               <button
                 type="submit"
@@ -526,66 +612,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <Sparkles className="w-5 h-5" />
                 </span>
               </button>
-
-              {/* Discount Field moved from Quote session */}
-              <div className="mt-6 bg-white/70 border border-gray-200 rounded-2xl p-6">
-                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
-                    <Percent className="w-4 h-4 text-white" />
-                  </div>
-                  Discount (%)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  step={0.01}
-                  value={discountValue}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    
-                    // Allow empty value for clearing
-                    if (raw === '') {
-                      setDiscountValue('');
-                      try { 
-                        localStorage.setItem('cpq_discount', '');
-                        window.dispatchEvent(new CustomEvent('discountUpdated'));
-                      } catch {}
-                      return;
-                    }
-                    
-                    const numValue = Number(raw);
-                    
-                    // Check if value exceeds 10%
-                    if (numValue > 10) {
-                      alert('Discount cannot be more than 10%');
-                      return; // Don't update the value
-                    }
-                    
-                    // Ensure value is not negative
-                    if (numValue < 0) {
-                      setDiscountValue('0');
-                      try { 
-                        localStorage.setItem('cpq_discount', '0');
-                        window.dispatchEvent(new CustomEvent('discountUpdated'));
-                      } catch {}
-                      return;
-                    }
-                    
-                    // Update the display value immediately
-                    setDiscountValue(raw);
-                    
-                    // Save to localStorage and notify other components
-                    try { 
-                      localStorage.setItem('cpq_discount', raw);
-                      window.dispatchEvent(new CustomEvent('discountUpdated'));
-                    } catch {}
-                  }}
-                  className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                  placeholder={`Enter discount percentage (max 10%)`}
-                />
-                <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 10%.</p>
-              </div>
             </>
           )}
         </form>

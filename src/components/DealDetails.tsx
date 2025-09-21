@@ -6,8 +6,6 @@ import {
   Calendar, 
   Target, 
   UserCheck,
-  ExternalLink,
-  RefreshCw,
   AlertCircle,
   CheckCircle,
   ArrowRight,
@@ -39,8 +37,8 @@ interface DealDetailsProps {
 }
 
 const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDealData }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [isLoading] = useState(false);
+  const [showSuccessMessage] = useState(false);
 
   console.log('🔍 DealDetails render - dealData:', dealData);
   console.log('🔍 Company By Contact value:', dealData?.companyByContact);
@@ -66,26 +64,7 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
     );
   }
 
-  const handleRefresh = async () => {
-    if (onRefresh) {
-      console.log('🔄 Refresh button clicked - starting refresh...');
-      setIsLoading(true);
-      try {
-        await onRefresh();
-        console.log('✅ Refresh completed successfully');
-        
-        // Show success message
-        setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 3000); // Hide after 3 seconds
-      } catch (error) {
-        console.error('❌ Error during refresh:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      console.warn('⚠️ No refresh function provided');
-    }
-  };
+  // Refresh button removed per requirements; keeping onRefresh prop optional for compatibility
 
   const handleUseDealData = () => {
     if (onUseDealData && dealData) {
@@ -116,25 +95,7 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
             <p className="text-gray-600">HubSpot Deal Details</p>
           </div>
         </div>
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={handleRefresh}
-            disabled={isLoading}
-            className="flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <a
-            href={`https://app.hubspot.com/contacts/_/deal/${dealData.dealId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            <ExternalLink className="w-4 h-4 mr-2" />
-            View in HubSpot
-          </a>
-        </div>
+        {/* Top-right action buttons removed (Refresh, View in HubSpot) */}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

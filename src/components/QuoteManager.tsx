@@ -1220,16 +1220,16 @@ The client will receive an email with the PDF quote and a link to complete the d
         )}
       </div>
 
-      {/* Quotes List */}
+      {/* Documents List */}
       <div className="space-y-6">
         {quotes.length === 0 ? (
           <div className="text-center py-12">
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <FileText className="w-12 h-12 text-gray-400" />
             </div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-2">No Quotes Yet</h3>
+            <h3 className="text-xl font-semibold text-gray-800 mb-2">No Documents Yet</h3>
             <p className="text-gray-600 mb-6">
-              Generate your first quote to see it here.
+              Generate your first document to see it here.
             </p>
           </div>
         ) : (
