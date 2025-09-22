@@ -281,14 +281,41 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 
   const renderDocxPreview = async (blob: Blob) => {
     try {
+      // Validate blob before processing
+      if (!blob || blob.size === 0) {
+        throw new Error('Document blob is empty or invalid');
+      }
+      
+      console.log('📄 Rendering DOCX preview, blob size:', blob.size, 'bytes, type:', blob.type);
+      
+      // Check if blob has valid ZIP signature
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
+        throw new Error('Document is not a valid ZIP/DOCX file (missing ZIP signature)');
+      }
+      
       ensureDocxPreviewStylesInjected();
       // @ts-ignore - resolved at runtime; types provided via ambient declaration
       const { renderAsync } = await import('docx-preview');
-      const arrayBuffer = await blob.arrayBuffer();
+      
       // Ensure container exists in DOM
       setShowInlinePreview(true);
       await delayFrame();
-      if (previewContainerRef.current) previewContainerRef.current.innerHTML = '';
+      
+      // Wait for container to be available
+      let attempts = 0;
+      while (!previewContainerRef.current && attempts < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
+      if (!previewContainerRef.current) {
+        throw new Error('Preview container not available after waiting');
+      }
+      
+      previewContainerRef.current.innerHTML = '';
+      
       await renderAsync(arrayBuffer, previewContainerRef.current as HTMLElement, undefined, {
         inWrapper: true,
         ignoreWidth: false,
@@ -303,14 +330,31 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       try {
         const mammoth = await import('mammoth');
         const arrayBuffer = await blob.arrayBuffer();
+        
+        // Validate arrayBuffer for mammoth
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error('Document arrayBuffer is empty');
+        }
+        
         const result = await mammoth.convertToHtml({ arrayBuffer } as any);
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Document Preview</title></head><body>${result.value}</body></html>`;
         const htmlBlob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(htmlBlob);
         setPreviewUrl(url);
         setShowInlinePreview(true);
+        console.log('✅ DOCX converted to HTML with mammoth');
       } catch (fallbackErr) {
         console.error('❌ HTML fallback also failed:', fallbackErr);
+        // Show error message to user
+        if (previewContainerRef.current) {
+          previewContainerRef.current.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #666;">
+              <h3>Document Preview Unavailable</h3>
+              <p>The document could not be previewed due to formatting issues.</p>
+              <p>You can still download the document using the buttons below.</p>
+            </div>
+          `;
+        }
       }
     }
   };
@@ -1005,80 +1049,138 @@ Total Price: {{total price}}`;
 
   // Handle PDF download from the generated agreement using document preview
   const handleDownloadAgreementPDF = async () => {
-    if (!processedAgreement) {
-      alert('No agreement available. Please generate an agreement first.');
-      return;
-    }
-
     try {
-      console.log('🔄 Starting Agreement PDF generation (mammoth + pdf-lib)...');
-
-      // Primary path: exact visual fidelity using docx-preview + rasterization
-      if (processedAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        const pdfBlob = await convertDocxToPdfExact(processedAgreement);
-        const fileName = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
-        downloadBlob(pdfBlob, fileName);
-        console.log('✅ Agreement PDF downloaded (exact rendering)');
+      if (!processedAgreement) {
+        alert('No agreement available. Please generate an agreement first.');
         return;
       }
-
-      // Fallback path: rasterize preview HTML into PDF (existing behavior)
-      console.log('ℹ️ Falling back to HTML rasterization for non-DOCX content');
-      let documentPreview = document.querySelector('.document-preview-content');
-      if (!documentPreview) {
-        const iframe = document.querySelector('iframe[title="Agreement Document Preview"]') as HTMLIFrameElement;
-        if (iframe && iframe.contentDocument) documentPreview = iframe.contentDocument.body;
-      }
-      if (!documentPreview) {
-        alert('Document preview not available. Please make sure the document is displayed first.');
-        return;
-      }
-
-      const tempContainer = document.createElement('div');
-      tempContainer.style.position = 'absolute';
-      tempContainer.style.left = '-9999px';
-      tempContainer.style.top = '0';
-      tempContainer.style.width = '1200px';
-      tempContainer.style.backgroundColor = 'white';
-      tempContainer.style.padding = '40px';
-      tempContainer.style.fontFamily = 'Arial, sans-serif';
-      document.body.appendChild(tempContainer);
-
-      const clonedContent = documentPreview.cloneNode(true) as HTMLElement;
-      tempContainer.appendChild(clonedContent);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const canvas = await html2canvas(tempContainer, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        width: 1200,
-        height: clonedContent.scrollHeight
-      });
-      document.body.removeChild(tempContainer);
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 210;
-      const pageHeight = 295;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-      const fileName = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
-      pdf.save(fileName);
-      console.log('✅ Agreement PDF downloaded via fallback');
+      // Prefer server-side high-fidelity conversion
+      const { templateService } = await import('../utils/templateService');
+      const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('❌ Error downloading agreement PDF:', error);
-      alert('Failed to download PDF. Please try again or contact support.');
+      console.error('❌ Server conversion failed, falling back to in-modal PDF capture:', error);
+      try {
+        // Ensure the inline preview exists; if not, render it
+        if (!showInlinePreview) {
+          setShowAgreementPreview(true);
+          setShowInlinePreview(true);
+          await delayFrame();
+          await renderDocxPreview(processedAgreement as Blob);
+          await delayFrame();
+        }
+
+        // Find the agreement preview container
+        const container = previewContainerRef.current || document.querySelector('.document-preview-content');
+        if (!container) {
+          alert('Document preview not available. Please click "View Document" first, then try again.');
+          return;
+        }
+
+        // Attempt page-by-page capture to avoid mid-page breaks
+        const pageSelectors = ['.docx .page', '.docx .docx-page', '.docx-page', '.page'];
+        let pages: Element[] = [];
+        for (const sel of pageSelectors) {
+          const found = Array.from((container as HTMLElement).querySelectorAll(sel));
+          if (found.length) { pages = found; break; }
+        }
+
+        const pdf = new jsPDF('p', 'mm', 'a4');
+
+        if (pages.length > 0) {
+          for (let i = 0; i < pages.length; i++) {
+            // Create isolated temp for each page
+            const tempPage = document.createElement('div');
+            tempPage.style.position = 'absolute';
+            tempPage.style.left = '-9999px';
+            tempPage.style.top = '0';
+            tempPage.style.width = '1200px';
+            tempPage.style.backgroundColor = 'white';
+            document.body.appendChild(tempPage);
+            tempPage.appendChild((pages[i] as HTMLElement).cloneNode(true));
+
+            await new Promise(res => setTimeout(res, 200));
+
+            const canvas = await html2canvas(tempPage, {
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff'
+            });
+
+            document.body.removeChild(tempPage);
+
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = 210; // A4 width
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            if (i > 0) pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
+          }
+        } else {
+          // Fallback to whole-container capture
+          const temp = document.createElement('div');
+          temp.style.position = 'absolute';
+          temp.style.left = '-9999px';
+          temp.style.top = '0';
+          temp.style.width = '1200px';
+          temp.style.backgroundColor = 'white';
+          temp.style.padding = '40px';
+          document.body.appendChild(temp);
+          temp.appendChild((container as HTMLElement).cloneNode(true));
+
+          await new Promise(res => setTimeout(res, 800));
+          const canvas = await html2canvas(temp, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            width: 1200,
+            height: (temp.firstElementChild as HTMLElement)?.scrollHeight || temp.scrollHeight
+          });
+          document.body.removeChild(temp);
+
+          const imgData = canvas.toDataURL('image/png');
+          const imgWidth = 210; // A4 width in mm
+          const pageHeight = 295; // A4 height in mm
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+          let heightLeft = imgHeight;
+          let position = 0;
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+          while (heightLeft >= 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+          }
+        }
+
+        pdf.save(`agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`);
+      } catch (fallbackErr) {
+        console.error('❌ Inline capture fallback failed:', fallbackErr);
+        // Last resort: Use the original DOCX file as download
+        try {
+          const url = URL.createObjectURL(processedAgreement as Blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.docx`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          alert('PDF conversion is not available. The Word document has been downloaded instead. You can convert it to PDF using Microsoft Word or any online converter.');
+        } catch (docxErr) {
+          console.error('❌ DOCX download fallback failed:', docxErr);
+          alert('Unable to download document. Please try again or contact support.');
+        }
+      }
     }
   };
 
