@@ -12,7 +12,8 @@ import {
   Users, 
   Sparkles,
   Eye,
-  Briefcase
+  Briefcase,
+  Calendar
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -63,6 +64,7 @@ interface ClientInfo {
   clientName: string;
   clientEmail: string;
   company: string;
+  effectiveDate?: string;
   discount?: number;
 }
 
@@ -113,6 +115,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     clientName: '',
     clientEmail: '',
     company: '',
+    effectiveDate: '',
     discount: undefined
   });
 
@@ -168,7 +171,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           ...prev,
           clientName: parsed.clientName || '',
           clientEmail: parsed.clientEmail || '',
-          company: parsed.company || ''
+          company: parsed.company || '',
+          effectiveDate: parsed.effectiveDate || ''
         }));
       }
     } catch {}
@@ -237,7 +241,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     try { localStorage.setItem('cpq_quote_client_info', JSON.stringify(newClientInfo)); } catch {}
     
     // Only notify parent when user makes actual changes (not during auto-fill)
-    if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.discount !== undefined)) {
+    if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.effectiveDate || updates.discount !== undefined)) {
       onClientInfoChange(newClientInfo);
     }
   };
@@ -363,7 +367,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       setClientInfo({
         clientName: '',
         clientEmail: '',
-        company: ''
+        company: '',
+        effectiveDate: ''
       });
     }
   }, [hubspotState?.isConnected]);
@@ -493,15 +498,43 @@ Generated on: ${new Date().toLocaleString()}
 Quote ID: ${quoteData.id}
       `.trim();
 
-      // Create mailto link
+      // Send email directly through backend API
       const dealDeskEmail = 'dealdesk@cloudfuze.com'; // Replace with actual deal desk email
-      const mailtoLink = `mailto:${dealDeskEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
       
-      // Open email client
-      window.open(mailtoLink, '_blank');
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const response = await fetch(`${backendUrl}/api/email/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: dealDeskEmail,
+          subject: emailSubject,
+          message: emailBody
+        })
+      });
       
-      // Show success message
-      alert('Email client opened with quote details. Please send the email to complete the Deal Desk submission.');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        
+        // Handle specific email configuration errors
+        if (response.status === 500 && errorData.message?.includes('Email configuration not set')) {
+          alert(`❌ Email Not Configured\n\nThe server needs email configuration to send emails.\n\nPlease contact your administrator to:\n1. Create a .env file with EMAIL_USER and EMAIL_PASS\n2. Set up Gmail App Password\n3. Restart the server\n\nAlternatively, you can use the manual email option.`);
+          
+          // Fallback to mailto link
+          const mailtoLink = `mailto:${dealDeskEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+          window.open(mailtoLink, '_blank');
+          alert('📧 Email client opened as fallback. Please send the email manually.');
+          return;
+        }
+        
+        throw new Error(errorData.message || `Server error ${response.status}`);
+      }
+      
+      const result = await response.json();
+      if (result?.success) {
+        alert(`✅ Quote sent to Deal Desk successfully!\n\n📧 Message ID: ${result.messageId}\n📧 Sent to: ${dealDeskEmail}\n\nThe Deal Desk team will review your quote and provide feedback.`);
+      } else {
+        throw new Error(result?.message || 'Unknown server response');
+      }
       
     } catch (error) {
       console.error('Error sending to Deal Desk:', error);
@@ -2662,9 +2695,31 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 )}
               </div>
 
+              {/* Effective Date */}
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Calendar className="w-4 h-4 text-white" />
+                  </div>
+                  Effective Date
+                </label>
+                <input
+                  type="date"
+                  value={clientInfo.effectiveDate || ''}
+                  onChange={(e) => setClientInfo({ ...clientInfo, effectiveDate: e.target.value })}
+                  className="w-full px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-xl font-medium"
+                  style={{ 
+                    fontSize: '18px',
+                    height: '60px',
+                    paddingTop: '18px',
+                    paddingBottom: '18px'
+                  }}
+                />
+              </div>
+
               {/* Discount field moved to Configure session */}
 
-              <button
+            <button
                 type="submit"
                 className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group"
               >
@@ -3224,6 +3279,27 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 )}
             </div>
 
+            {/* Effective Date */}
+            <div className="group">
+              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-4 h-4 text-white" />
+                </div>
+                Effective Date
+              </label>
+              <input
+                type="date"
+                value={clientInfo.effectiveDate || ''}
+                onChange={(e) => updateClientInfo({ effectiveDate: e.target.value })}
+                className="w-full px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-xl font-medium"
+                style={{ 
+                  fontSize: '18px',
+                  height: '60px',
+                  paddingTop: '18px',
+                  paddingBottom: '18px'
+                }}
+              />
+            </div>
 
             <button
               type="submit"

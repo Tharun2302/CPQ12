@@ -450,8 +450,8 @@ function App() {
                      contactFirstName || contactLastName || 
                      urlParams.get('contactName') || 
                      urlParams.get('ContactName') || 
-                     'Contact from HubSpot'),
-        contactEmail: contactEmail || 'email@hubspot.com',
+                     'Not Available'),
+        contactEmail: contactEmail || 'Not Available',
         contactPhone: contactPhone || '+1 (555) 123-4567',
         contactJobTitle: contactJobTitle || 'Position from HubSpot',
         companyDomain: companyDomain || 'hubspot.com',
@@ -664,8 +664,8 @@ function App() {
       
       // Auto-fill client information from deal data
       const enhancedClientInfo = {
-        clientName: dealParams.contactName || 'Contact from HubSpot',
-        clientEmail: dealParams.contactEmail || 'email@hubspot.com',
+        clientName: dealParams.contactName || 'Not Available',
+        clientEmail: dealParams.contactEmail || 'Not Available',
         company: dealParams.company || 'Not Available',
         phone: '',
         jobTitle: '',

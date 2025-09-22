@@ -1,10 +1,7 @@
 import React from 'react';
 import { 
   Building, 
-  DollarSign, 
-  Calendar, 
-  Target, 
-  UserCheck,
+  DollarSign,
   Hash,
   FileText
 } from 'lucide-react';
@@ -95,35 +92,6 @@ const DealComponents: React.FC<DealComponentsProps> = ({ dealData }) => {
           borderColor="border-green-200"
         />
 
-        {/* Stage Component */}
-        <DealProperty
-          label="Deal Stage"
-          value={dealData.stage || 'Not Set'}
-          icon={Target}
-          iconColor="bg-purple-500"
-          bgColor="from-purple-50 to-violet-50"
-          borderColor="border-purple-200"
-        />
-
-        {/* Close Date Component */}
-        <DealProperty
-          label="Close Date"
-          value={dealData.closeDate ? new Date(dealData.closeDate).toLocaleDateString() : 'Not Set'}
-          icon={Calendar}
-          iconColor="bg-orange-500"
-          bgColor="from-orange-50 to-amber-50"
-          borderColor="border-orange-200"
-        />
-
-        {/* Owner ID Component */}
-        <DealProperty
-          label="Owner ID"
-          value={dealData.ownerId || 'Not Set'}
-          icon={UserCheck}
-          iconColor="bg-teal-500"
-          bgColor="from-teal-50 to-cyan-50"
-          borderColor="border-teal-200"
-        />
       </div>
 
       {/* Deal Summary Card */}
@@ -135,7 +103,7 @@ const DealComponents: React.FC<DealComponentsProps> = ({ dealData }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
             <span className="text-gray-500">Total Properties:</span>
-            <span className="ml-2 font-semibold text-gray-900">6</span>
+            <span className="ml-2 font-semibold text-gray-900">3</span>
           </div>
           <div>
             <span className="text-gray-500">Last Updated:</span>
