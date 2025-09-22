@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
+import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 
 interface DealData {
   dealId: string;
@@ -1015,6 +1017,7 @@ Total Price: {{total price}}`;
   // Handle PDF download from the generated agreement using document preview
   const handleDownloadAgreementPDF = async () => {
     try {
+<<<<<<< HEAD
       if (!processedAgreement) {
         alert('No agreement available. Please generate an agreement first.');
         return;
@@ -1030,6 +1033,73 @@ Total Price: {{total price}}`;
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+=======
+      console.log('🔄 Starting Agreement PDF generation (mammoth + pdf-lib)...');
+
+      // Primary path: exact visual fidelity using docx-preview + rasterization
+      if (processedAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const pdfBlob = await convertDocxToPdfExact(processedAgreement);
+        const fileName = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
+        downloadBlob(pdfBlob, fileName);
+        console.log('✅ Agreement PDF downloaded (exact rendering)');
+        return;
+      }
+
+      // Fallback path: rasterize preview HTML into PDF (existing behavior)
+      console.log('ℹ️ Falling back to HTML rasterization for non-DOCX content');
+      let documentPreview = document.querySelector('.document-preview-content');
+      if (!documentPreview) {
+        const iframe = document.querySelector('iframe[title="Agreement Document Preview"]') as HTMLIFrameElement;
+        if (iframe && iframe.contentDocument) documentPreview = iframe.contentDocument.body;
+      }
+      if (!documentPreview) {
+        alert('Document preview not available. Please make sure the document is displayed first.');
+        return;
+      }
+
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '0';
+      tempContainer.style.width = '1200px';
+      tempContainer.style.backgroundColor = 'white';
+      tempContainer.style.padding = '40px';
+      tempContainer.style.fontFamily = 'Arial, sans-serif';
+      document.body.appendChild(tempContainer);
+
+      const clonedContent = documentPreview.cloneNode(true) as HTMLElement;
+      tempContainer.appendChild(clonedContent);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const canvas = await html2canvas(tempContainer, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 1200,
+        height: clonedContent.scrollHeight
+      });
+      document.body.removeChild(tempContainer);
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const pageHeight = 295;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      const fileName = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      console.log('✅ Agreement PDF downloaded via fallback');
+>>>>>>> b8edcc584518ad5bd67e2cc3af3985e764f58a70
     } catch (error) {
       console.error('❌ Server conversion failed, falling back to in-modal PDF capture:', error);
       try {
