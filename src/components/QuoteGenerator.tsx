@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
+import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 
 interface DealData {
   dealId: string;
@@ -976,25 +978,29 @@ Total Price: {{total price}}`;
     }
 
     try {
-      console.log('🔄 Starting Agreement PDF generation...');
-      
-      // Find the document preview content
+      console.log('🔄 Starting Agreement PDF generation (mammoth + pdf-lib)...');
+
+      // Primary path: exact visual fidelity using docx-preview + rasterization
+      if (processedAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const pdfBlob = await convertDocxToPdfExact(processedAgreement);
+        const fileName = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
+        downloadBlob(pdfBlob, fileName);
+        console.log('✅ Agreement PDF downloaded (exact rendering)');
+        return;
+      }
+
+      // Fallback path: rasterize preview HTML into PDF (existing behavior)
+      console.log('ℹ️ Falling back to HTML rasterization for non-DOCX content');
       let documentPreview = document.querySelector('.document-preview-content');
-      
-      // If not found, try to get content from iframe
       if (!documentPreview) {
         const iframe = document.querySelector('iframe[title="Agreement Document Preview"]') as HTMLIFrameElement;
-        if (iframe && iframe.contentDocument) {
-          documentPreview = iframe.contentDocument.body;
-        }
+        if (iframe && iframe.contentDocument) documentPreview = iframe.contentDocument.body;
       }
-      
       if (!documentPreview) {
         alert('Document preview not available. Please make sure the document is displayed first.');
         return;
       }
 
-      // Create a temporary container for PDF generation
       const tempContainer = document.createElement('div');
       tempContainer.style.position = 'absolute';
       tempContainer.style.left = '-9999px';
@@ -1005,14 +1011,10 @@ Total Price: {{total price}}`;
       tempContainer.style.fontFamily = 'Arial, sans-serif';
       document.body.appendChild(tempContainer);
 
-      // Clone the document preview content
       const clonedContent = documentPreview.cloneNode(true) as HTMLElement;
       tempContainer.appendChild(clonedContent);
-
-      // Wait for any images or fonts to load
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Generate PDF using html2canvas and jsPDF
       const canvas = await html2canvas(tempContainer, {
         scale: 2,
         useCORS: true,
@@ -1021,38 +1023,26 @@ Total Price: {{total price}}`;
         width: 1200,
         height: clonedContent.scrollHeight
       });
-
-      // Clean up temporary container
       document.body.removeChild(tempContainer);
 
-      // Create PDF
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 295; // A4 height in mm
+      const imgWidth = 210;
+      const pageHeight = 295;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       let heightLeft = imgHeight;
-
       let position = 0;
-
-      // Add first page
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
-
-      // Add additional pages if needed
       while (heightLeft >= 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
         pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
       }
-
-      // Download the PDF
       const fileName = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
       pdf.save(fileName);
-      
-      console.log('✅ Agreement PDF downloaded successfully');
+      console.log('✅ Agreement PDF downloaded via fallback');
     } catch (error) {
       console.error('❌ Error downloading agreement PDF:', error);
       alert('Failed to download PDF. Please try again or contact support.');
