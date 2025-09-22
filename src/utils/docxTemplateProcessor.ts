@@ -121,8 +121,25 @@ export class DocxTemplateProcessor {
       const templateBytes = await templateFile.arrayBuffer();
       console.log('📄 Template bytes loaded:', templateBytes.byteLength, 'bytes');
       
-      const zip = new PizZip(templateBytes);
-      console.log('📦 ZIP file created, files:', Object.keys(zip.files));
+      // Validate that we have actual data
+      if (templateBytes.byteLength === 0) {
+        throw new Error('Template file is empty or corrupted');
+      }
+      
+      // Check if the file starts with ZIP signature (PK)
+      const uint8Array = new Uint8Array(templateBytes);
+      if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
+        throw new Error('Template file is not a valid ZIP/DOCX file (missing ZIP signature)');
+      }
+      
+      let zip;
+      try {
+        zip = new PizZip(templateBytes);
+        console.log('📦 ZIP file created, files:', Object.keys(zip.files));
+      } catch (zipError) {
+        console.error('❌ PizZip creation failed:', zipError);
+        throw new Error(`Failed to parse DOCX file as ZIP: ${zipError instanceof Error ? zipError.message : 'Unknown error'}`);
+      }
       
       // Check if this is a valid DOCX file
       if (!zip.files['word/document.xml']) {
@@ -364,10 +381,23 @@ export class DocxTemplateProcessor {
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       });
       
+      // Validate generated buffer
+      if (!buffer || buffer.size === 0) {
+        throw new Error('Generated DOCX buffer is empty or invalid');
+      }
+      
+      // Check if generated buffer has valid ZIP signature
+      const bufferArrayBuffer = await buffer.arrayBuffer();
+      const bufferUint8Array = new Uint8Array(bufferArrayBuffer);
+      if (bufferUint8Array.length < 4 || bufferUint8Array[0] !== 0x50 || bufferUint8Array[1] !== 0x4B) {
+        throw new Error('Generated DOCX buffer is not a valid ZIP file (missing ZIP signature)');
+      }
+      
+      console.log('✅ Generated DOCX buffer is valid, size:', buffer.size, 'bytes');
+      
       // CRITICAL: Verify that tokens were actually replaced in the final document
       console.log('🔍 VERIFYING TOKEN REPLACEMENT IN FINAL DOCUMENT:');
       try {
-        const bufferArrayBuffer = await buffer.arrayBuffer();
         const finalZip = new PizZip(bufferArrayBuffer);
         const finalDocumentXml = finalZip.file('word/document.xml')?.asText();
         if (finalDocumentXml) {
@@ -826,9 +856,167 @@ Generated on: ${templateData.date}
 Quote ID: ${templateData.quoteId}
       `.trim();
       
-      // Create a simple DOCX file (for now, we'll use text but with DOCX MIME type)
-      // In a real implementation, you'd create a proper DOCX structure
-      const blob = new Blob([simpleDocxContent], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      // Create a proper DOCX file using the docx library
+      const { Document, Packer, Paragraph, TextRun } = await import('docx');
+      
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "SERVICE AGREEMENT",
+                  bold: true,
+                  size: 32
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Company: ${templateData.company || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Date: ${templateData.date || new Date().toLocaleDateString()}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Quote ID: ${templateData.quoteId || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "\nCLIENT INFORMATION",
+                  bold: true,
+                  size: 28
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Client Name: ${templateData.clientName || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Email: ${templateData.email || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Company: ${templateData.company || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "\nSERVICE DETAILS",
+                  bold: true,
+                  size: 28
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Number of Users: ${templateData.users || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Duration: ${templateData.duration || 'N/A'} months`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Plan: ${templateData.planName || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "\nPRICING BREAKDOWN",
+                  bold: true,
+                  size: 28
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `Total Cost: ${templateData.total || 'N/A'}`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "\nTERMS AND CONDITIONS",
+                  bold: true,
+                  size: 28
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "This agreement outlines the services to be provided by CloudFuze for the migration and management of the client's data and systems as specified above.",
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `The total cost of ${templateData.total || 'N/A'} covers all services including migration, data transfer, and ${templateData.duration || 'N/A'} months of service.`,
+                  size: 24
+                })
+              ]
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "This agreement is valid from the date of signature and will be in effect for the duration specified above.",
+                  size: 24
+                })
+              ]
+            })
+          ]
+        }]
+      });
+      
+      const blob = await Packer.toBlob(doc);
       
       console.log('✅ Fallback document created successfully');
       console.log('📄 Content length:', simpleDocxContent.length, 'characters');
