@@ -209,6 +209,20 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate contact information first
+    const hasInvalidContactInfo = 
+      contactInfo.clientName === 'Not Available' || 
+      contactInfo.clientEmail === 'Not Available' || 
+      contactInfo.companyName2 === 'Not Available' ||
+      !contactInfo.clientName.trim() ||
+      !contactInfo.clientEmail.trim() ||
+      !contactInfo.companyName2.trim();
+    
+    if (hasInvalidContactInfo) {
+      alert('All contact information should be filled. Please update any fields showing "Not Available" or empty fields before proceeding.');
+      return;
+    }
+    
     // Validate that all required fields have valid values (minimum 1)
     if (config.numberOfUsers < 1) {
       alert('Please enter a valid number of users (minimum 1)');
@@ -288,7 +302,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   type="text"
                   value={contactInfo.clientName}
                   onChange={(e) => handleContactChange('clientName', e.target.value)}
-                  className="w-full px-4 py-3 bg-white border-2 border-green-200 rounded-lg text-gray-800 font-medium focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-100 transition-colors"
+                  className={`w-full px-4 py-3 bg-white border-2 rounded-lg text-gray-800 font-medium focus:outline-none focus:ring-2 transition-colors ${
+                    contactInfo.clientName === 'Not Available' || !contactInfo.clientName.trim()
+                      ? 'border-red-300 focus:border-red-400 focus:ring-red-100' 
+                      : 'border-green-200 focus:border-green-400 focus:ring-green-100'
+                  }`}
                   placeholder="Enter client name"
                 />
               </div>
@@ -300,7 +318,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   type="email"
                   value={contactInfo.clientEmail}
                   onChange={(e) => handleContactChange('clientEmail', e.target.value)}
-                  className="w-full px-4 py-3 bg-white border-2 border-green-200 rounded-lg text-gray-800 font-medium focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-100 transition-colors"
+                  className={`w-full px-4 py-3 bg-white border-2 rounded-lg text-gray-800 font-medium focus:outline-none focus:ring-2 transition-colors ${
+                    contactInfo.clientEmail === 'Not Available' || !contactInfo.clientEmail.trim()
+                      ? 'border-red-300 focus:border-red-400 focus:ring-red-100' 
+                      : 'border-green-200 focus:border-green-400 focus:ring-green-100'
+                  }`}
                   placeholder="Enter client email"
                 />
               </div>
@@ -312,18 +334,31 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   type="text"
                   value={contactInfo.companyName2}
                   onChange={(e) => handleContactChange('companyName2', e.target.value)}
-                  className="w-full px-4 py-3 bg-white border-2 border-green-200 rounded-lg text-gray-800 font-medium focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-100 transition-colors"
-                  placeholder="Enter company name by contact"
+                  className={`w-full px-4 py-3 bg-white border-2 rounded-lg text-gray-800 font-medium focus:outline-none focus:ring-2 transition-colors ${
+                    contactInfo.companyName2 === 'Not Available' || !contactInfo.companyName2.trim()
+                      ? 'border-red-300 focus:border-red-400 focus:ring-red-100' 
+                      : 'border-green-200 focus:border-green-400 focus:ring-green-100'
+                  }`}
+                  placeholder="Enter company name"
                 />
               </div>
             </div>
             
-            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-700">
-                <strong>💡 Tip:</strong> This information is automatically synchronized from HubSpot. 
-                You can edit these fields as needed. Any changes made in HubSpot will be reflected here when you refresh the deal data.
-              </p>
-            </div>
+            {/* Warning message for incomplete contact information */}
+            {(contactInfo.clientName === 'Not Available' || 
+              contactInfo.clientEmail === 'Not Available' || 
+              contactInfo.companyName2 === 'Not Available' ||
+              !contactInfo.clientName.trim() ||
+              !contactInfo.clientEmail.trim() ||
+              !contactInfo.companyName2.trim()) && (
+              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700 font-medium">
+                  ⚠️ <strong>Action Required:</strong> All contact information fields must be completed before proceeding to plan selection. 
+                  Please update any fields showing "Not Available" or empty fields.
+                </p>
+              </div>
+            )}
+            
           </div>
         )}
 

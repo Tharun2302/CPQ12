@@ -1319,7 +1319,7 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
     console.log('📧 Email send request received');
     console.log('📧 Email configured:', isEmailConfigured);
     console.log('📧 EMAIL_USER:', EMAIL_USER ? 'Set' : 'Not set');
-    console.log('📧 EMAIL_PASS:', EMAIL_PASS ? 'Set' : 'Not set');
+    console.log('📧 EMAIL_PASS:', EMAIL_PASS ? 'Set (hidden)' : 'Not set');
     
     if (!isEmailConfigured) {
       console.log('❌ Email not configured - missing credentials');
@@ -1450,7 +1450,7 @@ async function startServer() {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Database available: ${databaseAvailable}`);
-      console.log(`📧 Email configured: ${isEmailConfigured}`);
+      console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
       console.log(`🔗 HubSpot API key: ${HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'}`);
       console.log(`🌐 Available endpoints:`);
       console.log(`   - GET  /`);

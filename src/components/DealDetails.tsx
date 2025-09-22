@@ -2,23 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { 
   Building, 
   User, 
-  DollarSign, 
-  Calendar, 
-  Target, 
-  UserCheck,
+  DollarSign,
   AlertCircle,
   CheckCircle,
   ArrowRight,
-  Settings
+  Settings,
+  Hash,
+  UserCheck
 } from 'lucide-react';
 
 interface DealData {
   dealId: string;
   dealName: string;
   amount: string;
-  closeDate?: string;
-  stage?: string;
-  ownerId?: string;
   company?: string;
   companyByContact?: string;
   contactName?: string;
@@ -82,9 +78,6 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
           </p>
         </div>
       )}
-      <div className="mb-4 p-2 bg-yellow-100 border border-yellow-300 rounded">
-        <p className="text-sm text-yellow-800">Debug: DealDetails component is rendering</p>
-      </div>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center">
           <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center mr-4">
@@ -102,7 +95,7 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
         {/* Deal ID */}
         <div className="flex items-center p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
           <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-            <Target className="w-5 h-5 text-blue-600" />
+            <Hash className="w-5 h-5 text-blue-600" />
           </div>
           <div>
             <p className="text-sm text-gray-500 font-medium">Deal ID</p>
@@ -132,46 +125,6 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
           </div>
         </div>
 
-        {/* Stage */}
-        {dealData.stage && (
-          <div className="flex items-center p-4 bg-gradient-to-r from-purple-50 to-violet-50 rounded-xl border border-purple-100">
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
-              <Target className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Stage</p>
-              <p className="font-semibold text-gray-900 text-lg">{dealData.stage}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Close Date */}
-        {dealData.closeDate && (
-          <div className="flex items-center p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-100">
-            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mr-4">
-              <Calendar className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Close Date</p>
-              <p className="font-semibold text-gray-900 text-lg">
-                {new Date(dealData.closeDate).toLocaleDateString()}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Owner */}
-        {dealData.ownerId && (
-          <div className="flex items-center p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl border border-indigo-100">
-            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center mr-4">
-              <UserCheck className="w-5 h-5 text-indigo-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Owner ID</p>
-              <p className="font-semibold text-gray-900 text-lg">{dealData.ownerId}</p>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Enhanced Contact & Company Information */}
