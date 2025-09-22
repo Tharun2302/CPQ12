@@ -7,6 +7,20 @@ const path = require('path');
 const { MongoClient } = require('mongodb');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { spawn } = require('child_process');
+const { v4: uuidv4 } = require('uuid');
+let libre;
+try {
+  libre = require('libreoffice-convert');
+  // Don't promisify if it's already a promise-based function
+  if (typeof libre.convert === 'function' && !libre.convertAsync) {
+    libre.convertAsync = require('util').promisify(libre.convert);
+  }
+  console.log('✅ libreoffice-convert package loaded successfully');
+} catch (e) {
+  console.log('⚠️ libreoffice-convert not available, will use system LibreOffice');
+  console.error('libreoffice-convert error:', e.message);
+}
 require('dotenv').config();
 
 const app = express();
@@ -114,6 +128,7 @@ const EMAIL_PASS = process.env.EMAIL_PASS;
 const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 
 // Email configuration
 let transporter;
@@ -1061,6 +1076,248 @@ app.get('/api/templates/:id/file', async (req, res) => {
       error: 'Failed to fetch template file',
       details: error.message 
     });
+  }
+});
+
+// Convert DOCX to PDF using multiple fallback methods
+app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => {
+  // Set longer timeout for conversion
+  req.setTimeout(60000); // 60 seconds
+  res.setTimeout(60000);
+  
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No DOCX file provided' });
+    }
+
+    console.log('🔄 Starting DOCX to PDF conversion...');
+    console.log('📄 File size:', req.file.size, 'bytes');
+    console.log('📄 File type:', req.file.mimetype);
+
+    // Method 1: Direct LibreOffice system call (most reliable for exact formatting)
+    console.log('📄 Trying direct LibreOffice conversion...');
+    try {
+      const os = require('os');
+      const fs = require('fs');
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpq-'));
+      const inputPath = path.join(tmpDir, `${uuidv4()}.docx`);
+      const outputPath = path.join(tmpDir, `${uuidv4()}.pdf`);
+      
+      // Write DOCX to temp file
+      fs.writeFileSync(inputPath, req.file.buffer);
+      console.log('📄 Temp DOCX written:', inputPath);
+      
+      // Use LibreOffice to convert
+      const sofficeCmd = process.env.SOFFICE_PATH || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+      console.log('📄 Using LibreOffice:', sofficeCmd);
+      
+      const { spawn } = require('child_process');
+      const conversion = spawn(sofficeCmd, [
+        '--headless',
+        '--convert-to', 'pdf',
+        '--outdir', tmpDir,
+        inputPath
+      ], { stdio: 'pipe' });
+      
+      let stdout = '';
+      let stderr = '';
+      conversion.stdout.on('data', (data) => { stdout += data.toString(); });
+      conversion.stderr.on('data', (data) => { stderr += data.toString(); });
+      
+      const conversionPromise = new Promise((resolve, reject) => {
+        conversion.on('close', (code) => {
+          console.log('📄 LibreOffice exit code:', code);
+          console.log('📄 LibreOffice stdout:', stdout);
+          console.log('📄 LibreOffice stderr:', stderr);
+          
+          if (code !== 0) {
+            reject(new Error(`LibreOffice conversion failed with code ${code}: ${stderr}`));
+            return;
+          }
+          
+          // Find the generated PDF
+          const expectedPdfPath = inputPath.replace(/\.docx$/i, '.pdf');
+          console.log('📄 Looking for PDF at:', expectedPdfPath);
+          
+          if (!fs.existsSync(expectedPdfPath)) {
+            reject(new Error(`PDF not found at expected location: ${expectedPdfPath}`));
+            return;
+          }
+          
+          const pdfBuffer = fs.readFileSync(expectedPdfPath);
+          console.log('✅ PDF generated successfully with LibreOffice');
+          console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
+          
+          // Cleanup
+          try { fs.unlinkSync(inputPath); } catch {}
+          try { fs.unlinkSync(expectedPdfPath); } catch {}
+          try { fs.rmdirSync(tmpDir); } catch {}
+          
+          resolve(pdfBuffer);
+        });
+        
+        conversion.on('error', (error) => {
+          console.error('❌ LibreOffice spawn error:', error);
+          reject(error);
+        });
+      });
+      
+      const pdfBuffer = await conversionPromise;
+      
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="agreement.pdf"',
+        'Content-Length': pdfBuffer.length
+      });
+      return res.send(pdfBuffer);
+      
+    } catch (libreError) {
+      console.error('❌ Direct LibreOffice conversion failed:', libreError);
+      console.error('Error details:', libreError.message);
+      // Continue to next method
+    }
+
+    // Method 2: Try remote Gotenberg service
+    if (GOTENBERG_URL) {
+      try {
+        console.log('📄 Trying Gotenberg service...');
+        const baseUrl = GOTENBERG_URL.replace(/\/$/, '');
+        const endpoint = `${baseUrl}/forms/libreoffice/convert`;
+        const form = new FormData();
+        const blob = new Blob([req.file.buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        form.append('files', blob, 'document.docx');
+        form.append('outputFilename', 'agreement');
+        const resp = await fetch(endpoint, { method: 'POST', body: form });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          console.error('Gotenberg conversion failed:', resp.status, txt);
+        } else {
+          const ab = await resp.arrayBuffer();
+          const pdfBuffer = Buffer.from(ab);
+          console.log('✅ PDF converted successfully with Gotenberg');
+          res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="agreement.pdf"',
+            'Content-Length': pdfBuffer.length
+          });
+          return res.send(pdfBuffer);
+        }
+      } catch (e) {
+        console.error('❌ Gotenberg request error:', e);
+      }
+    }
+
+    // Method 3: Simple text-based PDF generation
+    console.log('📄 Trying simple text-based PDF generation...');
+    try {
+      const mammoth = require('mammoth');
+      
+      // Convert DOCX to plain text
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      const textContent = result.value;
+      
+      console.log('📄 Extracted text length:', textContent.length);
+      console.log('📄 Text preview:', textContent.substring(0, 200) + '...');
+      
+      if (!textContent || textContent.trim().length === 0) {
+        throw new Error('No text content extracted from DOCX');
+      }
+      
+       // Create a simple PDF using jsPDF
+       const { jsPDF } = require('jspdf');
+       const pdf = new jsPDF();
+      
+      // Set font and size
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(12);
+      
+      // Split text into lines that fit the page width
+      const pageWidth = 180; // Usable width in mm (210 - 30 for margins)
+      const lineHeight = 7; // Line height in mm
+      const maxLinesPerPage = 35; // Approximate lines per page
+      
+      const lines = pdf.splitTextToSize(textContent, pageWidth);
+      
+      let currentLine = 0;
+      let currentPage = 1;
+      
+      // Add title
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('SERVICE AGREEMENT', 15, 20);
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'normal');
+      
+      let yPosition = 35;
+      
+      for (let i = 0; i < lines.length; i++) {
+        if (yPosition > 280) { // Near bottom of page
+          pdf.addPage();
+          yPosition = 20;
+          currentPage++;
+        }
+        
+        pdf.text(lines[i], 15, yPosition);
+        yPosition += lineHeight;
+      }
+      
+      // Add page numbers
+      const totalPages = pdf.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(10);
+        pdf.text(`Page ${i} of ${totalPages}`, 180, 290);
+      }
+      
+      const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
+      
+      console.log('✅ PDF generated successfully with text fallback');
+      console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
+      
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="agreement.pdf"',
+        'Content-Length': pdfBuffer.length
+      });
+      return res.send(pdfBuffer);
+      
+    } catch (textError) {
+      console.error('❌ Text-based PDF generation failed:', textError);
+    }
+
+    // All conversion methods failed
+    console.error('❌ All conversion methods failed');
+    return res.status(500).json({ 
+      success: false, 
+      error: 'PDF conversion not available. All conversion methods failed.',
+      details: {
+        libreofficeConvert: libre ? 'failed' : 'not available',
+        gotenberg: GOTENBERG_URL ? 'failed' : 'not configured',
+        htmlFallback: 'failed',
+        systemLibreOffice: 'not used (relying on libreoffice-convert package)'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ DOCX->PDF conversion error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test DOCX to PDF conversion capabilities
+app.get('/api/convert/test', async (req, res) => {
+  try {
+    console.log('🧪 Testing conversion capabilities...');
+    const status = {
+      libreofficeConvert: libre ? 'available' : 'not available',
+      gotenberg: GOTENBERG_URL ? `configured: ${GOTENBERG_URL}` : 'not configured',
+      systemLibreOffice: 'not tested (use libreoffice-convert instead)'
+    };
+    
+    res.json({ success: true, status });
+  } catch (error) {
+    console.error('❌ Test error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
