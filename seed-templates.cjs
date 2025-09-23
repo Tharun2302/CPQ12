@@ -71,12 +71,44 @@ async function seedDefaultTemplates(db) {
 
       if (existing) {
         console.log(`⏭️ Template already exists: ${template.name}`);
+        
+        // Check if the file has been modified and update if needed
+        const fileStats = fs.statSync(filePath);
+        const existingModified = existing.lastModified ? new Date(existing.lastModified) : new Date(0);
+        
+        if (fileStats.mtime > existingModified) {
+          console.log(`🔄 Template file is newer, updating: ${template.name}`);
+          
+          // Read updated file
+          const fileBuffer = fs.readFileSync(filePath);
+          const base64Data = fileBuffer.toString('base64');
+          
+          // Update the existing template
+          await db.collection('templates').updateOne(
+            { name: template.name },
+            { 
+              $set: {
+                fileData: base64Data,
+                fileSize: fileBuffer.length,
+                lastModified: fileStats.mtime,
+                updatedAt: new Date(),
+                version: (existing.version || 1) + 0.1
+              }
+            }
+          );
+          
+          console.log(`✅ Updated template: ${template.name} (${Math.round(fileBuffer.length / 1024)}KB)`);
+          uploadedCount++;
+        }
         continue;
       }
 
       // Read file and convert to base64
       const fileBuffer = fs.readFileSync(filePath);
       const base64Data = fileBuffer.toString('base64');
+      
+      // Get file modification time
+      const fileStats = fs.statSync(filePath);
       
       // Create template document
       const templateDoc = {
@@ -93,8 +125,10 @@ async function seedDefaultTemplates(db) {
         planType: template.planType,
         keywords: template.keywords,
         createdAt: new Date(),
+        lastModified: fileStats.mtime,
         uploadedBy: 'system-seed',
-        status: 'active'
+        status: 'active',
+        version: 1.0
       };
 
       // Insert into database

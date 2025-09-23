@@ -73,9 +73,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   // Initialize contact info from deal data
   useEffect(() => {
-    // Load previously saved configuration from localStorage (persistence across sessions)
+    // Load previously saved configuration from sessionStorage (only for current session)
+    // This ensures project configuration fields are empty on page refresh but retained during navigation
     try {
-      const savedConfig = localStorage.getItem('cpq_configuration');
+      const savedConfig = sessionStorage.getItem('cpq_configuration_session');
       if (savedConfig) {
         const parsed = JSON.parse(savedConfig);
         const merged = {
@@ -89,8 +90,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         } as ConfigurationData;
         setConfig(merged);
         onConfigurationChange(merged);
+        console.log('📋 Loaded project configuration from session storage');
+      } else {
+        console.log('📋 No session configuration found, starting with empty project configuration fields');
       }
-    } catch {}
+    } catch (error) {
+      console.log('📋 Error loading session configuration, starting with empty fields:', error);
+    }
 
     // Load persisted contact info if available (user may have edited manually earlier)
     try {
@@ -141,10 +147,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   }, [dealData]); // Removed onContactInfoChange from dependencies
 
-  // Load discount value from localStorage on component mount
+  // Load discount value from sessionStorage on component mount
   useEffect(() => {
     try {
-      const savedDiscount = localStorage.getItem('cpq_discount');
+      const savedDiscount = sessionStorage.getItem('cpq_discount_session');
       if (savedDiscount !== null && savedDiscount !== '') {
         setDiscountValue(savedDiscount);
       }
@@ -168,8 +174,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     const newConfig = { ...config, [field]: value };
     setConfig(newConfig);
     onConfigurationChange(newConfig);
-    // Persist configuration so values remain when user navigates
-    try { localStorage.setItem('cpq_configuration', JSON.stringify(newConfig)); } catch {}
+    // Persist configuration in sessionStorage so values remain when user navigates but clear on page refresh
+    try { sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig)); } catch {}
     
     // Auto-scroll down when migration type is selected, but only if we have a target section
     if (field === 'migrationType' && value) {
@@ -609,22 +615,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       
                       // Ensure value is not negative
                       if (numValue < 0) {
-                        setDiscountValue('0');
-                        try { 
-                          localStorage.setItem('cpq_discount', '0');
-                          window.dispatchEvent(new CustomEvent('discountUpdated'));
-                        } catch {}
-                        return;
-                      }
-                      
-                      // Update the display value immediately
-                      setDiscountValue(raw);
-                      
-                      // Save to localStorage and notify other components
+                      setDiscountValue('0');
                       try { 
-                        localStorage.setItem('cpq_discount', raw);
+                        sessionStorage.setItem('cpq_discount_session', '0');
                         window.dispatchEvent(new CustomEvent('discountUpdated'));
                       } catch {}
+                      return;
+                    }
+                    
+                    // Update the display value immediately
+                    setDiscountValue(raw);
+                    
+                    // Save to sessionStorage and notify other components
+                    try { 
+                      sessionStorage.setItem('cpq_discount_session', raw);
+                      window.dispatchEvent(new CustomEvent('discountUpdated'));
+                    } catch {}
                     }}
                     className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
                     placeholder={`Enter discount percentage (max 10%)`}

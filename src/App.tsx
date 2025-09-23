@@ -1125,7 +1125,27 @@ function App() {
 
     console.log('🔍 Auto-selecting template for:', { tierName: safeTier, migration, availableTemplates: templates.length });
 
-    // First, try exact match for SLACK TO TEAMS templates
+    // First priority: Match by planType field (most reliable)
+    const planTypeMatches = templates.filter(t => {
+      const planType = (t?.planType || '').toLowerCase();
+      const matches = planType === safeTier;
+      
+      console.log('🎯 Plan type matching:', { 
+        templateName: t?.name, 
+        templatePlanType: planType, 
+        targetTier: safeTier,
+        matches
+      });
+      
+      return matches;
+    });
+
+    if (planTypeMatches.length > 0) {
+      console.log('✅ Found planType match:', planTypeMatches[0].name);
+      return planTypeMatches[0];
+    }
+
+    // Second priority: Try exact match for SLACK TO TEAMS templates by name
     const exactMatches = templates.filter(t => {
       const name = (t?.name || '').toLowerCase();
       
@@ -1133,7 +1153,7 @@ function App() {
       const isSlackToTeams = name.includes('slack') && name.includes('teams');
       const matchesPlan = name.includes(safeTier);
       
-      console.log('🔍 Template matching:', { 
+      console.log('🔍 Name-based template matching:', { 
         templateName: name, 
         isSlackToTeams, 
         matchesPlan, 
@@ -1145,7 +1165,7 @@ function App() {
     });
 
     if (exactMatches.length > 0) {
-      console.log('✅ Found exact template match:', exactMatches[0].name);
+      console.log('✅ Found exact name match:', exactMatches[0].name);
       return exactMatches[0];
     }
 

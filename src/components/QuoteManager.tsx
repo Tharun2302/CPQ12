@@ -618,7 +618,13 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
                 </thead>
                 <tbody>
                   <tr class="border-b border-gray-200">
-                    <td class="py-4 text-gray-700 font-medium">User costs (${quote.configuration?.numberOfUsers || 0} users × ${quote.configuration?.duration || 0} months)</td>
+                    <td class="py-4 text-gray-700 font-medium">
+                      User costs (${quote.configuration?.numberOfUsers || 0} users × ${quote.configuration?.duration || 0} months)
+                      <br />
+                      <span class="text-sm text-gray-500 font-normal">
+                        @ ${formatCurrency((quote.calculation?.userCost || 0) / ((quote.configuration?.numberOfUsers || 1) * (quote.configuration?.duration || 1)))}/user/month
+                      </span>
+                    </td>
                     <td class="text-right py-4 font-bold text-gray-900">${formatCurrency(quote.calculation?.userCost || 0)}</td>
                   </tr>
                   <tr class="border-b border-gray-200">
