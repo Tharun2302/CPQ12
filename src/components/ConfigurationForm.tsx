@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
-import { Calculator, Users, Server, Clock, Database, ArrowRight, Sparkles, UserCheck, FileText, Percent } from 'lucide-react';
+import { Calculator, Users, Server, Clock, Database, ArrowRight, Sparkles, UserCheck, FileText, Percent, MessageSquare } from 'lucide-react';
 
 interface DealData {
   dealId: string;
@@ -54,7 +54,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     numberOfInstances: 0,
     duration: 0,
     migrationType: '' as any, // Start with empty to hide other fields
-    dataSizeGB: 0
+    dataSizeGB: 0,
+    messages: 0
   });
 
   // Contact information state
@@ -83,7 +84,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           numberOfInstances: typeof parsed.numberOfInstances === 'number' ? parsed.numberOfInstances : 0,
           duration: typeof parsed.duration === 'number' ? parsed.duration : 0,
           migrationType: parsed.migrationType || ('' as any),
-          dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 0
+          dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 0,
+          messages: typeof parsed.messages === 'number' ? parsed.messages : 0
         } as ConfigurationData;
         setConfig(merged);
         onConfigurationChange(merged);
@@ -570,8 +572,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </div>
                 )}
 
-                {/* Discount Field moved inside Project Configuration */}
-                <div className="group md:col-span-2">
+                {/* Discount and Messages Fields side by side */}
+                <div className="group">
                   <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                     <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
                       <Percent className="w-4 h-4 text-white" />
@@ -628,6 +630,31 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     placeholder={`Enter discount percentage (max 10%)`}
                   />
                   <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 10%.</p>
+                </div>
+
+                {/* Messages Field */}
+                <div className="group">
+                  <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                      <MessageSquare className="w-4 h-4 text-white" />
+                    </div>
+                    Messages
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={config.messages || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const numValue = value === '' ? 0 : parseInt(value) || 0;
+                      handleChange('messages', numValue);
+                    }}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                    placeholder="Enter number of messages"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-gray-500 mt-2">Number of messages for the migration.</p>
                 </div>
               </div>
             </div>

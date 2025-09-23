@@ -967,9 +967,52 @@ function App() {
     loadQuotes();
   }, []);
 
-  // Load templates from localStorage on component mount
+  // Load templates from database and localStorage on component mount
   useEffect(() => {
-    const loadTemplates = () => {
+    const loadTemplates = async () => {
+      try {
+        // First try to load from database
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const response = await fetch(`${backendUrl}/api/templates`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.templates && data.templates.length > 0) {
+            console.log('📋 Templates loaded from database:', data.templates.length);
+            
+            // Convert database templates to frontend format with File objects
+            const templatesWithFiles = data.templates.map((template: any) => {
+              // Convert base64 fileData to File object
+              let file = null;
+              if (template.fileData) {
+                try {
+                  // Convert raw base64 to data URL format
+                  const mimeType = template.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                  const dataURL = `data:${mimeType};base64,${template.fileData}`;
+                  file = dataURLtoFile(dataURL, template.fileName || 'template.docx');
+                } catch (error) {
+                  console.error('Error converting fileData to File:', error);
+                }
+              }
+              
+              return {
+                ...template,
+                file,
+                uploadDate: new Date(template.createdAt || template.uploadDate || Date.now()),
+                content: null
+              };
+            });
+            
+            setTemplates(templatesWithFiles);
+            console.log('✅ Database templates converted to frontend format:', templatesWithFiles.length);
+            return;
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ Database templates not available, falling back to localStorage:', error);
+      }
+
+      // Fallback to localStorage if database fails
       try {
         const savedTemplates = localStorage.getItem('cpq_templates');
         if (savedTemplates) {
@@ -982,7 +1025,7 @@ function App() {
             uploadDate: new Date(template.uploadDate)
           }));
           setTemplates(templatesWithFiles);
-          console.log('📋 Templates loaded in App:', templatesWithFiles.length);
+          console.log('📋 Templates loaded from localStorage:', templatesWithFiles.length);
         }
       } catch (error) {
         console.error('Error loading templates:', error);
@@ -1090,6 +1133,14 @@ function App() {
       const isSlackToTeams = name.includes('slack') && name.includes('teams');
       const matchesPlan = name.includes(safeTier);
       
+      console.log('🔍 Template matching:', { 
+        templateName: name, 
+        isSlackToTeams, 
+        matchesPlan, 
+        safeTier,
+        planType: t?.planType 
+      });
+      
       return isSlackToTeams && matchesPlan;
     });
 
@@ -1104,7 +1155,13 @@ function App() {
       const desc = (t?.description || '').toLowerCase();
       let score = 0;
       
-      // Exact plan type match gets highest priority
+      // Use planType field if available (most reliable)
+      if (t?.planType && t.planType.toLowerCase() === safeTier) {
+        score += 15; // Highest priority for planType match
+        console.log('🎯 PlanType match found:', { planType: t.planType, safeTier });
+      }
+      
+      // Exact plan type match gets high priority
       if (safeTier === 'basic' && name.includes('basic')) score += 10;
       if (safeTier === 'advanced' && name.includes('advanced')) score += 10;
       
@@ -1155,10 +1212,19 @@ function App() {
     try {
       const auto = autoSelectTemplateForPlan(calculation?.tier?.name || '');
       if (auto) {
+        console.log('🔍 Auto-selected template details:', {
+          id: auto.id,
+          name: auto.name,
+          hasFile: !!auto.file,
+          fileType: auto.file?.type,
+          fileName: auto.file?.name,
+          fileSize: auto.file?.size
+        });
+        
         setSelectedTemplate(auto);
         console.log('✅ Auto-selected template for plan:', {
           plan: calculation?.tier?.name,
-          template: { id: auto.id, name: auto.name }
+          template: { id: auto.id, name: auto.name, hasFile: !!auto.file }
         });
       } else {
         console.log('⚠️ No matching template found for plan, keeping current selection.');

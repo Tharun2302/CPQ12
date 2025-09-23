@@ -593,6 +593,10 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
                 <span class="text-gray-700 font-semibold">Data Size:</span>
                 <span class="font-bold text-gray-900">${quote.configuration?.dataSizeGB || 'Not specified'} GB</span>
               </div>
+              <div class="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+                <span class="text-gray-700 font-semibold">Messages:</span>
+                <span class="font-bold text-gray-900">${quote.configuration?.messages || '0'}</span>
+              </div>
             </div>
           </div>
 
