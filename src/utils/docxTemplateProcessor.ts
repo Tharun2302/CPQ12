@@ -679,6 +679,17 @@ export class DocxTemplateProcessor {
       '{{planName}}': data.planName || 'Basic',
       '{{plan_name}}': data.planName || 'Basic',
       
+      // Messages from configuration
+      '{{messages}}': (data as any)['{{messages}}'] || '0',
+      '{{message}}': (data as any)['{{message}}'] || '0',
+      '{{message_count}}': (data as any)['{{message_count}}'] || '0',
+      '{{notes}}': (data as any)['{{notes}}'] || '0',
+      '{{additional_notes}}': (data as any)['{{additional_notes}}'] || '0',
+      '{{custom_message}}': (data as any)['{{custom_message}}'] || '0',
+      '{{number_of_messages}}': (data as any)['{{number_of_messages}}'] || '0',
+      '{{numberOfMessages}}': (data as any)['{{numberOfMessages}}'] || '0',
+      '{{messages_count}}': (data as any)['{{messages_count}}'] || '0',
+      
       // Discount tokens - hide when discount is 0
       '{{discount}}': (data as any)['{{discount}}'] || '',
       '{{discount_percent}}': (data as any)['{{discount_percent}}'] || '',

@@ -565,7 +565,7 @@ Quote ID: ${quoteData.id}
           
           // Fallback to mailto link
           const mailtoLink = `mailto:${dealDeskEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-          window.open(mailtoLink, '_blank');
+      window.open(mailtoLink, '_blank');
           alert('📧 Email client opened as fallback. Please send the email manually.');
           return;
         }
@@ -728,6 +728,19 @@ Quote ID: ${quoteData.id}
           '{{dealAmount}}': dealData?.amount || 'N/A',
           '{{deal_stage}}': dealData?.stage || 'N/A',
           '{{dealStage}}': dealData?.stage || 'N/A',
+          
+          // Messages from configuration
+          '{{messages}}': (configuration?.messages || 0).toString(),
+          '{{message}}': (configuration?.messages || 0).toString(),
+          '{{message_count}}': (configuration?.messages || 0).toString(),
+          '{{notes}}': (configuration?.messages || 0).toString(),
+          '{{additional_notes}}': (configuration?.messages || 0).toString(),
+          '{{additionalNotes}}': (configuration?.messages || 0).toString(),
+          '{{custom_message}}': (configuration?.messages || 0).toString(),
+          '{{customMessage}}': (configuration?.messages || 0).toString(),
+          '{{number_of_messages}}': (configuration?.messages || 0).toString(),
+          '{{numberOfMessages}}': (configuration?.messages || 0).toString(),
+          '{{messages_count}}': (configuration?.messages || 0).toString(),
           
           // Additional metadata
           '{{template_name}}': selectedTemplate?.name || 'Default Template',
@@ -1066,10 +1079,10 @@ Total Price: {{total price}}`;
   // Handle PDF download from the generated agreement using document preview
   const handleDownloadAgreementPDF = async () => {
     try {
-      if (!processedAgreement) {
-        alert('No agreement available. Please generate an agreement first.');
-        return;
-      }
+    if (!processedAgreement) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
       // Prefer server-side high-fidelity conversion
       const { templateService } = await import('../utils/templateService');
       const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
@@ -1097,8 +1110,8 @@ Total Price: {{total price}}`;
         const container = previewContainerRef.current || document.querySelector('.document-preview-content');
         if (!container) {
           alert('Document preview not available. Please click "View Document" first, then try again.');
-          return;
-        }
+        return;
+      }
 
         // Attempt page-by-page capture to avoid mid-page breaks
         const pageSelectors = ['.docx .page', '.docx .docx-page', '.docx-page', '.page'];
@@ -1125,15 +1138,15 @@ Total Price: {{total price}}`;
             await new Promise(res => setTimeout(res, 200));
 
             const canvas = await html2canvas(tempPage, {
-              scale: 2,
-              useCORS: true,
-              allowTaint: true,
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
               backgroundColor: '#ffffff'
-            });
+      });
 
             document.body.removeChild(tempPage);
 
-            const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/png');
             const imgWidth = 210; // A4 width
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
             if (i > 0) pdf.addPage();
@@ -1163,18 +1176,18 @@ Total Price: {{total price}}`;
           document.body.removeChild(temp);
 
           const imgData = canvas.toDataURL('image/png');
-          const imgWidth = 210; // A4 width in mm
-          const pageHeight = 295; // A4 height in mm
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          let heightLeft = imgHeight;
-          let position = 0;
-          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-          heightLeft -= pageHeight;
-          while (heightLeft >= 0) {
-            position = heightLeft - imgHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-            heightLeft -= pageHeight;
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 295; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
           }
         }
 
@@ -1753,7 +1766,21 @@ Total Price: {{total price}}`;
       // Check if template has a file
       if (!selectedTemplate.file) {
         console.error('❌ Selected template missing file:', selectedTemplate);
-        alert('Selected template does not have a valid file. Please go to the Template session and re-select your template.');
+        console.log('🔍 Template details:', {
+          id: selectedTemplate.id,
+          name: selectedTemplate.name,
+          hasFileData: !!selectedTemplate.fileData,
+          hasFile: !!selectedTemplate.file,
+          fileType: selectedTemplate.fileType,
+          fileName: selectedTemplate.fileName
+        });
+        
+        // Try to provide more helpful error message
+        if (selectedTemplate.fileData) {
+          alert('Template file is being processed. Please wait a moment and try again, or go to the Template session to re-select your template.');
+        } else {
+          alert('Selected template does not have a valid file. Please go to the Template session and re-select your template.');
+        }
         return;
       }
 
@@ -2080,6 +2107,19 @@ Total Price: {{total price}}`;
           '{{dealAmount}}': dealData?.amount || 'N/A',
           '{{deal_stage}}': dealData?.stage || 'N/A',
           '{{dealStage}}': dealData?.stage || 'N/A',
+          
+          // Messages from configuration
+          '{{messages}}': (configuration?.messages || 0).toString(),
+          '{{message}}': (configuration?.messages || 0).toString(),
+          '{{message_count}}': (configuration?.messages || 0).toString(),
+          '{{notes}}': (configuration?.messages || 0).toString(),
+          '{{additional_notes}}': (configuration?.messages || 0).toString(),
+          '{{additionalNotes}}': (configuration?.messages || 0).toString(),
+          '{{custom_message}}': (configuration?.messages || 0).toString(),
+          '{{customMessage}}': (configuration?.messages || 0).toString(),
+          '{{number_of_messages}}': (configuration?.messages || 0).toString(),
+          '{{numberOfMessages}}': (configuration?.messages || 0).toString(),
+          '{{messages_count}}': (configuration?.messages || 0).toString(),
           
           // Additional metadata
           '{{template_name}}': selectedTemplate?.name || 'Default Template',
@@ -2851,7 +2891,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               {/* Discount field moved to Configure session */}
 
-            <button
+              <button
                 type="submit"
                 className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group"
               >
@@ -3158,6 +3198,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
             <span className="text-gray-700 font-semibold">Data Size:</span>
             <span className="font-bold text-gray-900">{configuration.dataSizeGB} GB</span>
+          </div>
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Messages:</span>
+            <span className="font-bold text-gray-900">{configuration.messages || 0}</span>
           </div>
         </div>
       </div>
