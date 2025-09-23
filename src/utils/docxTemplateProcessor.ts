@@ -679,10 +679,15 @@ export class DocxTemplateProcessor {
       '{{planName}}': data.planName || 'Basic',
       '{{plan_name}}': data.planName || 'Basic',
       
-      // Discount tokens
-      '{{discount}}': (data as any)['{{discount}}'] || '0',
-      '{{discount_percent}}': (data as any)['{{discount_percent}}'] || '0',
-      '{{discount_amount}}': (data as any)['{{discount_amount}}'] || '$0.00',
+      // Discount tokens - hide when discount is 0
+      '{{discount}}': (data as any)['{{discount}}'] || '',
+      '{{discount_percent}}': (data as any)['{{discount_percent}}'] || '',
+      '{{discount_amount}}': (data as any)['{{discount_amount}}'] || '',
+      '{{discount_text}}': (data as any)['{{discount_text}}'] || '',
+      '{{discount_line}}': (data as any)['{{discount_line}}'] || '',
+      // Special tokens for conditional display
+      '{{show_discount}}': ((data as any)['{{discount}}'] && (data as any)['{{discount}}'] !== '' && (data as any)['{{discount}}'] !== '0') ? 'true' : '',
+      '{{hide_discount}}': ((data as any)['{{discount}}'] && (data as any)['{{discount}}'] !== '' && (data as any)['{{discount}}'] !== '0') ? '' : 'true',
       // Support both names: total_after_discount and total_price_discount
       '{{total_after_discount}}': (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
       '{{total_price_discount}}': (data as any)['{{total_price_discount}}'] || (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
@@ -840,9 +845,8 @@ PRICING BREAKDOWN
 Migration Cost: ${templateData.price_migration}
 Data Cost: ${templateData.price_data}
 Instance Cost: ${templateData['{{instance_cost}}'] || '$0.00'}
-Subtotal: ${templateData.total}
-Discount: ${templateData['{{discount}}'] || '0'}%
-Discount Amount: ${templateData['{{discount_amount}}'] || '$0.00'}
+Subtotal: ${templateData.total}${(templateData['{{discount}}'] && templateData['{{discount}}'] !== '' && templateData['{{discount}}'] !== '0') ? `
+Discount: ${templateData['{{discount}}']}% - ${templateData['{{discount_amount}}']}` : ''}
 Total After Discount: ${templateData['{{total_after_discount}}'] || templateData.total}
 
 TERMS AND CONDITIONS

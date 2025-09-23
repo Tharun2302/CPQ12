@@ -684,12 +684,20 @@ Quote ID: ${quoteData.id}
           '{{subtotal}}': formatCurrency(totalCost || 0),
           '{{sub_total}}': formatCurrency(totalCost || 0),
           
-          // Discount information
-          '{{discount}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-          '{{discount_percent}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-          '{{discount_percentage}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-          '{{discount_amount}}': formatCurrency(shouldApplyDiscount ? localDiscountAmount : 0),
-          '{{discountAmount}}': formatCurrency(shouldApplyDiscount ? localDiscountAmount : 0),
+          // Discount information - hide discount tokens when discount is 0
+          '{{discount}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
+          '{{discount_percent}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
+          '{{discount_percentage}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
+          '{{discount_amount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? formatCurrency(localDiscountAmount) : '',
+          '{{discountAmount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? formatCurrency(localDiscountAmount) : '',
+          '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
+          '{{discount_line}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          // Special tokens for conditional display in templates
+          '{{show_discount}}': (shouldApplyDiscount && discountPercent > 0) ? 'true' : '',
+          '{{hide_discount}}': (shouldApplyDiscount && discountPercent > 0) ? '' : 'true',
+          // Additional conditional tokens
+          '{{if_discount}}': (shouldApplyDiscount && discountPercent > 0) ? 'show' : 'hide',
+          '{{discount_row}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `<tr><td>Discount (${discountPercent}%)</td><td>-${formatCurrency(localDiscountAmount)}</td></tr>` : '',
           '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
           '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
           '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
@@ -703,11 +711,13 @@ Quote ID: ${quoteData.id}
           '{{plan}}': tierName,
           
           // Date information
-          '{{date}}': new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{Date}}': new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{current_date}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{currentDate}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{generation_date}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
+          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
+          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
           
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
@@ -953,8 +963,10 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{price_data}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
       '{{Duration of months}}': quote.configuration.duration.toString(),
       '{{total price}}': formatCurrency(safeCalculation.totalCost),
-      // New tokens related to discount and final total
-      '{{discount_amount}}': formatCurrency(shouldApplyDiscount ? discountAmount : 0),
+      // New tokens related to discount and final total - hide when discount is 0
+      '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? formatCurrency(discountAmount) : '',
+      '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
+      '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
       '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
       '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
       
@@ -969,7 +981,11 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{client_name}}': quote.clientName,
       '{{client_email}}': quote.clientEmail,
       '{{quote_number}}': quoteNumber,
-      '{{date}}': new Date().toLocaleDateString('en-US', { 
+      '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { 
+        year: '2-digit', 
+        month: '2-digit', 
+        day: '2-digit' 
+      }) : new Date().toLocaleDateString('en-US', { 
         year: '2-digit', 
         month: '2-digit', 
         day: '2-digit' 
@@ -1686,6 +1702,12 @@ Total Price: {{total price}}`;
       return;
     }
 
+    // Validate effective date is provided
+    if (!clientInfo.effectiveDate || clientInfo.effectiveDate.trim() === '') {
+      alert('Please Give Effective Date');
+      return;
+    }
+
     setIsGeneratingAgreement(true);
     try {
       console.log('🔄 Generating Agreement... [TIMESTAMP:', new Date().toISOString(), ']');
@@ -2020,12 +2042,14 @@ Total Price: {{total price}}`;
           '{{subtotal}}': formatCurrency(totalCost || 0),
           '{{sub_total}}': formatCurrency(totalCost || 0),
           
-          // Discount information
-        '{{discount}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-        '{{discount_percent}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-          '{{discount_percentage}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-        '{{discount_amount}}': formatCurrency(shouldApplyDiscount ? discountAmount : 0),
-          '{{discountAmount}}': formatCurrency(shouldApplyDiscount ? discountAmount : 0),
+          // Discount information - hide discount tokens when discount is 0
+        '{{discount}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
+        '{{discount_percent}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
+          '{{discount_percentage}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
+        '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? formatCurrency(discountAmount) : '',
+          '{{discountAmount}}': (shouldApplyDiscount && discountAmount > 0) ? formatCurrency(discountAmount) : '',
+          '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
+          '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
         '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
           '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
           '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
@@ -2039,11 +2063,13 @@ Total Price: {{total price}}`;
           '{{plan}}': tierName,
           
           // Date information
-          '{{date}}': new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{Date}}': new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{current_date}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{currentDate}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{generation_date}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
+          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
+          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
           
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
@@ -2165,7 +2191,11 @@ Total Price: {{total price}}`;
             } else if (token === '{{company name}}') {
               templateData[token] = finalCompanyName || 'Demo Company Inc.';
             } else if (token === '{{Date}}') {
-              templateData[token] = new Date().toLocaleDateString('en-US', {
+              templateData[token] = clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', {
+                year: '2-digit', 
+                month: '2-digit', 
+                day: '2-digit' 
+              }) : new Date().toLocaleDateString('en-US', {
                 year: '2-digit', 
                 month: '2-digit', 
                 day: '2-digit' 
