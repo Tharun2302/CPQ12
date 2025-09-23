@@ -196,10 +196,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   
   // Calculate discount logic - source discount primarily from Configure session (localStorage)
   const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
-  // Read latest discount from localStorage as the source of truth, fallback to state
+  // Read latest discount from sessionStorage as the source of truth, fallback to state
   const storedDiscountPercent = (() => {
     try {
-      const raw = localStorage.getItem('cpq_discount');
+      const raw = sessionStorage.getItem('cpq_discount_session');
       return raw !== null && raw !== '' && !isNaN(Number(raw)) ? Number(raw) : undefined;
     } catch {
       return undefined;
@@ -675,6 +675,12 @@ Quote ID: ${quoteData.id}
           '{{instance_cost}}': formatCurrency(instanceCost),
           '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
+          
+          // Per-user cost calculations
+          '{{per_user_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
           
           // Total pricing
           '{{total price}}': formatCurrency(totalCost || 0),
@@ -1779,7 +1785,7 @@ Total Price: {{total price}}`;
         if (selectedTemplate.fileData) {
           alert('Template file is being processed. Please wait a moment and try again, or go to the Template session to re-select your template.');
         } else {
-          alert('Selected template does not have a valid file. Please go to the Template session and re-select your template.');
+        alert('Selected template does not have a valid file. Please go to the Template session and re-select your template.');
         }
         return;
       }
@@ -2061,6 +2067,12 @@ Total Price: {{total price}}`;
           '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
           
+          // Per-user cost calculations
+          '{{per_user_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          
           // Total pricing
           '{{total price}}': formatCurrency(totalCost || 0),
           '{{total_price}}': formatCurrency(totalCost || 0),
@@ -2155,6 +2167,24 @@ Total Price: {{total price}}`;
         console.log('  Duration of months:', templateData['{{Duration of months}}']);
         console.log('  total price:', templateData['{{total price}}']);
         console.log('  price_migration:', templateData['{{price_migration}}']);
+        
+        // ⭐ SPECIFIC DEBUG FOR USER'S TEMPLATE TOKENS
+        console.log('🎯 USER TEMPLATE SPECIFIC TOKENS:');
+        console.log('  {{users_cost}}:', templateData['{{users_cost}}']);
+        console.log('  {{instance_cost}}:', templateData['{{instance_cost}}']);
+        console.log('  {{Duration_of_months}}:', templateData['{{Duration_of_months}}']);
+        console.log('  {{per_user_cost}}:', templateData['{{per_user_cost}}']);
+        console.log('  Source values for debugging:');
+        console.log('    userCost value:', userCost);
+        console.log('    instanceCost value:', instanceCost);
+        console.log('    duration value:', duration);
+        console.log('    formatCurrency(userCost):', formatCurrency(userCost || 0));
+        console.log('    formatCurrency(instanceCost):', formatCurrency(instanceCost));
+        console.log('    duration.toString():', (duration || 1).toString());
+        
+        // ⭐ GLOBAL DEBUG: Store template data for console debugging
+        (window as any).lastTemplateData = templateData;
+        console.log('🌍 Template data stored in window.lastTemplateData for debugging');
         
         // Debug: Check the source data
         console.log('🔍 Source data debugging:');
@@ -3222,7 +3252,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           </thead>
           <tbody>
             <tr className="border-b border-gray-200">
-              <td className="py-4 text-gray-700 font-medium">User costs ({configuration.numberOfUsers} users × {configuration.duration} months)</td>
+              <td className="py-4 text-gray-700 font-medium">
+                User costs ({configuration.numberOfUsers} users × {configuration.duration} months)
+                <br />
+                <span className="text-sm text-gray-500 font-normal">
+                  @ {formatCurrency(safeCalculation.userCost / (configuration.numberOfUsers * configuration.duration))}/user/month
+                </span>
+              </td>
               <td className="text-right py-4 font-bold text-gray-900">{formatCurrency(safeCalculation.userCost)}</td>
             </tr>
             <tr className="border-b border-gray-200">

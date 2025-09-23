@@ -313,6 +313,15 @@ export class DocxTemplateProcessor {
       });
       
       try {
+        // ⭐ FINAL DEBUG BEFORE RENDERING
+        console.log('🚀 FINAL TOKEN VALUES BEING SENT TO DOCXTEMPLATER:');
+        console.log('  {{users_cost}}:', docxtemplaterData['{{users_cost}}']);
+        console.log('  {{instance_cost}}:', docxtemplaterData['{{instance_cost}}']);
+        console.log('  {{Duration_of_months}}:', docxtemplaterData['{{Duration_of_months}}']);
+        console.log('  {{Company_Name}}:', docxtemplaterData['{{Company_Name}}']);
+        console.log('  {{users_count}}:', docxtemplaterData['{{users_count}}']);
+        console.log('  {{per_user_cost}}:', docxtemplaterData['{{per_user_cost}}']);
+        
         doc.render(docxtemplaterData);
         console.log('✅ Template rendered successfully with new API');
         
@@ -596,6 +605,18 @@ export class DocxTemplateProcessor {
     console.log('  price_migration →', migrationCost);
     console.log('  total_price →', totalPrice);
     
+    // ⭐ SPECIFIC DEBUG FOR USER'S TEMPLATE TOKENS
+    console.log('🎯 USER TEMPLATE SPECIFIC TOKENS IN DOCX PROCESSOR:');
+    console.log('  Checking {{users_cost}} - input value:', data['{{users_cost}}']);
+    console.log('  Checking {{instance_cost}} - input value:', data['{{instance_cost}}']);
+    console.log('  Checking {{Duration_of_months}} - input value:', data['{{Duration_of_months}}']);
+    console.log('  Checking {{per_user_cost}} - input value:', data['{{per_user_cost}}']);
+    console.log('  Final values that will be used:');
+    console.log('    users_cost final value:', userCost);
+    console.log('    instance_cost input:', (data as any)['{{instance_cost}}']);
+    console.log('    Duration_of_months final value:', duration);
+    console.log('    per_user_cost calculated:', (data as any)['{{per_user_cost}}']);
+    
     // Create comprehensive token mapping covering ALL possible variations
     const tokenMappings = {
       // Company variations
@@ -620,6 +641,16 @@ export class DocxTemplateProcessor {
       '{{user_cost}}': userCost,
       '{{userCost}}': userCost,
       '{{usersCost}}': userCost,
+      
+      // Per-user cost variations
+      '{{per_user_cost}}': (data as any)['{{per_user_cost}}'] || ((data as any)['{{users_cost}}'] ? 
+        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
+      '{{per_user_monthly_cost}}': (data as any)['{{per_user_monthly_cost}}'] || ((data as any)['{{users_cost}}'] ? 
+        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
+      '{{user_rate}}': (data as any)['{{user_rate}}'] || ((data as any)['{{users_cost}}'] ? 
+        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
+      '{{monthly_user_rate}}': (data as any)['{{monthly_user_rate}}'] || ((data as any)['{{users_cost}}'] ? 
+        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
       
       // Duration variations
       '{{Duration of months}}': duration,

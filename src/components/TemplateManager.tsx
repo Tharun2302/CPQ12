@@ -910,7 +910,13 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
               </thead>
               <tbody>
                 <tr>
-                  <td>User costs (${quote.configuration.numberOfUsers} users × ${quote.configuration.duration} months)</td>
+                  <td>
+                    User costs (${quote.configuration.numberOfUsers} users × ${quote.configuration.duration} months)
+                    <br />
+                    <small style="color: #666; font-weight: normal;">
+                      @ ${formatCurrency(quote.calculation.userCost / (quote.configuration.numberOfUsers * quote.configuration.duration))}/user/month
+                    </small>
+                  </td>
                   <td>${formatCurrency(quote.calculation.userCost)}</td>
                 </tr>
                 <tr>
@@ -1117,7 +1123,13 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
               </thead>
               <tbody>
                 <tr>
-                  <td>User costs (${quote.configuration.numberOfUsers} users × ${quote.configuration.duration} months)</td>
+                  <td>
+                    User costs (${quote.configuration.numberOfUsers} users × ${quote.configuration.duration} months)
+                    <br />
+                    <small style="color: #666; font-weight: normal;">
+                      @ ${formatCurrency(quote.calculation.userCost / (quote.configuration.numberOfUsers * quote.configuration.duration))}/user/month
+                    </small>
+                  </td>
                   <td>${formatCurrency(quote.calculation.userCost)}</td>
                 </tr>
                 <tr>

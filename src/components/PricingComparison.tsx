@@ -16,11 +16,11 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 }) => {
   const [discount, setDiscount] = useState<number>(0);
 
-  // Read discount from localStorage (set in Configuration session)
+  // Read discount from sessionStorage (set in Configuration session)
   useEffect(() => {
     const loadDiscount = () => {
       try {
-        const savedDiscount = localStorage.getItem('cpq_discount');
+        const savedDiscount = sessionStorage.getItem('cpq_discount_session');
         if (savedDiscount !== null && savedDiscount !== '' && !isNaN(Number(savedDiscount))) {
           setDiscount(Number(savedDiscount));
         } else {
@@ -36,7 +36,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
     // Listen for storage events (changes from other components)
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'cpq_discount') {
+      if (e.key === 'cpq_discount_session') {
         loadDiscount();
       }
     };
