@@ -24,6 +24,7 @@ import SignUpPage from './pages/SignUpPage';
 import MicrosoftCallback from './pages/MicrosoftCallback';
 import DebugEnv from './pages/DebugEnv';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import HubSpotIntegrationPage from './pages/HubSpotIntegrationPage';
 
 function App() {
   const [activeTab, setActiveTab] = useState('configure');
@@ -379,6 +380,19 @@ function App() {
 
   // Parse deal parameters from URL (HubSpot Integration)
   const parseDealParameters = () => {
+    // First check if we have stored HubSpot deal data from the integration page
+    const storedDealData = localStorage.getItem('hubspot_deal_data');
+    if (storedDealData) {
+      try {
+        const dealData = JSON.parse(storedDealData);
+        console.log('🔍 Using stored HubSpot deal data:', dealData);
+        setDealData(dealData);
+        return dealData;
+      } catch (error) {
+        console.error('❌ Error parsing stored HubSpot deal data:', error);
+      }
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     
     // Deal Information (from HubSpot CPQ TOOL property)
@@ -1660,6 +1674,9 @@ function App() {
           <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
           <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
           <Route path="/debug-env" element={<DebugEnv />} />
+          
+          {/* HubSpot Integration Route - Bypasses Authentication */}
+          <Route path="/hubspot" element={<HubSpotIntegrationPage />} />
           
           {/* Protected Routes - Original CPQ App */}
           <Route path="/dashboard" element={

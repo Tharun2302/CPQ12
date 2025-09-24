@@ -1,8 +1,20 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Calculator, Users, FileText, BarChart3, Shield, Zap } from 'lucide-react';
 
 const LandingPage: React.FC = () => {
+  const [isHubSpotAvailable, setIsHubSpotAvailable] = useState(false);
+
+  useEffect(() => {
+    // Check if HubSpot is available by checking for API key or localStorage
+    const hubspotApiKey = import.meta.env.VITE_HUBSPOT_API_KEY;
+    const savedHubspotState = localStorage.getItem('hubspotState');
+    
+    if (hubspotApiKey || savedHubspotState) {
+      setIsHubSpotAvailable(true);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
 
@@ -57,12 +69,21 @@ const LandingPage: React.FC = () => {
               </p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-md relative opacity-90 blur-[0.5px]">
-              <div className="absolute top-4 right-4">
-                <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full">
-                  Coming Soon
-                </span>
-              </div>
+            <div className={`bg-white p-6 rounded-lg shadow-md relative ${!isHubSpotAvailable ? 'opacity-90 blur-[0.5px]' : ''}`}>
+              {!isHubSpotAvailable && (
+                <div className="absolute top-4 right-4">
+                  <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full">
+                    Coming Soon
+                  </span>
+                </div>
+              )}
+              {isHubSpotAvailable && (
+                <div className="absolute top-4 right-4">
+                  <span className="bg-green-100 text-green-800 text-xs font-semibold px-2 py-1 rounded-full">
+                    Available
+                  </span>
+                </div>
+              )}
               <Users className="h-12 w-12 text-purple-600 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">HubSpot Integration</h3>
               <p className="text-gray-600">

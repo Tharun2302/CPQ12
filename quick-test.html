@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick HubSpot Bypass Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-link { 
+            display: inline-block; 
+            background: #ff7a59; 
+            color: white; 
+            padding: 15px 30px; 
+            text-decoration: none; 
+            border-radius: 5px; 
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .test-link:hover { background: #e66a49; }
+        .info { background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Quick HubSpot Bypass Test</h1>
+    
+    <div class="info">
+        <h3>Test Steps:</h3>
+        <ol>
+            <li>Click the test link below</li>
+            <li>You should see "Connecting from HubSpot..." loading screen</li>
+            <li>Then automatically go to dashboard (no login page!)</li>
+            <li>Check browser console (F12) for success messages</li>
+        </ol>
+    </div>
+
+    <a href="http://localhost:5173/hubspot?dealId=TEST123&dealName=Quick%20Test%20Deal&ContactEmail=test@example.com&ContactFirstName=Test&ContactLastName=User&CompanyName=Test%20Company&amount=25000" 
+       class="test-link" target="_blank">
+        🚀 Test HubSpot Bypass Now
+    </a>
+
+    <div class="info">
+        <h3>What to Look For:</h3>
+        <ul>
+            <li>✅ <strong>No login page</strong> - Goes straight to dashboard</li>
+            <li>✅ <strong>Loading screen</strong> - "Connecting from HubSpot..."</li>
+            <li>✅ <strong>Console messages</strong> - Success logs in browser console</li>
+            <li>✅ <strong>Pre-filled data</strong> - Deal info should be populated</li>
+        </ul>
+    </div>
+
+    <p><strong>If you see a login page, the bypass is NOT working.</strong></p>
+    <p><strong>If you go directly to dashboard, the bypass IS working! 🎉</strong></p>
+</body>
+</html>
