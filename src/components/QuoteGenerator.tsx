@@ -252,6 +252,19 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       setQuoteId(generateUniqueQuoteId());
     }
   }, []); // Empty dependency array - run only once
+
+  // Inject date format styles on component mount
+  useEffect(() => {
+    ensureDateFormatStylesInjected();
+    
+    // Force US date format by setting locale
+    const dateInputs = document.querySelectorAll('input[type="date"][data-format="mm-dd-yyyy"]');
+    dateInputs.forEach((input) => {
+      const htmlInput = input as HTMLInputElement;
+      htmlInput.lang = 'en-US';
+      htmlInput.setAttribute('locale', 'en-US');
+    });
+  }, []); // Empty dependency array - run only once
   const [showPlaceholderPreview, setShowPlaceholderPreview] = useState(false);
   const [placeholderPreviewData, setPlaceholderPreviewData] = useState<{
     originalText: string;
@@ -265,6 +278,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isGeneratingAgreement, setIsGeneratingAgreement] = useState(false);
   const [showInlinePreview, setShowInlinePreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
   const ensureDocxPreviewStylesInjected = () => {
@@ -275,6 +289,57 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     link.rel = 'stylesheet';
     link.href = 'https://unpkg.com/docx-preview@0.4.1/dist/docx-preview.css';
     document.head.appendChild(link);
+  };
+
+  const ensureDateFormatStylesInjected = () => {
+    const existing = document.getElementById('date-format-css');
+    if (existing) return;
+    const style = document.createElement('style');
+    style.id = 'date-format-css';
+    style.textContent = `
+      /* Force US date format order for Chrome/Safari */
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-fields-wrapper {
+        flex-direction: row;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-month-field {
+        order: 1;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-text:nth-of-type(1) {
+        order: 2;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-day-field {
+        order: 3;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-text:nth-of-type(2) {
+        order: 4;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-year-field {
+        order: 5;
+      }
+      
+      /* Custom placeholder for empty date inputs */
+      input[type="date"][data-format="mm-dd-yyyy"]:not(:focus):invalid {
+        color: transparent;
+        background-image: none;
+        position: relative;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]:not(:focus):invalid::before {
+        content: "mm-dd-yyyy";
+        color: #9CA3AF;
+        font-size: 18px;
+        position: absolute;
+        left: 24px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+      }
+      
+      /* Hide default calendar icon when showing custom placeholder */
+      input[type="date"][data-format="mm-dd-yyyy"]:not(:focus):invalid::-webkit-calendar-picker-indicator {
+        opacity: 0.5;
+      }
+    `;
+    document.head.appendChild(style);
   };
 
   const delayFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -2695,9 +2760,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         }
         
         setShowAgreementPreview(true);
+        // Force inline preview to be shown when agreement is generated
+        setShowInlinePreview(true);
         
-        // Show success message
-        alert(`✅ Agreement generated successfully!\n\nTemplate: ${selectedTemplate.name}\nClient: ${clientInfo.clientName}\nTotal Cost: ${formatCurrency(currentCalculation.totalCost)}\n\n📄 Please review the preview below. If everything looks correct, click "Download Agreement" to save the file.`);
+        // Document preview will show directly without alert interruption
       }
 
     } catch (error) {
@@ -2905,18 +2971,38 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   </div>
                   Effective Date
                 </label>
-                <input
-                  type="date"
-                  value={clientInfo.effectiveDate || ''}
-                  onChange={(e) => setClientInfo({ ...clientInfo, effectiveDate: e.target.value })}
-                  className="w-full px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-xl font-medium"
-                  style={{ 
-                    fontSize: '18px',
-                    height: '60px',
-                    paddingTop: '18px',
-                    paddingBottom: '18px'
-                  }}
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={clientInfo.effectiveDate || ''}
+                    onChange={(e) => setClientInfo({ ...clientInfo, effectiveDate: e.target.value })}
+                    placeholder="mm-dd-yyyy"
+                    title="Select date in MM-DD-YYYY format"
+                    data-format="mm-dd-yyyy"
+                    lang="en-US"
+                    locale="en-US"
+                    className="w-full px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-xl font-medium"
+                    style={{ 
+                      fontSize: '18px',
+                      height: '60px',
+                      paddingTop: '18px',
+                      paddingBottom: '18px'
+                    }}
+                  />
+                  {/* Custom placeholder overlay for empty state */}
+                  {!clientInfo.effectiveDate && (
+                    <div className="absolute left-6 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400 text-lg">
+                      mm-dd-yyyy
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-2 ml-1">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-1">
+                    <p className="text-xs font-semibold text-blue-700">
+                      📅 Format: MM-DD-YYYY (e.g., 12-31-2024)
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Discount field moved to Configure session */}
@@ -3751,114 +3837,215 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
         {/* Agreement Preview Modal - Enhanced Large Size */}
         {showAgreementPreview && processedAgreement && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-2">
-            <div className="bg-white rounded-3xl shadow-2xl w-full h-full max-w-7xl max-h-[98vh] overflow-hidden flex flex-col">
-              {/* Header - Enhanced */}
-              <div className="bg-gradient-to-r from-green-600 via-green-700 to-emerald-600 text-white p-8 flex items-center justify-between">
-                <div className="flex items-center space-x-6">
-                  <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                    <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-1">
+            <div className={`bg-white shadow-2xl w-full h-full overflow-hidden flex flex-col ${
+              isFullscreen 
+                ? 'max-w-none max-h-none rounded-none' 
+                : 'max-w-[98vw] max-h-[99vh] rounded-3xl'
+            }`}>
+              {/* Header - Ultra Compact */}
+              <div className="bg-gradient-to-r from-green-600 via-green-700 to-emerald-600 text-white p-2 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-4xl font-bold mb-2">🎉 Agreement Generated Successfully!</h2>
-                    <p className="text-green-100 text-xl">
-                      Template: {selectedTemplate?.name} | Client: {clientInfo.clientName}
+                    <h2 className="text-lg font-bold">🎉 Agreement Generated!</h2>
+                    <p className="text-green-100 text-xs">
+                      {selectedTemplate?.name} | {clientInfo.clientName}
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowAgreementPreview(false);
-                    setProcessedAgreement(null);
-                  }}
-                  className="text-white hover:text-green-200 transition-colors p-3 hover:bg-white hover:bg-opacity-10 rounded-full"
-                >
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Essential action buttons in header for agreement preview */}
+                  {showAgreementPreview && (
+                    <>
+                      <button
+                        onClick={handleDownloadAgreement}
+                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
+                        title="Download Agreement"
+                      >
+                        📥 Download
+                      </button>
+                      <button
+                        onClick={handleDownloadAgreementPDF}
+                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
+                        title="Download PDF"
+                      >
+                        📄 PDF
+                      </button>
+                      <button
+                        onClick={handleEmailAgreement}
+                        disabled={isEmailingAgreement}
+                        className={`transition-colors px-3 py-1 rounded-lg text-xs font-semibold ${
+                          isEmailingAgreement
+                            ? 'text-green-300 cursor-not-allowed'
+                            : 'text-white hover:text-green-200 hover:bg-white hover:bg-opacity-10'
+                        }`}
+                        title="Send to Deal Desk"
+                      >
+                        {isEmailingAgreement ? '⏳ Sending...' : '📧 Send'}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="text-white hover:text-green-200 transition-colors p-2 hover:bg-white hover:bg-opacity-10 rounded-full"
+                    title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                  >
+                    {isFullscreen ? (
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15h4.5M15 15v4.5m0-4.5l5.5 5.5" />
+                      </svg>
+                    ) : (
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAgreementPreview(false);
+                      setProcessedAgreement(null);
+                      setIsFullscreen(false);
+                      // Reset inline preview when closing agreement modal
+                      setShowInlinePreview(false);
+                      if (previewUrl) {
+                        URL.revokeObjectURL(previewUrl);
+                        setPreviewUrl(null);
+                      }
+                    }}
+                    className="text-white hover:text-green-200 transition-colors p-2 hover:bg-white hover:bg-opacity-10 rounded-full"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
-              {/* Content - Enhanced */}
+              {/* Content - Maximized for Preview */}
               <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Success Message - Enhanced */}
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-l-8 border-green-500 p-8 m-6 mb-4">
-                  <div className="flex items-start space-x-4">
-                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                      <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-green-800 font-bold text-xl mb-2">Template processed successfully!</p>
-                      <p className="text-green-700 text-lg">
-                        The tokens in your template have been replaced with the actual quote data. 
-                        Please review the preview below. If everything looks correct, click "Download Agreement" to save the file.
+                {/* Success Message - Ultra Compact (hidden in fullscreen) */}
+                {!isFullscreen && (
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-l-2 border-green-500 p-2 mx-2 mt-1 mb-2 flex-shrink-0">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <p className="text-green-800 font-semibold text-xs">
+                        Template processed successfully! Review the preview below.
                       </p>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Preview Area - Enhanced Large */}
-                <div className="flex-1 mx-6 mb-6 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300 overflow-hidden flex flex-col">
-                  <div className="bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                    <h3 className="text-2xl font-bold text-gray-800">📄 Document Preview</h3>
-                    {!showInlinePreview && (
-                      <button
-                        onClick={handleViewInline}
-                        className="text-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                      >
-                        👁️ View Document
-                      </button>
-                    )}
-                    {showInlinePreview && (
-                      <div className="text-sm text-gray-600 bg-green-50 px-4 py-2 rounded-lg">
-                        📄 Showing actual document content (converted from DOCX)
-                      </div>
-                    )}
+                {/* Preview Area - Maximized */}
+                <div className={`flex-1 bg-gray-50 border border-gray-300 overflow-hidden flex flex-col min-h-0 ${
+                  isFullscreen 
+                    ? 'mx-0 mb-0 rounded-none' 
+                    : 'mx-2 mb-2 rounded-xl'
+                }`}>
+                  <div className="bg-white px-3 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                    <h3 className="text-sm font-bold text-gray-800">📄 Document Preview</h3>
+                    <div className="flex items-center gap-2">
+                      {showInlinePreview && (
+                        <div className="text-xs text-gray-600 bg-green-50 px-2 py-1 rounded">
+                          📄 DOCX Content
+                        </div>
+                      )}
+                      {!showInlinePreview && !showAgreementPreview && (
+                        <button
+                          onClick={handleViewInline}
+                          className="text-xs bg-gradient-to-r from-blue-600 to-blue-700 text-white px-3 py-1 rounded hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold"
+                        >
+                          👁️ View Document
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1 bg-white overflow-hidden">
+                  <div className="flex-1 bg-white overflow-hidden min-h-0">
                     {showInlinePreview ? (
                       previewUrl ? (
-                        <iframe
-                          src={previewUrl}
-                          className="w-full h-full border-0"
-                          title="Agreement Document Preview"
-                        />
+                        <div className="w-full h-full relative">
+                          <iframe
+                            src={previewUrl}
+                            className="w-full h-full border-0"
+                            title="Agreement Document Preview"
+                            style={{ 
+                              minHeight: '700px',
+                              height: '100%',
+                              width: '100%'
+                            }}
+                          />
+                          {/* Enhanced zoom controls overlay */}
+                          <div className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded shadow-lg flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                            </svg>
+                            Use Ctrl +/- to zoom
+                          </div>
+                          
+                          {/* Fullscreen floating action buttons */}
+                          {isFullscreen && (
+                            <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+                              <button
+                                onClick={handleDownloadAgreement}
+                                className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform hover:scale-105"
+                                title="Download Agreement"
+                              >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={handleDownloadAgreementPDF}
+                                className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform hover:scale-105"
+                                title="Download PDF"
+                              >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       ) : (
-                        <div ref={previewContainerRef} className="document-preview-content w-full h-full overflow-auto p-6 bg-white" />
+                        <div ref={previewContainerRef} className="document-preview-content w-full h-full overflow-auto p-6 bg-white" style={{ minHeight: '700px' }} />
                       )
                     ) : (
-                      <div className="h-full flex items-center justify-center">
-                        <div className="text-center p-12">
-                          <div className="w-32 h-32 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-8">
-                            <svg className="w-16 h-16 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="h-full flex items-center justify-center min-h-[400px]">
+                        <div className="text-center p-8">
+                          <div className="w-24 h-24 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                           </div>
-                          <h4 className="text-3xl font-bold text-gray-800 mb-4">Document Ready for Preview</h4>
-                          <p className="text-gray-600 text-xl mb-8 max-w-2xl mx-auto">
+                          <h4 className="text-2xl font-bold text-gray-800 mb-3">Document Ready for Preview</h4>
+                          <p className="text-gray-600 text-lg mb-6 max-w-xl mx-auto">
                             Your agreement has been processed successfully with all tokens replaced with actual quote data.
                           </p>
-                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-8 mb-8 max-w-3xl mx-auto">
-                            <p className="text-blue-800 text-lg">
+                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-6 mb-6 max-w-2xl mx-auto">
+                            <p className="text-blue-800 text-base">
                               <strong>Click "View Document" above</strong> to see the complete agreement with all your data, 
                               or click "Download Agreement" to save the file.
                             </p>
                           </div>
-                          <div className="grid grid-cols-2 gap-6 text-lg text-gray-600 max-w-2xl mx-auto">
-                            <div className="bg-gray-50 p-4 rounded-xl">
+                          <div className="grid grid-cols-2 gap-4 text-sm text-gray-600 max-w-xl mx-auto">
+                            <div className="bg-gray-50 p-3 rounded-lg">
                               <p><strong>📋 Template:</strong> {selectedTemplate?.name}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-xl">
+                            <div className="bg-gray-50 p-3 rounded-lg">
                               <p><strong>👤 Client:</strong> {clientInfo.clientName}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-xl">
+                            <div className="bg-gray-50 p-3 rounded-lg">
                               <p><strong>🏢 Company:</strong> {clientInfo.company}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-xl">
+                            <div className="bg-gray-50 p-3 rounded-lg">
                               <p><strong>💰 Total Cost:</strong> {formatCurrency(calculation?.totalCost || 0)}</p>
                             </div>
                           </div>
@@ -3868,14 +4055,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   </div>
                 </div>
 
-                {/* Action Buttons - Enhanced */}
-                <div className="bg-white border-t-2 border-gray-200 p-8">
-                  <div className="flex gap-6 justify-center">
+                {/* Action Buttons - Ultra Compact (hidden in fullscreen and agreement preview) */}
+                {!isFullscreen && !showAgreementPreview && (
+                  <div className="bg-white border-t border-gray-200 p-2 flex-shrink-0">
+                  <div className="flex gap-2 justify-center flex-wrap">
                     <button
                       onClick={handleDownloadAgreement}
-                      className="flex items-center gap-3 px-10 py-5 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-2xl hover:from-green-700 hover:to-green-800 transition-all duration-200 font-bold text-xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1"
+                      className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all duration-200 font-semibold text-xs shadow-lg"
                     >
-                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       📥 Download Agreement
@@ -3883,9 +4071,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     {/* Download PDF button with functionality */}
                     <button
                       onClick={handleDownloadAgreementPDF}
-                      className="flex items-center gap-3 px-10 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-bold text-xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1"
+                      className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold text-xs shadow-lg"
                     >
-                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       📄 Download PDF
@@ -3893,25 +4081,33 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <button
                       onClick={handleEmailAgreement}
                       disabled={isEmailingAgreement}
-                      className={`flex items-center gap-3 px-10 py-5 rounded-2xl transition-all duration-200 font-bold text-xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1 ${
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
                         isEmailingAgreement
                           ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800'
+                          : 'bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:from-purple-700 hover:to-purple-800'
                       }`}
                     >
                       {isEmailingAgreement ? (
                         <>
-                          <div className="w-7 h-7 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                           Sending...
                         </>
                       ) : (
                         <>
-                          <Mail className="w-7 h-7" />
+                          <Mail className="w-3 h-3" />
                           📧 Send to Deal Desk
                         </>
                       )}
                     </button>
-                    {showInlinePreview ? (
+                    {/* After agreement generation, always show preview - no hide option */}
+                    {showInlinePreview && showAgreementPreview ? (
+                      <div className="flex items-center gap-1 px-4 py-2 bg-green-50 text-green-700 rounded-lg border border-green-200">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-xs font-semibold">📄 Document Loaded</span>
+                      </div>
+                    ) : showInlinePreview ? (
                       <button
                         onClick={() => {
                           setShowInlinePreview(false);
@@ -3920,9 +4116,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                             setPreviewUrl(null);
                           }
                         }}
-                        className="flex items-center gap-3 px-10 py-5 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-2xl hover:from-orange-700 hover:to-orange-800 transition-all duration-200 font-bold text-xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1"
+                        className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all duration-200 font-semibold text-xs shadow-lg"
                       >
-                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
                         </svg>
                         🙈 Hide Document
@@ -3930,9 +4126,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     ) : (
                       <button
                         onClick={handleViewInline}
-                        className="flex items-center gap-3 px-10 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-bold text-xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1"
+                        className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold text-xs shadow-lg"
                       >
-                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
@@ -3944,20 +4140,22 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         setShowAgreementPreview(false);
                         setProcessedAgreement(null);
                         setShowInlinePreview(false);
+                        setIsFullscreen(false);
                         if (previewUrl) {
                           URL.revokeObjectURL(previewUrl);
                           setPreviewUrl(null);
                         }
                       }}
-                      className="flex items-center gap-3 px-10 py-5 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-2xl hover:from-gray-700 hover:to-gray-800 transition-all duration-200 font-bold text-xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1"
+                      className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-200 font-semibold text-xs shadow-lg"
                     >
-                      <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                       ❌ Close Preview
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             </div>
           </div>
