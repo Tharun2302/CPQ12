@@ -57,7 +57,12 @@ const LandingPage: React.FC = () => {
               </p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="bg-white p-6 rounded-lg shadow-md relative opacity-90 blur-[0.5px]">
+              <div className="absolute top-4 right-4">
+                <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full">
+                  Coming Soon
+                </span>
+              </div>
               <Users className="h-12 w-12 text-purple-600 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">HubSpot Integration</h3>
               <p className="text-gray-600">
@@ -65,7 +70,12 @@ const LandingPage: React.FC = () => {
               </p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="bg-white p-6 rounded-lg shadow-md relative opacity-90 blur-[0.5px]">
+              <div className="absolute top-4 right-4">
+                <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full">
+                  Coming Soon
+                </span>
+              </div>
               <Shield className="h-12 w-12 text-red-600 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Digital Signatures</h3>
               <p className="text-gray-600">
@@ -73,7 +83,12 @@ const LandingPage: React.FC = () => {
               </p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="bg-white p-6 rounded-lg shadow-md relative opacity-90 blur-[0.5px]">
+              <div className="absolute top-4 right-4">
+                <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full">
+                  Coming Soon
+                </span>
+              </div>
               <BarChart3 className="h-12 w-12 text-yellow-600 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Analytics</h3>
               <p className="text-gray-600">
@@ -81,7 +96,12 @@ const LandingPage: React.FC = () => {
               </p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="bg-white p-6 rounded-lg shadow-md relative opacity-80 blur-[0.5px]">
+              <div className="absolute top-4 right-4">
+                <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full">
+                  Coming Soon
+                </span>
+              </div>
               <Zap className="h-12 w-12 text-orange-600 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Fast & Reliable</h3>
               <p className="text-gray-600">
