@@ -162,14 +162,23 @@
             console.log('Authorization code received:', code);
             console.log('Client ID:', getClientId());
             
-            // Exchange authorization code for access token and get real user data
+            // Check if this is a React app (has React components)
+            if (window.React || document.querySelector('[data-reactroot]')) {
+              console.log('🔄 React app detected - letting React handle the token exchange');
+              document.getElementById('status').textContent = 'Handling authentication...';
+              // Let React component handle the token exchange
+              return;
+            }
+            
+            // Only run token exchange if this is NOT a React app
+            console.log('🔄 Static HTML - handling token exchange');
             exchangeCodeForUserData(code).then(userData => {
               console.log('✅ User data received:', userData);
               console.log('✅ Final name:', userData.name);
               console.log('✅ Final email:', userData.email);
               document.getElementById('status').textContent = 'Authentication successful.';
               post({ type: 'MICROSOFT_AUTH_SUCCESS', user: userData });
-              setTimeout(() => window.close(), 3000); // Increased delay to see console
+              setTimeout(() => window.close(), 3000);
             }).catch(error => {
               console.error('❌ Failed to get user data:', error);
               console.error('❌ Error details:', error.message);

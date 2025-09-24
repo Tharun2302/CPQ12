@@ -314,8 +314,42 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             window.removeEventListener('message', messageListener);
             popup.close();
            
-            // Send Microsoft user data to backend
+            // Get real user profile from Microsoft Graph API
             const microsoftUser = event.data.user;
+            console.log('🔍 Fetching real user profile from Microsoft Graph...');
+            
+            let realUserData = microsoftUser; // Fallback to temporary data
+            
+            try {
+              const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+                headers: {
+                  'Authorization': `Bearer ${microsoftUser.accessToken}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (profileResponse.ok) {
+                const profile = await profileResponse.json();
+                console.log('✅ Real profile data received:', profile);
+                
+                // Update user data with real profile information
+                realUserData = {
+                  ...microsoftUser,
+                  id: profile.id || microsoftUser.id,
+                  name: profile.displayName || profile.givenName + ' ' + profile.surname || 'Microsoft User',
+                  email: profile.mail || profile.userPrincipalName || microsoftUser.email
+                };
+                console.log('✅ Updated user data with real profile:', realUserData);
+              } else {
+                console.warn('⚠️ Microsoft Graph API failed, using temporary data');
+                const errorText = await profileResponse.text();
+                console.error('Graph API error:', profileResponse.status, errorText);
+              }
+            } catch (graphError) {
+              console.warn('⚠️ Microsoft Graph API call failed, using temporary data:', graphError);
+            }
+            
+            // Send Microsoft user data to backend
             const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
            
             try {
@@ -325,10 +359,10 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                  id: microsoftUser.id,
-                  name: microsoftUser.name,
-                  email: microsoftUser.email,
-                  accessToken: microsoftUser.accessToken
+                  id: realUserData.id,
+                  name: realUserData.name,
+                  email: realUserData.email,
+                  accessToken: realUserData.accessToken
                 })
               });
  
@@ -360,14 +394,14 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               } else {
                 // Same fallback as above if backend returns non-OK
                 const user: User = {
-                  id: microsoftUser.id,
-                  name: microsoftUser.name,
-                  email: microsoftUser.email,
+                  id: realUserData.id,
+                  name: realUserData.name,
+                  email: realUserData.email,
                   provider: 'microsoft' as AuthProviderType,
                   createdAt: new Date().toISOString()
                 };
                 localStorage.setItem('cpq_user', JSON.stringify(user));
-                localStorage.setItem('cpq_token', microsoftUser.accessToken);
+                localStorage.setItem('cpq_token', realUserData.accessToken);
                 setUser(user);
                 setIsAuthenticated(true);
               }
@@ -375,15 +409,15 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               console.error('Backend Microsoft auth error:', backendError);
               // Fallback to local storage if backend fails
               const user: User = {
-                id: microsoftUser.id,
-                name: microsoftUser.name,
-                email: microsoftUser.email,
+                id: realUserData.id,
+                name: realUserData.name,
+                email: realUserData.email,
                 provider: 'microsoft' as AuthProviderType,
                 createdAt: new Date().toISOString()
               };
              
               localStorage.setItem('cpq_user', JSON.stringify(user));
-              localStorage.setItem('cpq_token', microsoftUser.accessToken);
+              localStorage.setItem('cpq_token', realUserData.accessToken);
              
               setUser(user);
               setIsAuthenticated(true);

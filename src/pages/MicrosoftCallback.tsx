@@ -59,60 +59,13 @@ async function exchangeCodeForUserData(code: string) {
     const accessToken = tokenData.access_token;
     console.log('Token exchange successful, access token received');
 
-    // Get user profile from Microsoft Graph
-    console.log('🔍 Fetching user profile from Microsoft Graph...');
-    console.log('🔑 Access token (first 20 chars):', accessToken.substring(0, 20) + '...');
-    console.log('🔑 Full access token length:', accessToken.length);
-    console.log('🔑 Access token starts with:', accessToken.substring(0, 50) + '...');
+    // Return user data with access token - let the main window handle Graph API call
+    console.log('✅ Access token received, passing to main window for Graph API call');
     
-    const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    console.log('📊 Profile response status:', profileResponse.status);
-    console.log('📊 Profile response headers:', Object.fromEntries(profileResponse.headers.entries()));
-
-    if (!profileResponse.ok) {
-      const errorText = await profileResponse.text();
-      console.error('❌ Profile fetch failed:', profileResponse.status, errorText);
-      console.error('🔑 Access token (first 20 chars):', accessToken.substring(0, 20) + '...');
-      console.error('🌐 Graph API URL:', 'https://graph.microsoft.com/v1.0/me');
-      console.error('📋 Response headers:', Object.fromEntries(profileResponse.headers.entries()));
-      console.error('📄 Error response body:', errorText);
-      
-      // Try to decode the access token to see what's in it
-      try {
-        const tokenParts = accessToken.split('.');
-        if (tokenParts.length === 3) {
-          const payload = JSON.parse(atob(tokenParts[1]));
-          console.error('🔍 Token payload:', payload);
-          console.error('🔍 Token scopes:', payload.scp || payload.scope);
-          console.error('🔍 Token audience:', payload.aud);
-        }
-      } catch (e) {
-        console.error('🔍 Could not decode token:', e);
-      }
-      
-      throw new Error(`Profile fetch failed: ${profileResponse.status} - ${errorText}`);
-    }
-
-    const profile = await profileResponse.json();
-    console.log('✅ Profile data received:', profile);
-    console.log('🔍 Profile ID:', profile.id);
-    console.log('🔍 Profile displayName:', profile.displayName);
-    console.log('🔍 Profile mail:', profile.mail);
-    console.log('🔍 Profile userPrincipalName:', profile.userPrincipalName);
-    console.log('🔍 Profile givenName:', profile.givenName);
-    console.log('🔍 Profile surname:', profile.surname);
-
-    // Return user data in the expected format
     const userData = {
-      id: profile.id || 'microsoft_' + Date.now(),
-      name: profile.displayName || profile.givenName + ' ' + profile.surname || 'Microsoft User',
-      email: profile.mail || profile.userPrincipalName || 'user@microsoft.com',
+      id: 'microsoft_' + Date.now(), // Temporary ID, will be updated after Graph API call
+      name: 'Microsoft User', // Temporary name, will be updated after Graph API call
+      email: 'user@microsoft.com', // Temporary email, will be updated after Graph API call
       accessToken: accessToken,
       provider: 'microsoft',
       createdAt: new Date().toISOString()
@@ -120,13 +73,14 @@ async function exchangeCodeForUserData(code: string) {
     
     console.log('🔧 Mapped user data:', userData);
 
-    // Cleanup PKCE artifacts after success
-    try {
-      localStorage.removeItem('msal_code_verifier');
-      localStorage.removeItem('msal_client_id');
-      sessionStorage.removeItem('msal_code_verifier');
-      sessionStorage.removeItem('msal_client_id');
-    } catch (_) {}
+        // Cleanup PKCE artifacts after success
+        try {
+          localStorage.removeItem('msal_code_verifier');
+          localStorage.removeItem('msal_client_id');
+          sessionStorage.removeItem('msal_code_verifier');
+          sessionStorage.removeItem('msal_client_id');
+          sessionStorage.removeItem('microsoft_token_exchange_started');
+        } catch (_) {}
 
     return userData;
 
@@ -157,6 +111,13 @@ const MicrosoftCallback: React.FC = () => {
         console.log('🔍 Authorization code found:', code);
         console.log('🔍 Starting Microsoft Graph API call...');
         
+        // Set a flag to prevent duplicate token exchange
+        if (sessionStorage.getItem('microsoft_token_exchange_started')) {
+          console.log('⚠️ Token exchange already started, skipping duplicate');
+          return;
+        }
+        sessionStorage.setItem('microsoft_token_exchange_started', 'true');
+        
         // Exchange authorization code for real user data
         exchangeCodeForUserData(code).then(userData => {
           console.log('✅ User data received:', userData);
@@ -179,6 +140,11 @@ const MicrosoftCallback: React.FC = () => {
             timestamp: new Date().toISOString(),
             fullError: error.toString()
           }));
+          
+          // Cleanup flag on error
+          try {
+            sessionStorage.removeItem('microsoft_token_exchange_started');
+          } catch (_) {}
           
           // Fallback to mock user if real API fails
           const fallbackUser = {
