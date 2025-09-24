@@ -17,6 +17,8 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
   });
   const [errors, setErrors] = useState<AuthError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isMicrosoftLoading, setIsMicrosoftLoading] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -62,7 +64,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
   };
 
   const handleGoogleLogin = async () => {
-    setIsSubmitting(true);
+    setIsGoogleLoading(true);
     
     try {
       // Google authentication will be implemented
@@ -74,12 +76,12 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
       setErrors([{ field: 'general', message: 'An error occurred with Google authentication.' }]);
       onError?.('An error occurred with Google authentication.');
     } finally {
-      setIsSubmitting(false);
+      setIsGoogleLoading(false);
     }
   };
 
   const handleMicrosoftLogin = async () => {
-    setIsSubmitting(true);
+    setIsMicrosoftLoading(true);
     
     try {
       const success = await loginWithMicrosoft();
@@ -95,7 +97,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
       setErrors([{ field: 'general', message: 'Microsoft authentication is coming soon! Please use email/password for now.' }]);
       onError?.('Microsoft authentication is coming soon! Please use email/password for now.');
     } finally {
-      setIsSubmitting(false);
+      setIsMicrosoftLoading(false);
     }
   };
 
@@ -170,10 +172,10 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isSubmitting || loading}
+            disabled={isSubmitting || isGoogleLoading || isMicrosoftLoading}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {isSubmitting || loading ? (
+            {isSubmitting ? (
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                 Signing In...
@@ -197,7 +199,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
         {/* Google Sign In Button */}
         <button
           onClick={handleGoogleLogin}
-          disabled={isSubmitting || loading}
+          disabled={isSubmitting || isGoogleLoading || isMicrosoftLoading}
           className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mb-3"
         >
           <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -206,13 +208,20 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
           </svg>
-          {isSubmitting || loading ? 'Signing in...' : 'Continue with Google'}
+          {isGoogleLoading ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+              Signing in...
+            </div>
+          ) : (
+            'Continue with Google'
+          )}
         </button>
 
         {/* Microsoft Sign In Button */}
         <button
           onClick={handleMicrosoftLogin}
-          disabled={isSubmitting || loading}
+          disabled={isSubmitting || isGoogleLoading || isMicrosoftLoading}
           className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -221,7 +230,14 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
             <rect x="1" y="13" width="10" height="10" fill="#00A4EF"/>
             <rect x="13" y="13" width="10" height="10" fill="#FFB900"/>
           </svg>
-          {isSubmitting || loading ? 'Signing in...' : 'Continue with Microsoft Account'}
+          {isMicrosoftLoading ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+              Signing in...
+            </div>
+          ) : (
+            'Continue with Microsoft Account'
+          )}
         </button>
 
         {/* Sign Up Link */}
