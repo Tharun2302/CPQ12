@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Calculator, FileText, Settings, BarChart3, Sparkles, DollarSign, MessageSquare, Upload, Building } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 import UserMenu from './auth/UserMenu';
 
 interface NavigationProps {
@@ -10,6 +11,7 @@ interface NavigationProps {
 
 const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   
   const tabs = [
     { id: 'deal', label: 'Deal', icon: Building },
@@ -21,6 +23,27 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
     { id: 'templates', label: 'Templates', icon: Upload },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  const handleTabChange = (tabId: string) => {
+    // Update the active tab
+    onTabChange(tabId);
+    
+    // Add to browser history for proper back navigation
+    window.history.pushState({ tab: tabId }, '', `/dashboard?tab=${tabId}`);
+  };
+
+  // Handle browser back button
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const tabFromState = event.state?.tab;
+      if (tabFromState && tabFromState !== activeTab) {
+        onTabChange(tabFromState);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeTab, onTabChange]);
 
   return (
     <nav className="bg-gradient-to-r from-white via-blue-50/50 to-indigo-50/50 shadow-2xl border-b border-blue-100/50 backdrop-blur-md">
@@ -51,7 +74,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => onTabChange(tab.id)}
+                      onClick={() => handleTabChange(tab.id)}
                       className={`flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-300 transform hover:scale-105 ${
                         activeTab === tab.id
                           ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'

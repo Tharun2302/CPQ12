@@ -63,8 +63,16 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
   // Refresh button removed per requirements; keeping onRefresh prop optional for compatibility
 
   const handleUseDealData = () => {
+    console.log('🔍 Use Deal Data button clicked');
+    console.log('🔍 onUseDealData function exists:', !!onUseDealData);
+    console.log('🔍 dealData exists:', !!dealData);
+    console.log('🔍 dealData content:', dealData);
+    
     if (onUseDealData && dealData) {
+      console.log('✅ Calling onUseDealData with:', dealData);
       onUseDealData(dealData);
+    } else {
+      console.log('❌ Cannot use deal data - missing function or data');
     }
   };
 
@@ -127,56 +135,48 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
 
       </div>
 
-      {/* Enhanced Contact & Company Information */}
-      {(dealData.contactName || dealData.companyByContact) && (
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <UserCheck className="w-5 h-5 text-green-600" />
-            Contact & Company Information
-          </h3>
+      {/* Enhanced Contact & Company Information - Always Show */}
+      <div className="mt-8">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <UserCheck className="w-5 h-5 text-green-600" />
+          Contact & Company Information
+        </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Contact Name */}
-            {dealData.contactName && (
-              <div className="flex items-center p-4 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-xl border border-teal-100">
-                <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center mr-4">
-                  <User className="w-5 h-5 text-teal-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">Contact Name</p>
-                  <p className="font-semibold text-gray-900 text-lg">{dealData.contactName}</p>
-                </div>
+            {/* Contact Name - Always Show */}
+            <div className="flex items-center p-4 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-xl border border-teal-100">
+              <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center mr-4">
+                <User className="w-5 h-5 text-teal-600" />
               </div>
-            )}
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Contact Name</p>
+                <p className="font-semibold text-gray-900 text-lg">{dealData.contactName || 'Not Available'}</p>
+              </div>
+            </div>
 
-            {/* Contact Email */}
-            {dealData.contactEmail && (
-              <div className="flex items-center p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-                  <div className="w-5 h-5 text-blue-600 text-center text-xs font-bold">@</div>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">Contact Email</p>
-                  <p className="font-semibold text-gray-900 text-lg">{dealData.contactEmail}</p>
-                </div>
+            {/* Contact Email - Always Show */}
+            <div className="flex items-center p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                <div className="w-5 h-5 text-blue-600 text-center text-xs font-bold">@</div>
               </div>
-            )}
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Contact Email</p>
+                <p className="font-semibold text-gray-900 text-lg">{dealData.contactEmail || 'Not Available'}</p>
+              </div>
+            </div>
 
-            {/* Company Name (2) */}
-            {dealData.companyByContact && (
-              <div className="flex items-center p-4 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl border border-amber-100">
-                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-4">
-                  <Building className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">Company Name</p>
-                  <p className="font-semibold text-gray-900 text-lg">{dealData.companyByContact}</p>
-                </div>
+            {/* Company Name - Always Show */}
+            <div className="flex items-center p-4 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl border border-amber-100">
+              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-4">
+                <Building className="w-5 h-5 text-amber-600" />
               </div>
-            )}
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Company Name</p>
+                <p className="font-semibold text-gray-900 text-lg">{dealData.companyByContact || 'Not Available'}</p>
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
       {/* Use Deal Data Button */}
       <div className="mt-8 pt-6 border-t border-gray-200">

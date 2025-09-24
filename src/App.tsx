@@ -27,7 +27,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import HubSpotIntegrationPage from './pages/HubSpotIntegrationPage';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('configure');
+  const [activeTab, setActiveTab] = useState('deal');
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
   const [calculations, setCalculations] = useState<PricingCalculation[]>([]);
   const [selectedTier, setSelectedTier] = useState<PricingCalculation | null>(null);
@@ -563,9 +563,10 @@ function App() {
 
   // Handle using deal data in configuration and quote generation
   const handleUseDealData = (dealData: any) => {
+    console.log('🔍 App: handleUseDealData called with:', dealData);
     setActiveDealData(dealData);
     setActiveTab('configure');
-    console.log('✅ Deal data activated for configuration:', dealData);
+    console.log('✅ Deal data activated for configuration, switching to configure tab');
   };
 
   // Handle contact info changes from configure session
@@ -652,6 +653,31 @@ function App() {
       }));
     }
   };
+
+  // Handle URL state changes for navigation
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const currentPath = window.location.pathname;
+      if (currentPath === '/dashboard') {
+        // Check if there's a tab in the URL state
+        const urlParams = new URLSearchParams(window.location.search);
+        const tabFromUrl = urlParams.get('tab');
+        if (tabFromUrl && tabFromUrl !== activeTab) {
+          setActiveTab(tabFromUrl);
+        }
+      }
+    };
+
+    // Listen for navigation changes
+    window.addEventListener('popstate', handleLocationChange);
+    
+    // Check initial state
+    handleLocationChange();
+
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, [activeTab]);
 
   // Handle URL parameters on component mount
   useEffect(() => {
