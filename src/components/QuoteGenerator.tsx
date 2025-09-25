@@ -763,6 +763,8 @@ Quote ID: ${quoteData.id}
           '{{discountAmount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? formatCurrency(localDiscountAmount) : '',
           '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
           '{{discount_line}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          // Some templates may have a static label cell; clear it when no discount
+          '{{discount_label}}': (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '',
           // Special tokens for conditional display in templates
           '{{show_discount}}': (shouldApplyDiscount && discountPercent > 0) ? 'true' : '',
           '{{hide_discount}}': (shouldApplyDiscount && discountPercent > 0) ? '' : 'true',
@@ -1051,6 +1053,8 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? formatCurrency(discountAmount) : '',
       '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
       '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
+          // Static label support for templates with a dedicated label cell
+          '{{discount_label}}': (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '',
       '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
       '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
       
@@ -2372,6 +2376,11 @@ Total Price: {{total price}}`;
         console.log('  Duration valid?', !!templateData['{{Duration of months}}']);
         console.log('  Total price valid?', !!templateData['{{total price}}']);
         
+        // Ensure discount label token always exists (even when empty)
+        if (templateData['{{discount_label}}'] === undefined) {
+          templateData['{{discount_label}}'] = (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '';
+        }
+
         // DIAGNOSTIC: Run comprehensive template analysis
         console.log('🔍 Running comprehensive template diagnostic...');
         const { TemplateDiagnostic } = await import('../utils/templateDiagnostic');
@@ -2389,14 +2398,27 @@ Total Price: {{total price}}`;
         console.log('  Document structure:', diagnostic.documentStructure);
         console.log('  Recommendations:', diagnostic.recommendations);
         
-        // Show diagnostic results to user
-        if (diagnostic.missingTokens.length > 0 || diagnostic.mismatchedTokens.length > 0) {
+        // Treat discount tokens as optional (we intentionally allow them to be empty/not present)
+        const optionalTokens = ['discount_label', 'discount_amount', 'show_discount', 'hide_discount', 'if_discount'];
+        const filteredMissing = diagnostic.missingTokens.filter(t => !optionalTokens.includes(t));
+        const filteredMismatched = diagnostic.mismatchedTokens.filter(t => !optionalTokens.includes(t));
+
+        // Pre-check and log whether discount will show
+        console.log('🧮 Discount pre-check before generate:', {
+          discountPercent,
+          shouldApplyDiscount,
+          discount_label: templateData['{{discount_label}}'],
+          discount_amount: templateData['{{discount_amount}}']
+        });
+
+        // Show diagnostic results to user (only for non-optional tokens)
+        if (filteredMissing.length > 0 || filteredMismatched.length > 0) {
           const issueMessage = `
 🔍 TEMPLATE DIAGNOSTIC RESULTS:
 
 ❌ ISSUES FOUND:
-${diagnostic.missingTokens.length > 0 ? `• Missing data for tokens: ${diagnostic.missingTokens.join(', ')}` : ''}
-${diagnostic.mismatchedTokens.length > 0 ? `• Token format mismatches: ${diagnostic.mismatchedTokens.join(', ')}` : ''}
+${filteredMissing.length > 0 ? `• Missing data for tokens: ${filteredMissing.join(', ')}` : ''}
+${filteredMismatched.length > 0 ? `• Token format mismatches: ${filteredMismatched.join(', ')}` : ''}
 
 📋 TEMPLATE TOKENS FOUND:
 ${diagnostic.templateTokens.map(token => `• {{${token}}}`).join('\n')}
@@ -2413,7 +2435,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.error('❌ Template diagnostic found issues:', issueMessage);
           alert(issueMessage);
           
-          // CRITICAL: Stop processing if diagnostic finds issues
+          // Stop only when non-optional tokens have issues
           throw new Error('Template diagnostic found issues. Please fix the token mismatches before proceeding.');
         } else {
           console.log('✅ Template diagnostic passed - all tokens match correctly!');
