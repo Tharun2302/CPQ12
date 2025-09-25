@@ -31,7 +31,13 @@ HubSpot Deal → Custom Action Button → Your App URL → Auto Auth → Dashboa
 In your HubSpot deal, add a custom action button with this URL pattern:
 
 ```
-https://yourdomain.com?hubspot=true&hs_contact_id={{contact.id}}&hs_deal_id={{deal.id}}&hs_company={{contact.company}}&hs_contact_name={{contact.firstname}} {{contact.lastname}}&hs_contact_email={{contact.email}}&hs_deal_amount={{deal.amount}}
+https://yourdomain.com?hubspot=true&dealId={{deal.id}}&dealName={{deal.name}}&amount={{deal.amount}}&ContactEmail={{contact.email}}
+```
+
+Or for more detailed data:
+
+```
+https://yourdomain.com?hubspot=true&dealId={{deal.id}}&dealName={{deal.name}}&amount={{deal.amount}}&ContactEmail={{contact.email}}&hs_contact_id={{contact.id}}&hs_deal_id={{deal.id}}&hs_company={{contact.company}}&hs_contact_name={{contact.firstname}} {{contact.lastname}}&hs_contact_email={{contact.email}}&hs_deal_amount={{deal.amount}}
 ```
 
 ### Step 2: Test the Integration
@@ -54,13 +60,17 @@ VITE_BACKEND_URL=http://localhost:3001
 | Parameter | Description | Example |
 |-----------|-------------|---------|
 | `hubspot` | Indicates source is HubSpot | `hubspot=true` |
-| `hs_contact_id` | HubSpot contact ID | `12345` |
-| `hs_deal_id` | HubSpot deal ID | `67890` |
-| `hs_company` | Company name | `Acme Corp` |
-| `hs_contact_name` | Contact full name | `John Smith` |
-| `hs_contact_email` | Contact email | `john@acme.com` |
-| `hs_deal_amount` | Deal amount | `50000` |
-| `hs_deal_stage` | Deal stage | `qualified` |
+| `dealId` | HubSpot deal ID (real parameter) | `44452642155` |
+| `dealName` | Deal name (real parameter) | `Signalbase - Box to SharePoint` |
+| `amount` | Deal amount (real parameter) | `$500` |
+| `ContactEmail` | Contact email (real parameter) | `ch@signalbase.com` |
+| `hs_contact_id` | HubSpot contact ID (standard) | `12345` |
+| `hs_deal_id` | HubSpot deal ID (standard) | `67890` |
+| `hs_company` | Company name (standard) | `Acme Corp` |
+| `hs_contact_name` | Contact full name (standard) | `John Smith` |
+| `hs_contact_email` | Contact email (standard) | `john@acme.com` |
+| `hs_deal_amount` | Deal amount (standard) | `50000` |
+| `hs_deal_stage` | Deal stage (standard) | `qualified` |
 
 ## 🔍 Detection Logic
 

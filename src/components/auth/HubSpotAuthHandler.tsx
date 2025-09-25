@@ -31,17 +31,19 @@ const HubSpotAuthHandler: React.FC<HubSpotAuthHandlerProps> = ({ children }) => 
       console.log('🔍 isAuthenticated:', isAuthenticated);
       console.log('🔍 location.search:', location.search);
       
-      // Check if user is already authenticated
-      if (isAuthenticated) {
-        console.log('🔍 User already authenticated, skipping HubSpot auth');
-        return;
-      }
-
-      // Check for HubSpot URL parameters
+      // Check for HubSpot URL parameters first
       const urlParams = new URLSearchParams(location.search);
       const isFromHubspot = urlParams.has('hubspot') || 
                            urlParams.has('hs_deal_id') || 
                            urlParams.has('hs_contact_id') ||
+                           urlParams.has('dealId') ||
+                           urlParams.has('dealName') ||
+                           urlParams.has('amount') ||
+                           urlParams.has('ContactEmail') ||
+                           urlParams.has('ContactFirstName') ||
+                           urlParams.has('ContactLastName') ||
+                           urlParams.has('CompanyName') ||
+                           urlParams.has('CompanyFromContact') ||
                            location.search.includes('hubspot') ||
                            document.referrer.includes('hubspot');
 
@@ -51,6 +53,49 @@ const HubSpotAuthHandler: React.FC<HubSpotAuthHandlerProps> = ({ children }) => 
       if (!isFromHubspot) {
         console.log('🔍 Not from HubSpot, letting normal auth flow handle it');
         return; // Not from HubSpot, let normal auth flow handle it
+      }
+
+      // If user is already authenticated and came from HubSpot, store data and redirect to dashboard
+      if (isAuthenticated) {
+        console.log('🔍 User already authenticated and came from HubSpot, storing data and redirecting to dashboard');
+        
+        // Extract and store HubSpot data for use in quotes
+        const firstName = urlParams.get('ContactFirstName') || '';
+        const lastName = urlParams.get('ContactLastName') || '';
+        const fullName = `${firstName} ${lastName}`.trim() || urlParams.get('dealName') || 'HubSpot User';
+        
+        const hubspotUserData: HubSpotUserData = {
+          contactId: urlParams.get('hs_contact_id') || urlParams.get('contactId') || undefined,
+          dealId: urlParams.get('hs_deal_id') || urlParams.get('dealId') || undefined,
+          companyName: urlParams.get('hs_company') || 
+                      urlParams.get('company') || 
+                      urlParams.get('CompanyName') || 
+                      urlParams.get('CompanyFromContact') || 
+                      undefined,
+          contactName: urlParams.get('hs_contact_name') || 
+                      urlParams.get('contact_name') || 
+                      urlParams.get('contactName') || 
+                      fullName || 
+                      urlParams.get('dealName') || 
+                      undefined,
+          contactEmail: urlParams.get('hs_contact_email') || 
+                       urlParams.get('contact_email') || 
+                       urlParams.get('ContactEmail') || 
+                       undefined,
+          dealAmount: urlParams.get('hs_deal_amount') || 
+                     urlParams.get('deal_amount') || 
+                     urlParams.get('amount') || 
+                     undefined,
+          dealStage: urlParams.get('hs_deal_stage') || urlParams.get('deal_stage') || undefined,
+          source: 'hubspot'
+        };
+
+        // Store HubSpot data for use in quotes
+        localStorage.setItem('cpq_hubspot_data', JSON.stringify(hubspotUserData));
+        console.log('📊 Stored HubSpot data for authenticated user:', hubspotUserData);
+        
+        navigate('/dashboard', { replace: true });
+        return;
       }
 
       console.log('🔍 Starting HubSpot authentication process');
@@ -64,13 +109,32 @@ const HubSpotAuthHandler: React.FC<HubSpotAuthHandlerProps> = ({ children }) => 
         console.log('📍 URL Params:', Object.fromEntries(urlParams.entries()));
 
         // Extract HubSpot data from URL parameters
+        const firstName = urlParams.get('ContactFirstName') || '';
+        const lastName = urlParams.get('ContactLastName') || '';
+        const fullName = `${firstName} ${lastName}`.trim() || urlParams.get('dealName') || 'HubSpot User';
+        
         const hubspotUserData: HubSpotUserData = {
-          contactId: urlParams.get('hs_contact_id') || undefined,
-          dealId: urlParams.get('hs_deal_id') || undefined,
-          companyName: urlParams.get('hs_company') || urlParams.get('company') || undefined,
-          contactName: urlParams.get('hs_contact_name') || urlParams.get('contact_name') || undefined,
-          contactEmail: urlParams.get('hs_contact_email') || urlParams.get('contact_email') || undefined,
-          dealAmount: urlParams.get('hs_deal_amount') || urlParams.get('deal_amount') || undefined,
+          contactId: urlParams.get('hs_contact_id') || urlParams.get('contactId') || undefined,
+          dealId: urlParams.get('hs_deal_id') || urlParams.get('dealId') || undefined,
+          companyName: urlParams.get('hs_company') || 
+                      urlParams.get('company') || 
+                      urlParams.get('CompanyName') || 
+                      urlParams.get('CompanyFromContact') || 
+                      undefined,
+          contactName: urlParams.get('hs_contact_name') || 
+                      urlParams.get('contact_name') || 
+                      urlParams.get('contactName') || 
+                      fullName || 
+                      urlParams.get('dealName') || 
+                      undefined,
+          contactEmail: urlParams.get('hs_contact_email') || 
+                       urlParams.get('contact_email') || 
+                       urlParams.get('ContactEmail') || 
+                       undefined,
+          dealAmount: urlParams.get('hs_deal_amount') || 
+                     urlParams.get('deal_amount') || 
+                     urlParams.get('amount') || 
+                     undefined,
           dealStage: urlParams.get('hs_deal_stage') || urlParams.get('deal_stage') || undefined,
           source: 'hubspot'
         };
@@ -141,8 +205,8 @@ const HubSpotAuthHandler: React.FC<HubSpotAuthHandlerProps> = ({ children }) => 
 
         console.log('✅ HubSpot user authenticated successfully:', hubspotUser);
 
-        // Reload the page to trigger auth context update
-        window.location.href = '/dashboard';
+        // Navigate to dashboard - the auth context will pick up the new user data
+        navigate('/dashboard', { replace: true });
 
       } catch (error) {
         console.error('❌ HubSpot authentication failed:', error);
