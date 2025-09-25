@@ -1,7 +1,6 @@
 import React from 'react';
 import { 
   Building, 
-  DollarSign,
   Hash,
   FileText
 } from 'lucide-react';
@@ -40,7 +39,7 @@ interface DealComponentsProps {
   dealData: {
     dealId: string;
     dealName: string;
-    amount: string;
+    amount?: string;
     closeDate?: string;
     stage?: string;
     ownerId?: string;
@@ -82,15 +81,6 @@ const DealComponents: React.FC<DealComponentsProps> = ({ dealData }) => {
           borderColor="border-indigo-200"
         />
 
-        {/* Amount Component */}
-        <DealProperty
-          label="Deal Amount"
-          value={dealData.amount}
-          icon={DollarSign}
-          iconColor="bg-green-500"
-          bgColor="from-green-50 to-emerald-50"
-          borderColor="border-green-200"
-        />
 
       </div>
 
@@ -103,7 +93,7 @@ const DealComponents: React.FC<DealComponentsProps> = ({ dealData }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
             <span className="text-gray-500">Total Properties:</span>
-            <span className="ml-2 font-semibold text-gray-900">3</span>
+            <span className="ml-2 font-semibold text-gray-900">2</span>
           </div>
           <div>
             <span className="text-gray-500">Last Updated:</span>

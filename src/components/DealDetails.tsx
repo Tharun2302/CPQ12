@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   Building, 
   User, 
-  DollarSign,
   AlertCircle,
   CheckCircle,
   ArrowRight,
@@ -14,7 +13,7 @@ import {
 interface DealData {
   dealId: string;
   dealName: string;
-  amount: string;
+  amount?: string;
   company?: string;
   companyByContact?: string;
   contactName?: string;
@@ -114,16 +113,6 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
           </div>
         </div>
 
-        {/* Amount */}
-        <div className="flex items-center p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100">
-          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-4">
-            <DollarSign className="w-5 h-5 text-green-600" />
-          </div>
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Amount</p>
-            <p className="font-semibold text-gray-900 text-lg">{dealData.amount}</p>
-          </div>
-        </div>
 
       </div>
 
