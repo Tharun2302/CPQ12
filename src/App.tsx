@@ -1078,10 +1078,19 @@ function App() {
       setShowPricing(false);
       // Reset selected tier
       setSelectedTier(null);
-      // Reset calculations
-      setCalculations([]);
+      
+      // Only reset calculations if we don't have a valid configuration
+      // If we have a configuration, recalculate to maintain functionality
+      if (configuration && configuration.migrationType && configuration.numberOfUsers > 0) {
+        console.log('🔄 Recalculating pricing for existing configuration');
+        const newCalculations = calculateAllTiers(configuration, PRICING_TIERS);
+        setCalculations(newCalculations);
+      } else {
+        // Reset calculations only if no valid configuration exists
+        setCalculations([]);
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, configuration]);
 
   // Listen for navigation events from QuoteGenerator
   useEffect(() => {
