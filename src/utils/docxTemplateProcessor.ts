@@ -497,99 +497,105 @@ export class DocxTemplateProcessor {
           
           if (!discountApplied) {
             console.log('🧹 DISCOUNT CLEANUP: Starting cleanup because discount is not applied');
-            const stripTags = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-            const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
-            const paraRegex = /<w:p[\s\S]*?<\/w:p>/gi;
-            let modifiedXml = finalDocumentXml.replace(rowRegex, (row) => {
-              const text = stripTags(row);
-              return text.includes('discount') ? '' : row;
-            });
-            modifiedXml = modifiedXml.replace(paraRegex, (para) => {
-              const text = stripTags(para);
-              // Remove discount-only paragraphs and those that resolve to N/A
-              return (text.includes('discount') || text === 'n/a') ? '' : para;
-            });
-            // Remove any empty table rows after token resolution
-            const emptyRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
-            modifiedXml = modifiedXml.replace(emptyRowRegex, (row) => {
-              const text = stripTags(row);
-              return text.length === 0 ? '' : row;
-            });
-
-            // ULTRA AGGRESSIVE CLEANUP: Remove ANY row containing "Discount" and "N/A" in any order
-            const discountNARowRegex1 = /<w:tr[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<\/w:tr>/gi;
-            const discountNARowRegex2 = /<w:tr[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<\/w:tr>/gi;
-            modifiedXml = modifiedXml.replace(discountNARowRegex1, '');
-            modifiedXml = modifiedXml.replace(discountNARowRegex2, '');
-
-            // Remove ANY paragraph containing "Discount" and "N/A" in any order
-            const discountNAParaRegex1 = /<w:p[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<\/w:p>/gi;
-            const discountNAParaRegex2 = /<w:p[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<\/w:p>/gi;
-            modifiedXml = modifiedXml.replace(discountNAParaRegex1, '');
-            modifiedXml = modifiedXml.replace(discountNAParaRegex2, '');
-
-            // Remove ANY cell containing "Discount" or "N/A" (case insensitive)
-            const discountCellRegex = /<w:tc[\s\S]*?<w:t[^>]*>\s*[Dd]iscount\s*<\/w:t>[\s\S]*?<\/w:tc>/gi;
-            const naCellRegex = /<w:tc[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<\/w:tc>/gi;
-            modifiedXml = modifiedXml.replace(discountCellRegex, '');
-            modifiedXml = modifiedXml.replace(naCellRegex, '');
-
-            // NUCLEAR OPTION: Remove any row that contains BOTH "Discount" AND "N/A" anywhere in the row
-            const nuclearRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
-            modifiedXml = modifiedXml.replace(nuclearRowRegex, (row) => {
-              const rowText = stripTags(row).toLowerCase();
-              if (rowText.includes('discount') && rowText.includes('n/a')) {
-                console.log('🧹 NUCLEAR: Removing row containing both Discount and N/A');
-                console.log('🔍 Row text was:', rowText);
+            
+            // PRECISE CLEANUP: Only remove specific discount-related content, not headers
+            let modifiedXml = finalDocumentXml;
+            
+            // 1. Remove table rows that contain ONLY discount-related content
+            const discountRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            modifiedXml = modifiedXml.replace(discountRowRegex, (row) => {
+              const rowText = row.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+              
+              // Only remove rows that are clearly discount-related
+              if (rowText === 'discount n/a' || 
+                  rowText === 'discount' || 
+                  rowText === 'n/a' ||
+                  (rowText.includes('discount') && rowText.includes('n/a') && rowText.length < 50)) {
+                console.log('🧹 Removing discount row:', rowText);
                 return '';
               }
               return row;
             });
 
-            // Also remove any paragraph that contains BOTH "Discount" AND "N/A" anywhere
-            const nuclearParaRegex = /<w:p[\s\S]*?<\/w:p>/gi;
-            modifiedXml = modifiedXml.replace(nuclearParaRegex, (para) => {
-              const paraText = stripTags(para).toLowerCase();
-              if (paraText.includes('discount') && paraText.includes('n/a')) {
-                console.log('🧹 NUCLEAR: Removing paragraph containing both Discount and N/A');
-                console.log('🔍 Para text was:', paraText);
+            // 2. Remove paragraphs that contain ONLY discount-related content
+            const discountParaRegex = /<w:p[\s\S]*?<\/w:p>/gi;
+            modifiedXml = modifiedXml.replace(discountParaRegex, (para) => {
+              const paraText = para.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+              
+              // Only remove paragraphs that are clearly discount-related
+              if (paraText === 'discount n/a' || 
+                  paraText === 'discount' || 
+                  paraText === 'n/a' ||
+                  (paraText.includes('discount') && paraText.includes('n/a') && paraText.length < 50)) {
+                console.log('🧹 Removing discount paragraph:', paraText);
                 return '';
               }
               return para;
             });
 
-            // EXTREME CLEANUP: Look for the exact "Discount N/A" pattern in any text element
-            const textElementRegex = /<w:t[^>]*>([^<]*)<\/w:t>/gi;
-            modifiedXml = modifiedXml.replace(textElementRegex, (match, textContent) => {
-              const cleanText = textContent.trim().toLowerCase();
-              if (cleanText === 'discount n/a' || cleanText === 'discount n/a' || cleanText.includes('discount') && cleanText.includes('n/a')) {
-                console.log('🧹 EXTREME: Removing text element containing:', textContent);
+            // 3. Remove specific discount table cells (but preserve headers)
+            const discountCellRegex = /<w:tc[\s\S]*?<\/w:tc>/gi;
+            modifiedXml = modifiedXml.replace(discountCellRegex, (cell) => {
+              const cellText = cell.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+              
+              // Only remove cells that are clearly discount-related
+              if (cellText === 'discount' || cellText === 'n/a') {
+                console.log('🧹 Removing discount cell:', cellText);
                 return '';
               }
-              return match;
+              return cell;
+            });
+
+            // 4. Remove empty table rows that might be left after discount removal
+            const emptyRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            modifiedXml = modifiedXml.replace(emptyRowRegex, (row) => {
+              const rowText = row.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+              if (rowText.length === 0) {
+                console.log('🧹 Removing empty row');
+                return '';
+              }
+              return row;
             });
 
             if (modifiedXml !== finalDocumentXml) {
               console.log('🧹 Final cleanup: removed Discount/N/A blocks in post-pack stage');
               finalZip.file('word/document.xml', modifiedXml);
-              // Also clean headers and footers if they contain Discount or N/A
+              // Also clean headers and footers if they contain specific discount content
               Object.keys(finalZip.files).forEach((fileName) => {
                 if (/^word\/(header\d+\.xml|footer\d+\.xml)$/i.test(fileName)) {
                   try {
                     const xml = finalZip.file(fileName)?.asText() || '';
                     if (!xml) return;
-                    let cleaned = xml.replace(rowRegex, (row) => {
-                      const text = stripTags(row);
-                      return text.includes('discount') ? '' : row;
+                    
+                    // Use the same precise cleanup for headers/footers
+                    let cleaned = xml;
+                    
+                    // Remove discount rows in headers/footers
+                    const headerDiscountRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+                    cleaned = cleaned.replace(headerDiscountRowRegex, (row) => {
+                      const rowText = row.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                      if (rowText === 'discount n/a' || 
+                          rowText === 'discount' || 
+                          rowText === 'n/a' ||
+                          (rowText.includes('discount') && rowText.includes('n/a') && rowText.length < 50)) {
+                        return '';
+                      }
+                      return row;
                     });
-                    cleaned = cleaned.replace(paraRegex, (para) => {
-                      const text = stripTags(para);
-                      return (text.includes('discount') || text === 'n/a') ? '' : para;
+                    
+                    // Remove discount paragraphs in headers/footers
+                    const headerDiscountParaRegex = /<w:p[\s\S]*?<\/w:p>/gi;
+                    cleaned = cleaned.replace(headerDiscountParaRegex, (para) => {
+                      const paraText = para.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                      if (paraText === 'discount n/a' || 
+                          paraText === 'discount' || 
+                          paraText === 'n/a' ||
+                          (paraText.includes('discount') && paraText.includes('n/a') && paraText.length < 50)) {
+                        return '';
+                      }
+                      return para;
                     });
-                    cleaned = cleaned.replace(emptyRowRegex, (row) => {
-                      const text = stripTags(row);
-                      return text.length === 0 ? '' : row;
-                    });
+                    
                     if (cleaned !== xml) {
                       finalZip.file(fileName, cleaned);
                       console.log(`🧹 Cleaned header/footer: ${fileName}`);
