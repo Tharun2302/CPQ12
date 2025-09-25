@@ -1414,6 +1414,85 @@ app.put('/api/templates/:id', async (req, res) => {
   }
 });
 
+// HubSpot API endpoints for authentication
+// Get HubSpot contact by ID
+app.get('/api/hubspot/contacts/:contactId', async (req, res) => {
+  try {
+    const { contactId } = req.params;
+    
+    if (!HUBSPOT_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: 'HubSpot API key not configured'
+      });
+    }
+
+    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${HUBSPOT_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HubSpot API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    console.error('❌ Error fetching HubSpot contact:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get HubSpot deal by ID
+app.get('/api/hubspot/deals/:dealId', async (req, res) => {
+  try {
+    const { dealId } = req.params;
+    
+    if (!HUBSPOT_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: 'HubSpot API key not configured'
+      });
+    }
+
+    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${HUBSPOT_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HubSpot API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    console.error('❌ Error fetching HubSpot deal:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Test MongoDB connection
 app.get('/api/test-mongodb', async (req, res) => {
   try {
