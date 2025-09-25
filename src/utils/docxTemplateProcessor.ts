@@ -34,6 +34,8 @@ export interface DocxTemplateData {
   '{{discount}}'?: string;
   '{{discount_percent}}'?: string;
   '{{discount_amount}}'?: string;
+  '{{discount_row}}'?: string;
+  '{{discount_label}}'?: string;
   // New: total after discount alias used in template as total_price_discount
   '{{total_price_discount}}'?: string;
   '{{total_after_discount}}'?: string;
@@ -324,6 +326,57 @@ export class DocxTemplateProcessor {
         
         doc.render(docxtemplaterData);
         console.log('✅ Template rendered successfully with new API');
+
+        // After rendering: if discount is not applied, remove any table row/paragraph that contains a static "Discount" label
+        try {
+          const discountValue = String(processedData['{{discount}}'] || '').trim();
+          const discountApplied = discountValue !== '' && discountValue !== '0';
+          if (!discountApplied) {
+            const zipAfter = doc.getZip();
+            const xmlPath = 'word/document.xml';
+            const originalXml = zipAfter.file(xmlPath)?.asText() || '';
+
+            // Helper to strip any XML tags to check human text
+            const stripTags = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+            // Remove any table row that contains the word "discount" even when split across multiple runs
+            const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            let newXml = originalXml.replace(rowRegex, (row) => {
+              const text = stripTags(row);
+              return text.includes('discount') ? '' : row;
+            });
+
+            // Also remove standalone paragraphs that contain the word "discount"
+            const paraRegex = /<w:p[\s\S]*?<\/w:p>/gi;
+            newXml = newXml.replace(paraRegex, (para) => {
+              const text = stripTags(para);
+              return text.includes('discount') ? '' : para;
+            });
+
+            // Additionally, remove any table row that is effectively empty (e.g., when cells are only tokens that resolved to empty
+            const emptyRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            let cleanedXml = newXml.replace(emptyRowRegex, (row) => {
+              const text = stripTags(row);
+              return text.length === 0 ? '' : row;
+            });
+
+            if (cleanedXml !== originalXml) {
+              zipAfter.file(xmlPath, cleanedXml);
+              console.log('🧹 Removed Discount/empty rows because discount is not applied');
+            }
+
+            // Fallback: if any isolated "Discount" text remains (not in a table), blank it
+            let fallbackXml = zipAfter.file(xmlPath)?.asText() || cleanedXml;
+            const discountTextRun = /<w:t[^>]*>\s*Discount\s*<\/w:t>/gi;
+            if (discountTextRun.test(fallbackXml)) {
+              fallbackXml = fallbackXml.replace(discountTextRun, '<w:t></w:t>');
+              zipAfter.file(xmlPath, fallbackXml);
+              console.log('🧹 Fallback applied: stripped remaining "Discount" text runs');
+            }
+          }
+        } catch (cleanupErr) {
+          console.warn('⚠️ Could not post-process DOCX to remove Discount rows:', cleanupErr);
+        }
         
         // CRITICAL: Log the final processed document to verify tokens were replaced
         const finalDocumentXml = zip.file('word/document.xml')?.asText() || '';
@@ -384,8 +437,8 @@ export class DocxTemplateProcessor {
         return this.createFallbackDocument(templateData);
       }
       
-      // Generate output
-      const buffer = doc.getZip().generate({
+      // Generate output from Docxtemplater
+      let buffer = doc.getZip().generate({
         type: 'blob',
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       });
@@ -407,8 +460,8 @@ export class DocxTemplateProcessor {
       // CRITICAL: Verify that tokens were actually replaced in the final document
       console.log('🔍 VERIFYING TOKEN REPLACEMENT IN FINAL DOCUMENT:');
       try {
-        const finalZip = new PizZip(bufferArrayBuffer);
-        const finalDocumentXml = finalZip.file('word/document.xml')?.asText();
+        let finalZip = new PizZip(bufferArrayBuffer);
+        let finalDocumentXml = finalZip.file('word/document.xml')?.asText();
         if (finalDocumentXml) {
           const finalCleanText = this.extractTextFromDocxXml(finalDocumentXml);
           console.log('🔍 Final document text preview:', finalCleanText.substring(0, 500) + '...');
@@ -432,6 +485,135 @@ export class DocxTemplateProcessor {
           console.log(`  User Count (1): ${hasUserCount ? '✅' : '❌'}`);
           console.log(`  User Cost ($40): ${hasUserCost ? '✅' : '❌'}`);
           console.log(`  Total Price ($1,020): ${hasTotalPrice ? '✅' : '❌'}`);
+
+          // FINAL SAFETY CLEANUP: If discount is not applied, remove any remaining Discount paragraphs/rows
+          const discountValue = String(processedData['{{discount}}'] || '').trim();
+          const discountApplied = discountValue !== '' && discountValue !== '0' && discountValue !== 'N/A' && discountValue !== 'n/a';
+          
+          console.log('🔍 DISCOUNT CLEANUP DEBUG:');
+          console.log('  discountValue:', discountValue);
+          console.log('  discountApplied:', discountApplied);
+          console.log('  processedData keys:', Object.keys(processedData).filter(k => k.includes('discount')));
+          
+          if (!discountApplied) {
+            console.log('🧹 DISCOUNT CLEANUP: Starting cleanup because discount is not applied');
+            const stripTags = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            const paraRegex = /<w:p[\s\S]*?<\/w:p>/gi;
+            let modifiedXml = finalDocumentXml.replace(rowRegex, (row) => {
+              const text = stripTags(row);
+              return text.includes('discount') ? '' : row;
+            });
+            modifiedXml = modifiedXml.replace(paraRegex, (para) => {
+              const text = stripTags(para);
+              // Remove discount-only paragraphs and those that resolve to N/A
+              return (text.includes('discount') || text === 'n/a') ? '' : para;
+            });
+            // Remove any empty table rows after token resolution
+            const emptyRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            modifiedXml = modifiedXml.replace(emptyRowRegex, (row) => {
+              const text = stripTags(row);
+              return text.length === 0 ? '' : row;
+            });
+
+            // ULTRA AGGRESSIVE CLEANUP: Remove ANY row containing "Discount" and "N/A" in any order
+            const discountNARowRegex1 = /<w:tr[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<\/w:tr>/gi;
+            const discountNARowRegex2 = /<w:tr[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<\/w:tr>/gi;
+            modifiedXml = modifiedXml.replace(discountNARowRegex1, '');
+            modifiedXml = modifiedXml.replace(discountNARowRegex2, '');
+
+            // Remove ANY paragraph containing "Discount" and "N/A" in any order
+            const discountNAParaRegex1 = /<w:p[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<\/w:p>/gi;
+            const discountNAParaRegex2 = /<w:p[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<w:t[^>]*>\s*Discount\s*<\/w:t>[\s\S]*?<\/w:p>/gi;
+            modifiedXml = modifiedXml.replace(discountNAParaRegex1, '');
+            modifiedXml = modifiedXml.replace(discountNAParaRegex2, '');
+
+            // Remove ANY cell containing "Discount" or "N/A" (case insensitive)
+            const discountCellRegex = /<w:tc[\s\S]*?<w:t[^>]*>\s*[Dd]iscount\s*<\/w:t>[\s\S]*?<\/w:tc>/gi;
+            const naCellRegex = /<w:tc[\s\S]*?<w:t[^>]*>\s*N\/A\s*<\/w:t>[\s\S]*?<\/w:tc>/gi;
+            modifiedXml = modifiedXml.replace(discountCellRegex, '');
+            modifiedXml = modifiedXml.replace(naCellRegex, '');
+
+            // NUCLEAR OPTION: Remove any row that contains BOTH "Discount" AND "N/A" anywhere in the row
+            const nuclearRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            modifiedXml = modifiedXml.replace(nuclearRowRegex, (row) => {
+              const rowText = stripTags(row).toLowerCase();
+              if (rowText.includes('discount') && rowText.includes('n/a')) {
+                console.log('🧹 NUCLEAR: Removing row containing both Discount and N/A');
+                console.log('🔍 Row text was:', rowText);
+                return '';
+              }
+              return row;
+            });
+
+            // Also remove any paragraph that contains BOTH "Discount" AND "N/A" anywhere
+            const nuclearParaRegex = /<w:p[\s\S]*?<\/w:p>/gi;
+            modifiedXml = modifiedXml.replace(nuclearParaRegex, (para) => {
+              const paraText = stripTags(para).toLowerCase();
+              if (paraText.includes('discount') && paraText.includes('n/a')) {
+                console.log('🧹 NUCLEAR: Removing paragraph containing both Discount and N/A');
+                console.log('🔍 Para text was:', paraText);
+                return '';
+              }
+              return para;
+            });
+
+            // EXTREME CLEANUP: Look for the exact "Discount N/A" pattern in any text element
+            const textElementRegex = /<w:t[^>]*>([^<]*)<\/w:t>/gi;
+            modifiedXml = modifiedXml.replace(textElementRegex, (match, textContent) => {
+              const cleanText = textContent.trim().toLowerCase();
+              if (cleanText === 'discount n/a' || cleanText === 'discount n/a' || cleanText.includes('discount') && cleanText.includes('n/a')) {
+                console.log('🧹 EXTREME: Removing text element containing:', textContent);
+                return '';
+              }
+              return match;
+            });
+
+            if (modifiedXml !== finalDocumentXml) {
+              console.log('🧹 Final cleanup: removed Discount/N/A blocks in post-pack stage');
+              finalZip.file('word/document.xml', modifiedXml);
+              // Also clean headers and footers if they contain Discount or N/A
+              Object.keys(finalZip.files).forEach((fileName) => {
+                if (/^word\/(header\d+\.xml|footer\d+\.xml)$/i.test(fileName)) {
+                  try {
+                    const xml = finalZip.file(fileName)?.asText() || '';
+                    if (!xml) return;
+                    let cleaned = xml.replace(rowRegex, (row) => {
+                      const text = stripTags(row);
+                      return text.includes('discount') ? '' : row;
+                    });
+                    cleaned = cleaned.replace(paraRegex, (para) => {
+                      const text = stripTags(para);
+                      return (text.includes('discount') || text === 'n/a') ? '' : para;
+                    });
+                    cleaned = cleaned.replace(emptyRowRegex, (row) => {
+                      const text = stripTags(row);
+                      return text.length === 0 ? '' : row;
+                    });
+                    if (cleaned !== xml) {
+                      finalZip.file(fileName, cleaned);
+                      console.log(`🧹 Cleaned header/footer: ${fileName}`);
+                    }
+                  } catch {}
+                }
+              });
+              // Re-generate cleaned buffer
+              buffer = finalZip.generate({
+                type: 'blob',
+                mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              });
+
+              // Verify that Discount/N/A no longer exists in main document
+              const verifyZip = new PizZip(await buffer.arrayBuffer());
+              const verifyXml = verifyZip.file('word/document.xml')?.asText() || '';
+              const verifyText = this.extractTextFromDocxXml(verifyXml).toLowerCase();
+              if (!verifyText.includes('discount') && !verifyText.includes('n/a')) {
+                console.log('✅ Verification: Discount/N/A removed from main document');
+              } else {
+                console.warn('⚠️ Verification: Discount/N/A still present in main document after cleanup');
+              }
+            }
+          }
         }
       } catch (verifyError) {
         console.error('❌ Error verifying final document:', verifyError);
@@ -610,7 +792,7 @@ export class DocxTemplateProcessor {
     console.log('  Checking {{users_cost}} - input value:', data['{{users_cost}}']);
     console.log('  Checking {{instance_cost}} - input value:', data['{{instance_cost}}']);
     console.log('  Checking {{Duration_of_months}} - input value:', data['{{Duration_of_months}}']);
-    console.log('  Checking {{per_user_cost}} - input value:', data['{{per_user_cost}}']);
+    console.log('  Checking {{per_user_cost}} - input value:', (data as any)['{{per_user_cost}}']);
     console.log('  Final values that will be used:');
     console.log('    users_cost final value:', userCost);
     console.log('    instance_cost input:', (data as any)['{{instance_cost}}']);
@@ -727,6 +909,9 @@ export class DocxTemplateProcessor {
       '{{discount_amount}}': (data as any)['{{discount_amount}}'] || '',
       '{{discount_text}}': (data as any)['{{discount_text}}'] || '',
       '{{discount_line}}': (data as any)['{{discount_line}}'] || '',
+      '{{discount_row}}': (data as any)['{{discount_row}}'] || '',
+      // Useful when templates have a static label cell. Empty it when discount is not applied
+      '{{discount_label}}': ((data as any)['{{discount}}'] && (data as any)['{{discount}}'] !== '' && (data as any)['{{discount}}'] !== '0') ? 'Discount' : '',
       // Special tokens for conditional display
       '{{show_discount}}': ((data as any)['{{discount}}'] && (data as any)['{{discount}}'] !== '' && (data as any)['{{discount}}'] !== '0') ? 'true' : '',
       '{{hide_discount}}': ((data as any)['{{discount}}'] && (data as any)['{{discount}}'] !== '' && (data as any)['{{discount}}'] !== '0') ? '' : 'true',
@@ -791,6 +976,12 @@ export class DocxTemplateProcessor {
       
       // Replace with intelligent fallbacks
       undefinedKeys.forEach(key => {
+        // Never force-fill discount-related tokens; keep them empty so rows can be removed
+        const lower = key.toLowerCase();
+        if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount') || lower.includes('if_discount')) {
+          processedData[key] = '';
+          return;
+        }
         if (key.toLowerCase().includes('company')) {
           processedData[key] = 'Demo Company Inc.';
         } else if (key.toLowerCase().includes('user') && key.toLowerCase().includes('count')) {
