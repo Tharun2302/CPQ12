@@ -2,17 +2,29 @@ import React, { useState } from 'react';
 import { Copy, ExternalLink, TestTube } from 'lucide-react';
 
 const HubSpotTestHelper: React.FC = () => {
-  const [baseUrl, setBaseUrl] = useState('http://localhost:5173');
+  const [baseUrl, setBaseUrl] = useState('https://cpq12-1.onrender.com');
   const [contactId, setContactId] = useState('12345');
-  const [dealId, setDealId] = useState('67890');
-  const [companyName, setCompanyName] = useState('Acme Corp');
-  const [contactName, setContactName] = useState('John Smith');
-  const [contactEmail, setContactEmail] = useState('john@acme.com');
-  const [dealAmount, setDealAmount] = useState('50000');
+  const [dealId, setDealId] = useState('44452642155');
+  const [companyName, setCompanyName] = useState('Signalbase');
+  const [contactName, setContactName] = useState('Signalbase - Box to SharePoint Online - Server Overage');
+  const [contactEmail, setContactEmail] = useState('chris@signalbase.com');
+  const [dealAmount, setDealAmount] = useState('$500');
+  const [firstName, setFirstName] = useState('Chris');
+  const [lastName, setLastName] = useState('Petrocelli');
 
   const generateTestUrl = () => {
     const params = new URLSearchParams();
     
+    // Use real HubSpot parameter names (exact match to your URL)
+    if (dealId) params.set('dealId', dealId);
+    if (contactName) params.set('dealName', contactName);
+    if (dealAmount) params.set('amount', dealAmount);
+    if (contactEmail) params.set('ContactEmail', contactEmail);
+    if (firstName) params.set('ContactFirstName', firstName);
+    if (lastName) params.set('ContactLastName', lastName);
+    if (companyName) params.set('CompanyFromContact', companyName);
+    
+    // Also add standard HubSpot parameters for compatibility
     if (contactId) params.set('hs_contact_id', contactId);
     if (dealId) params.set('hs_deal_id', dealId);
     if (companyName) params.set('hs_company', companyName);
@@ -133,6 +145,30 @@ const HubSpotTestHelper: React.FC = () => {
               type="text"
               value={dealAmount}
               onChange={(e) => setDealAmount(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              First Name
+            </label>
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Last Name
+            </label>
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>

@@ -50,11 +50,25 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         const storedToken = localStorage.getItem('cpq_token');
        
         if (storedUser && storedToken) {
-          // Only call backend if the token looks like a JWT we issued
-          const looksLikeJwt = (t: string) => t.split('.').length === 3;
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-         
-          if (looksLikeJwt(storedToken)) {
+          // Check if it's a HubSpot token
+          if (storedToken === 'hubspot_auth_token') {
+            // HubSpot user - use stored data directly
+            try {
+              const userData = JSON.parse(storedUser);
+              setUser(userData);
+              setIsAuthenticated(true);
+              console.log('✅ HubSpot user authenticated from localStorage:', userData);
+            } catch (error) {
+              console.error('Failed to parse HubSpot user data:', error);
+              localStorage.removeItem('cpq_user');
+              localStorage.removeItem('cpq_token');
+            }
+          } else {
+            // Regular JWT token - verify with backend
+            const looksLikeJwt = (t: string) => t.split('.').length === 3;
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+           
+            if (looksLikeJwt(storedToken)) {
             // Verify token with backend
             try {
               const response = await fetch(`${backendUrl}/api/auth/me`, {
@@ -95,6 +109,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               localStorage.removeItem('cpq_user');
               localStorage.removeItem('cpq_token');
             }
+          }
           }
         }
       } catch (error) {
