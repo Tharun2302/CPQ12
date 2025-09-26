@@ -71,6 +71,34 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   // Combination selection state
   const [combination, setCombination] = useState<string>('');
 
+  // Extract company name from email domain if company field is "Not Available"
+  const extractCompanyFromEmail = (email: string): string => {
+    if (!email) return '';
+    const domain = email.split('@')[1];
+    if (!domain) return '';
+    
+    // Remove common TLDs and format as company name
+    const companyName = domain
+      .replace(/\.(com|org|net|edu|gov|co|io|ai)$/i, '')
+      .split('.')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+    
+    return companyName;
+  };
+
+  // Get the effective company name (extracted from email if needed)
+  const getEffectiveCompanyName = (originalCompany?: string, email?: string): string => {
+    if (originalCompany && originalCompany !== 'Not Available') {
+      return originalCompany;
+    }
+    if (email) {
+      const extracted = extractCompanyFromEmail(email);
+      return extracted || 'Not Available';
+    }
+    return 'Not Available';
+  };
+
   // Initialize contact info from deal data
   useEffect(() => {
     // Load previously saved configuration from sessionStorage (only for current session)
@@ -99,51 +127,63 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
 
     // Load persisted contact info if available (user may have edited manually earlier)
+    let savedContactInfo = null;
     try {
       const savedContact = localStorage.getItem('cpq_contact_info');
       if (savedContact) {
-        const parsed = JSON.parse(savedContact);
-        setContactInfo({
-          clientName: parsed.clientName || '',
-          clientEmail: parsed.clientEmail || '',
-          company: parsed.company || '',
-          companyName2: parsed.companyName2 || ''
-        });
-        if (onContactInfoChange) {
-          onContactInfoChange({
-            clientName: parsed.clientName || '',
-            clientEmail: parsed.clientEmail || '',
-            company: (parsed.companyName2 || parsed.company || '')
-          });
-        }
+        savedContactInfo = JSON.parse(savedContact);
       }
     } catch {}
 
+    // Initialize contact info with priority: saved data > deal data > empty
+    let finalContactInfo = {
+      clientName: '',
+      clientEmail: '',
+      company: '',
+      companyName2: ''
+    };
+
+    // First, use deal data if available
     if (dealData) {
-      const initialContactInfo = {
+      finalContactInfo = {
         clientName: dealData.contactName || '',
         clientEmail: dealData.contactEmail || '',
         company: dealData.company || '',
-        companyName2: dealData.companyByContact || ''
+        companyName2: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)
       };
-      console.log('🔍 ConfigurationForm: Initializing contact info from deal data:', initialContactInfo);
-      setContactInfo(initialContactInfo);
-      
-      // Notify parent component of initial contact info
-      if (onContactInfoChange) {
-        // Map the internal structure to the expected parent structure
-        const parentContactInfo = {
-          clientName: initialContactInfo.clientName,
-          clientEmail: initialContactInfo.clientEmail,
-          company: initialContactInfo.companyName2 // Map companyName2 to company for parent
-        };
-        console.log('✅ ConfigurationForm: Notifying parent of initial contact info:', parentContactInfo);
-        onContactInfoChange(parentContactInfo);
-      } else {
-        console.log('⚠️ ConfigurationForm: No onContactInfoChange callback available for initial contact info');
+      console.log('🔍 ConfigurationForm: Initial contact info from deal data:', finalContactInfo);
+      console.log('🏢 Company extraction applied:', {
+        original: dealData.companyByContact,
+        email: dealData.contactEmail,
+        extracted: finalContactInfo.companyName2
+      });
+    }
+
+    // Then, override with saved data if it exists and has valid values
+    if (savedContactInfo) {
+      if (savedContactInfo.clientName) finalContactInfo.clientName = savedContactInfo.clientName;
+      if (savedContactInfo.clientEmail) finalContactInfo.clientEmail = savedContactInfo.clientEmail;
+      if (savedContactInfo.company && savedContactInfo.company !== 'Not Available') {
+        finalContactInfo.company = savedContactInfo.company;
       }
-    } else {
-      console.log('⚠️ ConfigurationForm: No deal data available for contact info initialization');
+      if (savedContactInfo.companyName2 && savedContactInfo.companyName2 !== 'Not Available') {
+        finalContactInfo.companyName2 = savedContactInfo.companyName2;
+      }
+      console.log('🔍 ConfigurationForm: Merged contact info with saved data:', finalContactInfo);
+    }
+
+    // Set the final contact info
+    setContactInfo(finalContactInfo);
+    
+    // Notify parent component of final contact info
+    if (onContactInfoChange) {
+      const parentContactInfo = {
+        clientName: finalContactInfo.clientName,
+        clientEmail: finalContactInfo.clientEmail,
+        company: finalContactInfo.companyName2 || finalContactInfo.company || ''
+      };
+      console.log('✅ ConfigurationForm: Notifying parent of final contact info:', parentContactInfo);
+      onContactInfoChange(parentContactInfo);
     }
   }, [dealData]); // Removed onContactInfoChange from dependencies
 
@@ -202,10 +242,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     // Notify parent component of contact info changes
     if (onContactInfoChange) {
       // Map the internal structure to the expected parent structure
+      // Use companyName2 if available, otherwise use company field
       const parentContactInfo = {
         clientName: newContactInfo.clientName,
         clientEmail: newContactInfo.clientEmail,
-        company: newContactInfo.companyName2 // Map companyName2 to company for parent
+        company: newContactInfo.companyName2 || newContactInfo.company || ''
       };
       console.log('✅ ConfigurationForm: Notifying parent of contact info change:', parentContactInfo);
       onContactInfoChange(parentContactInfo);

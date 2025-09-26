@@ -1449,6 +1449,23 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
                         ownerId: state.selectedDeal.properties.ownerid || 'Not Set',
                         // Add contact and company information from deal properties
                         company: state.selectedDeal.properties.company || 'Not Available',
+                        companyByContact: (() => {
+                          const originalCompany = state.selectedDeal.properties.company || 'Not Available';
+                          const email = state.selectedDeal.properties.contactemail;
+                          
+                          // Extract company from email if original company is "Not Available"
+                          if (originalCompany === 'Not Available' && email) {
+                            const domain = email.split('@')[1];
+                            if (domain) {
+                              return domain
+                                .replace(/\.(com|org|net|edu|gov|co|io|ai)$/i, '')
+                                .split('.')
+                                .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                                .join(' ');
+                            }
+                          }
+                          return originalCompany;
+                        })(),
                         contactName: state.selectedDeal.properties.contactname || 'Not Available',
                         contactEmail: state.selectedDeal.properties.contactemail || 'Not Available',
                         contactPhone: state.selectedDeal.properties.contactphone || 'Not Available',
