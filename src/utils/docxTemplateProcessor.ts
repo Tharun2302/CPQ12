@@ -41,6 +41,15 @@ export interface DocxTemplateData {
   '{{total_after_discount}}'?: string;
   '{{final_total}}'?: string;
   
+  // Instance tokens
+  '{{instance_users}}'?: string;
+  '{{instance_type}}'?: string;
+  '{{instanceType}}'?: string;
+  '{{instance_type_cost}}'?: string;
+  '{{numberOfInstances}}'?: string;
+  '{{number_of_instances}}'?: string;
+  '{{instances}}'?: string;
+  
   // Legacy fields for backward compatibility
   company?: string;
   clientName?: string;
@@ -830,13 +839,13 @@ export class DocxTemplateProcessor {
       '{{userCost}}': userCost,
       '{{usersCost}}': userCost,
       
-      // Per-user cost variations
+      // Per-user cost variations - fixed to match pricing display
       '{{per_user_cost}}': (data as any)['{{per_user_cost}}'] || ((data as any)['{{users_cost}}'] ? 
-        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
+        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / parseInt(userCount)).toFixed(2) : '0.00'),
       '{{per_user_monthly_cost}}': (data as any)['{{per_user_monthly_cost}}'] || ((data as any)['{{users_cost}}'] ? 
         (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
       '{{user_rate}}': (data as any)['{{user_rate}}'] || ((data as any)['{{users_cost}}'] ? 
-        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
+        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / parseInt(userCount)).toFixed(2) : '0.00'),
       '{{monthly_user_rate}}': (data as any)['{{monthly_user_rate}}'] || ((data as any)['{{users_cost}}'] ? 
         (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
       
@@ -925,6 +934,19 @@ export class DocxTemplateProcessor {
       '{{total_after_discount}}': (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
       '{{total_price_discount}}': (data as any)['{{total_price_discount}}'] || (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
       '{{final_total}}': (data as any)['{{final_total}}'] || (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
+      
+      // Instance tokens
+      '{{instance_users}}': (data as any)['{{instance_users}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instances}}'] || '1',
+      '{{instance_type}}': (data as any)['{{instance_type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard',
+      '{{instanceType}}': (data as any)['{{instanceType}}'] || (data as any)['{{instance_type}}'] || data.instanceType || 'Standard',
+      '{{instance_type_cost}}': (data as any)['{{instance_type_cost}}'] || (() => {
+        const { getInstanceTypeCost, formatCurrency } = require('./pricing');
+        const instanceType = (data as any)['{{instance_type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard';
+        return formatCurrency(getInstanceTypeCost(instanceType));
+      })(),
+      '{{numberOfInstances}}': (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || (data as any)['{{instances}}'] || '1',
+      '{{number_of_instances}}': (data as any)['{{number_of_instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
+      '{{instances}}': (data as any)['{{instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
       
       // Legacy support (for backward compatibility)
       company: companyName,

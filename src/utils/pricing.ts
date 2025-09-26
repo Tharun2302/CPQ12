@@ -63,22 +63,25 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     console.warn(`Configuration outside ${tier.name} tier limits: Users ${config.numberOfUsers} (${tier.userLimits.from}-${tier.userLimits.to}), GB ${config.dataSizeGB} (${tier.gbLimits.from}-${tier.gbLimits.to})`);
   }
  
+  // Get base instance type cost (without duration multiplier)
+  const getInstanceTypeCost = (instanceType: string): number => {
+    switch (instanceType) {
+      case 'Small':
+        return 500;
+      case 'Standard':
+        return 1000;
+      case 'Large':
+        return 2000;
+      case 'Extra Large':
+        return 3500;
+      default:
+        return 500;
+    }
+  };
+
   // Calculate instance cost based on instance type and duration
   const getInstanceCost = (instanceType: string, duration: number): number => {
-    const baseCost = (() => {
-      switch (instanceType) {
-        case 'Small':
-          return 500;
-        case 'Standard':
-          return 1000;
-        case 'Large':
-          return 2000;
-        case 'Extra Large':
-          return 3500;
-        default:
-          return 500;
-      }
-    })();
+    const baseCost = getInstanceTypeCost(instanceType);
     return baseCost * duration;
   };
  
@@ -208,4 +211,20 @@ export function formatCurrency(amount: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+// Export the instance type cost function for use in templates
+export function getInstanceTypeCost(instanceType: string): number {
+  switch (instanceType) {
+    case 'Small':
+      return 500;
+    case 'Standard':
+      return 1000;
+    case 'Large':
+      return 2000;
+    case 'Extra Large':
+      return 3500;
+    default:
+      return 500;
+  }
 }

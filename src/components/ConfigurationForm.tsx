@@ -303,9 +303,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Client Name */}
+              {/* Contact Name */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Client Name</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Contact Name</label>
                 <input
                   type="text"
                   value={contactInfo.clientName}
@@ -315,13 +315,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       ? 'border-red-300 focus:border-red-400 focus:ring-red-100' 
                       : 'border-green-200 focus:border-green-400 focus:ring-green-100'
                   }`}
-                  placeholder="Enter client name"
+                  placeholder="Enter contact name"
                 />
               </div>
               
-              {/* Client Email */}
+              {/* Contact Email */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Client Email</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Contact Email</label>
                 <input
                   type="email"
                   value={contactInfo.clientEmail}
@@ -331,7 +331,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       ? 'border-red-300 focus:border-red-400 focus:ring-red-100' 
                       : 'border-green-200 focus:border-green-400 focus:ring-green-100'
                   }`}
-                  placeholder="Enter client email"
+                  placeholder="Enter contact email"
                 />
               </div>
               

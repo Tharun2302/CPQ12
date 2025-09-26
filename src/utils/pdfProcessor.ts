@@ -128,6 +128,15 @@ export function createPlaceholderMap(quoteData: QuoteData): PlaceholderMap {
     'Duration_of_months': quoteData.configuration.duration.toString(),
     'duration_months': quoteData.configuration.duration.toString(),
     
+    // Instance tokens
+    'instance_users': quoteData.configuration.numberOfInstances.toString(),
+    'instance_type': quoteData.configuration.instanceType,
+    'instance_type_cost': (() => {
+      const { getInstanceTypeCost, formatCurrency } = require('./pricing');
+      return formatCurrency(getInstanceTypeCost(quoteData.configuration.instanceType));
+    })(),
+    'instances': quoteData.configuration.numberOfInstances.toString(),
+    
     // Pricing
     'userCost': formatCurrency(quoteData.calculation.userCost),
     'dataCost': formatCurrency(quoteData.calculation.dataCost),

@@ -648,7 +648,17 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
       '{{price_migration}}': formatCurrency(quote.calculation?.migrationCost || 0),
       '{{price_data}}': formatCurrency(quote.calculation?.dataCost || 0),
       '{{total price}}': formatCurrency(quote.calculation?.totalCost || 0),
-      '{{Duration of months}}': quote.configuration?.duration || '1'
+      '{{Duration of months}}': quote.configuration?.duration || '1',
+      '{{instance_users}}': quote.configuration?.numberOfInstances || '1',
+      '{{instance_type}}': quote.configuration?.instanceType || 'Standard',
+      '{{instanceType}}': quote.configuration?.instanceType || 'Standard',
+      '{{instance_type_cost}}': (() => {
+        const { getInstanceTypeCost, formatCurrency } = require('../utils/pricing');
+        return formatCurrency(getInstanceTypeCost(quote.configuration?.instanceType || 'Standard'));
+      })(),
+      '{{numberOfInstances}}': quote.configuration?.numberOfInstances || '1',
+      '{{number_of_instances}}': quote.configuration?.numberOfInstances || '1',
+      '{{instances}}': quote.configuration?.numberOfInstances || '1'
     };
 
     let processedContent = content;
