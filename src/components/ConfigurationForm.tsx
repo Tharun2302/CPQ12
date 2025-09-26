@@ -66,6 +66,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     companyName2: ''
   });
 
+  // Track if this is the initial load vs navigation return
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
   // Discount state for proper display
   const [discountValue, setDiscountValue] = useState<string>('');
   // Combination selection state
@@ -135,7 +138,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       }
     } catch {}
 
-    // Initialize contact info with priority: saved data > deal data > empty
+    // Initialize contact info with smart priority logic
     let finalContactInfo = {
       clientName: '',
       clientEmail: '',
@@ -143,44 +146,46 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       companyName2: ''
     };
 
-    // First, use deal data if available
-    if (dealData) {
+    // Check if user has saved contact info (indicating they've made manual edits)
+    const hasUserEdits = savedContactInfo && (
+      (savedContactInfo.clientName && savedContactInfo.clientName !== 'Not Available') ||
+      (savedContactInfo.clientEmail && savedContactInfo.clientEmail !== 'Not Available') ||
+      (savedContactInfo.company && savedContactInfo.company !== 'Not Available') ||
+      (savedContactInfo.companyName2 && savedContactInfo.companyName2 !== 'Not Available')
+    );
+
+    // If user has made edits, ALWAYS prioritize their edits (even over deal data)
+    if (hasUserEdits) {
+      finalContactInfo = {
+        clientName: savedContactInfo.clientName || '',
+        clientEmail: savedContactInfo.clientEmail || '',
+        company: savedContactInfo.company || '',
+        companyName2: savedContactInfo.companyName2 || ''
+      };
+      console.log('✅ ConfigurationForm: Using saved contact info (user edits preserved):', finalContactInfo);
+    }
+    // If no user edits, use deal data if available
+    else if (dealData) {
       finalContactInfo = {
         clientName: dealData.contactName || '',
         clientEmail: dealData.contactEmail || '',
         company: dealData.company || '',
         companyName2: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)
       };
-      console.log('🔍 ConfigurationForm: Initial contact info from deal data:', finalContactInfo);
+      console.log('🔍 ConfigurationForm: Using deal data (no user edits):', finalContactInfo);
       console.log('🏢 Company extraction applied:', {
         original: dealData.companyByContact,
         email: dealData.contactEmail,
         extracted: finalContactInfo.companyName2
       });
     }
-
-    // Then, override with saved data if it exists and has valid values
-    // PRIORITY: Always preserve user manual edits over deal data
-    if (savedContactInfo) {
-      // Always use saved data if user has manually edited fields (preserves user edits)
-      if (savedContactInfo.clientName) {
-        finalContactInfo.clientName = savedContactInfo.clientName;
-        console.log('🔍 ConfigurationForm: Using saved client name (user edit preserved):', savedContactInfo.clientName);
-      }
-      if (savedContactInfo.clientEmail) {
-        finalContactInfo.clientEmail = savedContactInfo.clientEmail;
-        console.log('🔍 ConfigurationForm: Using saved client email (user edit preserved):', savedContactInfo.clientEmail);
-      }
-      if (savedContactInfo.company && savedContactInfo.company !== 'Not Available') {
-        finalContactInfo.company = savedContactInfo.company;
-        console.log('🔍 ConfigurationForm: Using saved company (user edit preserved):', savedContactInfo.company);
-      }
-      if (savedContactInfo.companyName2 && savedContactInfo.companyName2 !== 'Not Available') {
-        finalContactInfo.companyName2 = savedContactInfo.companyName2;
-        console.log('🔍 ConfigurationForm: Using saved companyName2 (user edit preserved):', savedContactInfo.companyName2);
-      }
-      console.log('✅ ConfigurationForm: User edits preserved over deal data');
+    // Otherwise, start with empty values
+    else {
+      console.log('🔍 ConfigurationForm: Starting with empty contact info (no deal data or user edits)');
     }
+
+    // Mark that we've completed the initial load
+    setIsInitialLoad(false);
 
     // Set the final contact info
     setContactInfo(finalContactInfo);
