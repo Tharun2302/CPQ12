@@ -33,6 +33,34 @@ interface DealDetailsProps {
 
 const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDealData }) => {
   const [isLoading] = useState(false);
+
+  // Extract company name from email domain if company field is "Not Available"
+  const extractCompanyFromEmail = (email: string): string => {
+    if (!email) return '';
+    const domain = email.split('@')[1];
+    if (!domain) return '';
+    
+    // Remove common TLDs and format as company name
+    const companyName = domain
+      .replace(/\.(com|org|net|edu|gov|co|io|ai)$/i, '')
+      .split('.')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+    
+    return companyName;
+  };
+
+  // Get the effective company name (extracted from email if needed)
+  const getEffectiveCompanyName = (originalCompany?: string, email?: string): string => {
+    if (originalCompany && originalCompany !== 'Not Available') {
+      return originalCompany;
+    }
+    if (email) {
+      const extracted = extractCompanyFromEmail(email);
+      return extracted || 'Not Available';
+    }
+    return 'Not Available';
+  };
   const [showSuccessMessage] = useState(false);
 
   console.log('🔍 DealDetails render - dealData:', dealData);
@@ -152,14 +180,22 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
             )}
 
             {/* Company Name (2) */}
-            {dealData.companyByContact && (
+            {(dealData.companyByContact || dealData.contactEmail) && (
               <div className="flex items-center p-4 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl border border-amber-100">
                 <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-4">
                   <Building className="w-5 h-5 text-amber-600" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 font-medium">Company Name</p>
-                  <p className="font-semibold text-gray-900 text-lg">{dealData.companyByContact}</p>
+                  <p className="font-semibold text-gray-900 text-lg">
+                    {getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)}
+                  </p>
+                  {dealData.companyByContact === 'Not Available' && dealData.contactEmail && (
+                    <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      Extracted from email domain
+                    </p>
+                  )}
                 </div>
               </div>
             )}
