@@ -553,15 +553,8 @@ function App() {
     setActiveDealData(dealData);
     setActiveTab('configure');
     
-    // Clear any saved contact info to ensure deal data takes priority
-    try {
-      localStorage.removeItem('cpq_contact_info');
-      console.log('🧹 Cleared saved contact info to prioritize deal data');
-    } catch (error) {
-      console.warn('⚠️ Could not clear saved contact info:', error);
-    }
-    
-    console.log('✅ Deal data activated for configuration:', dealData);
+    // Don't clear saved contact info - preserve user manual edits
+    console.log('✅ Deal data activated for configuration (preserving user edits):', dealData);
   };
 
   // Handle contact info changes from configure session
