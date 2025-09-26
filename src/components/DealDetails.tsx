@@ -91,7 +91,13 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
 
   const handleUseDealData = () => {
     if (onUseDealData && dealData) {
-      onUseDealData(dealData);
+      // Create enhanced deal data with extracted company name
+      const enhancedDealData = {
+        ...dealData,
+        companyByContact: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)
+      };
+      console.log('🔄 Using deal data with enhanced company name:', enhancedDealData);
+      onUseDealData(enhancedDealData);
     }
   };
 
