@@ -160,7 +160,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
 
     // Then, override with saved data if it exists and has valid values
-    if (savedContactInfo) {
+    // BUT: If deal data has valid values, prioritize deal data over saved data
+    if (savedContactInfo && !dealData) {
+      // Only use saved data if no deal data is available
       if (savedContactInfo.clientName) finalContactInfo.clientName = savedContactInfo.clientName;
       if (savedContactInfo.clientEmail) finalContactInfo.clientEmail = savedContactInfo.clientEmail;
       if (savedContactInfo.company && savedContactInfo.company !== 'Not Available') {
@@ -169,7 +171,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       if (savedContactInfo.companyName2 && savedContactInfo.companyName2 !== 'Not Available') {
         finalContactInfo.companyName2 = savedContactInfo.companyName2;
       }
-      console.log('🔍 ConfigurationForm: Merged contact info with saved data:', finalContactInfo);
+      console.log('🔍 ConfigurationForm: Using saved contact info (no deal data):', finalContactInfo);
+    } else if (savedContactInfo && dealData) {
+      // If both exist, only use saved data for fields that are empty in deal data
+      if (!finalContactInfo.clientName && savedContactInfo.clientName) {
+        finalContactInfo.clientName = savedContactInfo.clientName;
+      }
+      if (!finalContactInfo.clientEmail && savedContactInfo.clientEmail) {
+        finalContactInfo.clientEmail = savedContactInfo.clientEmail;
+      }
+      // For company fields, always prioritize deal data (including extracted company names)
+      console.log('🔍 ConfigurationForm: Deal data takes priority over saved data for company info');
     }
 
     // Set the final contact info
