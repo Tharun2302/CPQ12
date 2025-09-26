@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const multer = require('multer');
 const path = require('path');
 const { MongoClient } = require('mongodb');
@@ -132,19 +132,31 @@ const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
 
 // Email configuration
-let transporter;
-const isEmailConfigured = EMAIL_USER && EMAIL_PASS;
+const resend = new Resend(process.env.RESEND_API_KEY);
+const isEmailConfigured = process.env.RESEND_API_KEY && process.env.EMAIL_FROM;
 
-if (isEmailConfigured) {
-  transporter = nodemailer.createTransport({
-    host: EMAIL_HOST,
-    port: EMAIL_PORT,
-    secure: false,
-  auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS
+// Email sending function using Resend
+async function sendEmail(to, subject, html, attachments = []) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+      to: to,
+      subject: subject,
+      html: html,
+      attachments: attachments
+    });
+
+    if (error) {
+      console.error('❌ Resend error:', error);
+      return { success: false, error: error };
     }
-  });
+
+    console.log('✅ Email sent successfully:', data);
+    return { success: true, data: data };
+  } catch (error) {
+    console.error('❌ Email send error:', error);
+    return { success: false, error: error };
+  }
 }
 
 // Serve static files
@@ -1655,18 +1667,18 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
   try {
     console.log('📧 Email send request received');
     console.log('📧 Email configured:', isEmailConfigured);
-    console.log('📧 EMAIL_USER:', EMAIL_USER ? 'Set' : 'Not set');
-    console.log('📧 EMAIL_PASS:', EMAIL_PASS ? 'Set (hidden)' : 'Not set');
+    console.log('📧 RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'Set (hidden)' : 'Not set');
+    console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM ? 'Set' : 'Not set');
     
     if (!isEmailConfigured) {
       console.log('❌ Email not configured - missing credentials');
       return res.status(500).json({
         success: false,
-        message: 'Email configuration not set. Set EMAIL_USER and EMAIL_PASS in environment.',
+        message: 'Email configuration not set. Set RESEND_API_KEY and EMAIL_FROM in environment.',
         instructions: [
           '1. Create .env file in project root',
-          '2. Add: EMAIL_USER=your-gmail@gmail.com',
-          '3. Add: EMAIL_PASS=your-gmail-app-password',
+          '2. Add: RESEND_API_KEY=your-resend-api-key',
+          '3. Add: EMAIL_FROM=your-verified-domain@yourdomain.com',
           '4. Restart the server'
         ]
       });
@@ -1683,16 +1695,9 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
       });
     }
 
-    const mailOptions = {
-      from: EMAIL_USER,
-      to,
-      subject,
-      html: String(message).replace(/\n/g, '<br>'),
-      attachments: []
-    };
-
+    let attachments = [];
     if (req.file) {
-      mailOptions.attachments.push({
+      attachments.push({
         filename: req.file.originalname || 'attachment',
         content: req.file.buffer,
         contentType: req.file.mimetype || 'application/octet-stream'
@@ -1704,9 +1709,14 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
     console.log('📧 Subject:', subject);
     console.log('📧 Attachment:', req.file ? req.file.originalname : 'None');
     
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent successfully:', info.messageId);
-    return res.json({ success: true, messageId: info.messageId });
+    const result = await sendEmail(to, subject, String(message).replace(/\n/g, '<br>'), attachments);
+    
+    if (result.success) {
+      console.log('✅ Email sent successfully:', result.data);
+      return res.json({ success: true, messageId: result.data?.id, data: result.data });
+    } else {
+      throw new Error(result.error?.message || 'Failed to send email');
+    }
   } catch (error) {
     console.error('❌ Email send error:', error);
     console.error('❌ Error code:', error.code);
@@ -1714,12 +1724,14 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
     
     let userFriendlyMessage = 'Failed to send email';
     
-    if (error.code === 'EAUTH' || error.responseCode === 535) {
-      userFriendlyMessage = 'Gmail authentication failed. Please check your email credentials and App Password.';
+    if (error.message?.includes('API key') || error.message?.includes('Invalid API key')) {
+      userFriendlyMessage = 'Resend API key is invalid. Please check your RESEND_API_KEY environment variable.';
+    } else if (error.message?.includes('from') || error.message?.includes('domain')) {
+      userFriendlyMessage = 'Email domain not verified. Please verify your domain in Resend dashboard.';
     } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-      userFriendlyMessage = 'Could not connect to Gmail servers. Please check your internet connection.';
-    } else if (error.message?.includes('Invalid login')) {
-      userFriendlyMessage = 'Invalid Gmail credentials. Please verify your email and App Password.';
+      userFriendlyMessage = 'Could not connect to Resend servers. Please check your internet connection.';
+    } else if (error.message?.includes('rate limit')) {
+      userFriendlyMessage = 'Rate limit exceeded. Please wait before sending more emails.';
     }
     
     return res.status(500).json({ 
@@ -1737,26 +1749,30 @@ app.post('/api/email/test', async (req, res) => {
     if (!isEmailConfigured) {
       return res.status(500).json({
         success: false,
-        message: 'Email not configured. Check EMAIL_USER and EMAIL_PASS in .env file.'
+        message: 'Email not configured. Check RESEND_API_KEY and EMAIL_FROM in .env file.'
       });
     }
     
-    const testEmail = {
-      from: EMAIL_USER,
-      to: EMAIL_USER, // Send to self for testing
-      subject: 'CPQ Email Test',
-      html: 'This is a test email from CPQ system. If you receive this, email is working correctly!'
-    };
-    
+    const testTo = process.env.EMAIL_FROM; // Send to the configured from address for testing
     console.log('📧 Testing email configuration...');
-    const info = await transporter.sendMail(testEmail);
     
-    return res.json({
-      success: true,
-      message: 'Test email sent successfully!',
-      messageId: info.messageId,
-      sentTo: EMAIL_USER
-    });
+    const result = await sendEmail(
+      testTo, 
+      'CPQ Email Test', 
+      'This is a test email from CPQ system using Resend. If you receive this, email is working correctly!'
+    );
+    
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: 'Test email sent successfully!',
+        messageId: result.data?.id,
+        sentTo: testTo,
+        data: result.data
+      });
+    } else {
+      throw new Error(result.error?.message || 'Failed to send test email');
+    }
   } catch (error) {
     console.error('❌ Email test failed:', error);
     return res.status(500).json({
