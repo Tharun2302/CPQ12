@@ -57,7 +57,8 @@ const UserMenu: React.FC = () => {
           </div>
 
           {/* Menu Items */}
-          <button
+          {/* Settings menu item hidden per requirement */}
+          {/* <button
             onClick={() => {
               setIsOpen(false);
               navigate('/dashboard');
@@ -69,7 +70,7 @@ const UserMenu: React.FC = () => {
           >
             <Settings className="w-4 h-4 mr-3" />
             Settings
-          </button>
+          </button> */}
 
           <button
             onClick={handleLogout}

@@ -283,7 +283,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       !contactInfo.companyName2.trim();
     
     if (hasInvalidContactInfo) {
-      alert('All contact information should be filled. Please update any fields showing "Not Available" or empty fields before proceeding.');
+      alert('All contact information should be filled. Please update any fields showing "Not Available" or empty fields, including the required Legal Entity Name, before proceeding.');
       return;
     }
     
@@ -391,9 +391,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 />
               </div>
               
-              {/* Company Name (2) */}
+              {/* Legal Entity Name */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Company Name</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Legal Entity Name*</label>
                 <input
                   type="text"
                   value={contactInfo.companyName2}
@@ -403,7 +403,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       ? 'border-red-300 focus:border-red-400 focus:ring-red-100' 
                       : 'border-green-200 focus:border-green-400 focus:ring-green-100'
                   }`}
-                  placeholder="Enter company name"
+                  placeholder="Enter legal entity name"
                 />
               </div>
             </div>
@@ -415,12 +415,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               !contactInfo.clientName.trim() ||
               !contactInfo.clientEmail.trim() ||
               !contactInfo.companyName2.trim()) && (
-              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-700 font-medium">
-                  ⚠️ <strong>Action Required:</strong> All contact information fields must be completed before proceeding to plan selection. 
-                  Please update any fields showing "Not Available" or empty fields.
-                </p>
-              </div>
+               <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                 <p className="text-sm text-red-700 font-medium">
+                   ⚠️ <strong>Action Required:</strong> All contact information fields must be completed before proceeding to plan selection. 
+                   Please update any fields showing "Not Available" or empty fields, including the required Legal Entity Name.
+                 </p>
+               </div>
             )}
             
           </div>
