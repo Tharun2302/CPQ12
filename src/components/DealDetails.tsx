@@ -3,6 +3,7 @@ import {
   Building, 
   User, 
   AlertCircle,
+  CheckCircle,
   ArrowRight,
   Settings,
   Hash,
@@ -195,6 +196,12 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
                   <p className="font-semibold text-gray-900 text-lg">
                     {getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)}
                   </p>
+                  {dealData.companyByContact === 'Not Available' && dealData.contactEmail && (
+                    <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      Extracted from email domain
+                    </p>
+                  )}
                 </div>
               </div>
             )}
