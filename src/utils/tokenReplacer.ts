@@ -104,6 +104,26 @@ export const TOKEN_REPLACEMENT_MAP = {
   'PRICE_MIGRATION': (quoteData: QuoteData) => formatCurrency(quoteData.calculation.migrationCost),
   'PRICE_INSTANCE': (quoteData: QuoteData) => formatCurrency(quoteData.calculation.instanceCost),
   
+  // Instance tokens
+  'instance_users': (quoteData: QuoteData) => quoteData.configuration.numberOfInstances.toString(),
+  'instanceusers': (quoteData: QuoteData) => quoteData.configuration.numberOfInstances.toString(),
+  'instance_count': (quoteData: QuoteData) => quoteData.configuration.numberOfInstances.toString(),
+  'instances_count': (quoteData: QuoteData) => quoteData.configuration.numberOfInstances.toString(),
+  'number_of_instances': (quoteData: QuoteData) => quoteData.configuration.numberOfInstances.toString(),
+  'numberofinstances': (quoteData: QuoteData) => quoteData.configuration.numberOfInstances.toString(),
+  'instance_type': (quoteData: QuoteData) => quoteData.configuration.instanceType || 'N/A',
+  'instancetype': (quoteData: QuoteData) => quoteData.configuration.instanceType || 'N/A',
+  'INSTANCE_TYPE': (quoteData: QuoteData) => quoteData.configuration.instanceType || 'N/A',
+  'instance_type_cost': (quoteData: QuoteData) => {
+    const { getInstanceTypeCost, formatCurrency } = require('./pricing');
+    return formatCurrency(getInstanceTypeCost(quoteData.configuration.instanceType || 'Standard'));
+  },
+  'INSTANCE_TYPE_COST': (quoteData: QuoteData) => {
+    const { getInstanceTypeCost, formatCurrency } = require('./pricing');
+    return formatCurrency(getInstanceTypeCost(quoteData.configuration.instanceType || 'Standard'));
+  },
+  'INSTANCE_USERS': (quoteData: QuoteData) => quoteData.configuration.numberOfInstances.toString(),
+  
   // Additional tokens
   'client_name': (quoteData: QuoteData) => quoteData.clientName || 'N/A',
   'clientname': (quoteData: QuoteData) => quoteData.clientName || 'N/A',

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost } from '../utils/pricing';
 import { 
   FileText, 
   Download, 
@@ -669,16 +669,16 @@ Quote ID: ${quoteData.id}
       if (!agreementBlob && selectedTemplate?.file && selectedTemplate.file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
 
-        const companyName = (configureContactInfo?.company || clientInfo.company || 'Demo Company Inc.');
-        const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '') ? 'Demo Company Inc.' : companyName;
+        const companyName = (configureContactInfo?.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Your Company');
+        const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '' || companyName === 'Demo Company Inc.') ? 'Your Company' : companyName;
         const userCount = configuration?.numberOfUsers || 1;
         const userCost = calculation?.userCost ?? safeCalculation.userCost;
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
         const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
         const duration = configuration?.duration || 1;
         const migrationType = configuration?.migrationType || 'Content';
-        const clientName = clientInfo.clientName || 'Demo Client';
-        const clientEmail = clientInfo.clientEmail || 'demo@example.com';
+        const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
+        const clientEmail = clientInfo.clientEmail || dealData?.contactEmail || 'contact@email.com';
 
         // Calculate comprehensive pricing breakdown
         const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
@@ -711,6 +711,7 @@ Quote ID: ${quoteData.id}
           '{{number_of_users}}': (userCount || 1).toString(),
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
+          '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(instanceType)),
           '{{number_of_instances}}': numberOfInstances.toString(),
           '{{numberOfInstances}}': numberOfInstances.toString(),
           '{{instances}}': numberOfInstances.toString(),
@@ -741,10 +742,10 @@ Quote ID: ${quoteData.id}
           '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
           
-          // Per-user cost calculations
-          '{{per_user_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          // Per-user cost calculations - fixed to match pricing display
+          '{{per_user_cost}}': formatCurrency((userCost || 0) / (userCount || 1)),
           '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
-          '{{user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{user_rate}}': formatCurrency((userCost || 0) / (userCount || 1)),
           '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
           
           // Total pricing
@@ -759,8 +760,8 @@ Quote ID: ${quoteData.id}
           '{{discount}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
           '{{discount_percent}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
           '{{discount_percentage}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-          '{{discount_amount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? formatCurrency(localDiscountAmount) : '',
-          '{{discountAmount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? formatCurrency(localDiscountAmount) : '',
+          '{{discount_amount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discountAmount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
           '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
           '{{discount_line}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
           // Some templates may have a static label cell; clear it when no discount
@@ -836,7 +837,7 @@ Quote ID: ${quoteData.id}
       }
 
       if (!agreementBlob) {
-        alert('Agreement not generated yet. Click Generate Agreement first.');
+        alert('Agreement not generated yet. Click Preview Agreement first.');
         setIsEmailingAgreement(false);
         return;
       }
@@ -848,7 +849,10 @@ Quote ID: ${quoteData.id}
         return;
       }
 
-      const subject = `CloudFuze Service Agreement - ${clientInfo.company || 'Client'} - ${new Date().toLocaleDateString()}`;
+      const emailCompanyName = clientInfo.company || dealData?.companyByContact || dealData?.company || 'Client';
+      const emailClientName = clientInfo.clientName || dealData?.contactName || 'Valued Client';
+      
+      const subject = `CloudFuze Service Agreement - ${emailCompanyName} - ${new Date().toLocaleDateString()}`;
       
       // Calculate all pricing components
       const userCost = calculation?.userCost ?? safeCalculation.userCost;
@@ -860,14 +864,14 @@ Quote ID: ${quoteData.id}
       const finalTotal = shouldApplyDiscount ? finalTotalAfterDiscount : subtotal;
       const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
       
-      const message = `Dear ${clientInfo.clientName || 'Valued Client'},
+      const message = `Dear ${emailClientName},
 
 Thank you for choosing CloudFuze for your data migration needs. Please find your comprehensive service agreement attached for review.
 
 CLIENT INFORMATION:
-- Client Name: ${clientInfo.clientName || 'N/A'}
-- Email: ${clientInfo.clientEmail || 'N/A'}
-- Company: ${clientInfo.company || 'N/A'}
+- Client Name: ${emailClientName}
+- Email: ${clientInfo.clientEmail || dealData?.contactEmail || 'N/A'}
+- Company: ${emailCompanyName}
 - Discount Applied: ${clientInfo.discount || 0}%
 
 PROJECT CONFIGURATION:
@@ -1048,9 +1052,13 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{price_migration}}': formatCurrency(safeCalculation.migrationCost),
       '{{price_data}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
       '{{Duration of months}}': quote.configuration.duration.toString(),
+      '{{instance_users}}': quote.configuration.numberOfInstances.toString(),
+      '{{instance_type}}': quote.configuration.instanceType || 'Standard',
+      '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(quote.configuration.instanceType || 'Standard')),
+      '{{per_user_cost}}': formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1)),
       '{{total price}}': formatCurrency(safeCalculation.totalCost),
       // New tokens related to discount and final total - hide when discount is 0
-      '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? formatCurrency(discountAmount) : '',
+      '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
       '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
       '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
           // Static label support for templates with a dedicated label cell
@@ -2089,15 +2097,15 @@ Total Price: {{total price}}`;
         
         const templateData: Record<string, string> = {
           // Core company and client information
-          '{{Company Name}}': finalCompanyName || 'Demo Company Inc.',
-          '{{ Company Name }}': finalCompanyName || 'Demo Company Inc.',
-          '{{Company_Name}}': finalCompanyName || 'Demo Company Inc.',
-          '{{ Company_Name }}': finalCompanyName || 'Demo Company Inc.',
-          '{{company name}}': finalCompanyName || 'Demo Company Inc.',
-          '{{clientName}}': clientName || 'Demo Client',
-          '{{client_name}}': clientName || 'Demo Client',
-          '{{email}}': clientEmail || 'demo@example.com',
-          '{{client_email}}': clientEmail || 'demo@example.com',
+          '{{Company Name}}': finalCompanyName || 'Your Company',
+          '{{ Company Name }}': finalCompanyName || 'Your Company',
+          '{{Company_Name}}': finalCompanyName || 'Your Company',
+          '{{ Company_Name }}': finalCompanyName || 'Your Company',
+          '{{company name}}': finalCompanyName || 'Your Company',
+          '{{clientName}}': clientName || 'Contact Name',
+          '{{client_name}}': clientName || 'Contact Name',
+          '{{email}}': clientEmail || 'contact@email.com',
+          '{{client_email}}': clientEmail || 'contact@email.com',
           
           // Project configuration
           '{{users_count}}': (userCount || 1).toString(),
@@ -2106,6 +2114,8 @@ Total Price: {{total price}}`;
           '{{number_of_users}}': (userCount || 1).toString(),
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
+          '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(instanceType)),
+          '{{instance_users}}': numberOfInstances.toString(),
           '{{number_of_instances}}': numberOfInstances.toString(),
           '{{numberOfInstances}}': numberOfInstances.toString(),
           '{{instances}}': numberOfInstances.toString(),
@@ -2136,10 +2146,10 @@ Total Price: {{total price}}`;
           '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
           
-          // Per-user cost calculations
-          '{{per_user_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          // Per-user cost calculations - fixed to match pricing display
+          '{{per_user_cost}}': formatCurrency((userCost || 0) / (userCount || 1)),
           '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
-          '{{user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          '{{user_rate}}': formatCurrency((userCost || 0) / (userCount || 1)),
           '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
           
           // Total pricing
@@ -2154,8 +2164,8 @@ Total Price: {{total price}}`;
         '{{discount}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
         '{{discount_percent}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
           '{{discount_percentage}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-        '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? formatCurrency(discountAmount) : '',
-          '{{discountAmount}}': (shouldApplyDiscount && discountAmount > 0) ? formatCurrency(discountAmount) : '',
+        '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
+          '{{discountAmount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
           '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
           '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
         '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
@@ -2316,7 +2326,7 @@ Total Price: {{total price}}`;
           criticalIssues.forEach(token => {
             console.log(`🔧 FORCE FIXING: ${token}`);
             if (token === '{{Company Name}}' || token === '{{ Company Name }}' || token === '{{Company_Name}}' || token === '{{ Company_Name }}') {
-              templateData[token] = finalCompanyName || 'Demo Company Inc.';
+              templateData[token] = finalCompanyName || 'Your Company';
             } else if (token === '{{users_count}}') {
               templateData[token] = (userCount || 1).toString();
             } else if (token === '{{users_cost}}') {
@@ -2328,7 +2338,7 @@ Total Price: {{total price}}`;
             } else if (token === '{{price_migration}}') {
               templateData[token] = formatCurrency(migrationCost || 0);
             } else if (token === '{{company name}}') {
-              templateData[token] = finalCompanyName || 'Demo Company Inc.';
+              templateData[token] = finalCompanyName || 'Your Company';
             } else if (token === '{{Date}}') {
               templateData[token] = clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', {
                 year: '2-digit', 
@@ -2997,9 +3007,57 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <input
                     type="date"
                     value={clientInfo.effectiveDate || ''}
-                    onChange={(e) => setClientInfo({ ...clientInfo, effectiveDate: e.target.value })}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value;
+                      if (!selectedDate) {
+                        setClientInfo({ ...clientInfo, effectiveDate: '' });
+                        return;
+                      }
+                      
+                      const today = new Date();
+                      const todayStr = today.toISOString().split('T')[0];
+                      
+                      console.log('Date validation:', { selectedDate, todayStr });
+                      
+                      // Compare as strings (YYYY-MM-DD format)
+                      if (selectedDate >= todayStr) {
+                        setClientInfo({ ...clientInfo, effectiveDate: selectedDate });
+                      } else {
+                        // Past date detected - show warning and reset
+                        alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
+                        e.target.value = todayStr;
+                        setClientInfo({ ...clientInfo, effectiveDate: todayStr });
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const selectedDate = e.target.value;
+                      if (selectedDate) {
+                        const today = new Date();
+                        const todayStr = today.toISOString().split('T')[0];
+                        
+                        if (selectedDate < todayStr) {
+                          alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
+                          e.target.value = todayStr;
+                          setClientInfo({ ...clientInfo, effectiveDate: todayStr });
+                        }
+                      }
+                    }}
+                    onInput={(e) => {
+                      const selectedDate = (e.target as HTMLInputElement).value;
+                      if (selectedDate && selectedDate.length === 10) { // Full date entered
+                        const today = new Date();
+                        const todayStr = today.toISOString().split('T')[0];
+                        
+                        if (selectedDate < todayStr) {
+                          alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
+                          (e.target as HTMLInputElement).value = todayStr;
+                          setClientInfo({ ...clientInfo, effectiveDate: todayStr });
+                        }
+                      }
+                    }}
                     placeholder="mm-dd-yyyy"
-                    title="Select date in MM-DD-YYYY format"
+                    title="Select date in MM-DD-YYYY format (today or future dates only)"
                     data-format="mm-dd-yyyy"
                     lang="en-US"
                     locale="en-US"
@@ -3031,7 +3089,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group"
+                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group hidden"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                 <span className="relative flex items-center justify-center gap-3">
@@ -3041,7 +3099,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 </span>
               </button>
 
-              {/* Generate Agreement Button */}
+              {/* Preview Agreement Button */}
               <button
                 type="button"
                 onClick={handleGenerateAgreement}
@@ -3062,7 +3120,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   ) : (
                     <>
                       <FileText className="w-5 h-5" />
-                      Generate Agreement
+                      Preview Agreement
                       <Sparkles className="w-5 h-5" />
                     </>
                   )}
@@ -3102,7 +3160,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 type="button"
                 onClick={handleSendToDealDesk}
                 disabled={isSendingToDealDesk}
-                className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group ${
+                className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group hidden ${
                   isSendingToDealDesk
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white hover:from-purple-700 hover:via-indigo-700 hover:to-blue-700 hover:scale-105 hover:shadow-2xl'
@@ -3465,7 +3523,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               ) : (
                 <>
                   <FileText className="w-4 h-4" />
-                  Generate Agreement
+                  Preview Agreement
                 </>
               )}
             </button>
@@ -3526,7 +3584,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     Go to the <span className="font-medium text-blue-600">Template</span> session to select a template for agreement generation.
                   </p>
                   <p className="text-xs text-yellow-600 mt-1">
-                    ⚠️ Generate Agreement button will be disabled until a template is selected
+                    ⚠️ Preview Agreement button will be disabled until a template is selected
                     </p>
                   </div>
               </div>
@@ -3623,7 +3681,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
             <button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group"
+              className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group hidden"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
               <span className="relative flex items-center justify-center gap-3">
@@ -3654,7 +3712,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 ) : (
                   <>
                     <FileText className="w-5 h-5" />
-                    Generate Agreement
+                    Preview Agreement
                     <Sparkles className="w-5 h-5" />
                   </>
                 )}
@@ -3666,7 +3724,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               type="button"
               onClick={handleEmailAgreement}
               disabled={isEmailingAgreement}
-              className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group ${
+              className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group hidden ${
                 isEmailingAgreement
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white hover:from-purple-700 hover:via-indigo-700 hover:to-blue-700 hover:scale-105 hover:shadow-2xl'

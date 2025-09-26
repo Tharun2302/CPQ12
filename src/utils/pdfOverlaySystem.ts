@@ -451,6 +451,16 @@ export class PDFOverlaySystem {
         '{{migration_price}}': this.formatCurrency(quoteData.calculation?.migrationCost || 0),
         '{{total_price}}': this.formatCurrency(quoteData.calculation?.totalCost || 0),
         '{{duration_months}}': quoteData.configuration?.duration?.toString() || '1',
+        '{{instance_users}}': quoteData.configuration?.numberOfInstances?.toString() || '1',
+        '{{instance_type}}': quoteData.configuration?.instanceType || 'Standard',
+        '{{instanceType}}': quoteData.configuration?.instanceType || 'Standard',
+        '{{instance_type_cost}}': (() => {
+          const { getInstanceTypeCost } = require('./pricing');
+          return this.formatCurrency(getInstanceTypeCost(quoteData.configuration?.instanceType || 'Standard'));
+        })(),
+        '{{numberOfInstances}}': quoteData.configuration?.numberOfInstances?.toString() || '1',
+        '{{number_of_instances}}': quoteData.configuration?.numberOfInstances?.toString() || '1',
+        '{{instances}}': quoteData.configuration?.numberOfInstances?.toString() || '1',
         '{{date}}': new Date().toLocaleDateString('en-US', { 
           year: 'numeric', 
           month: 'long', 
