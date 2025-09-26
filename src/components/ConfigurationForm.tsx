@@ -160,28 +160,26 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
 
     // Then, override with saved data if it exists and has valid values
-    // BUT: If deal data has valid values, prioritize deal data over saved data
-    if (savedContactInfo && !dealData) {
-      // Only use saved data if no deal data is available
-      if (savedContactInfo.clientName) finalContactInfo.clientName = savedContactInfo.clientName;
-      if (savedContactInfo.clientEmail) finalContactInfo.clientEmail = savedContactInfo.clientEmail;
+    // PRIORITY: Always preserve user manual edits over deal data
+    if (savedContactInfo) {
+      // Always use saved data if user has manually edited fields (preserves user edits)
+      if (savedContactInfo.clientName) {
+        finalContactInfo.clientName = savedContactInfo.clientName;
+        console.log('🔍 ConfigurationForm: Using saved client name (user edit preserved):', savedContactInfo.clientName);
+      }
+      if (savedContactInfo.clientEmail) {
+        finalContactInfo.clientEmail = savedContactInfo.clientEmail;
+        console.log('🔍 ConfigurationForm: Using saved client email (user edit preserved):', savedContactInfo.clientEmail);
+      }
       if (savedContactInfo.company && savedContactInfo.company !== 'Not Available') {
         finalContactInfo.company = savedContactInfo.company;
+        console.log('🔍 ConfigurationForm: Using saved company (user edit preserved):', savedContactInfo.company);
       }
       if (savedContactInfo.companyName2 && savedContactInfo.companyName2 !== 'Not Available') {
         finalContactInfo.companyName2 = savedContactInfo.companyName2;
+        console.log('🔍 ConfigurationForm: Using saved companyName2 (user edit preserved):', savedContactInfo.companyName2);
       }
-      console.log('🔍 ConfigurationForm: Using saved contact info (no deal data):', finalContactInfo);
-    } else if (savedContactInfo && dealData) {
-      // If both exist, only use saved data for fields that are empty in deal data
-      if (!finalContactInfo.clientName && savedContactInfo.clientName) {
-        finalContactInfo.clientName = savedContactInfo.clientName;
-      }
-      if (!finalContactInfo.clientEmail && savedContactInfo.clientEmail) {
-        finalContactInfo.clientEmail = savedContactInfo.clientEmail;
-      }
-      // For company fields, always prioritize deal data (including extracted company names)
-      console.log('🔍 ConfigurationForm: Deal data takes priority over saved data for company info');
+      console.log('✅ ConfigurationForm: User edits preserved over deal data');
     }
 
     // Set the final contact info
