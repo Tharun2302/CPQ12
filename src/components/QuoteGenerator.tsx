@@ -568,10 +568,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       const emailBody = `
 New Quote Request for Deal Desk Review
 
-CLIENT INFORMATION:
-- Client Name: ${clientInfo.clientName}
+CONTACT INFORMATION:
+- Contact Name: ${clientInfo.clientName}
 - Email: ${clientInfo.clientEmail}
-- Company: ${clientInfo.company}
+- Legal Entity Name: ${clientInfo.company}
 - Discount Applied: ${clientInfo.discount ?? 0}%
 
 PROJECT CONFIGURATION:
@@ -868,10 +868,10 @@ Quote ID: ${quoteData.id}
 
 Thank you for choosing CloudFuze for your data migration needs. Please find your comprehensive service agreement attached for review.
 
-CLIENT INFORMATION:
-- Client Name: ${emailClientName}
+CONTACT INFORMATION:
+- Contact Name: ${emailClientName}
 - Email: ${clientInfo.clientEmail || dealData?.contactEmail || 'N/A'}
-- Company: ${emailCompanyName}
+- Legal Entity Name: ${emailCompanyName}
 - Discount Applied: ${clientInfo.discount || 0}%
 
 PROJECT CONFIGURATION:
@@ -1675,9 +1675,9 @@ Total Price: {{total price}}`;
             </div>
             
             <div class="content-section">
-              <div class="section-title">Client Information</div>
-              <p><strong>Company:</strong> ${clientInfo.company}</p>
-              <p><strong>Client Name:</strong> ${clientInfo.clientName}</p>
+              <div class="section-title">Contact Information</div>
+              <p><strong>Legal Entity Name:</strong> ${clientInfo.company}</p>
+              <p><strong>Contact Name:</strong> ${clientInfo.clientName}</p>
               <p><strong>Email:</strong> ${clientInfo.clientEmail}</p>
               <p><strong>Migration Type:</strong> ${configuration?.migrationType || 'Content'}</p>
               <p><strong>Duration:</strong> ${configuration?.duration || 1} months</p>
@@ -2933,14 +2933,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             Please connect to HubSpot in the HubSpot tab to automatically populate client information from your contacts.
           </p>
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-6">
-            <h3 className="font-semibold text-gray-800 mb-4">Manual Client Information</h3>
+            <h3 className="font-semibold text-gray-800 mb-4">Manual Contact Information</h3>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="group">
                 <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                     <User className="w-4 h-4 text-white" />
                   </div>
-                  Client Name
+                  Contact Name
                 </label>
                 <input
                   type="text"
@@ -2948,7 +2948,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   value={clientInfo.clientName}
                   onChange={(e) => updateClientInfo({ clientName: e.target.value })}
                   className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                  placeholder="Enter client name"
+                  placeholder="Enter contact name"
                 />
               </div>
 
@@ -2974,7 +2974,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                     <Building className="w-4 h-4 text-white" />
                   </div>
-                  Company Name
+                  Legal Entity Name*
                 </label>
                 <input
                   type="text"
@@ -2982,14 +2982,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   value={clientInfo.company}
                   onChange={(e) => updateClientInfo({ company: e.target.value })}
                   className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                  placeholder="Enter company name"
+                  placeholder="Enter legal entity name"
                 />
                 {clientInfo.company && hubspotState?.selectedContact && (
                   <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" />
                     {hubspotState.selectedContact.properties.company 
-                      ? 'Company name from HubSpot contact'
-                      : 'Company name auto-extracted from email domain'
+                      ? 'Legal entity name from HubSpot contact'
+                      : 'Legal entity name auto-extracted from email domain'
                     }
                   </p>
                 )}
@@ -3593,7 +3593,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
             <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3">
             <User className="w-6 h-6 text-blue-600" />
-            Client Information
+            Contact Information
           </h3>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -3602,7 +3602,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                   <User className="w-4 h-4 text-white" />
                 </div>
-                Client Name
+                Contact Name
               </label>
               <input
                 type="text"
@@ -3610,7 +3610,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 value={clientInfo.clientName}
                 onChange={(e) => setClientInfo({ ...clientInfo, clientName: e.target.value })}
                 className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                placeholder="Enter client name"
+                placeholder="Enter contact name"
               />
             </div>
 
@@ -3636,7 +3636,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                   <Building className="w-4 h-4 text-white" />
                 </div>
-                Company Name
+                Legal Entity Name*
               </label>
               <input
                 type="text"
@@ -3644,14 +3644,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 value={clientInfo.company}
                 onChange={(e) => setClientInfo({ ...clientInfo, company: e.target.value })}
                 className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                placeholder="Enter company name"
+                placeholder="Enter legal entity name"
               />
                 {clientInfo.company && hubspotState?.selectedContact && (
                   <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" />
                     {hubspotState.selectedContact.properties.company 
-                      ? 'Company name from HubSpot contact'
-                      : 'Company name auto-extracted from email domain'
+                      ? 'Legal entity name from HubSpot contact'
+                      : 'Legal entity name auto-extracted from email domain'
                     }
                   </p>
                 )}
@@ -3944,7 +3944,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <>
                       <button
                         onClick={handleDownloadAgreement}
-                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
+                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold hidden"
                         title="Download Agreement"
                       >
                         📥 Download

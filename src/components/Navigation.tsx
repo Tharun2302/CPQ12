@@ -19,7 +19,8 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
     { id: 'quote', label: 'Quote', icon: FileText },
     { id: 'quotes', label: 'Documents', icon: FileText },
     { id: 'templates', label: 'Templates', icon: Upload },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    // Settings tab hidden per requirement
+    // { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
