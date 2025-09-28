@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const { Resend } = require('resend');
+const sgMail = require('@sendgrid/mail');
 const multer = require('multer');
 const path = require('path');
 const { MongoClient } = require('mongodb');
@@ -132,27 +132,38 @@ const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
 const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
 
 // Email configuration
-const resend = new Resend(process.env.RESEND_API_KEY);
-const isEmailConfigured = process.env.RESEND_API_KEY && process.env.EMAIL_FROM;
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
+const isEmailConfigured = process.env.SENDGRID_API_KEY;
 
-// Email sending function using Resend
+// Email sending function using SendGrid
 async function sendEmail(to, subject, html, attachments = []) {
   try {
-    const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+    const emailPayload = {
+      from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
       to: to,
       subject: subject,
       html: html,
-      attachments: attachments
-    });
+      attachments: attachments.map(att => ({
+        content: att.content.toString('base64'),
+        filename: att.filename,
+        type: att.contentType,
+        disposition: 'attachment'
+      }))
+    };
+    
+    console.log('📧 Sending email with SendGrid payload:', JSON.stringify({
+      from: emailPayload.from,
+      to: emailPayload.to,
+      subject: emailPayload.subject,
+      attachments: attachments.length > 0 ? `${attachments.length} attachment(s)` : 'No attachments'
+    }, null, 2));
+    
+    const result = await sgMail.send(emailPayload);
 
-    if (error) {
-      console.error('❌ Resend error:', error);
-      return { success: false, error: error };
-    }
-
-    console.log('✅ Email sent successfully:', data);
-    return { success: true, data: data };
+    console.log('✅ Email sent successfully via SendGrid:', result);
+    return { success: true, data: result };
   } catch (error) {
     console.error('❌ Email send error:', error);
     return { success: false, error: error };
@@ -1667,18 +1678,18 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
   try {
     console.log('📧 Email send request received');
     console.log('📧 Email configured:', isEmailConfigured);
-    console.log('📧 RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'Set (hidden)' : 'Not set');
-    console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM ? 'Set' : 'Not set');
+    console.log('📧 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? 'Set (hidden)' : 'Not set');
+    console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM || 'Not set');
     
     if (!isEmailConfigured) {
       console.log('❌ Email not configured - missing credentials');
       return res.status(500).json({
         success: false,
-        message: 'Email configuration not set. Set RESEND_API_KEY and EMAIL_FROM in environment.',
+        message: 'Email configuration not set. Set SENDGRID_API_KEY in environment.',
         instructions: [
           '1. Create .env file in project root',
-          '2. Add: RESEND_API_KEY=your-resend-api-key',
-          '3. Add: EMAIL_FROM=your-verified-domain@yourdomain.com',
+          '2. Add: SENDGRID_API_KEY=your-sendgrid-api-key',
+          '3. Add: EMAIL_FROM=your-verified-email@domain.com',
           '4. Restart the server'
         ]
       });
@@ -1725,11 +1736,11 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
     let userFriendlyMessage = 'Failed to send email';
     
     if (error.message?.includes('API key') || error.message?.includes('Invalid API key')) {
-      userFriendlyMessage = 'Resend API key is invalid. Please check your RESEND_API_KEY environment variable.';
+      userFriendlyMessage = 'SendGrid API key is invalid. Please check your SENDGRID_API_KEY environment variable.';
     } else if (error.message?.includes('from') || error.message?.includes('domain')) {
-      userFriendlyMessage = 'Email domain not verified. Please verify your domain in Resend dashboard.';
+      userFriendlyMessage = 'Email sender not verified. Please verify your sender email in SendGrid dashboard.';
     } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-      userFriendlyMessage = 'Could not connect to Resend servers. Please check your internet connection.';
+      userFriendlyMessage = 'Could not connect to SendGrid servers. Please check your internet connection.';
     } else if (error.message?.includes('rate limit')) {
       userFriendlyMessage = 'Rate limit exceeded. Please wait before sending more emails.';
     }
@@ -1749,7 +1760,7 @@ app.post('/api/email/test', async (req, res) => {
     if (!isEmailConfigured) {
       return res.status(500).json({
         success: false,
-        message: 'Email not configured. Check RESEND_API_KEY and EMAIL_FROM in .env file.'
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
       });
     }
     

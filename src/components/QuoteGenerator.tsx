@@ -19,6 +19,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
+import { sendEmailWithEmailJS } from '../utils/emailservice';
 
 interface DealData {
   dealId: string;
@@ -842,12 +843,8 @@ Quote ID: ${quoteData.id}
         return;
       }
 
-      const toDefault = clientInfo.clientEmail || '';
-      const to = window.prompt('Enter recipient email address', toDefault);
-      if (!to) {
-        setIsEmailingAgreement(false);
-        return;
-      }
+      // Send directly to CloudFuze sales operations (SendGrid allows this)
+      const to = 'salesops@cloudfuze.com';
 
       const emailCompanyName = clientInfo.company || dealData?.companyByContact || dealData?.company || 'Client';
       const emailClientName = clientInfo.clientName || dealData?.contactName || 'Valued Client';
@@ -921,32 +918,23 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
 
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
       const formData = new FormData();
-      formData.append('to', to);
-      formData.append('subject', subject);
-      formData.append('message', message);
-
+      // Replace the server-side fetch with EmailJS
       const filenameBase = (clientInfo.company || 'Company').replace(/[^a-zA-Z0-9]/g, '_');
       const timestamp = new Date().toISOString().slice(0, 10);
-      const file = new File([agreementBlob], `${filenameBase}_Agreement_${timestamp}.docx`, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      formData.append('attachment', file);
 
-      const response = await fetch(`${backendUrl}/api/email/send`, { method: 'POST', body: formData });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        
-        // Handle specific email configuration errors
-        if (response.status === 500 && errorData.message?.includes('Email configuration not set')) {
-          alert(`❌ Email Not Configured\n\nThe server needs email configuration to send emails.\n\nPlease contact your administrator to:\n1. Create a .env file with EMAIL_USER and EMAIL_PASS\n2. Set up Gmail App Password\n3. Restart the server\n\nAlternatively, you can download the agreement and send it manually.`);
-          return;
-        }
-        
-        throw new Error(errorData.message || `Server error ${response.status}`);
-      }
-      const result = await response.json();
-      if (result?.success) {
-        alert('✅ Agreement emailed successfully to ' + to + '!');
+      // Send email using EmailJS
+      const result = await sendEmailWithEmailJS(
+        to,
+        subject,
+        message,
+        agreementBlob,
+        `${filenameBase}_Agreement_${timestamp}.docx`
+      );
+
+      if (result.success) {
+        alert('✅ Agreement emailed successfully to CloudFuze Sales Operations!');
       } else {
-        throw new Error(result?.message || 'Unknown server response');
+        throw new Error(result.message);
       }
     } catch (err: any) {
       console.error('Error emailing agreement:', err);
