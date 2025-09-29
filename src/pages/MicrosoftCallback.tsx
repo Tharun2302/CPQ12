@@ -25,7 +25,7 @@ async function exchangeCodeForUserData(code: string) {
       code_verifier: codeVerifier ? 'present' : 'missing'
     });
     
-    const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    const tokenResponse = await fetch('https://login.microsoftonline.com/2c5bdaf4-8ff2-4bd9-bd54-7c50ab219590/oauth2/v2.0/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -108,11 +108,17 @@ async function exchangeCodeForUserData(code: string) {
     console.log('🔍 Profile givenName:', profile.givenName);
     console.log('🔍 Profile surname:', profile.surname);
 
+    // Validate domain - only allow cloudfuze.com emails
+    const userEmail = profile.mail || profile.userPrincipalName || 'user@microsoft.com';
+    if (!userEmail.endsWith('@cloudfuze.com')) {
+      throw new Error('Access denied: Only cloudfuze.com email addresses are allowed');
+    }
+
     // Return user data in the expected format
     const userData = {
       id: profile.id || 'microsoft_' + Date.now(),
       name: profile.displayName || profile.givenName + ' ' + profile.surname || 'Microsoft User',
-      email: profile.mail || profile.userPrincipalName || 'user@microsoft.com',
+      email: userEmail,
       accessToken: accessToken,
       provider: 'microsoft',
       createdAt: new Date().toISOString()
