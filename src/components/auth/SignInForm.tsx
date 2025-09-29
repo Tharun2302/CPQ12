@@ -71,13 +71,13 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
       if (success) {
         onSuccess?.();
       } else {
-        setErrors([{ field: 'general', message: 'Microsoft authentication is not configured. Please use email/password for now.' }]);
-        onError?.('Microsoft authentication is not configured. Please use email/password for now.');
+        setErrors([{ field: 'general', message: 'Microsoft authentication failed. Please try again or use email/password.' }]);
+        onError?.('Microsoft authentication failed. Please try again or use email/password.');
       }
     } catch (error) {
       console.error('Microsoft login error:', error);
-      setErrors([{ field: 'general', message: 'Microsoft authentication is coming soon! Please use email/password for now.' }]);
-      onError?.('Microsoft authentication is coming soon! Please use email/password for now.');
+      setErrors([{ field: 'general', message: 'Microsoft authentication error. Please try again or use email/password.' }]);
+      onError?.('Microsoft authentication error. Please try again or use email/password.');
     } finally {
       setIsSubmitting(false);
     }
@@ -191,7 +191,14 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
             <rect x="1" y="13" width="10" height="10" fill="#00A4EF"/>
             <rect x="13" y="13" width="10" height="10" fill="#FFB900"/>
           </svg>
-          {isSubmitting || loading ? 'Signing in...' : 'Continue with Microsoft Account'}
+          {isSubmitting || loading ? (
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+              Signing in...
+            </div>
+          ) : (
+            'Continue with Microsoft Account'
+          )}
         </button>
 
         {/* Sign Up Link */}

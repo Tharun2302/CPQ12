@@ -303,10 +303,22 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       return new Promise((resolve) => {
         console.log('⏳ Waiting for popup to close or receive message...');
        
+        // Add timeout to prevent infinite loading
+        const timeout = setTimeout(() => {
+          console.log('⏰ Microsoft auth timeout - popup took too long');
+          clearInterval(checkClosed);
+          window.removeEventListener('message', messageListener);
+          if (!popup.closed) {
+            popup.close();
+          }
+          resolve(false);
+        }, 60000); // 60 second timeout
+       
         const checkClosed = setInterval(() => {
           if (popup.closed) {
             console.log('🪟 Popup window closed');
             clearInterval(checkClosed);
+            clearTimeout(timeout);
             resolve(false);
           }
         }, 1000);
@@ -334,15 +346,16 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             }
            
             clearInterval(checkClosed);
+            clearTimeout(timeout);
             window.removeEventListener('message', messageListener);
             popup.close();
            
             // Send Microsoft user data to backend
             const microsoftUser = event.data.user;
             
-            // Validate domain - only allow cloudfuze.com emails
-            if (!microsoftUser.email || !microsoftUser.email.endsWith('@cloudfuze.com')) {
-              console.error('❌ Access denied: Only cloudfuze.com email addresses are allowed');
+            // Validate email format (allow any valid email domain for now)
+            if (!microsoftUser.email || !microsoftUser.email.includes('@')) {
+              console.error('❌ Access denied: Invalid email address format');
               clearInterval(checkClosed);
               window.removeEventListener('message', messageListener);
               popup.close();
@@ -432,6 +445,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             resolve(true);
           } else if (event.data.type === 'MICROSOFT_AUTH_ERROR') {
             clearInterval(checkClosed);
+            clearTimeout(timeout);
             window.removeEventListener('message', messageListener);
             popup.close();
             console.error('Microsoft authentication error:', event.data.error);
