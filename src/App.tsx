@@ -22,7 +22,6 @@ import LandingPage from './pages/LandingPage';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
 import MicrosoftCallback from './pages/MicrosoftCallback';
-import DebugEnv from './pages/DebugEnv';
 import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
@@ -1679,7 +1678,6 @@ function App() {
             <Route path="/signup" element={<SignUpPage />} />
             <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
             <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
-            <Route path="/debug-env" element={<DebugEnv />} />
             
             {/* Protected Routes - Original CPQ App */}
             <Route path="/dashboard" element={
