@@ -116,7 +116,7 @@ const LandingPage: React.FC = () => {
             <span className="text-xl font-bold">CPQ Pro</span>
           </div>
           <p className="text-gray-400">
-            © 2024 CPQ Pro. All rights reserved.
+            © 2025 CPQ Pro. All rights reserved.
           </p>
         </div>
       </footer>
