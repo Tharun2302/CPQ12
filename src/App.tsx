@@ -588,65 +588,6 @@ function App() {
 
   // Handle HubSpot contact selection - moved after updateHubspotState declaration
 
-  // Auto-load HubSpot data after successful connection
-  const autoLoadHubSpotData = async () => {
-    try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      
-      // Load contacts
-      console.log('🔄 Auto-loading HubSpot contacts...');
-      setHubspotState(prev => ({ ...prev, isLoadingContacts: true }));
-      
-      const contactsResponse = await fetch(`${backendUrl}/api/hubspot/contacts`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15000)
-      });
-      
-      if (contactsResponse.ok) {
-        const contactsResult = await contactsResponse.json();
-        if (contactsResult.success && contactsResult.data) {
-          console.log('✅ Auto-loaded contacts:', contactsResult.data.length);
-          setHubspotState(prev => ({ 
-            ...prev, 
-            hubspotContacts: contactsResult.data,
-            isLoadingContacts: false 
-          }));
-        }
-      }
-      
-      // Load deals
-      console.log('🔄 Auto-loading HubSpot deals...');
-      setHubspotState(prev => ({ ...prev, isLoadingDeals: true }));
-      
-      const dealsResponse = await fetch(`${backendUrl}/api/hubspot/deals`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15000)
-      });
-      
-      if (dealsResponse.ok) {
-        const dealsResult = await dealsResponse.json();
-        if (dealsResult.success && dealsResult.data) {
-          console.log('✅ Auto-loaded deals:', dealsResult.data.length);
-          setHubspotState(prev => ({ 
-            ...prev, 
-            hubspotDeals: dealsResult.data,
-            isLoadingDeals: false 
-          }));
-        }
-      }
-      
-      console.log('✅ HubSpot data auto-loading completed');
-    } catch (error) {
-      console.log('⚠️ Error auto-loading HubSpot data:', error);
-      setHubspotState(prev => ({ 
-        ...prev, 
-        isLoadingContacts: false,
-        isLoadingDeals: false 
-      }));
-    }
-  };
 
   // Handle URL parameters on component mount
   useEffect(() => {
@@ -854,10 +795,6 @@ function App() {
         isConnecting: false 
       }));
       console.log('✅ HubSpot auto-connected in demo mode');
-      
-      // Auto-load HubSpot data
-      console.log('🔄 Auto-loading HubSpot data...');
-      await autoLoadHubSpotData();
     };
 
     // Add a small delay to ensure the app is fully loaded

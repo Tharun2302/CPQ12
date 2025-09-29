@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
@@ -19,95 +19,42 @@ interface HubSpotAuthHandlerProps {
 }
 
 const HubSpotAuthHandler: React.FC<HubSpotAuthHandlerProps> = ({ children }) => {
-  const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const processHubSpotAuth = async () => {
-      console.log('🔍 HubSpotAuthHandler: Starting processHubSpotAuth');
-      console.log('🔍 isAuthenticated:', isAuthenticated);
-      console.log('🔍 location.search:', location.search);
+    // HubSpot authentication bypass removed - users must authenticate normally
+    // This component now only handles HubSpot data extraction for authenticated users
+    const processHubSpotData = async () => {
+      console.log('🔍 HubSpotAuthHandler: Processing HubSpot data for authenticated user');
       
-      // Check for HubSpot URL parameters first
-      const urlParams = new URLSearchParams(location.search);
-      const isFromHubspot = urlParams.has('hubspot') || 
-                           urlParams.has('hs_deal_id') || 
-                           urlParams.has('hs_contact_id') ||
-                           urlParams.has('dealId') ||
-                           urlParams.has('dealName') ||
-                           urlParams.has('amount') ||
-                           urlParams.has('ContactEmail') ||
-                           urlParams.has('ContactFirstName') ||
-                           urlParams.has('ContactLastName') ||
-                           urlParams.has('CompanyName') ||
-                           urlParams.has('CompanyFromContact') ||
-                           location.search.includes('hubspot') ||
-                           document.referrer.includes('hubspot');
-
-      console.log('🔍 isFromHubspot:', isFromHubspot);
-      console.log('🔍 urlParams:', Object.fromEntries(urlParams.entries()));
-
-      if (!isFromHubspot) {
-        console.log('🔍 Not from HubSpot, letting normal auth flow handle it');
-        return; // Not from HubSpot, let normal auth flow handle it
-      }
-
-      // If user is already authenticated and came from HubSpot, store data and redirect to dashboard
-      if (isAuthenticated) {
-        console.log('🔍 User already authenticated and came from HubSpot, storing data and redirecting to dashboard');
-        
-        // Extract and store HubSpot data for use in quotes
-        const firstName = urlParams.get('ContactFirstName') || '';
-        const lastName = urlParams.get('ContactLastName') || '';
-        const fullName = `${firstName} ${lastName}`.trim() || urlParams.get('dealName') || 'HubSpot User';
-        
-        const hubspotUserData: HubSpotUserData = {
-          contactId: urlParams.get('hs_contact_id') || urlParams.get('contactId') || undefined,
-          dealId: urlParams.get('hs_deal_id') || urlParams.get('dealId') || undefined,
-          companyName: urlParams.get('hs_company') || 
-                      urlParams.get('company') || 
-                      urlParams.get('CompanyName') || 
-                      urlParams.get('CompanyFromContact') || 
-                      undefined,
-          contactName: urlParams.get('hs_contact_name') || 
-                      urlParams.get('contact_name') || 
-                      urlParams.get('contactName') || 
-                      fullName || 
-                      urlParams.get('dealName') || 
-                      undefined,
-          contactEmail: urlParams.get('hs_contact_email') || 
-                       urlParams.get('contact_email') || 
-                       urlParams.get('ContactEmail') || 
-                       undefined,
-          dealAmount: urlParams.get('hs_deal_amount') || 
-                     urlParams.get('deal_amount') || 
-                     urlParams.get('amount') || 
-                     undefined,
-          dealStage: urlParams.get('hs_deal_stage') || urlParams.get('deal_stage') || undefined,
-          source: 'hubspot'
-        };
-
-        // Store HubSpot data for use in quotes
-        localStorage.setItem('cpq_hubspot_data', JSON.stringify(hubspotUserData));
-        console.log('📊 Stored HubSpot data for authenticated user:', hubspotUserData);
-        
-        navigate('/dashboard', { replace: true });
+      // Only process HubSpot data if user is already authenticated
+      if (!isAuthenticated) {
+        console.log('🔍 User not authenticated, skipping HubSpot data processing');
         return;
       }
 
-      console.log('🔍 Starting HubSpot authentication process');
+      // Check for HubSpot URL parameters
+      const urlParams = new URLSearchParams(location.search);
+      const hasHubspotData = urlParams.has('dealId') || 
+                            urlParams.has('dealName') ||
+                            urlParams.has('ContactEmail') ||
+                            urlParams.has('ContactFirstName') ||
+                            urlParams.has('ContactLastName') ||
+                            urlParams.has('CompanyName');
+
+      if (!hasHubspotData) {
+        console.log('🔍 No HubSpot data in URL parameters');
+        return;
+      }
+
+      console.log('🔍 Processing HubSpot data for authenticated user');
       setIsProcessing(true);
       setError(null);
 
       try {
-        console.log('🔍 HubSpot authentication detected');
-        console.log('📍 Current URL:', window.location.href);
-        console.log('📍 Referrer:', document.referrer);
-        console.log('📍 URL Params:', Object.fromEntries(urlParams.entries()));
-
         // Extract HubSpot data from URL parameters
         const firstName = urlParams.get('ContactFirstName') || '';
         const lastName = urlParams.get('ContactLastName') || '';
@@ -141,101 +88,20 @@ const HubSpotAuthHandler: React.FC<HubSpotAuthHandlerProps> = ({ children }) => 
 
         console.log('📊 Extracted HubSpot data:', hubspotUserData);
 
-        // If we have minimal data, try to fetch more from HubSpot API
-        if (hubspotUserData.contactId || hubspotUserData.dealId) {
-          try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            
-            // Try to fetch contact details
-            if (hubspotUserData.contactId) {
-              const contactResponse = await fetch(`${backendUrl}/api/hubspot/contacts/${hubspotUserData.contactId}`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-              });
-              
-              if (contactResponse.ok) {
-                const contactData = await contactResponse.json();
-                if (contactData.success && contactData.data) {
-                  hubspotUserData.contactName = hubspotUserData.contactName || contactData.data.properties?.firstname + ' ' + contactData.data.properties?.lastname;
-                  hubspotUserData.contactEmail = hubspotUserData.contactEmail || contactData.data.properties?.email;
-                  hubspotUserData.companyName = hubspotUserData.companyName || contactData.data.properties?.company;
-                }
-              }
-            }
-
-            // Try to fetch deal details
-            if (hubspotUserData.dealId) {
-              const dealResponse = await fetch(`${backendUrl}/api/hubspot/deals/${hubspotUserData.dealId}`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-              });
-              
-              if (dealResponse.ok) {
-                const dealData = await dealResponse.json();
-                if (dealData.success && dealData.data) {
-                  hubspotUserData.dealAmount = hubspotUserData.dealAmount || dealData.data.properties?.amount;
-                  hubspotUserData.dealStage = hubspotUserData.dealStage || dealData.data.properties?.dealstage;
-                }
-              }
-            }
-          } catch (apiError) {
-            console.warn('⚠️ Could not fetch additional HubSpot data:', apiError);
-            // Continue with available data
-          }
-        }
-
-        // Store HubSpot data for later use
-        console.log('📊 HubSpot data extracted:', hubspotUserData);
-
-        // Create a HubSpot user object
-        const hubspotUser = {
-          id: `hubspot_${hubspotUserData.contactId || Date.now()}`,
-          name: hubspotUserData.contactName || 'HubSpot User',
-          email: hubspotUserData.contactEmail || 'hubspot@example.com',
-          provider: 'hubspot',
-          createdAt: new Date().toISOString(),
-          hubspotData: hubspotUserData
-        };
-
-        // Store user data in localStorage
-        localStorage.setItem('cpq_user', JSON.stringify(hubspotUser));
+        // Store HubSpot data for use in quotes (but don't create user session)
         localStorage.setItem('cpq_hubspot_data', JSON.stringify(hubspotUserData));
-        localStorage.setItem('cpq_auth_source', 'hubspot');
-        localStorage.setItem('cpq_token', 'hubspot_auth_token'); // Simple token for HubSpot users
-
-        console.log('✅ HubSpot user authenticated successfully:', hubspotUser);
-
-        // Navigate to dashboard - the auth context will pick up the new user data
-        navigate('/dashboard', { replace: true });
+        console.log('📊 Stored HubSpot data for authenticated user:', hubspotUserData);
 
       } catch (error) {
-        console.error('❌ HubSpot authentication failed:', error);
-        setError(error instanceof Error ? error.message : 'HubSpot authentication failed');
-        
-        // Redirect to landing page on error
-        setTimeout(() => {
-          navigate('/', { replace: true });
-        }, 3000);
+        console.error('❌ HubSpot data processing failed:', error);
+        setError(error instanceof Error ? error.message : 'HubSpot data processing failed');
       } finally {
         setIsProcessing(false);
       }
     };
 
-    // Add timeout to prevent infinite processing
-    const timeoutId = setTimeout(() => {
-      if (isProcessing) {
-        console.warn('⚠️ HubSpot auth processing timeout, stopping');
-        setIsProcessing(false);
-        setError('Authentication timeout');
-      }
-    }, 10000); // 10 second timeout
-
-    processHubSpotAuth();
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [location, isAuthenticated, navigate]);
+    processHubSpotData();
+  }, [location, isAuthenticated]);
 
   // Show loading state while processing HubSpot auth
   if (isProcessing) {
