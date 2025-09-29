@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  cpq-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cpq-application
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MONGODB_URI=${MONGODB_URI}
+      - DB_NAME=${DB_NAME:-cpq_database}
+      - JWT_SECRET=${JWT_SECRET}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - HUBSPOT_API_KEY=${HUBSPOT_API_KEY}
+      - GOTENBERG_URL=${GOTENBERG_URL}
+    volumes:
+      - ./temp-files:/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cpq-network
+
+networks:
+  cpq-network:
+    driver: bridge
