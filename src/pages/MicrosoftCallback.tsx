@@ -108,10 +108,10 @@ async function exchangeCodeForUserData(code: string) {
     console.log('🔍 Profile givenName:', profile.givenName);
     console.log('🔍 Profile surname:', profile.surname);
 
-    // Validate domain - only allow cloudfuze.com emails
+    // Validate email format (allow any valid email domain for now)
     const userEmail = profile.mail || profile.userPrincipalName || 'user@microsoft.com';
-    if (!userEmail.endsWith('@cloudfuze.com')) {
-      throw new Error('Access denied: Only cloudfuze.com email addresses are allowed');
+    if (!userEmail || !userEmail.includes('@')) {
+      throw new Error('Access denied: Invalid email address format');
     }
 
     // Return user data in the expected format
@@ -197,6 +197,7 @@ const MicrosoftCallback: React.FC = () => {
           };
           
           console.log('⚠️ Using fallback user because Graph API failed:', fallbackUser);
+          console.log('⚠️ This allows authentication to continue even if Microsoft Graph API is unavailable');
           window.opener?.postMessage({
             type: 'MICROSOFT_AUTH_SUCCESS',
             user: fallbackUser
