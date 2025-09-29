@@ -1,21 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import Navigation from './components/Navigation';
-import ConfigurationForm from './components/ConfigurationForm';
-import PricingComparison from './components/PricingComparison';
-import PricingTierConfig from './components/PricingTierConfig';
-
-import QuoteGenerator from './components/QuoteGenerator';
-import QuoteManager from './components/QuoteManager';
-import TemplateManager from './components/TemplateManager';
-import DealDetails from './components/DealDetails';
-
-import Settings from './components/Settings';
-import DigitalSignatureForm from './components/DigitalSignatureForm';
+import Dashboard from './components/Dashboard';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from './types/pricing';
-import { calculateAllTiers, getRecommendedTier, PRICING_TIERS } from './utils/pricing';
-import { FileText } from 'lucide-react';
+import { calculateAllTiers, PRICING_TIERS } from './utils/pricing';
 
 // Import authentication page components
 import LandingPage from './pages/LandingPage';
@@ -26,7 +14,6 @@ import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('configure');
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
   const [calculations, setCalculations] = useState<PricingCalculation[]>([]);
   const [selectedTier, setSelectedTier] = useState<PricingCalculation | null>(null);
@@ -550,7 +537,7 @@ function App() {
   // Handle using deal data in configuration and quote generation
   const handleUseDealData = (dealData: any) => {
     setActiveDealData(dealData);
-    setActiveTab('configure');
+    // Navigation is now handled by React Router
     
     // Clear any saved contact info to ensure deal data takes priority
     try {
@@ -632,8 +619,7 @@ function App() {
       // Store deal info for later use
       localStorage.setItem('dealInfo', JSON.stringify(dealParams));
       
-      // Set active tab to 'deal' when deal data is present
-      setActiveTab('deal');
+      // Deal data is present - user can navigate to deal tab via URL
       
       // Automatically refresh deal data from HubSpot to get real values
       console.log('🚀 Auto-refreshing deal data from HubSpot...');
@@ -1015,10 +1001,10 @@ function App() {
     }
   }, [quotes]);
 
-  // Reset configure session when returning to configure tab
+  // Reset configure session when configuration changes
   useEffect(() => {
-    if (activeTab === 'configure') {
-      console.log('🔄 Returning to configure tab - resetting session state');
+    if (configuration) {
+      console.log('🔄 Configuration changed - resetting session state');
       // Reset pricing display to show initial configuration form
       setShowPricing(false);
       // Reset selected tier
@@ -1035,22 +1021,9 @@ function App() {
         setCalculations([]);
       }
     }
-  }, [activeTab, configuration]);
+  }, [configuration]);
 
-  // Listen for navigation events from QuoteGenerator
-  useEffect(() => {
-    const handleNavigateToTab = (event: CustomEvent) => {
-      const tabName = event.detail;
-      console.log('🔄 Navigating to tab:', tabName);
-      setActiveTab(tabName);
-    };
-
-    window.addEventListener('navigateToTab', handleNavigateToTab as EventListener);
-    
-    return () => {
-      window.removeEventListener('navigateToTab', handleNavigateToTab as EventListener);
-    };
-  }, []);
+  // Navigation is now handled by React Router URLs
 
   const handleConfigurationChange = (config: ConfigurationData) => {
     // Check if migration type has changed
@@ -1208,7 +1181,9 @@ function App() {
       console.warn('Auto-select template failed:', e);
     }
 
-    setActiveTab('quote');
+    // Navigate to quote tab after selecting tier
+    console.log('🔄 Navigating to quote tab after tier selection...');
+    // Note: Navigation will be handled by the Dashboard component
   };
 
   const handleTierUpdate = (updatedTiers: PricingTier[]) => {
@@ -1393,216 +1368,6 @@ function App() {
     setSelectedTemplate(template);
   };
 
-  const renderContent = () => {
-    // Handle signature form display
-    if (isSignatureForm && signatureFormData) {
-      return (
-        <DigitalSignatureForm
-          formId={signatureFormData.form_id}
-          quoteData={signatureFormData.quote_data}
-          clientName={signatureFormData.client_name}
-          clientEmail={signatureFormData.client_email}
-          onComplete={handleSignatureFormComplete}
-        />
-      );
-    }
-
-    switch (activeTab) {
-      case 'deal':
-        return (
-          <div className="max-w-7xl mx-auto p-6">
-            <div className="mb-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Deal Information</h1>
-                  <p className="text-gray-600">View and manage deal details from HubSpot</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Show DealDetails component with real or test data */}
-            <DealDetails 
-              dealData={dealData || {
-                dealId: "TEST-12345",
-                dealName: "Test Deal - Cloud Migration",
-                amount: "$25,000",
-                stage: "Proposal",
-                closeDate: "2024-12-31",
-                ownerId: "user-456",
-                // Add demo contact and company information
-                company: "Demo Company Inc.",
-                companyByContact: "Contact Company Inc.",
-                contactName: "John Smith",
-                contactEmail: "john.smith@democompany.com",
-                contactPhone: "+1 (555) 123-4567",
-                contactJobTitle: "IT Director",
-                companyDomain: "democompany.com",
-                companyPhone: "+1 (555) 987-6543",
-                companyAddress: "123 Business Street, City, State 12345"
-              }}
-              onRefresh={refreshDealData}
-              onUseDealData={handleUseDealData}
-            />
-          </div>
-        );
-
-      case 'configure':
-        return (
-          <div className="space-y-8">
-            <ConfigurationForm
-              onConfigurationChange={handleConfigurationChange}
-              onSubmit={handleSubmitConfiguration}
-              dealData={activeDealData}
-              onContactInfoChange={handleConfigureContactInfoChange}
-              templates={templates}
-              selectedTemplate={selectedTemplate}
-              onTemplateSelect={handleTemplateSelect}
-            />
-            
-            {showPricing && calculations.length > 0 && (
-              <PricingComparison
-                calculations={calculations}
-                recommendedTier={getRecommendedTier(calculations)}
-                onSelectTier={handleSelectTier}
-                configuration={configuration}
-              />
-            )}
-          </div>
-        );
-
-      case 'pricing-config':
-        return (
-          <PricingTierConfig
-            tiers={pricingTiers}
-            onTierUpdate={handleTierUpdate}
-          />
-        );
-
-
-
-
-      case 'quote':
-        // Debug logging removed to prevent console spam
-        
-        if (!selectedTier || !configuration) {
-          console.log('❌ Quote tab: Missing selectedTier or configuration');
-          return (
-            <div className="max-w-4xl mx-auto p-8">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FileText className="w-8 h-8 text-gray-400" />
-                </div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">No Configuration Selected</h2>
-                <p className="text-gray-600 mb-6">
-                  Please configure your project and select a pricing tier first to generate a quote.
-                </p>
-                <div className="space-x-4">
-                  <button
-                    onClick={() => setActiveTab('configure')}
-                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold"
-                  >
-                    Go to Configuration
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('pricing')}
-                    className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-semibold"
-                  >
-                    View Pricing
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        }
-        
-        // Create a fallback calculation if no tier is selected
-        const fallbackCalculation: PricingCalculation = {
-          userCost: 30,
-          dataCost: 0,
-          migrationCost: 300,
-          instanceCost: 0,
-          totalCost: 330,
-          tier: {
-            id: 'default',
-            name: 'Basic' as const,
-            perUserCost: 30.0,
-            perGBCost: 1.00,
-            managedMigrationCost: 300,
-            instanceCost: 0,
-            userLimits: { from: 1, to: 100 },
-            gbLimits: { from: 0, to: 1000 },
-            features: ['Basic migration support', 'Email support']
-          }
-        };
-
-        // Debug: Check what calculation is being passed (reduced logging)
-        if (!selectedTier) {
-          console.log('🔍 App.tsx - Using fallback calculation (no tier selected)');
-        }
-
-        // Create a fallback configuration if none exists
-        const fallbackConfiguration: ConfigurationData = {
-          numberOfUsers: 1,
-          instanceType: 'Standard',
-          numberOfInstances: 1,
-          duration: 1,
-          migrationType: 'Messaging',
-          dataSizeGB: 0
-        };
-
-        return (
-          <QuoteGenerator
-            calculation={selectedTier || fallbackCalculation}
-            configuration={configuration || fallbackConfiguration}
-            onGenerateQuote={handleGenerateQuote}
-            hubspotState={hubspotState}
-            onSelectHubSpotContact={handleSelectHubSpotContact}
-            companyInfo={companyInfo}
-            selectedTemplate={selectedTemplate}
-            onClientInfoChange={handleClientInfoChange}
-            dealData={activeDealData}
-            configureContactInfo={configureContactInfo}
-          />
-        );
-
-      case 'quotes':
-        return (
-          <QuoteManager
-            quotes={quotes}
-            onDeleteQuote={handleDeleteQuote}
-            onUpdateQuoteStatus={handleUpdateQuoteStatus}
-            onUpdateQuote={handleUpdateQuote}
-            templates={templates}
-
-          />
-        );
-
-      case 'templates':
-        return (
-          <TemplateManager
-            onTemplateSelect={handleTemplateSelect}
-            selectedTemplate={selectedTemplate}
-            onTemplatesUpdate={handleTemplatesUpdate}
-            currentQuoteData={getCurrentQuoteData()}
-
-          />
-        );
-
-
-
-
-      case 'settings':
-        return (
-          <Settings
-            companyInfo={companyInfo}
-            updateCompanyInfo={updateCompanyInfo}
-          />
-        );
-
-      default:
-        return null;
-    }
-  };
 
    return (
     <Router>
@@ -1616,16 +1381,62 @@ function App() {
             <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
             <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
             
-            {/* Protected Routes - Original CPQ App */}
-            <Route path="/dashboard" element={
+            {/* Protected Routes - Dashboard with URL-based tab navigation */}
+            <Route path="/dashboard" element={<Navigate to="/dashboard/configure" replace />} />
+            <Route path="/dashboard/*" element={
               <ProtectedRoute>
-                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
-                  {!isSignatureForm && <Navigation activeTab={activeTab} onTabChange={setActiveTab} />}
-                  
-                  <main className={`${isSignatureForm ? 'max-w-6xl' : 'max-w-7xl'} mx-auto px-4 sm:px-6 lg:px-8 py-10`}>
-                    {renderContent()}
-                  </main>
-                </div>
+                <Dashboard
+                  configuration={configuration}
+                  setConfiguration={setConfiguration}
+                  calculations={calculations}
+                  setCalculations={setCalculations}
+                  selectedTier={selectedTier}
+                  setSelectedTier={setSelectedTier}
+                  showPricing={showPricing}
+                  setShowPricing={setShowPricing}
+                  pricingTiers={pricingTiers}
+                  setPricingTiers={setPricingTiers}
+                  hubspotState={hubspotState}
+                  setHubspotState={setHubspotState}
+                  companyInfo={companyInfo}
+                  setCompanyInfo={setCompanyInfo}
+                  selectedTemplate={selectedTemplate}
+                  setSelectedTemplate={setSelectedTemplate}
+                  templates={templates}
+                  setTemplates={setTemplates}
+                  quotes={quotes}
+                  setQuotes={setQuotes}
+                  dealData={dealData}
+                  setDealData={setDealData}
+                  activeDealData={activeDealData}
+                  setActiveDealData={setActiveDealData}
+                  currentClientInfo={currentClientInfo}
+                  setCurrentClientInfo={setCurrentClientInfo}
+                  configureContactInfo={configureContactInfo}
+                  setConfigureContactInfo={setConfigureContactInfo}
+                  signatureFormData={signatureFormData}
+                  setSignatureFormData={setSignatureFormData}
+                  isSignatureForm={isSignatureForm}
+                  setIsSignatureForm={setIsSignatureForm}
+                  handleConfigurationChange={handleConfigurationChange}
+                  handleSubmitConfiguration={handleSubmitConfiguration}
+                  handleSelectTier={handleSelectTier}
+                  handleTierUpdate={handleTierUpdate}
+                  handleGenerateQuote={handleGenerateQuote}
+                  handleDeleteQuote={handleDeleteQuote}
+                  handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                  handleUpdateQuote={handleUpdateQuote}
+                  handleTemplateSelect={handleTemplateSelect}
+                  handleTemplatesUpdate={handleTemplatesUpdate}
+                  updateCompanyInfo={updateCompanyInfo}
+                  handleSelectHubSpotContact={handleSelectHubSpotContact}
+                  handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                  handleClientInfoChange={handleClientInfoChange}
+                  refreshDealData={refreshDealData}
+                  handleUseDealData={handleUseDealData}
+                  handleSignatureFormComplete={handleSignatureFormComplete}
+                  getCurrentQuoteData={getCurrentQuoteData}
+                />
               </ProtectedRoute>
             } />
             

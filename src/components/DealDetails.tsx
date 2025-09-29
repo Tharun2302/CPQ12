@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Building, 
   User, 
-  AlertCircle,
   CheckCircle,
   ArrowRight,
   Settings,
@@ -31,8 +30,7 @@ interface DealDetailsProps {
   onUseDealData?: (dealData: DealData) => void;
 }
 
-const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDealData }) => {
-  const [isLoading] = useState(false);
+const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onUseDealData }) => {
 
   // Extract company name from email domain if company field is "Not Available"
   const extractCompanyFromEmail = (email: string): string => {
@@ -90,6 +88,10 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
   // Refresh button removed per requirements; keeping onRefresh prop optional for compatibility
 
   const handleUseDealData = () => {
+    console.log('🔍 Use Deal Data button clicked!');
+    console.log('🔍 onUseDealData function:', onUseDealData);
+    console.log('🔍 dealData:', dealData);
+    
     if (onUseDealData && dealData) {
       // Create enhanced deal data with extracted company name
       const enhancedDealData = {
@@ -98,6 +100,8 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
       };
       console.log('🔄 Using deal data with enhanced company name:', enhancedDealData);
       onUseDealData(enhancedDealData);
+    } else {
+      console.error('❌ Missing onUseDealData function or dealData:', { onUseDealData, dealData });
     }
   };
 
@@ -218,7 +222,8 @@ const DealDetails: React.FC<DealDetailsProps> = ({ dealData, onRefresh, onUseDea
           <div className="flex space-x-3">
             <button 
               onClick={handleUseDealData}
-              className="flex items-center px-6 py-3 text-sm bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg"
+              className="flex items-center px-6 py-3 text-sm bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg cursor-pointer"
+              style={{ pointerEvents: 'auto' }}
             >
               <Settings className="w-4 h-4 mr-2" />
               Use Deal Data
