@@ -17,20 +17,37 @@ import { FileText } from 'lucide-react';
 interface DashboardProps {
   // All the props that were previously in App component
   configuration: ConfigurationData | undefined;
+  setConfiguration: React.Dispatch<React.SetStateAction<ConfigurationData | undefined>>;
   calculations: PricingCalculation[];
+  setCalculations: React.Dispatch<React.SetStateAction<PricingCalculation[]>>;
   selectedTier: PricingCalculation | null;
+  setSelectedTier: React.Dispatch<React.SetStateAction<PricingCalculation | null>>;
   showPricing: boolean;
+  setShowPricing: React.Dispatch<React.SetStateAction<boolean>>;
   pricingTiers: PricingTier[];
+  setPricingTiers: React.Dispatch<React.SetStateAction<PricingTier[]>>;
   hubspotState: any;
+  setHubspotState: React.Dispatch<React.SetStateAction<any>>;
   companyInfo: any;
+  setCompanyInfo: React.Dispatch<React.SetStateAction<any>>;
   selectedTemplate: any;
+  setSelectedTemplate: React.Dispatch<React.SetStateAction<any>>;
   templates: any[];
+  setTemplates: React.Dispatch<React.SetStateAction<any[]>>;
   quotes: Quote[];
+  setQuotes: React.Dispatch<React.SetStateAction<Quote[]>>;
   dealData: any;
+  setDealData: React.Dispatch<React.SetStateAction<any>>;
   activeDealData: any;
+  setActiveDealData: React.Dispatch<React.SetStateAction<any>>;
+  currentClientInfo: any;
+  setCurrentClientInfo: React.Dispatch<React.SetStateAction<any>>;
   configureContactInfo: any;
+  setConfigureContactInfo: React.Dispatch<React.SetStateAction<any>>;
   signatureFormData: any;
+  setSignatureFormData: React.Dispatch<React.SetStateAction<any>>;
   isSignatureForm: boolean;
+  setIsSignatureForm: React.Dispatch<React.SetStateAction<boolean>>;
   // Handler functions
   handleConfigurationChange: (config: ConfigurationData) => void;
   handleSubmitConfiguration: () => void;
@@ -54,20 +71,37 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({
   configuration,
+  setConfiguration,
   calculations,
+  setCalculations,
   selectedTier,
+  setSelectedTier,
   showPricing,
+  setShowPricing,
   pricingTiers,
+  setPricingTiers,
   hubspotState,
+  setHubspotState,
   companyInfo,
+  setCompanyInfo,
   selectedTemplate,
+  setSelectedTemplate,
   templates,
+  setTemplates,
   quotes,
+  setQuotes,
   dealData,
+  setDealData,
   activeDealData,
+  setActiveDealData,
+  currentClientInfo,
+  setCurrentClientInfo,
   configureContactInfo,
+  setConfigureContactInfo,
   signatureFormData,
+  setSignatureFormData,
   isSignatureForm,
+  setIsSignatureForm,
   handleConfigurationChange,
   handleSubmitConfiguration,
   handleSelectTier,
