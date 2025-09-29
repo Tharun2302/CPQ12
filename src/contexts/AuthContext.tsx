@@ -11,26 +11,19 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Mock user database (in a real app, this would be API calls)
 const mockUsers: User[] = [
   {
-    id: 'user_1',
-    name: 'raya',
-    email: 'raya@gmail.com',
+    id: 'user_cpq',
+    name: 'CPQ Team',
+    email: 'cpq@zenop.ai',
     provider: 'email',
     createdAt: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: 'user_2',
-    name: 'tharun',
-    email: 'tharun@gmail.com',
-    provider: 'email',
-    createdAt: '2024-01-02T00:00:00Z'
   }
 ];
- 
+
 // Mock passwords (in a real app, these would be hashed)
-const mockPasswords: { [key: string]: string } = {
-  'raya@gmail.com': 'raya123',
-  'tharun@gmail.com': 'tharun123'
-};
+// Note: Currently unused since we use fallback authentication
+// const mockPasswords: { [key: string]: string } = {
+//   'cpq@zenop.ai': 'CPQ@2025@TEAM'
+// };
  
 interface AuthProviderComponentProps {
   children: ReactNode;
@@ -128,6 +121,12 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setLoading(true);
+      
+      // Restrict to only specific account
+      if (email !== 'cpq@zenop.ai') {
+        console.error('❌ Access denied: Only cpq@zenop.ai is allowed for manual authentication');
+        return false;
+      }
      
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
       const response = await fetch(`${backendUrl}/api/auth/login`, {
@@ -154,9 +153,44 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         }
       }
      
+      // Fallback to mock authentication if backend fails
+      if (email === 'cpq@zenop.ai' && password === 'CPQ@2025@TEAM') {
+        const user = mockUsers.find(u => u.email === email);
+        if (user) {
+          // Store user and mock token
+          localStorage.setItem('cpq_user', JSON.stringify(user));
+          localStorage.setItem('cpq_token', 'mock_token_' + Date.now());
+          
+          // Update state
+          setUser(user);
+          setIsAuthenticated(true);
+          
+          console.log('✅ Fallback authentication successful for cpq@zenop.ai');
+          return true;
+        }
+      }
+      
       return false;
     } catch (error) {
       console.error('Login error:', error);
+      
+      // Fallback to mock authentication if backend fails
+      if (email === 'cpq@zenop.ai' && password === 'CPQ@2025@TEAM') {
+        const user = mockUsers.find(u => u.email === email);
+        if (user) {
+          // Store user and mock token
+          localStorage.setItem('cpq_user', JSON.stringify(user));
+          localStorage.setItem('cpq_token', 'mock_token_' + Date.now());
+          
+          // Update state
+          setUser(user);
+          setIsAuthenticated(true);
+          
+          console.log('✅ Fallback authentication successful for cpq@zenop.ai');
+          return true;
+        }
+      }
+      
       return false;
     } finally {
       setLoading(false);
@@ -191,39 +225,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     return base64UrlEncode(digest);
   };
  
-  const signup = async (userData: SignUpData): Promise<boolean> => {
+  const signup = async (_userData: SignUpData): Promise<boolean> => {
     try {
       setLoading(true);
-     
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: userData.name,
-          email: userData.email,
-          password: userData.password
-        })
-      });
- 
-      if (response.ok) {
-        const data = await response.json();
-       
-        if (data.success) {
-          // Store user and token
-          localStorage.setItem('cpq_user', JSON.stringify(data.user));
-          localStorage.setItem('cpq_token', data.token);
-         
-          // Update state
-          setUser(data.user);
-          setIsAuthenticated(true);
-         
-          return true;
-        }
-      }
-     
+      
+      // Disable signup - only allow specific account
+      console.error('❌ Signup is disabled. Only cpq@zenop.ai is allowed for manual authentication');
+      // Return false immediately without making any API calls
       return false;
     } catch (error) {
       console.error('Signup error:', error);

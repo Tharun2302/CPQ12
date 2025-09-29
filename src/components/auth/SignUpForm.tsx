@@ -57,8 +57,8 @@ const SignUpForm: React.FC<SignUpFormProps> = ({ onSuccess, onError }) => {
       if (success) {
         onSuccess?.();
       } else {
-        setErrors([{ field: 'general', message: 'Email already exists. Please use a different email.' }]);
-        onError?.('Email already exists. Please use a different email.');
+        setErrors([{ field: 'general', message: 'Signup is currently disabled. Only authorized accounts can access this application.' }]);
+        onError?.('Signup is currently disabled. Only authorized accounts can access this application.');
       }
     } catch (error) {
       console.error('Sign up error:', error);
@@ -260,6 +260,7 @@ const SignUpForm: React.FC<SignUpFormProps> = ({ onSuccess, onError }) => {
             </Link>
           </p>
         </div>
+
 
       </div>
     </div>
