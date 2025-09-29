@@ -49,8 +49,8 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
       if (success) {
         onSuccess?.();
       } else {
-        setErrors([{ field: 'general', message: 'Invalid email or password' }]);
-        onError?.('Invalid email or password');
+        setErrors([{ field: 'general', message: 'Access denied. Only authorized accounts can access this application.' }]);
+        onError?.('Access denied. Only authorized accounts can access this application.');
       }
     } catch (error) {
       console.error('Sign in error:', error);
@@ -203,6 +203,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
             </Link>
           </p>
         </div>
+
 
       </div>
     </div>
