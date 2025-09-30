@@ -1134,7 +1134,8 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       console.log('📄 Temp DOCX written:', inputPath);
       
       // Use LibreOffice to convert
-      const sofficeCmd = process.env.SOFFICE_PATH || 'libreoffice';
+      const isWindows = os.platform() === 'win32';
+      const sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
       console.log('📄 Using LibreOffice:', sofficeCmd);
       
       const { spawn } = require('child_process');
@@ -1866,8 +1867,11 @@ async function startServer() {
 app.get('/api/libreoffice/health', async (req, res) => {
   try {
     // Test if LibreOffice is available
+    const isWindows = os.platform() === 'win32';
+    const sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
+    
     await new Promise((resolve, reject) => {
-      exec('libreoffice --version', { timeout: 5000 }, (error, stdout, stderr) => {
+      exec(`${sofficeCmd} --version`, { timeout: 5000 }, (error, stdout, stderr) => {
         if (error) {
           reject(error);
         } else {

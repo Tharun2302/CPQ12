@@ -1563,15 +1563,43 @@ Quote ID: ${templateData.quoteId}
    * Format date in mm/dd/yyyy format
    */
   private formatDateMMDDYYYY(dateString: string): string {
-    if (!dateString || dateString === 'N/A') return 'N/A';
+    console.log('🔍 formatDateMMDDYYYY called with:', dateString, 'type:', typeof dateString);
+    
+    if (!dateString || dateString === 'N/A' || dateString === 'undefined' || dateString === 'null') {
+      console.log('  Returning N/A - empty or invalid dateString');
+      return 'N/A';
+    }
+    
     try {
-      // Parse the date string directly without timezone conversion
-      // This prevents the date offset issue
-      const date = new Date(dateString + 'T00:00:00'); // Add time to avoid timezone issues
+      let date: Date;
+      
+      // Handle different date formats
+      if (dateString.includes('-')) {
+        // Handle YYYY-MM-DD format (from HTML date input)
+        date = new Date(dateString + 'T00:00:00');
+      } else if (dateString.includes('/')) {
+        // Handle MM/DD/YYYY format
+        date = new Date(dateString);
+      } else {
+        // Try parsing as-is
+        date = new Date(dateString);
+      }
+      
+      console.log('  Parsed date object:', date);
+      console.log('  Date is valid:', !isNaN(date.getTime()));
+      console.log('  Date toString:', date.toString());
+      
+      if (isNaN(date.getTime())) {
+        console.log('  Invalid date, returning N/A');
+        return 'N/A';
+      }
+      
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       const day = date.getDate().toString().padStart(2, '0');
       const year = date.getFullYear();
-      return `${month}/${day}/${year}`;
+      const result = `${month}/${day}/${year}`;
+      console.log('  Formatted result:', result);
+      return result;
     } catch (error) {
       console.error('Error formatting date:', dateString, error);
       return 'N/A';
