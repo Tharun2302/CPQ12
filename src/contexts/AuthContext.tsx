@@ -267,7 +267,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       // Use localStorage so the popup callback window can access it
       localStorage.setItem('msal_code_verifier', codeVerifier);
  
-      const authUrl = `https://login.microsoftonline.com/2c5bdaf4-8ff2-4bd9-bd54-7c50ab219590/oauth2/v2.0/authorize?` +
+      const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
         `client_id=${clientId}&` +
         `response_type=code&` +
         `redirect_uri=${redirectUri}&` +
@@ -353,9 +353,20 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
             // Send Microsoft user data to backend
             const microsoftUser = event.data.user;
             
-            // Validate email format (allow any valid email domain for now)
+            // Validate email format and restrict to cloudfuze.com domain only
             if (!microsoftUser.email || !microsoftUser.email.includes('@')) {
               console.error('❌ Access denied: Invalid email address format');
+              clearInterval(checkClosed);
+              window.removeEventListener('message', messageListener);
+              popup.close();
+              resolve(false);
+              return;
+            }
+            
+            // Restrict access to only cloudfuze.com domain
+            if (!microsoftUser.email.endsWith('@cloudfuze.com')) {
+              console.error('❌ Access denied: Only cloudfuze.com domain is allowed');
+              alert('Access denied: Only users with @cloudfuze.com email addresses are allowed to access this application.');
               clearInterval(checkClosed);
               window.removeEventListener('message', messageListener);
               popup.close();
