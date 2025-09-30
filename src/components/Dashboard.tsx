@@ -324,7 +324,9 @@ const Dashboard: React.FC<DashboardProps> = ({
           numberOfInstances: 1,
           duration: 1,
           migrationType: 'Messaging',
-          dataSizeGB: 0
+          dataSizeGB: 0,
+          startDate: '',
+          endDate: ''
         };
 
         return (
@@ -332,6 +334,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             calculation={selectedTier || fallbackCalculation}
             configuration={configuration || fallbackConfiguration}
             onGenerateQuote={handleGenerateQuote}
+            onConfigurationChange={handleConfigurationChange}
             hubspotState={hubspotState}
             onSelectHubSpotContact={handleSelectHubSpotContact}
             companyInfo={companyInfo}
