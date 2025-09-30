@@ -9,6 +9,7 @@ services:
     ports:
       - "3001:3001"
     environment:
+      - SOFFICE_PATH=${SOFFICE_PATH}
       - NODE_ENV=production
       - PORT=3001
       - MONGODB_URI=${MONGODB_URI}

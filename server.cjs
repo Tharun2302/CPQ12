@@ -1134,7 +1134,7 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       console.log('📄 Temp DOCX written:', inputPath);
       
       // Use LibreOffice to convert
-      const sofficeCmd = process.env.SOFFICE_PATH || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+      const sofficeCmd = process.env.SOFFICE_PATH || 'libreoffice';
       console.log('📄 Using LibreOffice:', sofficeCmd);
       
       const { spawn } = require('child_process');
