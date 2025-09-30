@@ -1,33 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import Navigation from './components/Navigation';
-import ConfigurationForm from './components/ConfigurationForm';
-import PricingComparison from './components/PricingComparison';
-import PricingTierConfig from './components/PricingTierConfig';
-
-import QuoteGenerator from './components/QuoteGenerator';
-import QuoteManager from './components/QuoteManager';
-import TemplateManager from './components/TemplateManager';
-import DealDetails from './components/DealDetails';
-
-import Settings from './components/Settings';
-import DigitalSignatureForm from './components/DigitalSignatureForm';
+import Dashboard from './components/Dashboard';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from './types/pricing';
-import { calculateAllTiers, getRecommendedTier, PRICING_TIERS } from './utils/pricing';
-import { FileText } from 'lucide-react';
+import { calculateAllTiers, PRICING_TIERS } from './utils/pricing';
 
 // Import authentication page components
 import LandingPage from './pages/LandingPage';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
 import MicrosoftCallback from './pages/MicrosoftCallback';
-import DebugEnv from './pages/DebugEnv';
 import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('configure');
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
   const [calculations, setCalculations] = useState<PricingCalculation[]>([]);
   const [selectedTier, setSelectedTier] = useState<PricingCalculation | null>(null);
@@ -551,7 +537,7 @@ function App() {
   // Handle using deal data in configuration and quote generation
   const handleUseDealData = (dealData: any) => {
     setActiveDealData(dealData);
-    setActiveTab('configure');
+    // Navigation is now handled by React Router
     
     // Clear any saved contact info to ensure deal data takes priority
     try {
@@ -589,65 +575,6 @@ function App() {
 
   // Handle HubSpot contact selection - moved after updateHubspotState declaration
 
-  // Auto-load HubSpot data after successful connection
-  const autoLoadHubSpotData = async () => {
-    try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      
-      // Load contacts
-      console.log('🔄 Auto-loading HubSpot contacts...');
-      setHubspotState(prev => ({ ...prev, isLoadingContacts: true }));
-      
-      const contactsResponse = await fetch(`${backendUrl}/api/hubspot/contacts`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15000)
-      });
-      
-      if (contactsResponse.ok) {
-        const contactsResult = await contactsResponse.json();
-        if (contactsResult.success && contactsResult.data) {
-          console.log('✅ Auto-loaded contacts:', contactsResult.data.length);
-          setHubspotState(prev => ({ 
-            ...prev, 
-            hubspotContacts: contactsResult.data,
-            isLoadingContacts: false 
-          }));
-        }
-      }
-      
-      // Load deals
-      console.log('🔄 Auto-loading HubSpot deals...');
-      setHubspotState(prev => ({ ...prev, isLoadingDeals: true }));
-      
-      const dealsResponse = await fetch(`${backendUrl}/api/hubspot/deals`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(15000)
-      });
-      
-      if (dealsResponse.ok) {
-        const dealsResult = await dealsResponse.json();
-        if (dealsResult.success && dealsResult.data) {
-          console.log('✅ Auto-loaded deals:', dealsResult.data.length);
-          setHubspotState(prev => ({ 
-            ...prev, 
-            hubspotDeals: dealsResult.data,
-            isLoadingDeals: false 
-          }));
-        }
-      }
-      
-      console.log('✅ HubSpot data auto-loading completed');
-    } catch (error) {
-      console.log('⚠️ Error auto-loading HubSpot data:', error);
-      setHubspotState(prev => ({ 
-        ...prev, 
-        isLoadingContacts: false,
-        isLoadingDeals: false 
-      }));
-    }
-  };
 
   // Handle URL parameters on component mount
   useEffect(() => {
@@ -692,8 +619,7 @@ function App() {
       // Store deal info for later use
       localStorage.setItem('dealInfo', JSON.stringify(dealParams));
       
-      // Set active tab to 'deal' when deal data is present
-      setActiveTab('deal');
+      // Deal data is present - user can navigate to deal tab via URL
       
       // Automatically refresh deal data from HubSpot to get real values
       console.log('🚀 Auto-refreshing deal data from HubSpot...');
@@ -855,10 +781,6 @@ function App() {
         isConnecting: false 
       }));
       console.log('✅ HubSpot auto-connected in demo mode');
-      
-      // Auto-load HubSpot data
-      console.log('🔄 Auto-loading HubSpot data...');
-      await autoLoadHubSpotData();
     };
 
     // Add a small delay to ensure the app is fully loaded
@@ -1079,10 +1001,10 @@ function App() {
     }
   }, [quotes]);
 
-  // Reset configure session when returning to configure tab
+  // Reset configure session when configuration changes
   useEffect(() => {
-    if (activeTab === 'configure') {
-      console.log('🔄 Returning to configure tab - resetting session state');
+    if (configuration) {
+      console.log('🔄 Configuration changed - resetting session state');
       // Reset pricing display to show initial configuration form
       setShowPricing(false);
       // Reset selected tier
@@ -1099,22 +1021,9 @@ function App() {
         setCalculations([]);
       }
     }
-  }, [activeTab, configuration]);
+  }, [configuration]);
 
-  // Listen for navigation events from QuoteGenerator
-  useEffect(() => {
-    const handleNavigateToTab = (event: CustomEvent) => {
-      const tabName = event.detail;
-      console.log('🔄 Navigating to tab:', tabName);
-      setActiveTab(tabName);
-    };
-
-    window.addEventListener('navigateToTab', handleNavigateToTab as EventListener);
-    
-    return () => {
-      window.removeEventListener('navigateToTab', handleNavigateToTab as EventListener);
-    };
-  }, []);
+  // Navigation is now handled by React Router URLs
 
   const handleConfigurationChange = (config: ConfigurationData) => {
     // Check if migration type has changed
@@ -1272,7 +1181,9 @@ function App() {
       console.warn('Auto-select template failed:', e);
     }
 
-    setActiveTab('quote');
+    // Navigate to quote tab after selecting tier
+    console.log('🔄 Navigating to quote tab after tier selection...');
+    // Note: Navigation will be handled by the Dashboard component
   };
 
   const handleTierUpdate = (updatedTiers: PricingTier[]) => {
@@ -1457,6 +1368,7 @@ function App() {
     setSelectedTemplate(template);
   };
 
+<<<<<<< HEAD
   const renderContent = () => {
     // Handle signature form display
     if (isSignatureForm && signatureFormData) {
@@ -1668,6 +1580,8 @@ function App() {
         return null;
     }
   };
+=======
+>>>>>>> d7faa9ca3b93ed1b461544e18b8f1bb86d8e007c
 
    return (
     <Router>
@@ -1680,18 +1594,63 @@ function App() {
             <Route path="/signup" element={<SignUpPage />} />
             <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
             <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
-            <Route path="/debug-env" element={<DebugEnv />} />
             
-            {/* Protected Routes - Original CPQ App */}
-            <Route path="/dashboard" element={
+            {/* Protected Routes - Dashboard with URL-based tab navigation */}
+            <Route path="/dashboard" element={<Navigate to="/dashboard/configure" replace />} />
+            <Route path="/dashboard/*" element={
               <ProtectedRoute>
-                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
-                  {!isSignatureForm && <Navigation activeTab={activeTab} onTabChange={setActiveTab} />}
-                  
-                  <main className={`${isSignatureForm ? 'max-w-6xl' : 'max-w-7xl'} mx-auto px-4 sm:px-6 lg:px-8 py-10`}>
-                    {renderContent()}
-                  </main>
-                </div>
+                <Dashboard
+                  configuration={configuration}
+                  setConfiguration={setConfiguration}
+                  calculations={calculations}
+                  setCalculations={setCalculations}
+                  selectedTier={selectedTier}
+                  setSelectedTier={setSelectedTier}
+                  showPricing={showPricing}
+                  setShowPricing={setShowPricing}
+                  pricingTiers={pricingTiers}
+                  setPricingTiers={setPricingTiers}
+                  hubspotState={hubspotState}
+                  setHubspotState={setHubspotState}
+                  companyInfo={companyInfo}
+                  setCompanyInfo={setCompanyInfo}
+                  selectedTemplate={selectedTemplate}
+                  setSelectedTemplate={setSelectedTemplate}
+                  templates={templates}
+                  setTemplates={setTemplates}
+                  quotes={quotes}
+                  setQuotes={setQuotes}
+                  dealData={dealData}
+                  setDealData={setDealData}
+                  activeDealData={activeDealData}
+                  setActiveDealData={setActiveDealData}
+                  currentClientInfo={currentClientInfo}
+                  setCurrentClientInfo={setCurrentClientInfo}
+                  configureContactInfo={configureContactInfo}
+                  setConfigureContactInfo={setConfigureContactInfo}
+                  signatureFormData={signatureFormData}
+                  setSignatureFormData={setSignatureFormData}
+                  isSignatureForm={isSignatureForm}
+                  setIsSignatureForm={setIsSignatureForm}
+                  handleConfigurationChange={handleConfigurationChange}
+                  handleSubmitConfiguration={handleSubmitConfiguration}
+                  handleSelectTier={handleSelectTier}
+                  handleTierUpdate={handleTierUpdate}
+                  handleGenerateQuote={handleGenerateQuote}
+                  handleDeleteQuote={handleDeleteQuote}
+                  handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                  handleUpdateQuote={handleUpdateQuote}
+                  handleTemplateSelect={handleTemplateSelect}
+                  handleTemplatesUpdate={handleTemplatesUpdate}
+                  updateCompanyInfo={updateCompanyInfo}
+                  handleSelectHubSpotContact={handleSelectHubSpotContact}
+                  handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                  handleClientInfoChange={handleClientInfoChange}
+                  refreshDealData={refreshDealData}
+                  handleUseDealData={handleUseDealData}
+                  handleSignatureFormComplete={handleSignatureFormComplete}
+                  getCurrentQuoteData={getCurrentQuoteData}
+                />
               </ProtectedRoute>
             } />
             

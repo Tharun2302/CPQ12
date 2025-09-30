@@ -4,6 +4,8 @@ const axios = require('axios');
 const sgMail = require('@sendgrid/mail');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+const { exec } = require('child_process');
 const { MongoClient } = require('mongodb');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -1132,7 +1134,7 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       console.log('📄 Temp DOCX written:', inputPath);
       
       // Use LibreOffice to convert
-      const sofficeCmd = process.env.SOFFICE_PATH || 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+      const sofficeCmd = process.env.SOFFICE_PATH || 'libreoffice';
       console.log('📄 Using LibreOffice:', sofficeCmd);
       
       const { spawn } = require('child_process');
@@ -1819,8 +1821,8 @@ async function startServer() {
     console.log('🔍 Initializing database connection...');
     databaseAvailable = await initializeDatabase();
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Database available: ${databaseAvailable}`);
       console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
       console.log(`🔗 HubSpot API key: ${HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'}`);
@@ -1859,117 +1861,6 @@ app.listen(PORT, () => {
   }
 }
 
-// LibreOffice conversion endpoint (system LibreOffice)
-app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => {
-  try {
-    console.log('🔄 LibreOffice conversion request received');
-    
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No file uploaded'
-      });
-    }
-
-    // Create temp directories if they don't exist
-    const tempDir = path.join(__dirname, 'temp');
-    const inputDir = path.join(tempDir, 'input');
-    const outputDir = path.join(tempDir, 'output');
-    
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-    if (!fs.existsSync(inputDir)) fs.mkdirSync(inputDir, { recursive: true });
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-
-    // Generate unique filenames
-    const timestamp = Date.now();
-    const inputFileName = `input-${timestamp}.docx`;
-    const outputFileName = `output-${timestamp}.pdf`;
-    const inputPath = path.join(inputDir, inputFileName);
-    const outputPath = path.join(outputDir, outputFileName);
-
-    console.log('📁 Saving input file:', inputPath);
-    
-    // Save uploaded file
-    fs.writeFileSync(inputPath, req.file.buffer);
-
-    console.log('🔄 Converting with LibreOffice...');
-    
-    // Convert using system LibreOffice
-    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${inputPath}"`;
-    
-    await new Promise((resolve, reject) => {
-      exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
-        if (error) {
-          console.error('❌ LibreOffice conversion error:', error);
-          reject(error);
-        } else {
-          console.log('📄 LibreOffice output:', stdout);
-          if (stderr) console.warn('⚠️ LibreOffice warnings:', stderr);
-          resolve();
-        }
-      });
-    });
-
-    // Check if output file was created
-    if (!fs.existsSync(outputPath)) {
-      throw new Error('LibreOffice conversion failed - output file not created');
-    }
-
-    console.log('✅ LibreOffice conversion successful:', outputPath);
-    
-    // Set appropriate headers for PDF download
-    const pdfBuffer = fs.readFileSync(outputPath);
-    const originalName = req.file.originalname.replace(/\.[^/.]+$/, '') + '.pdf';
-    
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${originalName}"`,
-      'Content-Length': pdfBuffer.length
-    });
-
-    res.send(pdfBuffer);
-    
-    // Cleanup files after a delay
-    setTimeout(() => {
-      try {
-        if (fs.existsSync(inputPath)) {
-          fs.unlinkSync(inputPath);
-          console.log('🗑️ Cleaned up input file:', inputPath);
-        }
-        if (fs.existsSync(outputPath)) {
-          fs.unlinkSync(outputPath);
-          console.log('🗑️ Cleaned up output file:', outputPath);
-        }
-      } catch (cleanupError) {
-        console.warn('⚠️ Cleanup error:', cleanupError);
-      }
-    }, 10000); // 10 second delay
-    
-  } catch (error) {
-    console.error('❌ LibreOffice conversion error:', error.message);
-    
-    let userFriendlyMessage = 'Document conversion failed. Please try again.';
-    
-    if (error.message.includes('libreoffice')) {
-      userFriendlyMessage = 'LibreOffice is not installed or not in PATH. Please install LibreOffice.';
-    } else if (error.code === 'ETIMEDOUT') {
-      userFriendlyMessage = 'Conversion timed out. The document might be too complex.';
-    } else if (error.message.includes('output file not created')) {
-      userFriendlyMessage = 'Document conversion failed. The file might be corrupted or unsupported.';
-    }
-    
-    return res.status(500).json({
-      success: false,
-      message: userFriendlyMessage,
-      error: error.message,
-      instructions: [
-        '1. Install LibreOffice from https://www.libreoffice.org/download/',
-        '2. Add LibreOffice to your system PATH',
-        '3. Restart the server after installation'
-      ]
-    });
-  }
-});
 
 // LibreOffice system health check
 app.get('/api/libreoffice/health', async (req, res) => {

@@ -1,5 +1,5 @@
-import { PDFDocument, PDFPage, rgb, StandardFonts } from 'pdf-lib';
-import { findTokenPositions, TokenPosition, TokenSearchResult } from './tokenFinder';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { findTokenPositions, TokenPosition } from './tokenFinder';
 
 export interface QuoteData {
   id: string;
@@ -147,7 +147,6 @@ export const TOKEN_REPLACEMENT_MAP = {
   'project_end': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.endDate || ''),
   'plan_name': (quoteData: QuoteData) => quoteData.calculation.tier.name || 'N/A',
   'migration_type': (quoteData: QuoteData) => quoteData.configuration.migrationType || 'N/A',
-  'instance_type': (quoteData: QuoteData) => quoteData.configuration.instanceType || 'N/A',
   'duration': (quoteData: QuoteData) => quoteData.configuration.duration.toString(),
   'data_size': (quoteData: QuoteData) => quoteData.configuration.dataSizeGB.toString(),
 };
@@ -262,8 +261,8 @@ export async function replaceTokensInPDF(
     
     // Save the processed PDF
     console.log('💾 Saving processed PDF...');
-    const pdfBytes = await pdfDoc.save();
-    const processedPDF = new Blob([pdfBytes], { type: 'application/pdf' });
+    const processedPdfBytes = await pdfDoc.save();
+    const processedPDF = new Blob([processedPdfBytes], { type: 'application/pdf' });
     
     const processingTime = Date.now() - startTime;
     
