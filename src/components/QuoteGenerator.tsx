@@ -23,17 +23,31 @@ import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 
 // Date formatting helper for mm/dd/yyyy format
 function formatDateMMDDYYYY(dateString: string): string {
-  console.log('🔍 formatDateMMDDYYYY called with:', dateString);
-  if (!dateString || dateString === 'N/A') {
-    console.log('  Returning N/A - empty or N/A dateString');
+  console.log('🔍 formatDateMMDDYYYY called with:', dateString, 'type:', typeof dateString);
+  
+  if (!dateString || dateString === 'N/A' || dateString === 'undefined' || dateString === 'null') {
+    console.log('  Returning N/A - empty or invalid dateString');
     return 'N/A';
   }
+  
   try {
-    // Parse the date string directly without timezone conversion
-    // This prevents the date offset issue
-    const date = new Date(dateString + 'T00:00:00'); // Add time to avoid timezone issues
+    let date: Date;
+    
+    // Handle different date formats
+    if (dateString.includes('-')) {
+      // Handle YYYY-MM-DD format (from HTML date input)
+      date = new Date(dateString + 'T00:00:00');
+    } else if (dateString.includes('/')) {
+      // Handle MM/DD/YYYY format
+      date = new Date(dateString);
+    } else {
+      // Try parsing as-is
+      date = new Date(dateString);
+    }
+    
     console.log('  Parsed date object:', date);
     console.log('  Date is valid:', !isNaN(date.getTime()));
+    console.log('  Date toString:', date.toString());
     
     if (isNaN(date.getTime())) {
       console.log('  Invalid date, returning N/A');
@@ -819,13 +833,13 @@ Quote ID: ${quoteData.id}
           '{{plan}}': tierName,
           
           // Date information
-          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
-          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
-          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{current_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{currentDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
@@ -1117,15 +1131,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{client_name}}': quote.clientName,
       '{{client_email}}': quote.clientEmail,
       '{{quote_number}}': quoteNumber,
-      '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { 
-        year: '2-digit', 
-        month: '2-digit', 
-        day: '2-digit' 
-      }) : new Date().toLocaleDateString('en-US', { 
-        year: '2-digit', 
-        month: '2-digit', 
-        day: '2-digit' 
-      }),
+      '{{date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
         '{{instance_cost}}': formatCurrency(safeCalculation.instanceCost),
         '{{discount}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
         '{{discount_percent}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
@@ -2145,6 +2151,8 @@ Total Price: {{total price}}`;
         console.log('  configuration?.endDate:', configuration?.endDate);
         console.log('  clientInfo.effectiveDate:', clientInfo.effectiveDate);
         console.log('  configuration?.duration:', configuration?.duration);
+        console.log('  Full configuration object:', configuration);
+        console.log('  Full clientInfo object:', clientInfo);
         
         const templateData: Record<string, string> = {
           // Core company and client information
@@ -2190,45 +2198,74 @@ Total Price: {{total price}}`;
             console.log('  configuration?.startDate (Project Start Date):', configuration?.startDate);
             console.log('  clientInfo.effectiveDate (Effective Date):', clientInfo.effectiveDate);
             console.log('  selected startDate:', startDate);
-            const formatted = startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+            
+            if (!startDate) {
+              console.log('  No start date found, returning N/A');
+              return 'N/A';
+            }
+            
+            const formatted = formatDateMMDDYYYY(startDate);
             console.log('  formatted result:', formatted);
             return formatted;
           })(),
           '{{start_date}}': (() => {
-            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            const startDate = configuration?.startDate;
             return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
           })(),
           '{{startdate}}': (() => {
-            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            const startDate = configuration?.startDate;
             return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
           })(),
           '{{project_start_date}}': (() => {
-            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            const startDate = configuration?.startDate;
             return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
           })(),
           '{{project_start}}': (() => {
-            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            const startDate = configuration?.startDate;
             return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
           })(),
           
           // End date - calculate from Project Start Date + duration
           '{{End_date}}': (() => {
             if (configuration?.endDate) {
+              console.log('🔍 End_date using provided endDate:', configuration.endDate);
               return formatDateMMDDYYYY(configuration.endDate);
             }
+            
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            const duration = configuration?.duration;
+            
+            console.log('🔍 End_date calculation:');
+            console.log('  Project Start Date:', startDate);
+            console.log('  Duration (months):', duration);
+            
+            if (!startDate) {
+              console.log('  No start date found, returning N/A');
+              return 'N/A';
+            }
+            
+            if (!duration || duration <= 0) {
+              console.log('  No valid duration found, returning N/A');
+              return 'N/A';
+            }
+            
+            try {
               const startDateObj = new Date(startDate);
+              if (isNaN(startDateObj.getTime())) {
+                console.log('  Invalid start date, returning N/A');
+                return 'N/A';
+              }
+              
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
-              console.log('🔍 End_date calculation:');
-              console.log('  Project Start Date:', startDate);
-              console.log('  Duration (months):', configuration.duration);
+              endDate.setMonth(endDate.getMonth() + duration);
+              
               console.log('  Calculated End Date:', endDate.toISOString().split('T')[0]);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            } catch (error) {
+              console.error('Error calculating end date:', error);
+              return 'N/A';
             }
-            return 'N/A';
           })(),
           '{{end_date}}': (() => {
             if (configuration?.endDate) {
@@ -2344,13 +2381,13 @@ Total Price: {{total price}}`;
           '{{plan}}': tierName,
           
           // Date information
-          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
-          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
-          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
-          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{current_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{currentDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
@@ -2404,6 +2441,15 @@ Total Price: {{total price}}`;
             console.log(`✅ Template data ${key}:`, value);
           }
         });
+        
+        // Specific debugging for date tokens
+        console.log('🔍 DATE TOKENS DEBUG:');
+        console.log('  {{Start_date}}:', templateData['{{Start_date}}']);
+        console.log('  {{End_date}}:', templateData['{{End_date}}']);
+        console.log('  {{start_date}}:', templateData['{{start_date}}']);
+        console.log('  {{end_date}}:', templateData['{{end_date}}']);
+        console.log('  {{startdate}}:', templateData['{{startdate}}']);
+        console.log('  {{enddate}}:', templateData['{{enddate}}']);
         
         console.log('📋 Template data for DOCX processing:', templateData);
         
@@ -2510,15 +2556,7 @@ Total Price: {{total price}}`;
             } else if (token === '{{company name}}') {
               templateData[token] = finalCompanyName || 'Your Company';
             } else if (token === '{{Date}}') {
-              templateData[token] = clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', {
-                year: '2-digit', 
-                month: '2-digit', 
-                day: '2-digit' 
-              }) : new Date().toLocaleDateString('en-US', {
-                year: '2-digit', 
-                month: '2-digit', 
-                day: '2-digit' 
-              });
+              templateData[token] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
             }
             console.log(`🔧 FIXED: ${token} = ${templateData[token]}`);
           });
