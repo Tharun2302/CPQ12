@@ -1565,15 +1565,12 @@ Quote ID: ${templateData.quoteId}
   private formatDateMMDDYYYY(dateString: string): string {
     if (!dateString || dateString === 'N/A') return 'N/A';
     try {
-      const date = new Date(dateString);
-      // Convert to EST timezone (America/New_York)
-      const estDateString = date.toLocaleString('en-US', { 
-        timeZone: 'America/New_York' 
-      });
-      const estDate = new Date(estDateString);
-      const month = (estDate.getMonth() + 1).toString().padStart(2, '0');
-      const day = estDate.getDate().toString().padStart(2, '0');
-      const year = estDate.getFullYear();
+      // Parse the date string directly without timezone conversion
+      // This prevents the date offset issue
+      const date = new Date(dateString + 'T00:00:00'); // Add time to avoid timezone issues
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const year = date.getFullYear();
       return `${month}/${day}/${year}`;
     } catch (error) {
       console.error('Error formatting date:', dateString, error);

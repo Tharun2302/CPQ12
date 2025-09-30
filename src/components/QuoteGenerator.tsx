@@ -23,18 +23,29 @@ import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 
 // Date formatting helper for mm/dd/yyyy format
 function formatDateMMDDYYYY(dateString: string): string {
-  if (!dateString || dateString === 'N/A') return 'N/A';
+  console.log('🔍 formatDateMMDDYYYY called with:', dateString);
+  if (!dateString || dateString === 'N/A') {
+    console.log('  Returning N/A - empty or N/A dateString');
+    return 'N/A';
+  }
   try {
-    const date = new Date(dateString);
-    // Convert to EST timezone (America/New_York)
-    const estDateString = date.toLocaleString('en-US', { 
-      timeZone: 'America/New_York' 
-    });
-    const estDate = new Date(estDateString);
-    const month = (estDate.getMonth() + 1).toString().padStart(2, '0');
-    const day = estDate.getDate().toString().padStart(2, '0');
-    const year = estDate.getFullYear();
-    return `${month}/${day}/${year}`;
+    // Parse the date string directly without timezone conversion
+    // This prevents the date offset issue
+    const date = new Date(dateString + 'T00:00:00'); // Add time to avoid timezone issues
+    console.log('  Parsed date object:', date);
+    console.log('  Date is valid:', !isNaN(date.getTime()));
+    
+    if (isNaN(date.getTime())) {
+      console.log('  Invalid date, returning N/A');
+      return 'N/A';
+    }
+    
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const result = `${month}/${day}/${year}`;
+    console.log('  Formatted result:', result);
+    return result;
   } catch (error) {
     console.error('Error formatting date:', dateString, error);
     return 'N/A';
@@ -2128,6 +2139,13 @@ Total Price: {{total price}}`;
         const numberOfInstances = quoteData.configuration?.numberOfInstances || 1;
         const dataSizeGB = quoteData.configuration?.dataSizeGB || 0;
         
+        // Debug: Log the date values being used
+        console.log('🔍 Template Data Debug:');
+        console.log('  configuration?.startDate:', configuration?.startDate);
+        console.log('  configuration?.endDate:', configuration?.endDate);
+        console.log('  clientInfo.effectiveDate:', clientInfo.effectiveDate);
+        console.log('  configuration?.duration:', configuration?.duration);
+        
         const templateData: Record<string, string> = {
           // Core company and client information
           '{{Company Name}}': finalCompanyName || 'Your Company',
@@ -2165,22 +2183,49 @@ Total Price: {{total price}}`;
           '{{data_size_gb}}': dataSizeGB.toString(),
           
           // Project dates - formatted as mm/dd/yyyy
-          '{{Start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
-          '{{start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
-          '{{startdate}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
-          '{{project_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
-          '{{project_start}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          // Use configuration.startDate (Project Start Date) for Start_date
+          '{{Start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            console.log('🔍 Start_date calculation:');
+            console.log('  configuration?.startDate (Project Start Date):', configuration?.startDate);
+            console.log('  clientInfo.effectiveDate (Effective Date):', clientInfo.effectiveDate);
+            console.log('  selected startDate:', startDate);
+            const formatted = startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+            console.log('  formatted result:', formatted);
+            return formatted;
+          })(),
+          '{{start_date}}': (() => {
+            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{startdate}}': (() => {
+            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{project_start_date}}': (() => {
+            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{project_start}}': (() => {
+            const startDate = configuration?.startDate || clientInfo.effectiveDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
           
-          // End date - calculate if not provided (fallback for hidden field)
+          // End date - calculate from Project Start Date + duration
           '{{End_date}}': (() => {
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Fallback calculation if endDate is not set
-            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
-              const startDate = new Date(configuration.startDate);
-              const endDate = new Date(startDate);
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
               endDate.setMonth(endDate.getMonth() + configuration.duration);
+              console.log('🔍 End_date calculation:');
+              console.log('  Project Start Date:', startDate);
+              console.log('  Duration (months):', configuration.duration);
+              console.log('  Calculated End Date:', endDate.toISOString().split('T')[0]);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -2189,10 +2234,11 @@ Total Price: {{total price}}`;
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Fallback calculation if endDate is not set
-            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
-              const startDate = new Date(configuration.startDate);
-              const endDate = new Date(startDate);
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
               endDate.setMonth(endDate.getMonth() + configuration.duration);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
@@ -2202,10 +2248,11 @@ Total Price: {{total price}}`;
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Fallback calculation if endDate is not set
-            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
-              const startDate = new Date(configuration.startDate);
-              const endDate = new Date(startDate);
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
               endDate.setMonth(endDate.getMonth() + configuration.duration);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
@@ -2215,10 +2262,11 @@ Total Price: {{total price}}`;
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Fallback calculation if endDate is not set
-            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
-              const startDate = new Date(configuration.startDate);
-              const endDate = new Date(startDate);
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
               endDate.setMonth(endDate.getMonth() + configuration.duration);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
@@ -2228,10 +2276,11 @@ Total Price: {{total price}}`;
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Fallback calculation if endDate is not set
-            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
-              const startDate = new Date(configuration.startDate);
-              const endDate = new Date(startDate);
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
               endDate.setMonth(endDate.getMonth() + configuration.duration);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
@@ -3123,95 +3172,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               {/* Project Start Date - MOVED to main Contact Information section */}
 
-              {/* Effective Date */}
-              <div className="group">
-                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                    <Calendar className="w-4 h-4 text-white" />
-                  </div>
-                  Effective Date
-                </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={clientInfo.effectiveDate || ''}
-                    min={new Date().toISOString().split('T')[0]}
-                    onChange={(e) => {
-                      const selectedDate = e.target.value;
-                      if (!selectedDate) {
-                        setClientInfo({ ...clientInfo, effectiveDate: '' });
-                        return;
-                      }
-                      
-                      const today = new Date();
-                      const todayStr = today.toISOString().split('T')[0];
-                      
-                      console.log('Date validation:', { selectedDate, todayStr });
-                      
-                      // Compare as strings (YYYY-MM-DD format)
-                      if (selectedDate >= todayStr) {
-                        setClientInfo({ ...clientInfo, effectiveDate: selectedDate });
-                      } else {
-                        // Past date detected - show warning and reset
-                        alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
-                        e.target.value = todayStr;
-                        setClientInfo({ ...clientInfo, effectiveDate: todayStr });
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const selectedDate = e.target.value;
-                      if (selectedDate) {
-                        const today = new Date();
-                        const todayStr = today.toISOString().split('T')[0];
-                        
-                        if (selectedDate < todayStr) {
-                          alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
-                          e.target.value = todayStr;
-                          setClientInfo({ ...clientInfo, effectiveDate: todayStr });
-                        }
-                      }
-                    }}
-                    onInput={(e) => {
-                      const selectedDate = (e.target as HTMLInputElement).value;
-                      if (selectedDate && selectedDate.length === 10) { // Full date entered
-                        const today = new Date();
-                        const todayStr = today.toISOString().split('T')[0];
-                        
-                        if (selectedDate < todayStr) {
-                          alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
-                          (e.target as HTMLInputElement).value = todayStr;
-                          setClientInfo({ ...clientInfo, effectiveDate: todayStr });
-                        }
-                      }
-                    }}
-                    placeholder="mm-dd-yyyy"
-                    title="Select date in MM-DD-YYYY format (today or future dates only)"
-                    data-format="mm-dd-yyyy"
-                    lang="en-US"
-                    locale="en-US"
-                    className="w-full px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-xl font-medium"
-                    style={{ 
-                      fontSize: '18px',
-                      height: '60px',
-                      paddingTop: '18px',
-                      paddingBottom: '18px'
-                    }}
-                  />
-                  {/* Custom placeholder overlay for empty state */}
-                  {!clientInfo.effectiveDate && (
-                    <div className="absolute left-6 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400 text-lg">
-                      mm-dd-yyyy
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-2 ml-1">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-1">
-                    <p className="text-xs font-semibold text-blue-700">
-                      📅 Format: MM-DD-YYYY (e.g., 12-31-2024)
-                    </p>
-                  </div>
-                </div>
-              </div>
 
               {/* Discount field moved to Configure session */}
 
