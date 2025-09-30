@@ -19,6 +19,8 @@ services:
       - EMAIL_FROM=${EMAIL_FROM}
       - HUBSPOT_API_KEY=${HUBSPOT_API_KEY}
       - GOTENBERG_URL=${GOTENBERG_URL}
+      - VITE_MSAL_CLIENT_ID=${VITE_MSAL_CLIENT_ID}
+      - VITE_MSAL_REDIRECT_URI=${VITE_MSAL_REDIRECT_URI}
     volumes:
       - ./temp-files:/temp
     restart: unless-stopped
