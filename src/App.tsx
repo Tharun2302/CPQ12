@@ -1619,6 +1619,7 @@ function App() {
             calculation={selectedTier || fallbackCalculation}
             configuration={configuration || fallbackConfiguration}
             onGenerateQuote={handleGenerateQuote}
+            onConfigurationChange={handleConfigurationChange}
             hubspotState={hubspotState}
             onSelectHubSpotContact={handleSelectHubSpotContact}
             companyInfo={companyInfo}

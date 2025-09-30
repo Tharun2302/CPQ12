@@ -19,7 +19,27 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
-import { sendEmailWithEmailJS } from '../utils/emailservice';
+// EmailJS import removed - now using server-side email with attachment support
+
+// Date formatting helper for mm/dd/yyyy format
+function formatDateMMDDYYYY(dateString: string): string {
+  if (!dateString || dateString === 'N/A') return 'N/A';
+  try {
+    const date = new Date(dateString);
+    // Convert to EST timezone (America/New_York)
+    const estDateString = date.toLocaleString('en-US', { 
+      timeZone: 'America/New_York' 
+    });
+    const estDate = new Date(estDateString);
+    const month = (estDate.getMonth() + 1).toString().padStart(2, '0');
+    const day = estDate.getDate().toString().padStart(2, '0');
+    const year = estDate.getFullYear();
+    return `${month}/${day}/${year}`;
+  } catch (error) {
+    console.error('Error formatting date:', dateString, error);
+    return 'N/A';
+  }
+}
 
 interface DealData {
   dealId: string;
@@ -38,6 +58,7 @@ interface QuoteGeneratorProps {
   calculation: PricingCalculation;
   configuration: ConfigurationData;
   onGenerateQuote: (quote: Quote) => void;
+  onConfigurationChange?: (config: ConfigurationData) => void;
   hubspotState?: {
     isConnected: boolean;
     hubspotContacts: any[];
@@ -73,6 +94,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   calculation,
   configuration,
   onGenerateQuote,
+  onConfigurationChange,
   hubspotState,
   onSelectHubSpotContact,
   companyInfo,
@@ -604,7 +626,7 @@ TEMPLATE USED:
 
 Please review this quote and approve or provide feedback.
 
-Generated on: ${new Date().toLocaleString()}
+Generated on: ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}
 Quote ID: ${quoteData.id}
       `.trim();
 
@@ -786,13 +808,13 @@ Quote ID: ${quoteData.id}
           '{{plan}}': tierName,
           
           // Date information
-          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
+          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
+          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
           
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
@@ -843,7 +865,7 @@ Quote ID: ${quoteData.id}
         return;
       }
 
-      // Send directly to CloudFuze sales operations (SendGrid allows this)
+      // Send directly to CloudFuze sales operations
       const to = 'salesops@cloudfuze.com';
 
       const emailCompanyName = clientInfo.company || dealData?.companyByContact || dealData?.company || 'Client';
@@ -912,27 +934,46 @@ Best regards,
 CloudFuze Sales Team
 
 ---
-This agreement was generated on ${new Date().toLocaleString()} using CloudFuze CPQ Pro.
+This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST using CloudFuze CPQ Pro.
 Agreement ID: AGR-${Date.now().toString().slice(-8)}
 Template: ${selectedTemplate?.name || 'Default Template'}`;
 
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
       const formData = new FormData();
-      // Replace the server-side fetch with EmailJS
       const filenameBase = (clientInfo.company || 'Company').replace(/[^a-zA-Z0-9]/g, '_');
       const timestamp = new Date().toISOString().slice(0, 10);
+      const attachmentName = `${filenameBase}_Agreement_${timestamp}.docx`;
 
-      // Send email using EmailJS
-      const result = await sendEmailWithEmailJS(
+      // Add form data for server-side email with attachment
+      formData.append('to', to);
+      formData.append('subject', subject);
+      formData.append('message', message);
+      formData.append('attachment', agreementBlob, attachmentName);
+
+      console.log('📧 Sending email via server with attachment:', {
         to,
         subject,
-        message,
-        agreementBlob,
-        `${filenameBase}_Agreement_${timestamp}.docx`
-      );
+        attachmentName,
+        attachmentSize: agreementBlob.size
+      });
+
+      // Send email using server-side endpoint with attachment
+      const response = await fetch(`${backendUrl}/api/email/send`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
 
       if (result.success) {
-        alert('✅ Agreement emailed successfully to CloudFuze Sales Operations!');
+        console.log('📧 Email send response:', result);
+        console.log('📧 SendGrid Status Code:', result.statusCode);
+        console.log('📧 Message ID:', result.messageId);
+        
+        // Show more detailed success message
+        const messageId = result.messageId ? `\nMessage ID: ${result.messageId}` : '';
+        const statusCode = result.statusCode ? `\nStatus: ${result.statusCode}` : '';
+        alert(`✅ Agreement emailed successfully to salesops@cloudfuze.com!${messageId}${statusCode}\n\nNote: The email has been sent to CloudFuze Sales Operations.`);
       } else {
         throw new Error(result.message);
       }
@@ -1903,6 +1944,8 @@ Total Price: {{total price}}`;
       console.log('🔍 FINAL CONFIGURATION BEING USED:', finalConfiguration);
       console.log('🔍 FINAL CONFIGURATION TYPE:', typeof finalConfiguration);
       console.log('🔍 FINAL CONFIGURATION KEYS:', Object.keys(finalConfiguration));
+      console.log('🔍 FINAL CONFIGURATION startDate:', finalConfiguration.startDate);
+      console.log('🔍 FINAL CONFIGURATION endDate:', finalConfiguration.endDate);
 
       // Create quote data for template processing
       const quoteData = {
@@ -1916,7 +1959,9 @@ Total Price: {{total price}}`;
           numberOfInstances: finalConfiguration.numberOfInstances,
           duration: finalConfiguration.duration,
           migrationType: finalConfiguration.migrationType,
-          dataSizeGB: finalConfiguration.dataSizeGB
+          dataSizeGB: finalConfiguration.dataSizeGB,
+          startDate: finalConfiguration.startDate,
+          endDate: finalConfiguration.endDate
         },
         calculation: {
           userCost: finalCalculation.userCost,
@@ -2119,6 +2164,80 @@ Total Price: {{total price}}`;
           '{{dataSizeGB}}': dataSizeGB.toString(),
           '{{data_size_gb}}': dataSizeGB.toString(),
           
+          // Project dates - formatted as mm/dd/yyyy
+          '{{Start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{startdate}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{project_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{project_start}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          
+          // End date - calculate if not provided (fallback for hidden field)
+          '{{End_date}}': (() => {
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Fallback calculation if endDate is not set
+            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
+              const startDate = new Date(configuration.startDate);
+              const endDate = new Date(startDate);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{end_date}}': (() => {
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Fallback calculation if endDate is not set
+            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
+              const startDate = new Date(configuration.startDate);
+              const endDate = new Date(startDate);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{enddate}}': (() => {
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Fallback calculation if endDate is not set
+            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
+              const startDate = new Date(configuration.startDate);
+              const endDate = new Date(startDate);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end_date}}': (() => {
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Fallback calculation if endDate is not set
+            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
+              const startDate = new Date(configuration.startDate);
+              const endDate = new Date(startDate);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end}}': (() => {
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Fallback calculation if endDate is not set
+            if (configuration?.startDate && configuration?.duration && configuration.duration > 0) {
+              const startDate = new Date(configuration.startDate);
+              const endDate = new Date(startDate);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          
           // Pricing breakdown - all costs
           '{{users_cost}}': formatCurrency(userCost || 0),
           '{{user_cost}}': formatCurrency(userCost || 0),
@@ -2156,6 +2275,13 @@ Total Price: {{total price}}`;
           '{{discountAmount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
           '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
           '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
+          
+          // Enhanced discount tokens for better template control
+          '{{discount_label}}': (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '',
+          '{{discount_percent_only}}': (shouldApplyDiscount && discountPercent > 0) ? `${discountPercent}%` : '',
+          '{{discount_percent_with_parentheses}}': (shouldApplyDiscount && discountPercent > 0) ? `(${discountPercent}%)` : '',
+          '{{discount_display}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%)` : '',
+          '{{discount_full_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
         '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
           '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
           '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
@@ -2169,13 +2295,13 @@ Total Price: {{total price}}`;
           '{{plan}}': tierName,
           
           // Date information
-          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }),
-          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          '{{date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
+          '{{Date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
+          '{{current_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{currentDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{generation_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{effective_date}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? new Date(clientInfo.effectiveDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' }),
           
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
@@ -2212,6 +2338,13 @@ Total Price: {{total price}}`;
         console.log('🔍 TEMPLATE DATA CREATED:');
         console.log('  Template data keys:', Object.keys(templateData));
         console.log('  Template data values:', Object.values(templateData));
+        
+        // DEBUG: Check configuration object structure
+        console.log('🔍 CONFIGURATION DEBUG:');
+        console.log('  configuration object:', configuration);
+        console.log('  configuration.startDate:', configuration?.startDate);
+        console.log('  configuration.endDate:', configuration?.endDate);
+        console.log('  configuration keys:', configuration ? Object.keys(configuration) : 'configuration is null/undefined');
         
         // CRITICAL: Debug each template data entry
         console.log('🔍 TEMPLATE DATA DETAILED DEBUG:');
@@ -2456,6 +2589,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('  templateData.{{ Company_Name }}:', templateData['{{ Company_Name }}']);
         console.log('  templateData.{{company name}}:', templateData['{{company name}}']);
         console.log('  templateData.{{company_name}}:', templateData['{{company_name}}']);
+        console.log('  templateData.{{users_count}}:', templateData['{{users_count}}']);
+        console.log('  templateData.{{users_cost}}:', templateData['{{users_cost}}']);
+        console.log('  templateData.{{Duration_of_months}}:', templateData['{{Duration_of_months}}']);
+        console.log('  templateData.{{instance_cost}}:', templateData['{{instance_cost}}']);
+        console.log('  templateData.{{per_user_cost}}:', templateData['{{per_user_cost}}']);
         
         const result = await DocxTemplateProcessor.processDocxTemplate(
           selectedTemplate.file,
@@ -2982,6 +3120,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   </p>
                 )}
               </div>
+
+              {/* Project Start Date - MOVED to main Contact Information section */}
 
               {/* Effective Date */}
               <div className="group">
@@ -3645,6 +3785,41 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 )}
             </div>
 
+            {/* Project Start Date - MOVED from Project Configuration */}
+            <div className="group">
+              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-4 h-4 text-white" />
+                </div>
+                Project Start Date
+              </label>
+              <input
+                type="date"
+                value={configuration?.startDate || ''}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  const newStartDate = e.target.value;
+                  console.log('📅 Project Start Date changed:', newStartDate);
+                  
+                  if (onConfigurationChange) {
+                    // Update the configuration with the new start date
+                    const updatedConfig = {
+                      ...configuration,
+                      startDate: newStartDate
+                    };
+                    onConfigurationChange(updatedConfig);
+                    console.log('✅ Configuration updated with new start date:', newStartDate);
+                  } else {
+                    console.warn('⚠️ No onConfigurationChange callback provided');
+                  }
+                }}
+                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                placeholder="Select start date"
+                autoComplete="off"
+              />
+              <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
+            </div>
+
             {/* Effective Date */}
             <div className="group">
               <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
@@ -3656,7 +3831,42 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <input
                 type="date"
                 value={clientInfo.effectiveDate || ''}
-                onChange={(e) => updateClientInfo({ effectiveDate: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  const selectedDate = e.target.value;
+                  if (!selectedDate) {
+                    updateClientInfo({ effectiveDate: '' });
+                    return;
+                  }
+                  
+                  const today = new Date();
+                  const todayStr = today.toISOString().split('T')[0];
+                  
+                  console.log('Effective Date validation:', { selectedDate, todayStr });
+                  
+                  // Compare as strings (YYYY-MM-DD format)
+                  if (selectedDate >= todayStr) {
+                    updateClientInfo({ effectiveDate: selectedDate });
+                  } else {
+                    // Past date detected - show warning and reset
+                    alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
+                    e.target.value = todayStr;
+                    updateClientInfo({ effectiveDate: todayStr });
+                  }
+                }}
+                onBlur={(e) => {
+                  const selectedDate = e.target.value;
+                  if (selectedDate) {
+                    const today = new Date();
+                    const todayStr = today.toISOString().split('T')[0];
+                    
+                    if (selectedDate < todayStr) {
+                      alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
+                      e.target.value = todayStr;
+                      updateClientInfo({ effectiveDate: todayStr });
+                    }
+                  }
+                }}
                 className="w-full px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-xl font-medium"
                 style={{ 
                   fontSize: '18px',
@@ -3665,6 +3875,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   paddingBottom: '18px'
                 }}
               />
+              <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
             </div>
 
             <button

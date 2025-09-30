@@ -454,6 +454,23 @@ export class PDFOverlaySystem {
         '{{instance_users}}': quoteData.configuration?.numberOfInstances?.toString() || '1',
         '{{instance_type}}': quoteData.configuration?.instanceType || 'Standard',
         '{{instanceType}}': quoteData.configuration?.instanceType || 'Standard',
+        
+        // Discount tokens with enhanced formatting
+        '{{discount}}': quoteData.discount?.percent?.toString() || '',
+        '{{discount_percent}}': quoteData.discount?.percent?.toString() || '',
+        '{{discount_percentage}}': quoteData.discount?.percent?.toString() || '',
+        '{{discount_amount}}': quoteData.discount?.amount ? `-${this.formatCurrency(quoteData.discount.amount)}` : '',
+        '{{discountAmount}}': quoteData.discount?.amount ? `-${this.formatCurrency(quoteData.discount.amount)}` : '',
+        '{{discount_text}}': quoteData.discount?.percent ? `Discount (${quoteData.discount.percent}%)` : '',
+        '{{discount_line}}': quoteData.discount?.amount ? `Discount (${quoteData.discount.percent}%) - ${this.formatCurrency(quoteData.discount.amount)}` : '',
+        '{{discount_label}}': quoteData.discount?.percent ? 'Discount' : '',
+        '{{discount_percent_only}}': quoteData.discount?.percent ? `${quoteData.discount.percent}%` : '',
+        '{{discount_percent_with_parentheses}}': quoteData.discount?.percent ? `(${quoteData.discount.percent}%)` : '',
+        '{{discount_display}}': quoteData.discount?.amount ? `Discount (${quoteData.discount.percent}%)` : '',
+        '{{discount_full_line}}': quoteData.discount?.amount ? `Discount (${quoteData.discount.percent}%) - ${this.formatCurrency(quoteData.discount.amount)}` : '',
+        '{{total_after_discount}}': this.formatCurrency(quoteData.calculation?.totalCost || 0),
+        '{{total_price_discount}}': this.formatCurrency(quoteData.calculation?.totalCost || 0),
+        '{{final_total}}': this.formatCurrency(quoteData.calculation?.totalCost || 0),
         '{{instance_type_cost}}': (() => {
           const { getInstanceTypeCost } = require('./pricing');
           return this.formatCurrency(getInstanceTypeCost(quoteData.configuration?.instanceType || 'Standard'));
@@ -464,8 +481,83 @@ export class PDFOverlaySystem {
         '{{date}}': new Date().toLocaleDateString('en-US', { 
           year: 'numeric', 
           month: 'long', 
-          day: 'numeric' 
-        })
+          day: 'numeric',
+          timeZone: 'America/New_York'
+        }),
+        
+        // Project date tokens - formatted as mm/dd/yyyy
+        '{{Start_date}}': this.formatDateMMDDYYYY(quoteData.configuration?.startDate || ''),
+        '{{start_date}}': this.formatDateMMDDYYYY(quoteData.configuration?.startDate || ''),
+        '{{startdate}}': this.formatDateMMDDYYYY(quoteData.configuration?.startDate || ''),
+        '{{project_start_date}}': this.formatDateMMDDYYYY(quoteData.configuration?.startDate || ''),
+        '{{project_start}}': this.formatDateMMDDYYYY(quoteData.configuration?.startDate || ''),
+        
+        // End date tokens with fallback calculation for hidden field scenario
+        '{{End_date}}': (() => {
+          if (quoteData.configuration?.endDate) {
+            return this.formatDateMMDDYYYY(quoteData.configuration.endDate);
+          }
+          // Fallback calculation if endDate is not set
+          if (quoteData.configuration?.startDate && quoteData.configuration?.duration && quoteData.configuration.duration > 0) {
+            const startDate = new Date(quoteData.configuration.startDate);
+            const endDate = new Date(startDate);
+            endDate.setMonth(endDate.getMonth() + quoteData.configuration.duration);
+            return this.formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+          }
+          return 'N/A';
+        })(),
+        '{{end_date}}': (() => {
+          if (quoteData.configuration?.endDate) {
+            return this.formatDateMMDDYYYY(quoteData.configuration.endDate);
+          }
+          // Fallback calculation if endDate is not set
+          if (quoteData.configuration?.startDate && quoteData.configuration?.duration && quoteData.configuration.duration > 0) {
+            const startDate = new Date(quoteData.configuration.startDate);
+            const endDate = new Date(startDate);
+            endDate.setMonth(endDate.getMonth() + quoteData.configuration.duration);
+            return this.formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+          }
+          return 'N/A';
+        })(),
+        '{{enddate}}': (() => {
+          if (quoteData.configuration?.endDate) {
+            return this.formatDateMMDDYYYY(quoteData.configuration.endDate);
+          }
+          // Fallback calculation if endDate is not set
+          if (quoteData.configuration?.startDate && quoteData.configuration?.duration && quoteData.configuration.duration > 0) {
+            const startDate = new Date(quoteData.configuration.startDate);
+            const endDate = new Date(startDate);
+            endDate.setMonth(endDate.getMonth() + quoteData.configuration.duration);
+            return this.formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+          }
+          return 'N/A';
+        })(),
+        '{{project_end_date}}': (() => {
+          if (quoteData.configuration?.endDate) {
+            return this.formatDateMMDDYYYY(quoteData.configuration.endDate);
+          }
+          // Fallback calculation if endDate is not set
+          if (quoteData.configuration?.startDate && quoteData.configuration?.duration && quoteData.configuration.duration > 0) {
+            const startDate = new Date(quoteData.configuration.startDate);
+            const endDate = new Date(startDate);
+            endDate.setMonth(endDate.getMonth() + quoteData.configuration.duration);
+            return this.formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+          }
+          return 'N/A';
+        })(),
+        '{{project_end}}': (() => {
+          if (quoteData.configuration?.endDate) {
+            return this.formatDateMMDDYYYY(quoteData.configuration.endDate);
+          }
+          // Fallback calculation if endDate is not set
+          if (quoteData.configuration?.startDate && quoteData.configuration?.duration && quoteData.configuration.duration > 0) {
+            const startDate = new Date(quoteData.configuration.startDate);
+            const endDate = new Date(startDate);
+            endDate.setMonth(endDate.getMonth() + quoteData.configuration.duration);
+            return this.formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+          }
+          return 'N/A';
+        })()
       };
       
       console.log('📋 Token mappings:', tokenMappings);
@@ -1087,6 +1179,28 @@ export class PDFOverlaySystem {
       confidence: 0.7,
       detectionMethod: 'fallback'
     };
+  }
+
+  /**
+   * Format date in mm/dd/yyyy format
+   */
+  private formatDateMMDDYYYY(dateString: string): string {
+    if (!dateString || dateString === 'N/A') return 'N/A';
+    try {
+      const date = new Date(dateString);
+      // Convert to EST timezone (America/New_York)
+      const estDateString = date.toLocaleString('en-US', { 
+        timeZone: 'America/New_York' 
+      });
+      const estDate = new Date(estDateString);
+      const month = (estDate.getMonth() + 1).toString().padStart(2, '0');
+      const day = estDate.getDate().toString().padStart(2, '0');
+      const year = estDate.getFullYear();
+      return `${month}/${day}/${year}`;
+    } catch (error) {
+      console.error('Error formatting date:', dateString, error);
+      return 'N/A';
+    }
   }
 }
 

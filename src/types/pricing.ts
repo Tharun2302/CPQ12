@@ -38,6 +38,8 @@ export interface ConfigurationData {
   migrationType: 'Messaging';
   dataSizeGB: number;
   messages?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface PricingCalculation {

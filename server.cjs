@@ -1724,8 +1724,16 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
     
     if (result.success) {
       console.log('✅ Email sent successfully:', result.data);
-      return res.json({ success: true, messageId: result.data?.id, data: result.data });
+      console.log('📧 SendGrid response status:', result.data?.[0]?.statusCode);
+      console.log('📧 SendGrid message ID:', result.data?.[0]?.headers?.['x-message-id']);
+      return res.json({ 
+        success: true, 
+        messageId: result.data?.[0]?.headers?.['x-message-id'], 
+        statusCode: result.data?.[0]?.statusCode,
+        data: result.data 
+      });
     } else {
+      console.error('❌ Email send failed:', result.error);
       throw new Error(result.error?.message || 'Failed to send email');
     }
   } catch (error) {

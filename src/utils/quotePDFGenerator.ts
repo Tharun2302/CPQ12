@@ -81,7 +81,8 @@ function formatDate(date: Date | string): string {
   return dateObj.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
+    timeZone: 'America/New_York'
   });
 }
 
