@@ -12,7 +12,7 @@ export class MicrosoftAuth {
   private static readonly CLIENT_ID = (import.meta as any).env?.VITE_MSAL_CLIENT_ID as string;
   private static readonly REDIRECT_URI = ((import.meta as any).env?.VITE_MSAL_REDIRECT_URI as string) || `${window.location.origin}/auth/microsoft/callback`;
   private static readonly SCOPES = 'openid profile email User.Read';
-  private static readonly AUTHORITY = 'https://login.microsoftonline.com/2c5bdaf4-8ff2-4bd9-bd54-7c50ab219590/oauth2/v2.0/authorize';
+  private static readonly AUTHORITY = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
 
   private static generateRandomString(length: number): string {
     const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -75,11 +75,11 @@ export class MicrosoftAuth {
       // For now, we'll simulate a successful authentication
       console.log('Microsoft OAuth code received:', code);
       
-      // Simulate getting user info from Microsoft Graph
+      // Simulate getting user info from Microsoft Graph (restricted to cloudfuze.com)
       const mockUser: MicrosoftUser = {
         id: 'microsoft_' + Date.now(),
         name: 'Microsoft User',
-        email: 'user@microsoft.com',
+        email: 'user@cloudfuze.com',
         accessToken: 'mock_access_token_' + Date.now()
       };
 
@@ -93,11 +93,11 @@ export class MicrosoftAuth {
   static async getUserInfo(accessToken: string): Promise<MicrosoftUser | null> {
     try {
       // In a real app, you would call Microsoft Graph API
-      // For now, we'll return mock data
+      // For now, we'll return mock data (restricted to cloudfuze.com)
       const mockUser: MicrosoftUser = {
         id: 'microsoft_' + Date.now(),
         name: 'Microsoft User',
-        email: 'user@microsoft.com',
+        email: 'user@cloudfuze.com',
         accessToken: accessToken
       };
 

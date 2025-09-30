@@ -25,7 +25,7 @@ async function exchangeCodeForUserData(code: string) {
       code_verifier: codeVerifier ? 'present' : 'missing'
     });
     
-    const tokenResponse = await fetch('https://login.microsoftonline.com/2c5bdaf4-8ff2-4bd9-bd54-7c50ab219590/oauth2/v2.0/token', {
+    const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -108,10 +108,15 @@ async function exchangeCodeForUserData(code: string) {
     console.log('🔍 Profile givenName:', profile.givenName);
     console.log('🔍 Profile surname:', profile.surname);
 
-    // Validate email format (allow any valid email domain for now)
+    // Validate email format and restrict to cloudfuze.com domain only
     const userEmail = profile.mail || profile.userPrincipalName || 'user@microsoft.com';
     if (!userEmail || !userEmail.includes('@')) {
       throw new Error('Access denied: Invalid email address format');
+    }
+    
+    // Restrict access to only cloudfuze.com domain
+    if (!userEmail.endsWith('@cloudfuze.com')) {
+      throw new Error('Access denied: Only cloudfuze.com domain is allowed');
     }
 
     // Return user data in the expected format
@@ -186,11 +191,11 @@ const MicrosoftCallback: React.FC = () => {
             fullError: error.toString()
           }));
           
-          // Fallback to mock user if real API fails
+          // Fallback to mock user if real API fails (only for cloudfuze.com domain)
           const fallbackUser = {
             id: 'microsoft_' + Date.now(),
             name: 'Microsoft User (Fallback)',
-            email: 'user@microsoft.com',
+            email: 'user@cloudfuze.com',
             accessToken: 'fallback_token_' + Date.now(),
             provider: 'microsoft',
             createdAt: new Date().toISOString()
