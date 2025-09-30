@@ -1004,20 +1004,21 @@ function App() {
   // Reset configure session when configuration changes
   useEffect(() => {
     if (configuration) {
-      console.log('🔄 Configuration changed - resetting session state');
-      // Reset pricing display to show initial configuration form
-      setShowPricing(false);
-      // Reset selected tier
-      setSelectedTier(null);
+      console.log('🔄 Configuration changed - checking if reset is needed');
       
-      // Only reset calculations if we don't have a valid configuration
-      // If we have a configuration, recalculate to maintain functionality
-      if (configuration && configuration.migrationType && configuration.numberOfUsers > 0) {
+      // Only reset pricing state if core configuration fields have changed
+      // Don't reset for date-only changes
+      const hasCoreConfig = configuration.migrationType && configuration.numberOfUsers > 0;
+      
+      if (hasCoreConfig) {
         console.log('🔄 Recalculating pricing for existing configuration');
         const newCalculations = calculateAllTiers(configuration, PRICING_TIERS);
         setCalculations(newCalculations);
       } else {
-        // Reset calculations only if no valid configuration exists
+        // Only reset if we truly don't have a valid configuration
+        console.log('🔄 No valid configuration - resetting session state');
+        setShowPricing(false);
+        setSelectedTier(null);
         setCalculations([]);
       }
     }
@@ -1026,6 +1027,8 @@ function App() {
   // Navigation is now handled by React Router URLs
 
   const handleConfigurationChange = (config: ConfigurationData) => {
+    console.log('🔧 handleConfigurationChange called with:', config);
+    
     // Check if migration type has changed
     const migrationTypeChanged = configuration && configuration.migrationType !== config.migrationType;
     
@@ -1033,11 +1036,13 @@ function App() {
     
     // If migration type changed, reset pricing display
     if (migrationTypeChanged) {
+      console.log('🔄 Migration type changed, resetting pricing display');
       setShowPricing(false);
     }
     
     const newCalculations = calculateAllTiers(config, pricingTiers);
     setCalculations(newCalculations);
+    console.log('✅ Configuration updated successfully');
   };
 
   const handleSubmitConfiguration = () => {
@@ -1367,221 +1372,6 @@ function App() {
     });
     setSelectedTemplate(template);
   };
-
-<<<<<<< HEAD
-  const renderContent = () => {
-    // Handle signature form display
-    if (isSignatureForm && signatureFormData) {
-      return (
-        <DigitalSignatureForm
-          formId={signatureFormData.form_id}
-          quoteData={signatureFormData.quote_data}
-          clientName={signatureFormData.client_name}
-          clientEmail={signatureFormData.client_email}
-          onComplete={handleSignatureFormComplete}
-        />
-      );
-    }
-
-    switch (activeTab) {
-      case 'deal':
-        return (
-          <div className="max-w-7xl mx-auto p-6">
-            <div className="mb-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Deal Information</h1>
-                  <p className="text-gray-600">View and manage deal details from HubSpot</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Show DealDetails component with real or test data */}
-            <DealDetails 
-              dealData={dealData || {
-                dealId: "TEST-12345",
-                dealName: "Test Deal - Cloud Migration",
-                amount: "$25,000",
-                stage: "Proposal",
-                closeDate: "2024-12-31",
-                ownerId: "user-456",
-                // Add demo contact and company information
-                company: "Demo Company Inc.",
-                companyByContact: "Contact Company Inc.",
-                contactName: "John Smith",
-                contactEmail: "john.smith@democompany.com",
-                contactPhone: "+1 (555) 123-4567",
-                contactJobTitle: "IT Director",
-                companyDomain: "democompany.com",
-                companyPhone: "+1 (555) 987-6543",
-                companyAddress: "123 Business Street, City, State 12345"
-              }}
-              onRefresh={refreshDealData}
-              onUseDealData={handleUseDealData}
-            />
-          </div>
-        );
-
-      case 'configure':
-        return (
-          <div className="space-y-8">
-            <ConfigurationForm
-              onConfigurationChange={handleConfigurationChange}
-              onSubmit={handleSubmitConfiguration}
-              dealData={activeDealData}
-              onContactInfoChange={handleConfigureContactInfoChange}
-              templates={templates}
-              selectedTemplate={selectedTemplate}
-              onTemplateSelect={handleTemplateSelect}
-            />
-            
-            {showPricing && calculations.length > 0 && (
-              <PricingComparison
-                calculations={calculations}
-                recommendedTier={getRecommendedTier(calculations)}
-                onSelectTier={handleSelectTier}
-                configuration={configuration}
-              />
-            )}
-          </div>
-        );
-
-      case 'pricing-config':
-        return (
-          <PricingTierConfig
-            tiers={pricingTiers}
-            onTierUpdate={handleTierUpdate}
-          />
-        );
-
-
-
-
-      case 'quote':
-        // Debug logging removed to prevent console spam
-        
-        if (!selectedTier || !configuration) {
-          console.log('❌ Quote tab: Missing selectedTier or configuration');
-          return (
-            <div className="max-w-4xl mx-auto p-8">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FileText className="w-8 h-8 text-gray-400" />
-                </div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">No Configuration Selected</h2>
-                <p className="text-gray-600 mb-6">
-                  Please configure your project and select a pricing tier first to generate a quote.
-                </p>
-                <div className="space-x-4">
-                  <button
-                    onClick={() => setActiveTab('configure')}
-                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold"
-                  >
-                    Go to Configuration
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('pricing')}
-                    className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-semibold"
-                  >
-                    View Pricing
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        }
-        
-        // Create a fallback calculation if no tier is selected
-        const fallbackCalculation: PricingCalculation = {
-          userCost: 30,
-          dataCost: 0,
-          migrationCost: 300,
-          instanceCost: 0,
-          totalCost: 330,
-          tier: {
-            id: 'default',
-            name: 'Basic' as const,
-            perUserCost: 30.0,
-            perGBCost: 1.00,
-            managedMigrationCost: 300,
-            instanceCost: 0,
-            userLimits: { from: 1, to: 100 },
-            gbLimits: { from: 0, to: 1000 },
-            features: ['Basic migration support', 'Email support']
-          }
-        };
-
-        // Debug: Check what calculation is being passed (reduced logging)
-        if (!selectedTier) {
-          console.log('🔍 App.tsx - Using fallback calculation (no tier selected)');
-        }
-
-        // Create a fallback configuration if none exists
-        const fallbackConfiguration: ConfigurationData = {
-          numberOfUsers: 1,
-          instanceType: 'Standard',
-          numberOfInstances: 1,
-          duration: 1,
-          migrationType: 'Messaging',
-          dataSizeGB: 0
-        };
-
-        return (
-          <QuoteGenerator
-            calculation={selectedTier || fallbackCalculation}
-            configuration={configuration || fallbackConfiguration}
-            onGenerateQuote={handleGenerateQuote}
-            onConfigurationChange={handleConfigurationChange}
-            hubspotState={hubspotState}
-            onSelectHubSpotContact={handleSelectHubSpotContact}
-            companyInfo={companyInfo}
-            selectedTemplate={selectedTemplate}
-            onClientInfoChange={handleClientInfoChange}
-            dealData={activeDealData}
-            configureContactInfo={configureContactInfo}
-          />
-        );
-
-      case 'quotes':
-        return (
-          <QuoteManager
-            quotes={quotes}
-            onDeleteQuote={handleDeleteQuote}
-            onUpdateQuoteStatus={handleUpdateQuoteStatus}
-            onUpdateQuote={handleUpdateQuote}
-            templates={templates}
-
-          />
-        );
-
-      case 'templates':
-        return (
-          <TemplateManager
-            onTemplateSelect={handleTemplateSelect}
-            selectedTemplate={selectedTemplate}
-            onTemplatesUpdate={handleTemplatesUpdate}
-            currentQuoteData={getCurrentQuoteData()}
-
-          />
-        );
-
-
-
-
-      case 'settings':
-        return (
-          <Settings
-            companyInfo={companyInfo}
-            updateCompanyInfo={updateCompanyInfo}
-          />
-        );
-
-      default:
-        return null;
-    }
-  };
-=======
->>>>>>> d7faa9ca3b93ed1b461544e18b8f1bb86d8e007c
 
    return (
     <Router>
