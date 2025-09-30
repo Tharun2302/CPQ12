@@ -1,26 +1,26 @@
 import React from 'react';
-import { Calculator, FileText, Settings, BarChart3, Sparkles, DollarSign, MessageSquare, Upload, Building } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Calculator, FileText, Sparkles, Upload, Building } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
 interface NavigationProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
+  currentTab: string;
 }
 
-const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
+const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
   const { isAuthenticated } = useAuth();
   
   const tabs = [
-    { id: 'deal', label: 'Deal', icon: Building },
-    { id: 'configure', label: 'Configure', icon: Calculator },
+    { id: 'deal', label: 'Deal', icon: Building, path: '/dashboard/deal' },
+    { id: 'configure', label: 'Configure', icon: Calculator, path: '/dashboard/configure' },
     // Pricing tab hidden per requirement
-    // { id: 'pricing-config', label: 'Pricing', icon: DollarSign },
-    { id: 'quote', label: 'Quote', icon: FileText },
-    { id: 'quotes', label: 'Documents', icon: FileText },
-    { id: 'templates', label: 'Templates', icon: Upload },
+    // { id: 'pricing-config', label: 'Pricing', icon: DollarSign, path: '/dashboard/pricing-config' },
+    { id: 'quote', label: 'Quote', icon: FileText, path: '/dashboard/quote' },
+    { id: 'quotes', label: 'Documents', icon: FileText, path: '/dashboard/documents' },
+    { id: 'templates', label: 'Templates', icon: Upload, path: '/dashboard/templates' },
     // Settings tab hidden per requirement
-    // { id: 'settings', label: 'Settings', icon: Settings },
+    // { id: 'settings', label: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ];
 
   return (
@@ -49,19 +49,20 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
               <div className="flex space-x-2">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
+                  const isActive = currentTab === tab.id;
                   return (
-                    <button
+                    <Link
                       key={tab.id}
-                      onClick={() => onTabChange(tab.id)}
+                      to={tab.path}
                       className={`flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-300 transform hover:scale-105 ${
-                        activeTab === tab.id
+                        isActive
                           ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
                           : 'text-gray-700 hover:text-gray-900 hover:bg-white/60 hover:shadow-md'
                       }`}
                     >
                       <Icon className="w-5 h-5" />
                       <span className="font-semibold">{tab.label}</span>
-                    </button>
+                    </Link>
                   );
                 })}
               </div>
