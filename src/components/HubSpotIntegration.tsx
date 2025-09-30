@@ -39,7 +39,6 @@ interface HubSpotIntegrationProps {
     searchTerm: string;
   };
   updateHubspotState?: (updates: any) => void;
-  resetHubspotState?: () => void;
   onUseDealData?: (dealData: any) => void;
 }
 
@@ -65,6 +64,15 @@ interface HubSpotDeal {
     closedate: string;
     createdate?: string;
     lastmodifieddate?: string;
+    ownerid?: string;
+    company?: string;
+    contactemail?: string;
+    contactname?: string;
+    contactphone?: string;
+    contactjobtitle?: string;
+    companydomain?: string;
+    companyphone?: string;
+    companyaddress?: string;
   };
 }
 
@@ -74,7 +82,6 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
   calculation,
   hubspotState: globalHubspotState,
   updateHubspotState,
-  resetHubspotState,
   onUseDealData
 }) => {
   // Add error boundary
@@ -246,7 +253,7 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
             
             // Check if we're getting real data or demo data
             const isRealData = !result.isDemo && result.data.length > 0 && 
-              result.data.some(contact => contact.id && !contact.id.startsWith('contact_'));
+              result.data.some((contact: HubSpotContact) => contact.id && !contact.id.startsWith('contact_'));
             
             if (isRealData) {
               console.log('✅ Confirmed real HubSpot data');
@@ -347,7 +354,7 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
             
             // Check if we're getting real data or demo data
             const isRealData = !result.isDemo && result.data.length > 0 && 
-              result.data.some(deal => deal.id && !deal.id.startsWith('deal_'));
+              result.data.some((deal: HubSpotDeal) => deal.id && !deal.id.startsWith('deal_'));
             
             if (isRealData) {
               console.log('✅ Confirmed real HubSpot deals data');
@@ -523,14 +530,15 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
       }
     } catch (error) {
       console.error('❌ Backend server not available:', error);
+      const errorObj = error as Error;
       console.error('❌ Error details:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
+        name: errorObj.name,
+        message: errorObj.message,
+        stack: errorObj.stack
       });
       
       // Check if it's a timeout error
-      if (error.name === 'AbortError') {
+      if (errorObj.name === 'AbortError') {
         updateState({ 
           showDemoMode: true, 
           connectionError: 'Backend server connection timeout. Please ensure the server is running on port 4000.',
@@ -868,6 +876,12 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
                 >
                   Enable Demo Mode
                 </button>
+                <button
+                  onClick={testHubSpotConnection}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
+                >
+                  Try HubSpot Connection
+                </button>
               </div>
             </div>
           );
@@ -918,18 +932,6 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
         </div>
       )}
 
-      {/* Demo Mode Active Notice */}
-      {state.isConnected && state.hubspotContacts.length > 0 && state.showDemoMode && (
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-          <div className="flex items-center gap-2 text-blue-800 mb-2">
-            <Info className="w-4 h-4" />
-            <span className="font-medium">Demo Mode Active</span>
-          </div>
-          <p className="text-blue-700 text-sm">
-            You're currently viewing demo data. {state.hubspotContacts.length} contacts and {state.hubspotDeals.length} deals are loaded for testing.
-          </p>
-        </div>
-      )}
 
       {/* Connection Status */}
       <div className="mb-8">
@@ -1460,7 +1462,7 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
                               return domain
                                 .replace(/\.(com|org|net|edu|gov|co|io|ai)$/i, '')
                                 .split('.')
-                                .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                                .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1))
                                 .join(' ');
                             }
                           }
@@ -1574,3 +1576,4 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
 };
 
 export default HubSpotIntegration;
+

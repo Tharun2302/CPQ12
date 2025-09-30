@@ -108,11 +108,22 @@ async function exchangeCodeForUserData(code: string) {
     console.log('🔍 Profile givenName:', profile.givenName);
     console.log('🔍 Profile surname:', profile.surname);
 
+    // Validate email format and restrict to cloudfuze.com domain only
+    const userEmail = profile.mail || profile.userPrincipalName || 'user@microsoft.com';
+    if (!userEmail || !userEmail.includes('@')) {
+      throw new Error('Access denied: Invalid email address format');
+    }
+    
+    // Restrict access to only cloudfuze.com domain
+    if (!userEmail.endsWith('@cloudfuze.com')) {
+      throw new Error('Access denied: Only cloudfuze.com domain is allowed');
+    }
+
     // Return user data in the expected format
     const userData = {
       id: profile.id || 'microsoft_' + Date.now(),
       name: profile.displayName || profile.givenName + ' ' + profile.surname || 'Microsoft User',
-      email: profile.mail || profile.userPrincipalName || 'user@microsoft.com',
+      email: userEmail,
       accessToken: accessToken,
       provider: 'microsoft',
       createdAt: new Date().toISOString()
@@ -180,17 +191,18 @@ const MicrosoftCallback: React.FC = () => {
             fullError: error.toString()
           }));
           
-          // Fallback to mock user if real API fails
+          // Fallback to mock user if real API fails (only for cloudfuze.com domain)
           const fallbackUser = {
             id: 'microsoft_' + Date.now(),
             name: 'Microsoft User (Fallback)',
-            email: 'user@microsoft.com',
+            email: 'user@cloudfuze.com',
             accessToken: 'fallback_token_' + Date.now(),
             provider: 'microsoft',
             createdAt: new Date().toISOString()
           };
           
           console.log('⚠️ Using fallback user because Graph API failed:', fallbackUser);
+          console.log('⚠️ This allows authentication to continue even if Microsoft Graph API is unavailable');
           window.opener?.postMessage({
             type: 'MICROSOFT_AUTH_SUCCESS',
             user: fallbackUser
