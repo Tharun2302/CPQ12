@@ -310,6 +310,29 @@ export class DocxTemplateProcessor {
         }
       });
       
+      // CRITICAL: Add direct mappings for common tokens that might be missing
+      const commonTokens = {
+        'Company Name': processedData['{{Company Name}}'] || processedData['{{Company_Name}}'] || processedData['{{company name}}'] || 'Demo Company Inc.',
+        'Company_Name': processedData['{{Company_Name}}'] || processedData['{{Company Name}}'] || processedData['{{company name}}'] || 'Demo Company Inc.',
+        'users_count': processedData['{{users_count}}'] || processedData['{{userscount}}'] || processedData['{{users}}'] || '1',
+        'users_cost': processedData['{{users_cost}}'] || processedData['{{user_cost}}'] || '$0.00',
+        'Duration of months': processedData['{{Duration of months}}'] || processedData['{{Duration_of_months}}'] || processedData['{{duration_months}}'] || '1',
+        'Duration_of_months': processedData['{{Duration_of_months}}'] || processedData['{{Duration of months}}'] || processedData['{{duration_months}}'] || '1',
+        'total price': processedData['{{total price}}'] || processedData['{{total_price}}'] || processedData['{{prices}}'] || '$0.00',
+        'total_price': processedData['{{total_price}}'] || processedData['{{total price}}'] || processedData['{{prices}}'] || '$0.00',
+        'price_migration': processedData['{{price_migration}}'] || processedData['{{migration_price}}'] || '$0.00',
+        'instance_cost': processedData['{{instance_cost}}'] || processedData['{{instanceCost}}'] || '$0.00',
+        'per_user_cost': processedData['{{per_user_cost}}'] || processedData['{{per_user_monthly_cost}}'] || '$0.00'
+      };
+      
+      // Add common tokens to docxtemplater data
+      Object.entries(commonTokens).forEach(([key, value]) => {
+        if (!docxtemplaterData[key]) {
+          docxtemplaterData[key] = value;
+          console.log(`🔧 Added common token: "${key}" = "${value}"`);
+        }
+      });
+      
       console.log('🔍 DOCXTEMPLATER DATA (without brackets):');
       const cleanTokens = [
         'Company Name', 'Company_Name',  // Both space and underscore versions
@@ -326,12 +349,23 @@ export class DocxTemplateProcessor {
       try {
         // ⭐ FINAL DEBUG BEFORE RENDERING
         console.log('🚀 FINAL TOKEN VALUES BEING SENT TO DOCXTEMPLATER:');
-        console.log('  {{users_cost}}:', docxtemplaterData['{{users_cost}}']);
-        console.log('  {{instance_cost}}:', docxtemplaterData['{{instance_cost}}']);
-        console.log('  {{Duration_of_months}}:', docxtemplaterData['{{Duration_of_months}}']);
-        console.log('  {{Company_Name}}:', docxtemplaterData['{{Company_Name}}']);
-        console.log('  {{users_count}}:', docxtemplaterData['{{users_count}}']);
-        console.log('  {{per_user_cost}}:', docxtemplaterData['{{per_user_cost}}']);
+        console.log('  users_cost:', docxtemplaterData['users_cost']);
+        console.log('  instance_cost:', docxtemplaterData['instance_cost']);
+        console.log('  Duration_of_months:', docxtemplaterData['Duration_of_months']);
+        console.log('  Company_Name:', docxtemplaterData['Company_Name']);
+        console.log('  users_count:', docxtemplaterData['users_count']);
+        console.log('  per_user_cost:', docxtemplaterData['per_user_cost']);
+        
+        // CRITICAL: Final validation before rendering
+        console.log('🔍 FINAL VALIDATION BEFORE RENDERING:');
+        const criticalTokens = ['Company_Name', 'users_count', 'users_cost', 'Duration_of_months', 'total_price', 'price_migration'];
+        criticalTokens.forEach(token => {
+          const value = docxtemplaterData[token];
+          console.log(`  ${token}: "${value}" (type: ${typeof value})`);
+          if (!value || value === 'undefined' || value === 'null') {
+            console.error(`❌ CRITICAL: Token ${token} has invalid value: ${value}`);
+          }
+        });
         
         doc.render(docxtemplaterData);
         console.log('✅ Template rendered successfully with new API');
@@ -749,8 +783,22 @@ export class DocxTemplateProcessor {
     const date = data['{{date}}'] || new Date().toLocaleDateString('en-US', {
       year: '2-digit',
       month: '2-digit',
-      day: '2-digit'
+      day: '2-digit',
+      timeZone: 'America/New_York'
     });
+    
+    // Extract start and end dates from template data
+    const startDate = (data as any)['{{Start_date}}'] || (data as any).configuration?.startDate || '';
+    let endDate = (data as any)['{{End_date}}'] || (data as any).configuration?.endDate || '';
+    
+    // CRITICAL: Fallback calculation for end date if not provided (for hidden field scenario)
+    if (!endDate && startDate && (data as any).configuration?.duration && (data as any).configuration.duration > 0) {
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(startDateObj);
+      endDateObj.setMonth(endDateObj.getMonth() + (data as any).configuration.duration);
+      endDate = endDateObj.toISOString().split('T')[0];
+      console.log(`🔧 DOCX PROCESSOR: Calculated end date fallback: ${endDate} (Start: ${startDate}, Duration: ${(data as any).configuration.duration} months)`);
+    }
     
     console.log('🔍 DOCX PROCESSOR EXTRACTED VALUES:');
     console.log('  companyName:', companyName);
@@ -759,6 +807,8 @@ export class DocxTemplateProcessor {
     console.log('  duration:', duration);
     console.log('  totalPrice:', totalPrice);
     console.log('  migrationCost:', migrationCost);
+    console.log('  startDate:', startDate);
+    console.log('  endDate:', endDate);
     
     // CRITICAL: Check if any core values are using fallbacks
     console.log('🔍 TOKEN SOURCE ANALYSIS:');
@@ -898,6 +948,18 @@ export class DocxTemplateProcessor {
       '{{effectiveDate}}': date,
       '{{Date}}': date,
       
+      // Project date variations - formatted as mm/dd/yyyy
+      '{{Start_date}}': this.formatDateMMDDYYYY(startDate),
+      '{{start_date}}': this.formatDateMMDDYYYY(startDate),
+      '{{startdate}}': this.formatDateMMDDYYYY(startDate),
+      '{{project_start_date}}': this.formatDateMMDDYYYY(startDate),
+      '{{project_start}}': this.formatDateMMDDYYYY(startDate),
+      '{{End_date}}': this.formatDateMMDDYYYY(endDate),
+      '{{end_date}}': this.formatDateMMDDYYYY(endDate),
+      '{{enddate}}': this.formatDateMMDDYYYY(endDate),
+      '{{project_end_date}}': this.formatDateMMDDYYYY(endDate),
+      '{{project_end}}': this.formatDateMMDDYYYY(endDate),
+      
       // Additional common tokens
       '{{price_data}}': data['{{price_data}}'] || '$0.00',
       '{{data_cost}}': data['{{price_data}}'] || '$0.00',
@@ -930,13 +992,19 @@ export class DocxTemplateProcessor {
       // Special tokens for conditional display
       '{{show_discount}}': ((data as any)['{{discount}}'] && (data as any)['{{discount}}'] !== '' && (data as any)['{{discount}}'] !== '0') ? 'true' : '',
       '{{hide_discount}}': ((data as any)['{{discount}}'] && (data as any)['{{discount}}'] !== '' && (data as any)['{{discount}}'] !== '0') ? '' : 'true',
+      
+      // Enhanced discount tokens for better template control
+      '{{discount_percent_only}}': (data as any)['{{discount_percent_only}}'] || '',
+      '{{discount_percent_with_parentheses}}': (data as any)['{{discount_percent_with_parentheses}}'] || '',
+      '{{discount_display}}': (data as any)['{{discount_display}}'] || '',
+      '{{discount_full_line}}': (data as any)['{{discount_full_line}}'] || '',
       // Support both names: total_after_discount and total_price_discount
       '{{total_after_discount}}': (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
       '{{total_price_discount}}': (data as any)['{{total_price_discount}}'] || (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
       '{{final_total}}': (data as any)['{{final_total}}'] || (data as any)['{{total_after_discount}}'] || (data as any)['{{total_price_discount}}'] || (data as any)['{{total_price}}'] || '$0.00',
       
       // Instance tokens
-      '{{instance_users}}': (data as any)['{{instance_users}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instances}}'] || '1',
+      '{{instance_users}}': this.numberToWords(parseInt((data as any)['{{instance_users}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instances}}'] || '1')),
       '{{instance_type}}': (data as any)['{{instance_type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard',
       '{{instanceType}}': (data as any)['{{instanceType}}'] || (data as any)['{{instance_type}}'] || data.instanceType || 'Standard',
       '{{instance_type_cost}}': (data as any)['{{instance_type_cost}}'] || (() => {
@@ -1025,7 +1093,7 @@ export class DocxTemplateProcessor {
         } else if (key.toLowerCase().includes('email')) {
           processedData[key] = 'demo@example.com';
         } else if (key.toLowerCase().includes('date')) {
-          processedData[key] = new Date().toLocaleDateString();
+          processedData[key] = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
         } else {
           processedData[key] = 'N/A';
         }
@@ -1148,7 +1216,7 @@ Quote ID: ${templateData.quoteId}
             new Paragraph({
               children: [
                 new TextRun({
-                  text: `Date: ${templateData.date || new Date().toLocaleDateString()}`,
+                  text: `Date: ${templateData.date || new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`,
                   size: 24
                 })
               ]
@@ -1346,7 +1414,7 @@ Quote ID: ${templateData.quoteId}
       price_migration: '$3,000',
       price_data: '$1,000',
       total: '$11,000',
-      date: new Date().toLocaleDateString(),
+      date: new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
       instanceType: 'Standard',
       duration: 6,
       dataSize: 50,
@@ -1489,6 +1557,66 @@ Quote ID: ${templateData.quoteId}
       console.error('❌ Error cleaning DOCX XML:', error);
       return xmlContent;
     }
+  }
+
+  /**
+   * Format date in mm/dd/yyyy format
+   */
+  private formatDateMMDDYYYY(dateString: string): string {
+    if (!dateString || dateString === 'N/A') return 'N/A';
+    try {
+      const date = new Date(dateString);
+      // Convert to EST timezone (America/New_York)
+      const estDateString = date.toLocaleString('en-US', { 
+        timeZone: 'America/New_York' 
+      });
+      const estDate = new Date(estDateString);
+      const month = (estDate.getMonth() + 1).toString().padStart(2, '0');
+      const day = estDate.getDate().toString().padStart(2, '0');
+      const year = estDate.getFullYear();
+      return `${month}/${day}/${year}`;
+    } catch (error) {
+      console.error('Error formatting date:', dateString, error);
+      return 'N/A';
+    }
+  }
+
+  /**
+   * Convert number to words (e.g., 2 -> "Two", 45 -> "Forty-Five")
+   */
+  private numberToWords(num: number): string {
+    if (num === 0) return 'Zero';
+    if (num < 0) return 'Negative ' + this.numberToWords(-num);
+    
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    
+    if (num < 10) return ones[num];
+    if (num < 20) return teens[num - 10];
+    if (num < 100) {
+      const ten = Math.floor(num / 10);
+      const one = num % 10;
+      return tens[ten] + (one > 0 ? '-' + ones[one] : '');
+    }
+    if (num < 1000) {
+      const hundred = Math.floor(num / 100);
+      const remainder = num % 100;
+      return ones[hundred] + ' Hundred' + (remainder > 0 ? ' ' + this.numberToWords(remainder) : '');
+    }
+    if (num < 1000000) {
+      const thousand = Math.floor(num / 1000);
+      const remainder = num % 1000;
+      return this.numberToWords(thousand) + ' Thousand' + (remainder > 0 ? ' ' + this.numberToWords(remainder) : '');
+    }
+    if (num < 1000000000) {
+      const million = Math.floor(num / 1000000);
+      const remainder = num % 1000000;
+      return this.numberToWords(million) + ' Million' + (remainder > 0 ? ' ' + this.numberToWords(remainder) : '');
+    }
+    
+    // For very large numbers, return the number as string
+    return num.toString();
   }
 }
 

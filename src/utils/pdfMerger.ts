@@ -237,7 +237,8 @@ const drawQuoteContentOnPage = async (
   const currentDate = new Date().toLocaleDateString('en-US', { 
     year: 'numeric', 
     month: 'long', 
-    day: 'numeric' 
+    day: 'numeric',
+    timeZone: 'America/New_York'
   });
   
   // Draw a professional header background
@@ -1628,7 +1629,7 @@ export const createTemplatePreview = (template: TemplateData): string => {
       <h3 style="color: #374151; margin-bottom: 10px;">Template Preview: ${template.name}</h3>
       <p style="color: #6b7280; margin-bottom: 10px;">${template.description || 'Custom template'}</p>
       <p style="color: #6b7280; font-size: 12px;">Size: ${template.size || 'Unknown'}</p>
-      <p style="color: #6b7280; font-size: 12px;">Uploaded: ${template.uploadDate?.toLocaleDateString() || 'Unknown date'}</p>
+      <p style="color: #6b7280; font-size: 12px;">Uploaded: ${template.uploadDate?.toLocaleDateString('en-US', { timeZone: 'America/New_York' }) || 'Unknown date'}</p>
       <div style="margin-top: 15px; padding: 10px; background-color: #f3f4f6; border-radius: 4px;">
         <p style="color: #374151; font-size: 14px; margin: 0;">
           This template will be used to generate your quote PDF with merged data.
@@ -2519,7 +2520,8 @@ const replacePlaceholdersInExistingPage = async (
   const currentDate = new Date().toLocaleDateString('en-US', { 
     year: 'numeric', 
     month: 'long', 
-    day: 'numeric' 
+    day: 'numeric',
+    timeZone: 'America/New_York'
   });
 
     // Professional header structure - CloudFuze branding and Microsoft Partner badges

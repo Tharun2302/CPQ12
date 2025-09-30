@@ -328,7 +328,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
 
   const getDefaultQuoteContent = (quote: Quote, quoteNumber: string) => {
     try {
-    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' });
       
       // Helper function to safely escape HTML characters
       const escapeHtml = (text: string) => {

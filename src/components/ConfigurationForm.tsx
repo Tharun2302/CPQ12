@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
-import { Calculator, Users, Server, Clock, Database, ArrowRight, Sparkles, UserCheck, FileText, Percent, MessageSquare } from 'lucide-react';
+import { Calculator, Users, Server, Clock, Database, ArrowRight, Sparkles, UserCheck, FileText, Percent, MessageSquare, Calendar } from 'lucide-react';
 
 interface DealData {
   dealId: string;
@@ -222,11 +222,40 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     } catch {}
   }, []);
 
-
+  // Calculate end date when start date or duration changes
+  useEffect(() => {
+    if (config.startDate && config.duration && config.duration > 0) {
+      const startDate = new Date(config.startDate);
+      const endDate = new Date(startDate);
+      endDate.setMonth(endDate.getMonth() + config.duration);
+      const calculatedEndDate = endDate.toISOString().split('T')[0];
+      
+      if (config.endDate !== calculatedEndDate) {
+        const newConfig = { ...config, endDate: calculatedEndDate };
+        setConfig(newConfig);
+        onConfigurationChange(newConfig);
+        console.log(`📅 Auto-calculated end date: ${calculatedEndDate} (Start: ${config.startDate}, Duration: ${config.duration} months)`);
+      }
+    }
+  }, [config.startDate, config.duration]);
 
   const handleChange = (field: keyof ConfigurationData, value: any) => {
     console.log(`🔧 ConfigurationForm: Changing ${field} from ${config[field]} to ${value}`);
     const newConfig = { ...config, [field]: value };
+    
+    // Calculate end date when start date or duration changes
+    if (field === 'startDate' || field === 'duration') {
+      if (newConfig.startDate && newConfig.duration && newConfig.duration > 0) {
+        const startDate = new Date(newConfig.startDate);
+        const endDate = new Date(startDate);
+        endDate.setMonth(endDate.getMonth() + newConfig.duration);
+        newConfig.endDate = endDate.toISOString().split('T')[0];
+        console.log(`📅 Calculated end date: ${newConfig.endDate} (Start: ${newConfig.startDate}, Duration: ${newConfig.duration} months)`);
+      } else {
+        newConfig.endDate = undefined;
+      }
+    }
+    
     setConfig(newConfig);
     onConfigurationChange(newConfig);
     // Persist configuration in sessionStorage so values remain when user navigates but clear on page refresh
@@ -607,6 +636,33 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 autoComplete="off"
               />
             </div>
+
+            {/* Start Date - MOVED to Quote session (Contact Information section) */}
+            {/* The Project Start Date field has been moved to the Quote session above the Effective Date field */}
+            {/* This ensures better user experience while maintaining all functionality */}
+
+            {/* End Date - Calculated field - HIDDEN from UI but still calculated in background */}
+            {/* The end date is still calculated automatically in the useEffect hook above */}
+            {/* This ensures {{End_date}} token works in templates without showing the field to users */}
+            {false && (
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Calendar className="w-4 h-4 text-white" />
+                  </div>
+                  Project End Date
+                </label>
+                <input
+                  type="date"
+                  value={config.endDate || ''}
+                  readOnly
+                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl bg-gray-50 text-lg font-medium cursor-not-allowed"
+                  placeholder="Calculated automatically"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-gray-500 mt-2">Calculated based on start date and duration</p>
+              </div>
+            )}
 
                 {/* Data Size - Hide for Messaging migration type */}
                 {config.migrationType !== 'Messaging' && (

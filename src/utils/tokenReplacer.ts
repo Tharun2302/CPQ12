@@ -133,6 +133,18 @@ export const TOKEN_REPLACEMENT_MAP = {
   'quote_date': (quoteData: QuoteData) => formatDate(quoteData.createdAt),
   'date': (quoteData: QuoteData) => formatDate(quoteData.createdAt),
   'quote_id': (quoteData: QuoteData) => quoteData.id || 'N/A',
+  
+  // Date tokens - formatted as mm/dd/yyyy
+  'Start_date': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.startDate || ''),
+  'start_date': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.startDate || ''),
+  'startdate': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.startDate || ''),
+  'project_start_date': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.startDate || ''),
+  'project_start': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.startDate || ''),
+  'End_date': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.endDate || ''),
+  'end_date': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.endDate || ''),
+  'enddate': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.endDate || ''),
+  'project_end_date': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.endDate || ''),
+  'project_end': (quoteData: QuoteData) => formatDateMMDDYYYY(quoteData.configuration.endDate || ''),
   'plan_name': (quoteData: QuoteData) => quoteData.calculation.tier.name || 'N/A',
   'migration_type': (quoteData: QuoteData) => quoteData.configuration.migrationType || 'N/A',
   'instance_type': (quoteData: QuoteData) => quoteData.configuration.instanceType || 'N/A',
@@ -152,7 +164,27 @@ function formatCurrency(amount: number): string {
  */
 function formatDate(date: Date | string): string {
   const dateObj = date instanceof Date ? date : new Date(date);
-  return dateObj.toLocaleDateString();
+  return dateObj.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+}
+
+// Date formatting helper for mm/dd/yyyy format
+function formatDateMMDDYYYY(dateString: string): string {
+  if (!dateString || dateString === 'N/A') return 'N/A';
+  try {
+    const date = new Date(dateString);
+    // Convert to EST timezone (America/New_York)
+    const estDateString = date.toLocaleString('en-US', { 
+      timeZone: 'America/New_York' 
+    });
+    const estDate = new Date(estDateString);
+    const month = (estDate.getMonth() + 1).toString().padStart(2, '0');
+    const day = estDate.getDate().toString().padStart(2, '0');
+    const year = estDate.getFullYear();
+    return `${month}/${day}/${year}`;
+  } catch (error) {
+    console.error('Error formatting date:', dateString, error);
+    return 'N/A';
+  }
 }
 
 /**

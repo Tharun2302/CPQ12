@@ -93,7 +93,7 @@ export function findPlaceholders(text: string): string[] {
  */
 export function createPlaceholderMap(quoteData: QuoteData): PlaceholderMap {
   const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`;
-  const formatDate = (date: Date) => date.toLocaleDateString();
+  const formatDate = (date: Date) => date.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
   
   return {
     // Client Information
@@ -254,7 +254,7 @@ export async function generateQuotePDF(quoteData: QuoteData): Promise<Blob> {
     // Quote Information
     doc.setFontSize(12);
     doc.text(`Quote ID: CPQ-001`, 20, 50);
-    doc.text(`Date: ${quoteData.createdAt.toLocaleDateString()}`, 20, 60);
+    doc.text(`Date: ${quoteData.createdAt.toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`, 20, 60);
     
     // Client Information
     doc.setFontSize(14);
