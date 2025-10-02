@@ -15,6 +15,26 @@ import { calculatePricing, PRICING_TIERS } from '../utils/pricing';
 import QuoteGenerator from './QuoteGenerator';
 import { TemplateProcessor } from './TemplateProcessor';
 import { DocxTemplates } from './DocxTemplates';
+import { sanitizeTextInput, sanitizeNameInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
+
+// Helper function to limit consecutive spaces to maximum 5
+function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
+  // Replace any sequence of more than maxSpaces spaces with exactly maxSpaces spaces
+  const spaceRegex = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
+  return value.replace(spaceRegex, ' '.repeat(maxSpaces));
+}
+
+// Helper function to sanitize Contact Name input (remove special characters and emojis)
+function sanitizeContactName(value: string): string {
+  // Remove special characters, emojis, and keep only letters, spaces, hyphens, apostrophes, and periods
+  return value.replace(/[^a-zA-Z\s\-'\.]/g, '');
+}
+
+// Helper function to sanitize Contact Email input (remove emojis and special characters)
+function sanitizeContactEmail(value: string): string {
+  // Remove emojis and special characters, keep only valid email characters
+  return value.replace(/[^\w@\.\-]/g, '');
+}
 
 export const MainApp: React.FC = () => {
   const [uiState, setUIState] = useState<UIState>({
@@ -149,7 +169,7 @@ export const MainApp: React.FC = () => {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <FileText className="h-8 w-8 text-blue-600" />
-              <h1 className="ml-2 text-xl font-bold text-gray-900">CPQ System</h1>
+              <h1 className="ml-2 text-xl font-bold text-gray-900">ZENOP System</h1>
             </div>
             <div className="flex items-center space-x-4">
               {uiState.isLoading && (
@@ -236,7 +256,10 @@ export const MainApp: React.FC = () => {
                   <input
                     type="text"
                     value={clientDetails.companyName}
-                    onChange={(e) => setClientDetails(prev => ({ ...prev, companyName: e.target.value }))}
+                    onChange={(e) => {
+                      const sanitized = sanitizeCompanyInput(e.target.value);
+                      setClientDetails(prev => ({ ...prev, companyName: sanitized }));
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter company name"
                   />
@@ -248,7 +271,11 @@ export const MainApp: React.FC = () => {
                   <input
                     type="text"
                     value={clientDetails.clientName}
-                    onChange={(e) => setClientDetails(prev => ({ ...prev, clientName: e.target.value }))}
+                    onChange={(e) => {
+                      const sanitized = sanitizeNameInput(e.target.value);
+                      const processed = limitConsecutiveSpaces(sanitized);
+                      setClientDetails(prev => ({ ...prev, clientName: processed }));
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter client name"
                   />
@@ -260,7 +287,10 @@ export const MainApp: React.FC = () => {
                   <input
                     type="email"
                     value={clientDetails.clientEmail}
-                    onChange={(e) => setClientDetails(prev => ({ ...prev, clientEmail: e.target.value }))}
+                    onChange={(e) => {
+                      const sanitized = sanitizeContactEmail(e.target.value);
+                      setClientDetails(prev => ({ ...prev, clientEmail: sanitized }));
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter client email"
                   />

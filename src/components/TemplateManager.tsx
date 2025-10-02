@@ -17,6 +17,26 @@ import { convertPdfToWord, downloadWordFile, isPdfFile, testDocxLibrary } from '
 import { extractTemplateContent } from '../utils/pdfMerger';
 import { formatCurrency } from '../utils/pricing';
 import { templateService } from '../utils/templateService';
+import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
+
+// Helper function to limit consecutive spaces to maximum 5
+function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
+  // Replace any sequence of more than maxSpaces spaces with exactly maxSpaces spaces
+  const spaceRegex = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
+  return value.replace(spaceRegex, ' '.repeat(maxSpaces));
+}
+
+// Helper function to sanitize Contact Name input (remove special characters and emojis)
+function sanitizeContactName(value: string): string {
+  // Remove special characters, emojis, and keep only letters, spaces, hyphens, apostrophes, and periods
+  return value.replace(/[^a-zA-Z\s\-'\.]/g, '');
+}
+
+// Helper function to sanitize Contact Email input (remove emojis and special characters)
+function sanitizeContactEmail(value: string): string {
+  // Remove emojis and special characters, keep only valid email characters
+  return value.replace(/[^\w@\.\-]/g, '');
+}
 
 interface Template {
   id: string;
@@ -2344,7 +2364,10 @@ CloudFuze Team`,
                   <input
                     type="email"
                     value={emailForm.to}
-                    onChange={(e) => setEmailForm({ ...emailForm, to: e.target.value })}
+                    onChange={(e) => {
+                      const sanitized = sanitizeEmailInput(e.target.value);
+                      setEmailForm({ ...emailForm, to: sanitized });
+                    }}
                     placeholder="client@example.com"
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
@@ -2358,7 +2381,11 @@ CloudFuze Team`,
                   <input
                     type="text"
                     value={emailForm.clientName || ''}
-                    onChange={(e) => setEmailForm({ ...emailForm, clientName: e.target.value })}
+                    onChange={(e) => {
+                      const sanitized = sanitizeNameInput(e.target.value);
+                      const processed = limitConsecutiveSpaces(sanitized);
+                      setEmailForm({ ...emailForm, clientName: processed });
+                    }}
                     placeholder="Client's full name"
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required

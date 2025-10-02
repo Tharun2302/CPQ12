@@ -41,10 +41,10 @@ function App() {
 
   // Company information state management
   const [companyInfo, setCompanyInfo] = useState({
-    name: 'CPQ Pro Solutions',
+    name: 'ZENOP Pro Solutions',
     address: '123 Business St.',
     city: 'City, State 12345',
-    email: 'contact@cpqsolutions.com',
+    email: 'contact@zenopsolutions.com',
     phone: '(555) 123-4567'
   });
 
@@ -1386,7 +1386,7 @@ function App() {
             <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
             
             {/* Protected Routes - Dashboard with URL-based tab navigation */}
-            <Route path="/dashboard" element={<Navigate to="/dashboard/configure" replace />} />
+            <Route path="/dashboard" element={<Navigate to="/dashboard/deal" replace />} />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
                 <Dashboard

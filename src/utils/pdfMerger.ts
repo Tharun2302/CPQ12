@@ -539,7 +539,7 @@ const drawQuoteContentOnPage = async (
     color: rgb(0.2, 0.2, 0.2),
   });
   
-  page.drawText(sanitizeText('CPQ Pro Solutions'), {
+  page.drawText(sanitizeText('ZENOP Pro Solutions'), {
     x: rightColumn,
     y: startY - 25,
     size: 14,
@@ -1802,7 +1802,7 @@ export const createTemplatePreviewHTML = async (
                 </svg>
                 From:
               </h3>
-              <p class="font-bold text-xl mb-2 text-gray-900">CPQ Pro Solutions</p>
+              <p class="font-bold text-xl mb-2 text-gray-900">ZENOP Pro Solutions</p>
               <p class="text-gray-700 mb-2 text-lg">123 Business Street</p>
               <p class="text-gray-700 mb-2 text-lg">City, State 12345</p>
               <p class="text-gray-600 text-base">contact@cpqsolutions.com</p>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test DOCX Template</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .title { font-size: 18px; font-weight: bold; }
+        .content { margin: 20px 0; }
+        .token { background-color: #ffffcc; padding: 2px 4px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">Test Agreement for <span class="token">{{Company Name}}</span></div>
+    </div>
+
+    <div class="content">
+        <p>This is a test agreement for <span class="token">{{Company Name}}</span>.</p>
+        
+        <p><strong>Service Details:</strong></p>
+        <ul>
+            <li>Number of Users: <span class="token">{{users_count}}</span></li>
+            <li>User Cost: <span class="token">{{users_cost}}</span></li>
+            <li>Duration: <span class="token">{{Duration of months}}</span> months</li>
+            <li>Total Price: <span class="token">{{total price}}</span></li>
+        </ul>
+        
+        <p><strong>Additional Information:</strong></p>
+        <ul>
+            <li>Migration Type: <span class="token">{{migration type}}</span></li>
+            <li>Client Name: <span class="token">{{clientName}}</span></li>
+            <li>Email: <span class="token">{{email}}</span></li>
+            <li>Date: <span class="token">{{date}}</span></li>
+        </ul>
+    </div>
+
+    <div style="margin-top: 40px; font-size: 12px; color: #666;">
+        <p><strong>Instructions:</strong></p>
+        <p>1. Copy this HTML content</p>
+        <p>2. Paste into Microsoft Word or Google Docs</p>
+        <p>3. Save as .docx format</p>
+        <p>4. Upload to the CPQ system</p>
+        <p>5. Test the "Generate Agreement" functionality</p>
+    </div>
+</body>
+</html>

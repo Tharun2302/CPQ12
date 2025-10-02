@@ -11,11 +11,11 @@ const LandingPage: React.FC = () => {
         <div className="text-center">
           <div className="mb-8">
             <span className="inline-block bg-gradient-to-r from-blue-600 to-purple-600 text-white text-lg font-bold px-8 py-3 rounded-full shadow-lg transform hover:scale-105 transition-all duration-300">
-              ✨ Welcome to CloudFuze CPQ Quote ✨
+              ✨ Welcome to CloudFuze ZENOP Quote ✨
             </span>
           </div>
           <p className="text-xl text-gray-600 mb-8 max-w-4xl mx-auto leading-relaxed">
-            Streamline your sales process with CloudFuze's powerful CPQ solution. 
+            Streamline your sales process with CloudFuze's powerful ZENOP solution. 
             Generate accurate quotes, manage templates, and integrate with HubSpot 
             to close more deals faster.
           </p>
@@ -113,10 +113,10 @@ const LandingPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="flex items-center justify-center mb-4">
             <Calculator className="h-6 w-6 text-blue-400 mr-2" />
-            <span className="text-xl font-bold">CPQ Pro</span>
+            <span className="text-xl font-bold">ZENOP Pro</span>
           </div>
           <p className="text-gray-400">
-            © 2025 CPQ Pro. All rights reserved.
+            © 2025 ZENOP Pro. All rights reserved.
           </p>
         </div>
       </footer>

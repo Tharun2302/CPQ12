@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useLocation, Navigate, useNavigate } from 'react-router-dom';
 import Navigation from './Navigation';
 import ConfigurationForm from './ConfigurationForm';
@@ -124,11 +124,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Navigation state to track current session
+  const [navigationState, setNavigationState] = React.useState({
+    previousTab: null as string | null,
+    currentTab: 'deal',
+    isNavigating: false
+  });
+
   // Get current tab from URL path
   const getCurrentTab = () => {
     const path = location.pathname;
     if (path.startsWith('/dashboard/')) {
-      const tab = path.split('/dashboard/')[1] || 'configure';
+      const tab = path.split('/dashboard/')[1] || 'deal';
       
       // Handle backward compatibility for old quotes URL
       if (tab === 'quotes') {
@@ -139,10 +146,148 @@ const Dashboard: React.FC<DashboardProps> = ({
       
       return tab;
     }
-    return 'configure';
+    return 'deal';
   };
 
   const currentTab = getCurrentTab();
+
+  // Handle browser back button navigation
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      console.log('🔄 Browser back button pressed, syncing state with URL');
+      console.log('🔄 Current URL:', window.location.pathname);
+      
+      // Restore session state when navigating back
+      restoreSessionState();
+      
+      // Update navigation state to reflect the back navigation
+      setNavigationState(prev => ({
+        ...prev,
+        previousTab: prev.currentTab,
+        currentTab: getCurrentTab(),
+        isNavigating: true
+      }));
+      
+      // Reset navigation flag after a short delay
+      setTimeout(() => {
+        setNavigationState(prev => ({
+          ...prev,
+          isNavigating: false
+        }));
+      }, 100);
+    };
+
+    // Add event listener for browser back/forward buttons
+    window.addEventListener('popstate', handlePopState);
+
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  // Sync state with URL changes
+  useEffect(() => {
+    const newTab = getCurrentTab();
+    console.log('🔄 URL changed, current tab:', newTab);
+    console.log('🔄 Location pathname:', location.pathname);
+    
+    // Update navigation state when URL changes
+    setNavigationState(prev => ({
+      ...prev,
+      previousTab: prev.currentTab,
+      currentTab: newTab,
+      isNavigating: false
+    }));
+  }, [location.pathname]);
+
+  // Restore session state on component mount
+  useEffect(() => {
+    console.log('🔄 Dashboard mounted, checking for saved session state');
+    restoreSessionState();
+  }, []);
+
+  // Enhanced navigation handler that preserves session state
+  const handleNavigation = (tab: string) => {
+    console.log('🔄 Navigating to tab:', tab);
+    
+    // Preserve current session state before navigation
+    const currentSessionState = {
+      configuration,
+      calculations,
+      selectedTier,
+      showPricing,
+      currentClientInfo,
+      configureContactInfo
+    };
+    
+    // Store session state in sessionStorage for persistence
+    try {
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify({
+        previousTab: navigationState.currentTab,
+        currentTab: tab,
+        sessionState: currentSessionState,
+        timestamp: Date.now()
+      }));
+    } catch (error) {
+      console.warn('⚠️ Could not save navigation state:', error);
+    }
+    
+    // Update navigation state
+    setNavigationState(prev => ({
+      ...prev,
+      previousTab: prev.currentTab,
+      currentTab: tab,
+      isNavigating: true
+    }));
+    
+    // Navigate to the new tab
+    navigate(`/dashboard/${tab}`);
+    
+    // Reset navigation flag
+    setTimeout(() => {
+      setNavigationState(prev => ({
+        ...prev,
+        isNavigating: false
+      }));
+    }, 100);
+  };
+
+  // Restore session state when navigating back
+  const restoreSessionState = () => {
+    try {
+      const savedState = sessionStorage.getItem('cpq_navigation_state');
+      if (savedState) {
+        const parsed = JSON.parse(savedState);
+        console.log('🔄 Restoring session state:', parsed);
+        
+        // Restore state if it's recent (within 5 minutes)
+        if (Date.now() - parsed.timestamp < 300000) {
+          // Restore configuration and other state
+          if (parsed.sessionState.configuration) {
+            setConfiguration(parsed.sessionState.configuration);
+          }
+          if (parsed.sessionState.calculations) {
+            setCalculations(parsed.sessionState.calculations);
+          }
+          if (parsed.sessionState.selectedTier) {
+            setSelectedTier(parsed.sessionState.selectedTier);
+          }
+          if (parsed.sessionState.showPricing !== undefined) {
+            setShowPricing(parsed.sessionState.showPricing);
+          }
+          if (parsed.sessionState.currentClientInfo) {
+            setCurrentClientInfo(parsed.sessionState.currentClientInfo);
+          }
+          if (parsed.sessionState.configureContactInfo) {
+            setConfigureContactInfo(parsed.sessionState.configureContactInfo);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not restore session state:', error);
+    }
+  };
 
   // Debug wrapper for handleUseDealData
   const handleUseDealData = (dealData: any) => {
@@ -206,7 +351,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <div className="mb-8">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Deal Information</h1>
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Deal Info</h1>
                   <p className="text-gray-600">View and manage deal details from HubSpot</p>
                 </div>
               </div>
@@ -286,12 +431,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                     className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold"
                   >
                     Go to Configuration
-                  </button>
-                  <button
-                    onClick={() => window.location.href = '/dashboard/pricing-config'}
-                    className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-semibold"
-                  >
-                    View Pricing
                   </button>
                 </div>
               </div>
@@ -376,7 +515,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
 
       default:
-        return <Navigate to="/dashboard/configure" replace />;
+        return <Navigate to="/dashboard/deal" replace />;
     }
   };
 
@@ -384,7 +523,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
       {!isSignatureForm && <Navigation currentTab={currentTab} />}
       
-      <main className={`${isSignatureForm ? 'max-w-6xl' : 'max-w-7xl'} mx-auto px-4 sm:px-6 lg:px-8 py-10`}>
+      <main className={`${isSignatureForm ? 'max-w-6xl' : 'max-w-7xl'} mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-10`}>
         {renderTabContent()}
       </main>
     </div>
