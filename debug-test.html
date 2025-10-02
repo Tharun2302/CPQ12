@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Test</title>
+</head>
+<body>
+    <h1>Debug Test - Routes Check</h1>
+    <div id="status">Loading...</div>
+    
+    <script>
+        // Test if the dev server is running
+        fetch('http://localhost:5174/')
+            .then(response => {
+                document.getElementById('status').innerHTML = '✅ Dev server is running on port 5174';
+                return response.text();
+            })
+            .then(html => {
+                console.log('Response received:', html.substring(0, 200));
+                if (html.includes('root')) {
+                    document.getElementById('status').innerHTML += '<br>✅ HTML structure looks correct';
+                } else {
+                    document.getElementById('status').innerHTML += '<br>❌ HTML structure issue detected';
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').innerHTML = '❌ Dev server not running: ' + error.message;
+                console.error('Error:', error);
+            });
+    </script>
+</body>
+</html>

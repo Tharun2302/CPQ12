@@ -619,9 +619,9 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
     console.log('Quote data:', quote);
     
     // Use quote data if available, otherwise use default values
-    const clientName = quote?.clientName || 'CPQ Client';
+    const clientName = quote?.clientName || 'ZENOP Client';
     const clientEmail = quote?.clientEmail || 'client@example.com';
-    const companyName = quote?.company || 'CPQ Pro Solutions';
+    const companyName = quote?.company || 'ZENOP Pro Solutions';
     
     updateState({ isCreatingContact: true });
     
@@ -704,7 +704,7 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
     }
     
     // Use available data or defaults
-    const clientName = quote?.clientName || 'CPQ Client';
+    const clientName = quote?.clientName || 'ZENOP Client';
     const totalCost = calculation?.totalCost || 1000;
     
     updateState({ isCreatingDeal: true });
@@ -959,7 +959,7 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
                   : state.isConnected 
                   ? (state.showDemoMode 
                     ? 'Using demo data for testing purposes' 
-                    : 'Your CPQ Pro is connected to HubSpot CRM and loading real data')
+                    : 'Your ZENOP Pro is connected to HubSpot CRM and loading real data')
                   : 'Click "Connect to HubSpot" to load your real HubSpot data'
                 }
               </p>

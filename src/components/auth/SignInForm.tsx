@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { validateSignInForm, getFieldError } from '../../utils/validation';
 import { AuthError } from '../../types/auth';
+import { sanitizeEmailInput } from '../../utils/emojiSanitizer';
+import { Eye, EyeOff } from 'lucide-react';
+
 
 interface SignInFormProps {
   onSuccess?: () => void;
@@ -17,12 +20,15 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
   });
   const [errors, setErrors] = useState<AuthError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    // Apply sanitization for email field
+    const processedValue = name === 'email' ? sanitizeEmailInput(value) : value;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: processedValue
     }));
     
     // Clear errors when user starts typing
@@ -93,7 +99,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
         <div className="text-center mb-6">
           <div className="mb-4">
             <span className="inline-block bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm sm:text-base font-bold px-4 sm:px-6 py-2 sm:py-3 rounded-full shadow-lg transform hover:scale-105 transition-all duration-300 text-center max-w-full">
-              ✨ Welcome to CloudFuze CPQ Quote ✨
+              ✨ Welcome to CloudFuze ZENOP Quote ✨
             </span>
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Sign In</h2>
@@ -134,18 +140,31 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
             <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
               Password
             </label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleInputChange}
-              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                passwordError ? 'border-red-300' : 'border-gray-300'
-              }`}
-              placeholder="Enter your password"
-              required
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                id="password"
+                name="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                className={`w-full px-3 py-2 pr-10 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  passwordError ? 'border-red-300' : 'border-gray-300'
+                }`}
+                placeholder="Enter your password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
             {passwordError && (
               <p className="mt-1 text-sm text-red-600">{passwordError}</p>
             )}

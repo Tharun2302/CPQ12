@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { PRICING_TIERS } from '../utils/pricing';
 import { formatCurrency } from '../utils/pricing';
 import { Save, RefreshCw, Settings as SettingsIcon, DollarSign, User, Mail } from 'lucide-react';
+import { sanitizeCompanyInput, sanitizeEmailInput, sanitizeAddressInput, sanitizePhoneInput } from '../utils/emojiSanitizer';
+
 
 interface SettingsProps {
   companyInfo?: {
@@ -85,7 +87,10 @@ const Settings: React.FC<SettingsProps> = ({
             <input
               type="text"
               value={companyInfo.name}
-              onChange={(e) => setCompanyInfo({ ...companyInfo, name: e.target.value })}
+              onChange={(e) => {
+                const sanitized = sanitizeCompanyInput(e.target.value);
+                setCompanyInfo({ ...companyInfo, name: sanitized });
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -94,7 +99,10 @@ const Settings: React.FC<SettingsProps> = ({
             <input
               type="email"
               value={companyInfo.email}
-              onChange={(e) => setCompanyInfo({ ...companyInfo, email: e.target.value })}
+              onChange={(e) => {
+                const sanitized = sanitizeEmailInput(e.target.value);
+                setCompanyInfo({ ...companyInfo, email: sanitized });
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -103,7 +111,10 @@ const Settings: React.FC<SettingsProps> = ({
             <input
               type="text"
               value={companyInfo.address}
-              onChange={(e) => setCompanyInfo({ ...companyInfo, address: e.target.value })}
+              onChange={(e) => {
+                const sanitized = sanitizeAddressInput(e.target.value);
+                setCompanyInfo({ ...companyInfo, address: sanitized });
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -112,7 +123,10 @@ const Settings: React.FC<SettingsProps> = ({
             <input
               type="text"
               value={companyInfo.city}
-              onChange={(e) => setCompanyInfo({ ...companyInfo, city: e.target.value })}
+              onChange={(e) => {
+                const sanitized = sanitizeAddressInput(e.target.value);
+                setCompanyInfo({ ...companyInfo, city: sanitized });
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -121,7 +135,10 @@ const Settings: React.FC<SettingsProps> = ({
             <input
               type="text"
               value={companyInfo.phone}
-              onChange={(e) => setCompanyInfo({ ...companyInfo, phone: e.target.value })}
+              onChange={(e) => {
+                const sanitized = sanitizePhoneInput(e.target.value);
+                setCompanyInfo({ ...companyInfo, phone: sanitized });
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>

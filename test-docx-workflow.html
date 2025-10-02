@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOCX System Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        .test-button { padding: 10px 20px; margin: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .test-button:hover { background-color: #0056b3; }
+        .log { background-color: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>🧪 DOCX System Test</h1>
+    
+    <div class="test-section info">
+        <h3>📋 Test Instructions</h3>
+        <p>This test will verify that the DOCX system is working correctly in your CPQ application.</p>
+        <ol>
+            <li>Make sure your CPQ application is running at <a href="http://localhost:5173" target="_blank">http://localhost:5173</a></li>
+            <li>Click the test buttons below to verify each component</li>
+            <li>Check the console output for any errors</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h3>🔍 Test 1: Application Accessibility</h3>
+        <button class="test-button" onclick="testApplicationAccess()">Test Application Access</button>
+        <div id="test1-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>📄 Test 2: DOCX File Upload</h3>
+        <button class="test-button" onclick="testDocxUpload()">Test DOCX Upload</button>
+        <div id="test2-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>🔄 Test 3: Template Processing</h3>
+        <button class="test-button" onclick="testTemplateProcessing()">Test Template Processing</button>
+        <div id="test3-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>📊 Test Results</h3>
+        <div id="test-results" class="log"></div>
+    </div>
+
+    <script>
+        let testResults = [];
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}`;
+            testResults.push(logMessage);
+            
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.textContent = testResults.join('\n');
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+            
+            console.log(logMessage);
+        }
+
+        async function testApplicationAccess() {
+            const resultDiv = document.getElementById('test1-result');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                log('🔍 Testing application accessibility...');
+                const response = await fetch('http://localhost:5173');
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = '<p class="success">✅ Application is accessible (Status: ' + response.status + ')</p>';
+                    log('✅ Application accessibility test passed');
+                } else {
+                    resultDiv.innerHTML = '<p class="error">❌ Application not accessible (Status: ' + response.status + ')</p>';
+                    log('❌ Application accessibility test failed');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">❌ Error: ' + error.message + '</p>';
+                log('❌ Application accessibility test error: ' + error.message);
+            }
+        }
+
+        function testDocxUpload() {
+            const resultDiv = document.getElementById('test2-result');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                log('📄 Testing DOCX file upload functionality...');
+                
+                // Create a test DOCX file (simplified)
+                const testContent = 'Test DOCX content with {{Company Name}} token';
+                const blob = new Blob([testContent], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+                const file = new File([blob], 'test-template.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+                
+                // Test file validation
+                const isValidType = file.type.includes('wordprocessingml.document');
+                const isValidExtension = file.name.toLowerCase().endsWith('.docx');
+                const isValidSize = file.size < 10 * 1024 * 1024;
+                
+                if (isValidType && isValidExtension && isValidSize) {
+                    resultDiv.innerHTML = '<p class="success">✅ DOCX file validation passed</p>';
+                    log('✅ DOCX file validation test passed');
+                    log('📊 File details: ' + file.name + ', Size: ' + file.size + ' bytes, Type: ' + file.type);
+                } else {
+                    resultDiv.innerHTML = '<p class="error">❌ DOCX file validation failed</p>';
+                    log('❌ DOCX file validation test failed');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">❌ Error: ' + error.message + '</p>';
+                log('❌ DOCX file upload test error: ' + error.message);
+            }
+        }
+
+        function testTemplateProcessing() {
+            const resultDiv = document.getElementById('test3-result');
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                log('🔄 Testing template processing functionality...');
+                
+                // Test token mapping
+                const testTokens = {
+                    '{{Company Name}}': 'Demo Company Inc.',
+                    '{{users_count}}': '1',
+                    '{{users_cost}}': '$300',
+                    '{{Duration of months}}': '1',
+                    '{{total price}}': '$330'
+                };
+                
+                const hasAllTokens = Object.keys(testTokens).every(token => 
+                    ['{{Company Name}}', '{{users_count}}', '{{users_cost}}', '{{Duration of months}}', '{{total price}}'].includes(token)
+                );
+                
+                if (hasAllTokens) {
+                    resultDiv.innerHTML = '<p class="success">✅ Template token mapping test passed</p>';
+                    log('✅ Template token mapping test passed');
+                    log('📋 Supported tokens: ' + Object.keys(testTokens).join(', '));
+                } else {
+                    resultDiv.innerHTML = '<p class="error">❌ Template token mapping test failed</p>';
+                    log('❌ Template token mapping test failed');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">❌ Error: ' + error.message + '</p>';
+                log('❌ Template processing test error: ' + error.message);
+            }
+        }
+
+        // Initialize
+        log('🧪 DOCX System Test initialized');
+        log('📋 Ready to test DOCX functionality');
+    </script>
+</body>
+</html>

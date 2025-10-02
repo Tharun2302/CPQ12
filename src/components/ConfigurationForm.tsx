@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
 import { Calculator, Users, Server, Clock, Database, ArrowRight, Sparkles, UserCheck, FileText, Percent, MessageSquare, Calendar } from 'lucide-react';
+import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 
 interface DealData {
   dealId: string;
@@ -100,6 +101,25 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       return extracted || 'Not Available';
     }
     return 'Not Available';
+  };
+
+  // Helper function to limit consecutive spaces to maximum 5
+  const limitConsecutiveSpaces = (value: string, maxSpaces: number = 5): string => {
+    // Replace any sequence of more than maxSpaces spaces with exactly maxSpaces spaces
+    const spaceRegex = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
+    return value.replace(spaceRegex, ' '.repeat(maxSpaces));
+  };
+
+  // Helper function to sanitize Contact Name input (remove special characters and emojis)
+  const sanitizeContactName = (value: string): string => {
+    // Remove special characters, emojis, and keep only letters, spaces, hyphens, apostrophes, and periods
+    return value.replace(/[^a-zA-Z\s\-'\.]/g, '');
+  };
+
+  // Helper function to sanitize Contact Email input (remove emojis and special characters)
+  const sanitizeContactEmail = (value: string): string => {
+    // Remove emojis and special characters, keep only valid email characters
+    return value.replace(/[^\w@\.\-]/g, '');
   };
 
   // Initialize contact info from deal data
@@ -274,11 +294,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   };
 
   const handleContactChange = (field: keyof typeof contactInfo, value: string) => {
+    // Apply sanitization and space limitation for clientName field
+    let processedValue = value;
+    if (field === 'clientName') {
+      processedValue = sanitizeNameInput(value);
+      processedValue = limitConsecutiveSpaces(processedValue);
+    } else if (field === 'clientEmail') {
+      processedValue = sanitizeEmailInput(value);
+    } else if (field === 'companyName2') {
+      processedValue = sanitizeCompanyInput(value);
+    }
+    
     const newContactInfo = {
       ...contactInfo,
-      [field]: value
+      [field]: processedValue
     };
-    console.log('🔍 ConfigurationForm: Contact info changed:', { field, value, newContactInfo });
+    console.log('🔍 ConfigurationForm: Contact info changed:', { field, value: processedValue, newContactInfo });
     setContactInfo(newContactInfo);
     // Persist contact info
     try { localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo)); } catch {}
@@ -401,6 +432,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       : 'border-green-200 focus:border-green-400 focus:ring-green-100'
                   }`}
                   placeholder="Enter contact name"
+                  maxLength={35}
                 />
               </div>
               
@@ -433,6 +465,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       : 'border-green-200 focus:border-green-400 focus:ring-green-100'
                   }`}
                   placeholder="Enter legal entity name"
+                  maxLength={35}
                 />
               </div>
             </div>

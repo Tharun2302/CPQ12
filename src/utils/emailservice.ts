@@ -23,7 +23,7 @@ export async function sendEmailWithEmailJS(
       to_email: to,
       subject: subject,
       message: message,
-      from_name: 'CPQ System',
+      from_name: 'ZENOP System',
       reply_to: 'saitharunreddy2302@gmail.com',
       attachment_name: attachmentName || 'Agreement.docx'
     };
