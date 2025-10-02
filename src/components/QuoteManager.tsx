@@ -24,6 +24,8 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { mergeQuoteIntoTemplate, mergeQuoteWithSowTemplate, downloadMergedPDF, createTemplatePreviewHTML } from '../utils/pdfMerger';
 import { createTemplateFromPdf } from '../utils/pdfToTemplate';
+import { sanitizeEmailInput } from '../utils/emojiSanitizer';
+
 
 interface QuoteManagerProps {
   quotes: Quote[];
@@ -375,7 +377,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
         </div>
         <div style="flex: 1; text-align: right;">
           <h3 style="color: #1e40af; margin-bottom: 10px;">From:</h3>
-          <p style="font-weight: bold; margin: 5px 0;">CPQ Pro Solutions</p>
+          <p style="font-weight: bold; margin: 5px 0;">ZENOP Pro Solutions</p>
           <p style="margin: 5px 0;">123 Business Street</p>
           <p style="margin: 5px 0;">contact@cpqsolutions.com</p>
         </div>
@@ -511,7 +513,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
             </div>
             <div class="text-right">
               <div class="bg-gradient-to-br from-blue-600 to-indigo-600 text-white p-6 rounded-2xl shadow-lg">
-                <h2 class="text-2xl font-bold mb-2">CPQ Pro Solutions</h2>
+                <h2 class="text-2xl font-bold mb-2">ZENOP Pro Solutions</h2>
                 <p class="opacity-90">123 Business St.</p>
                 <p class="opacity-90">City, State 12345</p>
                 <p class="opacity-90">contact@cpqsolutions.com</p>
@@ -836,7 +838,7 @@ Quote Summary:
 Please review the attached quote and let us know if you have any questions or would like to proceed.
 
 Best regards,
-CPQ Pro Solutions Team`
+ZENOP Pro Solutions Team`
     });
     setShowEmailModal(quote.id);
   };
@@ -1029,7 +1031,7 @@ The signature form will allow you to:
 This form will expire in 7 days for security purposes.
 
 Best regards,
-CPQ Pro Solutions Team`;
+ZENOP Pro Solutions Team`;
 
       formData.append('message', enhancedMessage);
       
@@ -1585,7 +1587,10 @@ The client will receive an email with the PDF quote and a link to complete the d
                 <input
                   type="email"
                   value={emailForm.to}
-                  onChange={(e) => setEmailForm({ ...emailForm, to: e.target.value })}
+                  onChange={(e) => {
+                    const sanitized = sanitizeEmailInput(e.target.value);
+                    setEmailForm({ ...emailForm, to: sanitized });
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   placeholder="customer@example.com"
                 />

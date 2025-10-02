@@ -1,0 +1,55 @@
+# ===========================================
+# COPY THIS TO .env FILE IN YOUR PROJECT ROOT
+# ===========================================
+
+# ===========================================
+# MICROSOFT AUTHENTICATION CONFIGURATION
+# ===========================================
+# Get this from Azure App Registration
+# Go to: https://portal.azure.com > Azure Active Directory > App registrations
+VITE_MSAL_CLIENT_ID=your-microsoft-client-id-here
+VITE_MSAL_REDIRECT_URI=
+
+# ===========================================
+# DATABASE CONFIGURATION (Optional)
+# ===========================================
+# For MySQL/MariaDB
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=root
+DB_NAME=cpq_database1
+DB_PORT=3306
+
+# For MongoDB (if using MongoDB instead)
+MONGODB_URI=mongodb://localhost:27017
+DB_NAME=cpq_database
+
+# ===========================================
+# EMAIL CONFIGURATION (Optional)
+# ===========================================
+# For sending emails (Gmail example)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-password
+
+# ===========================================
+# HUBSPOT INTEGRATION (Optional)
+# ===========================================
+# For HubSpot CRM integration
+HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
+
+# ===========================================
+# SERVER CONFIGURATION
+# ===========================================
+# Port for your backend server
+PORT=3001
+
+# JWT Secret for authentication tokens (CHANGE IN PRODUCTION!)
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+
+# ===========================================
+# DEVELOPMENT vs PRODUCTION
+# ===========================================
+# Set to 'production' when deploying
+NODE_ENV=development

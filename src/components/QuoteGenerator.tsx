@@ -19,6 +19,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
+import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -65,6 +66,14 @@ function formatDateMMDDYYYY(dateString: string): string {
     return 'N/A';
   }
 }
+
+// Helper function to limit consecutive spaces to maximum 5
+function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
+  // Replace any sequence of more than maxSpaces spaces with exactly maxSpaces spaces
+  const spaceRegex = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
+  return value.replace(spaceRegex, ' '.repeat(maxSpaces));
+}
+
 
 interface DealData {
   dealId: string;
@@ -283,7 +292,20 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 
   // Helper function to update client info and notify parent
   const updateClientInfo = (updates: Partial<ClientInfo>) => {
-    const newClientInfo = { ...clientInfo, ...updates };
+    // Apply sanitization and space limitation for clientName field
+    let processedUpdates = { ...updates };
+    if (updates.clientName) {
+      processedUpdates.clientName = sanitizeNameInput(updates.clientName);
+      processedUpdates.clientName = limitConsecutiveSpaces(processedUpdates.clientName);
+    }
+    if (updates.clientEmail) {
+      processedUpdates.clientEmail = sanitizeEmailInput(updates.clientEmail);
+    }
+    if (updates.company) {
+      processedUpdates.company = sanitizeCompanyInput(updates.company);
+    }
+    
+    const newClientInfo = { ...clientInfo, ...processedUpdates };
     setClientInfo(newClientInfo);
     // Persist to localStorage so the Quote session remains sticky
     try { localStorage.setItem('cpq_quote_client_info', JSON.stringify(newClientInfo)); } catch {}
@@ -959,7 +981,7 @@ Best regards,
 CloudFuze Sales Team
 
 ---
-This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST using CloudFuze CPQ Pro.
+This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST using CloudFuze ZENOP Pro.
 Agreement ID: AGR-${Date.now().toString().slice(-8)}
 Template: ${selectedTemplate?.name || 'Default Template'}`;
 
@@ -2247,7 +2269,7 @@ Total Price: {{total price}}`;
             
             if (!duration || duration <= 0) {
               console.log('  No valid duration found, returning N/A');
-              return 'N/A';
+            return 'N/A';
             }
             
             try {
@@ -3162,6 +3184,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   onChange={(e) => updateClientInfo({ clientName: e.target.value })}
                   className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                   placeholder="Enter contact name"
+                  maxLength={35}
                 />
               </div>
 
@@ -3179,6 +3202,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   onChange={(e) => updateClientInfo({ clientEmail: e.target.value })}
                   className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                   placeholder="Enter email address"
+                  maxLength={35}
                 />
               </div>
 
@@ -3444,10 +3468,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         </div>
         <div className="text-right">
           <div className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white p-6 rounded-2xl shadow-lg">
-            <h2 className="text-2xl font-bold mb-2">{companyInfo?.name || 'CPQ Pro Solutions'}</h2>
+            <h2 className="text-2xl font-bold mb-2">{companyInfo?.name || 'ZENOP Pro Solutions'}</h2>
             <p className="opacity-90">{companyInfo?.address || '123 Business St.'}</p>
             <p className="opacity-90">{companyInfo?.city || 'City, State 12345'}</p>
-            <p className="opacity-90">{companyInfo?.email || 'contact@cpqsolutions.com'}</p>
+            <p className="opacity-90">{companyInfo?.email || 'contact@zenopsolutions.com'}</p>
           </div>
         </div>
       </div>
@@ -3734,9 +3758,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 type="text"
                 required
                 value={clientInfo.clientName}
-                onChange={(e) => setClientInfo({ ...clientInfo, clientName: e.target.value })}
+                onChange={(e) => {
+                  const sanitized = sanitizeNameInput(e.target.value);
+                  const processed = limitConsecutiveSpaces(sanitized);
+                  setClientInfo({ ...clientInfo, clientName: processed });
+                }}
                 className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                 placeholder="Enter contact name"
+                maxLength={35}
               />
             </div>
 
@@ -3751,9 +3780,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 type="email"
                 required
                 value={clientInfo.clientEmail}
-                onChange={(e) => setClientInfo({ ...clientInfo, clientEmail: e.target.value })}
+                onChange={(e) => {
+                  const sanitized = sanitizeEmailInput(e.target.value);
+                  setClientInfo({ ...clientInfo, clientEmail: sanitized });
+                }}
                 className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                 placeholder="Enter email address"
+                maxLength={35}
               />
             </div>
 
@@ -3768,7 +3801,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 type="text"
                 required
                 value={clientInfo.company}
-                onChange={(e) => setClientInfo({ ...clientInfo, company: e.target.value })}
+                onChange={(e) => {
+                  const sanitized = sanitizeCompanyInput(e.target.value);
+                  setClientInfo({ ...clientInfo, company: sanitized });
+                }}
                 className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                 placeholder="Enter legal entity name"
               />
