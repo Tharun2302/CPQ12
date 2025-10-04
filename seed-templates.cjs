@@ -34,6 +34,26 @@ async function seedDefaultTemplates(db) {
       combination: 'slack-to-teams', 
       planType: 'advanced',
       keywords: ['advanced', 'slack', 'teams', 'messaging', 'enterprise']
+    },
+    {
+      name: 'SLACK TO GOOGLE CHAT Basic',
+      description: 'Basic template for Slack to Google Chat migration - suitable for small to medium projects',
+      fileName: 'slack-to-google-chat-basic.docx',
+      isDefault: false,
+      category: 'messaging',
+      combination: 'slack-to-google-chat',
+      planType: 'basic',
+      keywords: ['basic', 'slack', 'google-chat', 'messaging']
+    },
+    {
+      name: 'SLACK TO GOOGLE CHAT Advanced',
+      description: 'Advanced template for Slack to Google Chat migration - suitable for large enterprise projects',
+      fileName: 'slack-to-google-chat-advanced.docx',
+      isDefault: false,
+      category: 'messaging',
+      combination: 'slack-to-google-chat',
+      planType: 'advanced',
+      keywords: ['advanced', 'slack', 'google-chat', 'messaging', 'enterprise']
     }
   ];
 
