@@ -169,7 +169,7 @@ export const MainApp: React.FC = () => {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <FileText className="h-8 w-8 text-blue-600" />
-              <h1 className="ml-2 text-xl font-bold text-gray-900">ZENOP System</h1>
+              <h1 className="ml-2 text-xl font-bold text-gray-900">Zenop.ai System</h1>
             </div>
             <div className="flex items-center space-x-4">
               {uiState.isLoading && (

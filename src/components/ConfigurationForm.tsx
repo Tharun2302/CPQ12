@@ -56,7 +56,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     duration: 0,
     migrationType: '' as any, // Start with empty to hide other fields
     dataSizeGB: 0,
-    messages: 0
+    messages: 0,
+    combination: ''
   });
 
   // Contact information state
@@ -137,7 +138,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           duration: typeof parsed.duration === 'number' ? parsed.duration : 0,
           migrationType: parsed.migrationType || ('' as any),
           dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 0,
-          messages: typeof parsed.messages === 'number' ? parsed.messages : 0
+          messages: typeof parsed.messages === 'number' ? parsed.messages : 0,
+          combination: '' // Always start with empty combination, let user choose
         } as ConfigurationData;
         setConfig(merged);
         onConfigurationChange(merged);
@@ -234,13 +236,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   }, []);
 
-  // Load saved combination from localStorage
+  // Load saved combination from localStorage only when component mounts, but don't auto-update config
   useEffect(() => {
     try {
       const savedCombo = localStorage.getItem('cpq_combination');
-      if (savedCombo) setCombination(savedCombo);
-    } catch {}
-  }, []);
+      if (savedCombo && savedCombo !== '') {
+        setCombination(savedCombo);
+        console.log('🔧 ConfigurationForm: Loaded combination from localStorage into local state:', savedCombo);
+      } else {
+        setCombination('');
+        console.log('🔧 ConfigurationForm: No saved combination found, keeping empty');
+      }
+    } catch (error) {
+      console.error('Error loading combination from localStorage:', error);
+    }
+  }, []); // Run only once on mount
 
   // Calculate end date when start date or duration changes
   useEffect(() => {
@@ -542,6 +552,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     const value = e.target.value;
                     setCombination(value);
                     try { localStorage.setItem('cpq_combination', value); } catch {}
+                    
+                    // Update configuration with new combination
+                    const newConfig = { ...config, combination: value };
+                    console.log('🔧 ConfigurationForm: Combination changed:', {
+                      oldCombination: config.combination,
+                      newCombination: value,
+                      newConfig: newConfig
+                    });
+                    setConfig(newConfig);
+                    onConfigurationChange(newConfig);
+                    
                     // Scroll to next section after selection
                     setTimeout(() => {
                       const target = document.querySelector('[data-section="project-configuration"]');
@@ -552,6 +573,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 >
                   <option value="">Select Combination</option>
                   <option value="slack-to-teams">SLACK TO TEAMS</option>
+                  <option value="slack-to-google-chat">SLACK TO GOOGLE CHAT</option>
                 </select>
                 <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
                   <p className="text-sm text-purple-700">

@@ -40,6 +40,7 @@ export interface ConfigurationData {
   messages?: number;
   startDate?: string;
   endDate?: string;
+  combination?: string;
 }
 
 export interface PricingCalculation {

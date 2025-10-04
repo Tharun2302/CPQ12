@@ -51,7 +51,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
               </div>
             </div>
             <h1 className="text-xl font-bold text-gray-900">
-              ZENOP
+              Zenop.ai
             </h1>
           </div>
 

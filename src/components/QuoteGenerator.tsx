@@ -981,7 +981,7 @@ Best regards,
 CloudFuze Sales Team
 
 ---
-This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST using CloudFuze ZENOP Pro.
+This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST using CloudFuze Zenop.ai Pro.
 Agreement ID: AGR-${Date.now().toString().slice(-8)}
 Template: ${selectedTemplate?.name || 'Default Template'}`;
 
@@ -3468,7 +3468,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         </div>
         <div className="text-right">
           <div className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white p-6 rounded-2xl shadow-lg">
-            <h2 className="text-2xl font-bold mb-2">{companyInfo?.name || 'ZENOP Pro Solutions'}</h2>
+            <h2 className="text-2xl font-bold mb-2">{companyInfo?.name || 'Zenop.ai Pro Solutions'}</h2>
             <p className="opacity-90">{companyInfo?.address || '123 Business St.'}</p>
             <p className="opacity-90">{companyInfo?.city || 'City, State 12345'}</p>
             <p className="opacity-90">{companyInfo?.email || 'contact@zenopsolutions.com'}</p>

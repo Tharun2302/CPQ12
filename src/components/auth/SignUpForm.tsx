@@ -121,7 +121,7 @@ const SignUpForm: React.FC<SignUpFormProps> = ({ onSuccess, onError }) => {
         <div className="text-center mb-6">
           <div className="mb-4">
             <span className="inline-block bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm sm:text-base font-bold px-4 sm:px-6 py-2 sm:py-3 rounded-full shadow-lg transform hover:scale-105 transition-all duration-300 text-center max-w-full">
-              ✨ Welcome to CloudFuze ZENOP Quote ✨
+              ✨ Welcome to CloudFuze Zenop.ai Quote ✨
             </span>
           </div>
           <h2 className="text-2xl font-bold text-gray-900">Sign Up</h2>

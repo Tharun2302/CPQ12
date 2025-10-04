@@ -41,7 +41,7 @@ function App() {
 
   // Company information state management
   const [companyInfo, setCompanyInfo] = useState({
-    name: 'ZENOP Pro Solutions',
+    name: 'Zenop.ai Pro Solutions',
     address: '123 Business St.',
     city: 'City, State 12345',
     email: 'contact@zenopsolutions.com',
@@ -1028,9 +1028,13 @@ function App() {
 
   const handleConfigurationChange = (config: ConfigurationData) => {
     console.log('🔧 handleConfigurationChange called with:', config);
+    console.log('🔧 handleConfigurationChange - combination field:', config.combination);
     
     // Check if migration type has changed
     const migrationTypeChanged = configuration && configuration.migrationType !== config.migrationType;
+    
+    // Check if combination has changed
+    const combinationChanged = configuration && configuration.combination !== config.combination;
     
     setConfiguration(config);
     
@@ -1038,6 +1042,27 @@ function App() {
     if (migrationTypeChanged) {
       console.log('🔄 Migration type changed, resetting pricing display');
       setShowPricing(false);
+    }
+    
+    // If combination changed, trigger template re-selection
+    if (combinationChanged && selectedTier) {
+      console.log('🔄 Combination changed, re-selecting template for current tier:', {
+        oldCombination: configuration?.combination,
+        newCombination: config.combination,
+        currentTier: selectedTier.tier.name
+      });
+      
+      // Re-select template based on current tier and new combination
+      const auto = autoSelectTemplateForPlan(selectedTier.tier.name, config);
+      if (auto) {
+        console.log('✅ Auto-selected new template for combination change:', {
+          combination: config.combination,
+          template: { id: auto.id, name: auto.name, hasFile: !!auto.file }
+        });
+        setSelectedTemplate(auto);
+      } else {
+        console.log('⚠️ No matching template found for new combination, keeping current selection.');
+      }
     }
     
     const newCalculations = calculateAllTiers(config, pricingTiers);
@@ -1055,22 +1080,31 @@ function App() {
 
     const safeTier = (tierName || '').toLowerCase();
     const migration = (config?.migrationType || '').toLowerCase();
+    const combination = (config?.combination || '').toLowerCase();
 
-    console.log('🔍 Auto-selecting template for:', { tierName: safeTier, migration, availableTemplates: templates.length });
+    console.log('🔍 Auto-selecting template for:', { tierName: safeTier, migration, combination, availableTemplates: templates.length });
+    console.log('🔍 Full config object:', config);
+    console.log('🔍 Available templates:', templates.map(t => ({ name: t.name, planType: t.planType, combination: t.combination })));
 
-    // First priority: Match by planType field (most reliable)
+    // First priority: Match by planType field AND combination (most reliable)
     const planTypeMatches = templates.filter(t => {
       const planType = (t?.planType || '').toLowerCase();
-      const matches = planType === safeTier;
+      const templateCombination = (t?.combination || '').toLowerCase();
+      const matchesPlanType = planType === safeTier;
+      const matchesCombination = !combination || templateCombination === combination;
       
       console.log('🎯 Plan type matching:', { 
         templateName: t?.name, 
         templatePlanType: planType, 
+        templateCombination,
         targetTier: safeTier,
-        matches
+        selectedCombination: combination,
+        matchesPlanType,
+        matchesCombination,
+        finalMatch: matchesPlanType && matchesCombination
       });
       
-      return matches;
+      return matchesPlanType && matchesCombination;
     });
 
     if (planTypeMatches.length > 0) {
@@ -1078,23 +1112,32 @@ function App() {
       return planTypeMatches[0];
     }
 
-    // Second priority: Try exact match for SLACK TO TEAMS templates by name
+    // Second priority: Try exact match for SLACK TO TEAMS and SLACK TO GOOGLE CHAT templates by name
     const exactMatches = templates.filter(t => {
       const name = (t?.name || '').toLowerCase();
       
-      // Look for exact pattern: "slack to teams [plan]"
+      // Look for exact pattern: "slack to teams [plan]" or "slack to google chat [plan]"
       const isSlackToTeams = name.includes('slack') && name.includes('teams');
+      const isSlackToGoogleChat = name.includes('slack') && name.includes('google') && name.includes('chat');
       const matchesPlan = name.includes(safeTier);
+      
+      // Check if the template matches the selected combination
+      const matchesCombination = !combination || 
+        (combination === 'slack-to-teams' && isSlackToTeams) ||
+        (combination === 'slack-to-google-chat' && isSlackToGoogleChat);
       
       console.log('🔍 Name-based template matching:', { 
         templateName: name, 
         isSlackToTeams, 
+        isSlackToGoogleChat,
         matchesPlan, 
+        matchesCombination,
         safeTier,
+        combination,
         planType: t?.planType 
       });
       
-      return isSlackToTeams && matchesPlan;
+      return (isSlackToTeams || isSlackToGoogleChat) && matchesPlan && matchesCombination;
     });
 
     if (exactMatches.length > 0) {
@@ -1120,6 +1163,13 @@ function App() {
       
       // SLACK TO TEAMS combination gets high priority
       if (name.includes('slack') && name.includes('teams')) score += 8;
+      
+      // SLACK TO GOOGLE CHAT combination gets high priority
+      if (name.includes('slack') && name.includes('google') && name.includes('chat')) score += 8;
+      
+      // Bonus for matching the selected combination
+      if (combination === 'slack-to-teams' && name.includes('slack') && name.includes('teams')) score += 5;
+      if (combination === 'slack-to-google-chat' && name.includes('slack') && name.includes('google') && name.includes('chat')) score += 5;
       
       // Migration type match
       if (migration && (name.includes(migration) || desc.includes(migration))) score += 5;
@@ -1163,7 +1213,12 @@ function App() {
 
     // Attempt to auto-select a template matching the chosen plan
     try {
-      const auto = autoSelectTemplateForPlan(calculation?.tier?.name || '');
+      console.log('🔍 handleSelectTier called with:', {
+        tierName: calculation?.tier?.name,
+        configuration: configuration,
+        combination: configuration?.combination
+      });
+      const auto = autoSelectTemplateForPlan(calculation?.tier?.name || '', configuration);
       if (auto) {
         console.log('🔍 Auto-selected template details:', {
           id: auto.id,
