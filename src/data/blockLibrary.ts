@@ -9,7 +9,7 @@ export const blockLibrary: BlockLibraryItem[] = [
     icon: '🏢',
     category: 'basic',
     defaultContent: {
-      companyName: 'ZENOP Pro Solutions',
+      companyName: 'Zenop.ai Pro Solutions',
       logo: null,
       tagline: 'Professional Quote Solutions'
     },
@@ -154,7 +154,7 @@ export const blockLibrary: BlockLibraryItem[] = [
     icon: '📄',
     category: 'basic',
     defaultContent: {
-      companyName: 'ZENOP Pro Solutions',
+      companyName: 'Zenop.ai Pro Solutions',
       address: '123 Business Street, City, State 12345',
       phone: '+1 (555) 123-4567',
       email: 'contact@cpqsolutions.com',
