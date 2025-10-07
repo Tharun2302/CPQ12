@@ -263,10 +263,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         
         // Restore state if it's recent (within 5 minutes)
         if (Date.now() - parsed.timestamp < 300000) {
-          // Restore configuration and other state
-          if (parsed.sessionState.configuration) {
-            setConfiguration(parsed.sessionState.configuration);
-          }
+          // Let ConfigurationForm handle all configuration loading - don't restore from navigation state
+          // This prevents conflicts between cpq_navigation_state and cpq_configuration_session
+          console.log('🔄 Skipping configuration restoration - letting ConfigurationForm handle it');
+          
           if (parsed.sessionState.calculations) {
             setCalculations(parsed.sessionState.calculations);
           }
