@@ -1,62 +1,98 @@
-# Multi-stage build for production
-FROM node:18-alpine AS builder
-
-# Set working directory
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install
-# Copy source code
-COPY . .
-
-# Build the React app
-RUN npm run build
-
-# Production stage
-FROM node:18-alpine AS production
-
-# Install LibreOffice and other system dependencies
+events {
+    worker_connections 1024;
+}
+ 
+http {
+    upstream app {
+        server app:3001;
+    }
+ 
+    # HTTP server - redirect to HTTPS
+    server {
+        listen 80;
+        server_name zenop.ai www.zenop.ai;
+        return 301 https://$server_name$request_uri;
+    }
+ 
+    # HTTPS server
+    server {
+        listen 443 ssl http2;
+        server_name zenop.ai www.zenop.ai;
+ 
+        # SSL Configuration
+        ssl_certificate /etc/letsencrypt/live/zenop.ai/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/zenop.ai/privkey.pem;
+ 
+        # SSL Settings
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:E>        ssl_prefer_server_ciphers off;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 10m;
+ 
+        # Security Headers
+        add_header X-Frame-Options DENY;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubD>
+ 
+        location / {
+            proxy_pass http://app;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Port $server_port;
+        }
+ 
+        location /api/ {
+            proxy_pass http://app;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+ 
+# Use Node.js 18 Alpine as base image
+FROM node:18-alpine
+ 
+# Install LibreOffice and dependencies
 RUN apk add --no-cache \
     libreoffice \
-    python3 \
-    py3-pip \
-    wget \
-    curl
-
-# Create app directory
+    fontconfig \
+    ttf-dejavu \
+    ttf-liberation \
+    ttf-opensans \
+&& rm -rf /var/cache/apk/*
+ 
+# Set working directory
 WORKDIR /app
-
+ 
 # Copy package files
 COPY package*.json ./
-
-# Install production dependencies only
-RUN npm install --production && npm cache clean --force
-# Copy built application from builder stage
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.cjs ./
-COPY --from=builder /app/seed-templates.cjs ./
-
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S cpq -u 1001
-
-# Create temp directories
-RUN mkdir -p /temp/input /temp/output && \
-    chown -R cpq:nodejs /temp && \
-    chown -R cpq:nodejs /app
-
-# Switch to non-root user
-USER cpq
-
-# Expose port
+ 
+# Install ALL dependencies (including devDependencies for build)
+RUN npm install
+ 
+# Copy source code
+COPY . .
+ 
+# Set environment variables for build (using HTTPS)
+ENV VITE_API_URL=https://zenop.ai/api
+ENV VITE_BACKEND_URL=https://zenop.ai
+ENV VITE_MSAL_CLIENT_ID=e71e69a8-07fd-4110-8d77-9e4326027969
+ENV VITE_MSAL_REDIRECT_URI=https://zenop.ai/auth/microsoft/callback
+ 
+# Build the application
+RUN npm run build
+ 
+# Remove devDependencies to reduce image size
+RUN npm prune --production
+ 
+# Expose port 3001
 EXPOSE 3001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3001/api/health || exit 1
-
+ 
 # Start the application
-CMD ["node", "server.cjs"]
+CMD ["npm", "start"]
