@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  cpq-app:
+  app:
     build:
       context: ..
       dockerfile: deploymentgigitaldocker/Dockerfile
@@ -9,30 +7,38 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - SOFFICE_PATH=${SOFFICE_PATH}
       - NODE_ENV=production
       - PORT=3001
-      - MONGODB_URI=${MONGODB_URI}
-      - DB_NAME=${DB_NAME:-cpq_database}
-      - JWT_SECRET=${JWT_SECRET}
-      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
-      - EMAIL_FROM=${EMAIL_FROM}
-      - HUBSPOT_API_KEY=${HUBSPOT_API_KEY}
-      - GOTENBERG_URL=${GOTENBERG_URL}
-      - VITE_MSAL_CLIENT_ID=${VITE_MSAL_CLIENT_ID}
-      - VITE_MSAL_REDIRECT_URI=${VITE_MSAL_REDIRECT_URI}
+      - MONGODB_URI=mongodb+srv://saitharunreddy2302_db_user:Saireddy2302@c>      - DB_NAME=cpq_database
+      - HUBSPOT_API_KEY=pat-na1-be483f35-8df3-4753-9b8d-f9c565e9fb69
+      - SENDGRID_API_KEY=SG.O7jGUiWbQF-_Q-6-Ki0Hqg.jEsjKy-h0aYzDN3D5hGlEXCi>      - EMAIL_FROM=saitharunreddy2302@gmail.com
+      - VITE_BACKEND_URL=https://zenop.ai
+      - VITE_API_URL=https://zenop.ai/api
+      - VITE_MSAL_CLIENT_ID=e71e69a8-07fd-4110-8d77-9e4326027969
+      - VITE_MSAL_REDIRECT_URI=https://zenop.ai/auth/microsoft/callback
+      - LIBREOFFICE_PATH=/usr/bin/libreoffice
+      - JWT_SECRET=cpq-super-secret-jwt-key-2024-production-1735891367
     volumes:
       - ./temp-files:/temp
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    networks:
+      - cpq-network
+ 
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - /etc/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - app
+    restart: unless-stopped
     networks:
       - cpq-network
 
 networks:
   cpq-network:
     driver: bridge
+ 
