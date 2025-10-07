@@ -129,8 +129,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     // This ensures project configuration fields are empty on page refresh but retained during navigation
     try {
       const savedConfig = sessionStorage.getItem('cpq_configuration_session');
+      console.log('📋 === CONFIGURATION LOADING START ===');
+      console.log('📋 Raw sessionStorage value:', savedConfig);
+      
       if (savedConfig) {
         const parsed = JSON.parse(savedConfig);
+        console.log('📋 Parsed sessionStorage data:', parsed);
+        console.log('📋 Combination in parsed data:', parsed.combination);
+        
         const merged = {
           numberOfUsers: typeof parsed.numberOfUsers === 'number' ? parsed.numberOfUsers : 0,
           instanceType: parsed.instanceType || 'Small',
@@ -139,11 +145,25 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           migrationType: parsed.migrationType || ('' as any),
           dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 0,
           messages: typeof parsed.messages === 'number' ? parsed.messages : 0,
-          combination: '' // Always start with empty combination, let user choose
+          combination: parsed.combination || '' // Preserve previously selected combination
         } as ConfigurationData;
+        
+        console.log('📋 === CRITICAL CHECK ===');
+        console.log('📋 Merged combination value:', merged.combination);
+        console.log('📋 Full merged config:', merged);
+        console.log('📋 ========================');
+        
         setConfig(merged);
         onConfigurationChange(merged);
-        console.log('📋 Loaded project configuration from session storage');
+        console.log('📋 Configuration set and parent notified');
+        
+        // Force combination sync after config is loaded
+        if (merged.combination && merged.combination !== '') {
+          setCombination(merged.combination);
+          console.log('📋 Force syncing combination state:', merged.combination);
+        }
+        
+        console.log('📋 === CONFIGURATION LOADING END ===');
       } else {
         console.log('📋 No session configuration found, starting with empty project configuration fields');
       }
@@ -236,21 +256,23 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   }, []);
 
-  // Load saved combination from localStorage only when component mounts, but don't auto-update config
+  // Sync combination with config (only use sessionStorage, no localStorage fallback)
   useEffect(() => {
-    try {
-      const savedCombo = localStorage.getItem('cpq_combination');
-      if (savedCombo && savedCombo !== '') {
-        setCombination(savedCombo);
-        console.log('🔧 ConfigurationForm: Loaded combination from localStorage into local state:', savedCombo);
-      } else {
-        setCombination('');
-        console.log('🔧 ConfigurationForm: No saved combination found, keeping empty');
-      }
-    } catch (error) {
-      console.error('Error loading combination from localStorage:', error);
+    console.log('🔧 ConfigurationForm: Combination sync logic:', {
+      configCombination: config.combination,
+      isInitialLoad: isInitialLoad,
+      currentCombination: combination
+    });
+    
+    // Always use config.combination (from session storage) as the source of truth
+    if (config.combination && config.combination !== '') {
+      setCombination(config.combination);
+      console.log('🔧 ConfigurationForm: Syncing combination from config (session storage):', config.combination);
+    } else {
+      setCombination('');
+      console.log('🔧 ConfigurationForm: No combination in config, setting empty');
     }
-  }, []); // Run only once on mount
+  }, [config.combination, isInitialLoad]); // Run when config.combination changes or initial load completes
 
   // Calculate end date when start date or duration changes
   useEffect(() => {
@@ -289,7 +311,28 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     setConfig(newConfig);
     onConfigurationChange(newConfig);
     // Persist configuration in sessionStorage so values remain when user navigates but clear on page refresh
-    try { sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig)); } catch {}
+    try { 
+      console.log('💾 === SAVING TO SESSION STORAGE ===');
+      console.log('💾 Field changed:', field);
+      console.log('💾 New value:', value);
+      console.log('💾 Combination in newConfig:', newConfig.combination);
+      console.log('💾 Full newConfig:', newConfig);
+      
+      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+      console.log('💾 Saved to cpq_configuration_session');
+      
+      // Also save to navigation state to keep Dashboard in sync
+      const existingNavState = sessionStorage.getItem('cpq_navigation_state');
+      if (existingNavState) {
+        const parsed = JSON.parse(existingNavState);
+        parsed.sessionState.configuration = newConfig;
+        sessionStorage.setItem('cpq_navigation_state', JSON.stringify(parsed));
+        console.log('💾 Also saved to cpq_navigation_state');
+      }
+      console.log('💾 === SAVE COMPLETE ===');
+    } catch (error) {
+      console.error('💾 Error saving to sessionStorage:', error);
+    }
     
     // Auto-scroll down when migration type is selected, but only if we have a target section
     if (field === 'migrationType' && value) {
@@ -547,21 +590,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </label>
                 {/* Combination must be selected by user */}
                 <select
-                  value={combination}
+                  value={config.combination || ''}
                   onChange={(e) => {
                     const value = e.target.value;
                     setCombination(value);
-                    try { localStorage.setItem('cpq_combination', value); } catch {}
-                    
-                    // Update configuration with new combination
-                    const newConfig = { ...config, combination: value };
-                    console.log('🔧 ConfigurationForm: Combination changed:', {
-                      oldCombination: config.combination,
-                      newCombination: value,
-                      newConfig: newConfig
-                    });
-                    setConfig(newConfig);
-                    onConfigurationChange(newConfig);
+                    // Persist through unified handler to ensure sessionStorage + nav state are updated
+                    handleChange('combination', value as any);
                     
                     // Scroll to next section after selection
                     setTimeout(() => {
@@ -577,9 +611,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </select>
                 <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
                   <p className="text-sm text-purple-700">
-                    {combination ? (
+                    {config.combination ? (
                       <>
-                        <strong>Selected:</strong> {combination.replace(/-/g, ' ').toUpperCase()}
+                        <strong>Selected:</strong> {config.combination.replace(/-/g, ' ').toUpperCase()}
                         <span className="block mt-1 text-purple-600">Templates for this combination will be auto-selected after you choose a plan.</span>
                       </>
                     ) : (
@@ -592,7 +626,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* Other Configuration Fields - Conditional Rendering */}
-          {config.migrationType && combination && (
+          {config.migrationType && config.combination && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
@@ -834,7 +868,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* Calculate Pricing Button - Show only after combination is selected */}
-          {config.migrationType && combination && (
+          {config.migrationType && config.combination && (
             <>
               <button
                 type="submit"
