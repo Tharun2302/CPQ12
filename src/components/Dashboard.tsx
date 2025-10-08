@@ -10,6 +10,7 @@ import TemplateManager from './TemplateManager';
 import DealDetails from './DealDetails';
 import Settings from './Settings';
 import DigitalSignatureForm from './DigitalSignatureForm';
+import ApprovalWorkflow from './ApprovalWorkflow';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
 import { FileText } from 'lucide-react';
@@ -505,6 +506,20 @@ const Dashboard: React.FC<DashboardProps> = ({
             currentQuoteData={getCurrentQuoteData()}
           />
         );
+
+      case 'approval':
+        return (
+          <ApprovalWorkflow
+            quotes={quotes}
+            onStartWorkflow={(workflowData) => {
+              console.log('Starting approval workflow:', workflowData);
+              // Here you can add logic to handle the workflow start
+              // For example, save to database, send emails, etc.
+            }}
+            onNavigateToDashboard={() => window.location.href = '/approval-tracking'}
+          />
+        );
+
 
       case 'settings':
         return (
