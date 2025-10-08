@@ -154,8 +154,8 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     // For Messaging: user cost is NOT multiplied by duration
     const userCost = perUserRate * config.numberOfUsers;
  
-    const dataPerGbRate = dataCostPerGB[planKey];
-    const dataCost = (config.dataSizeGB || 0) * dataPerGbRate;
+    // For Messaging migration: data cost should be 0 (no data cost calculation)
+    const dataCost = 0;
  
     const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
  
