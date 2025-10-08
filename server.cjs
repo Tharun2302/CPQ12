@@ -139,6 +139,144 @@ if (process.env.SENDGRID_API_KEY) {
 }
 const isEmailConfigured = process.env.SENDGRID_API_KEY;
 
+// Email template functions
+function generateManagerEmailHTML(workflowData) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Manager Approval Required</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #3B82F6, #1E40AF); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>🔔 Manager Approval Required</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Manager,</h2>
+          
+          <p>A new document requires your <strong>Manager</strong> approval:</p>
+          
+          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+               style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+          </div>
+          
+          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function generateCEOEmailHTML(workflowData) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>CEO Approval Required</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #8B5CF6, #7C3AED); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>👑 CEO Approval Required</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello CEO,</h2>
+          
+          <p>A new document requires your <strong>CEO</strong> approval:</p>
+          
+          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+               style="background: #8B5CF6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+          </div>
+          
+          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function generateClientEmailHTML(workflowData) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Document Submitted for Approval</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #10B981, #059669); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>📋 Document Submitted for Approval</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello ${workflowData.clientName},</h2>
+          
+          <p>Your document has been submitted for approval:</p>
+          
+          <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Status:</strong> Pending Approval</p>
+          </div>
+          
+          <p>Our team will review your document and get back to you soon.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+               style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Track Status
+            </a>
+          </div>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 // Email sending function using SendGrid
 async function sendEmail(to, subject, html, attachments = []) {
   try {
@@ -1761,6 +1899,86 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
       message: userFriendlyMessage, 
       error: error.message,
       code: error.code 
+    });
+  }
+});
+
+// API endpoint for sending approval workflow emails
+app.post('/api/send-approval-emails', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { managerEmail, ceoEmail, clientEmail, workflowData } = req.body;
+    
+    console.log('📧 Sending approval workflow emails...');
+    console.log('Manager:', managerEmail);
+    console.log('CEO:', ceoEmail);
+    console.log('Client:', clientEmail);
+    console.log('Workflow Data:', workflowData);
+
+    const results = [];
+
+    // Send email to Manager
+    try {
+      const managerResult = await sendEmail(
+        managerEmail,
+        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        generateManagerEmailHTML(workflowData)
+      );
+      results.push({ role: 'Manager', email: managerEmail, success: managerResult.success });
+    } catch (error) {
+      console.error('❌ Manager email failed:', error);
+      results.push({ role: 'Manager', email: managerEmail, success: false, error: error.message });
+    }
+
+    // Send email to CEO
+    try {
+      const ceoResult = await sendEmail(
+        ceoEmail,
+        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        generateCEOEmailHTML(workflowData)
+      );
+      results.push({ role: 'CEO', email: ceoEmail, success: ceoResult.success });
+    } catch (error) {
+      console.error('❌ CEO email failed:', error);
+      results.push({ role: 'CEO', email: ceoEmail, success: false, error: error.message });
+    }
+
+    // Send email to Client
+    try {
+      const clientResult = await sendEmail(
+        clientEmail,
+        `Document Submitted for Approval: ${workflowData.documentId}`,
+        generateClientEmailHTML(workflowData)
+      );
+      results.push({ role: 'Client', email: clientEmail, success: clientResult.success });
+    } catch (error) {
+      console.error('❌ Client email failed:', error);
+      results.push({ role: 'Client', email: clientEmail, success: false, error: error.message });
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    const totalCount = results.length;
+
+    console.log(`✅ Approval emails sent: ${successCount}/${totalCount}`);
+
+    res.json({
+      success: successCount > 0,
+      message: `Approval emails sent: ${successCount}/${totalCount}`,
+      results: results,
+      workflowData: workflowData
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending approval emails:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });

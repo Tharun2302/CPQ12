@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, RefreshCw, Plus, CheckCircle, Rocket, Users, Mail, FileCheck, BarChart3 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import EmailService from '../utils/emailService';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -14,6 +15,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   onNavigateToDashboard
 }) => {
   const { createWorkflow } = useApprovalWorkflows();
+  const emailService = EmailService.getInstance();
   const [formData, setFormData] = useState({
     documentType: 'PDF Quote',
     documentId: '',
@@ -83,7 +85,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     }));
   };
 
-  const handleStartWorkflow = () => {
+  const handleStartWorkflow = async () => {
     if (!formData.documentId) {
       alert('Please select a document first');
       return;
@@ -117,8 +119,50 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       onStartWorkflow(newWorkflow);
     }
 
-    // Show success message
-    alert('Approval workflow started successfully!');
+    // Send approval emails via backend API
+    try {
+      console.log('📧 Sending approval emails via backend...');
+      
+      const response = await fetch('http://localhost:3001/api/send-approval-emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          managerEmail: formData.managerEmail,
+          ceoEmail: formData.ceoEmail,
+          clientEmail: formData.clientEmail,
+          workflowData: {
+            documentId: formData.documentId,
+            documentType: formData.documentType,
+            clientName: selectedDocument?.clientName || 'Unknown Client',
+            amount: selectedDocument?.amount || 0,
+            workflowId: newWorkflow.id
+          }
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const successCount = result.results.filter((r: any) => r.success).length;
+        const totalCount = result.results.length;
+        
+        if (successCount === totalCount) {
+          alert('✅ Approval workflow started successfully!\n📧 All emails sent automatically to Manager, CEO, and Client.');
+        } else {
+          alert(`⚠️ Workflow started but only ${successCount}/${totalCount} emails sent successfully.\nCheck console for details.`);
+        }
+        
+        console.log('📧 Email sending results:', result.results);
+      } else {
+        alert('⚠️ Workflow started but email sending failed: ' + result.message);
+        console.error('Email sending error:', result);
+      }
+    } catch (error) {
+      console.error('Error sending approval emails:', error);
+      alert('⚠️ Workflow started but email sending failed. Please check the console for details.');
+    }
     
     // Reset form
     setFormData({
