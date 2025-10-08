@@ -13,7 +13,8 @@ import MicrosoftCallback from './pages/MicrosoftCallback';
 import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
-import ApprovalDashboardTest from './components/ApprovalDashboardTest';
+import ManagerApprovalDashboard from './components/ManagerApprovalDashboard';
+import CEOApprovalDashboard from './components/CEOApprovalDashboard';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -1448,6 +1449,18 @@ function App() {
               <ProtectedRoute>
                 <ApprovalDashboard onBackToDashboard={() => window.location.href = '/dashboard/approval'} />
               </ProtectedRoute>
+            } />
+            <Route path="/manager-approval" element={
+              <ManagerApprovalDashboard 
+                managerEmail="manager@company.com"
+                onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
+              />
+            } />
+            <Route path="/ceo-approval" element={
+              <CEOApprovalDashboard 
+                ceoEmail="ceo@company.com"
+                onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
+              />
             } />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
