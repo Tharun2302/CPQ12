@@ -1237,6 +1237,52 @@ Total Price: {{total price}}`;
       // Prefer server-side high-fidelity conversion
       const { templateService } = await import('../utils/templateService');
       const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      
+      // Save PDF to MongoDB database
+      try {
+        console.log('💾 Saving PDF to MongoDB from PDF button...');
+        const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
+        const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
+        
+        const savedDoc = {
+          fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
+          fileData: base64Data,
+          fileSize: pdfBlob.size,
+          clientName: clientInfo.clientName || 'Unknown',
+          clientEmail: clientInfo.clientEmail || '',
+          company: clientInfo.company || 'Unknown Company',
+          templateName: selectedTemplate?.name || 'Agreement',
+          generatedDate: new Date(),
+          quoteId: quoteId,
+          metadata: {
+            totalCost: calculation?.totalCost || 0,
+            duration: configuration?.duration || 0,
+            migrationType: configuration?.migrationType || 'Messaging',
+            numberOfUsers: configuration?.numberOfUsers || 0
+          }
+        };
+        
+        await documentServiceMongoDB.saveDocument(savedDoc);
+        console.log('✅ PDF saved to MongoDB successfully from PDF button');
+        
+        // Show success notification
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+        notification.innerHTML = `
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          <span>PDF saved to MongoDB!</span>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => {
+          notification.remove();
+        }, 3000);
+      } catch (error) {
+        console.error('❌ Error saving PDF to MongoDB:', error);
+        // Continue with download even if saving fails
+      }
+      
       const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
       link.href = url;
@@ -3024,6 +3070,51 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           const previewUrl = URL.createObjectURL(processedDocument);
           setPreviewUrl(previewUrl);
           setShowInlinePreview(true);
+        }
+        
+        // Save PDF to MongoDB database
+        try {
+          console.log('💾 Saving PDF to MongoDB...');
+          const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
+          const base64Data = await documentServiceMongoDB.blobToBase64(processedDocument);
+          
+          const savedDoc = {
+            fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+            fileData: base64Data,
+            fileSize: processedDocument.size,
+            clientName: clientName || 'Unknown',
+            clientEmail: clientEmail || '',
+            company: finalCompanyName || 'Unknown Company',
+            templateName: selectedTemplate.name,
+            generatedDate: new Date(),
+            quoteId: quoteId,
+            metadata: {
+              totalCost: finalCalculation.totalCost,
+              duration: finalConfiguration.duration,
+              migrationType: finalConfiguration.migrationType,
+              numberOfUsers: finalConfiguration.numberOfUsers
+            }
+          };
+          
+          await documentServiceMongoDB.saveDocument(savedDoc);
+          console.log('✅ PDF saved to MongoDB successfully');
+          
+          // Show success notification
+          const notification = document.createElement('div');
+          notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+          notification.innerHTML = `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span>Agreement saved to MongoDB!</span>
+          `;
+          document.body.appendChild(notification);
+          setTimeout(() => {
+            notification.remove();
+          }, 3000);
+        } catch (error) {
+          console.error('❌ Error saving PDF to MongoDB:', error);
+          // Still show the PDF even if saving fails
         }
         
         setShowAgreementPreview(true);
