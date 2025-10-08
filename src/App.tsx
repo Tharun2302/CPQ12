@@ -12,6 +12,8 @@ import SignUpPage from './pages/SignUpPage';
 import MicrosoftCallback from './pages/MicrosoftCallback';
 import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import ApprovalDashboard from './components/ApprovalDashboard';
+import ApprovalDashboardTest from './components/ApprovalDashboardTest';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -1442,6 +1444,11 @@ function App() {
             
             {/* Protected Routes - Dashboard with URL-based tab navigation */}
             <Route path="/dashboard" element={<Navigate to="/dashboard/deal" replace />} />
+            <Route path="/approval-tracking" element={
+              <ProtectedRoute>
+                <ApprovalDashboard onBackToDashboard={() => window.location.href = '/dashboard/approval'} />
+              </ProtectedRoute>
+            } />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
                 <Dashboard
