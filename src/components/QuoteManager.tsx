@@ -25,6 +25,7 @@ import html2canvas from 'html2canvas';
 import { mergeQuoteIntoTemplate, mergeQuoteWithSowTemplate, downloadMergedPDF, createTemplatePreviewHTML } from '../utils/pdfMerger';
 import { createTemplateFromPdf } from '../utils/pdfToTemplate';
 import { sanitizeEmailInput } from '../utils/emojiSanitizer';
+import { documentServiceMongoDB, SavedDocument } from '../services/documentServiceMongoDB';
 
 
 interface QuoteManagerProps {
@@ -78,7 +79,58 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     // Show sync notification briefly
     setShowTemplateSyncNotification(true);
     setTimeout(() => setShowTemplateSyncNotification(false), 3000);
+    
+    // Load saved documents
+    loadSavedDocuments();
   }, [templates, quotes]);
+  
+  // Load saved documents from MongoDB
+  const loadSavedDocuments = async () => {
+    setLoadingDocuments(true);
+    try {
+      const docs = await documentServiceMongoDB.getAllDocuments();
+      setSavedDocuments(docs);
+      console.log('✅ Loaded saved documents from MongoDB:', docs.length);
+    } catch (error) {
+      console.error('❌ Error loading documents from MongoDB:', error);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  };
+  
+  // View a saved document
+  const handleViewDocument = (doc: SavedDocument) => {
+    const blob = documentServiceMongoDB.base64ToBlob(doc.fileData);
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  };
+  
+  // Download a saved document
+  const handleDownloadDocument = (doc: SavedDocument) => {
+    const blob = documentServiceMongoDB.base64ToBlob(doc.fileData);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = doc.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  
+  // Delete a saved document from MongoDB
+  const handleDeleteDocument = async (docId: string) => {
+    if (confirm('Are you sure you want to delete this document?')) {
+      try {
+        await documentServiceMongoDB.deleteDocument(docId);
+        await loadSavedDocuments();
+        alert('Document deleted successfully from MongoDB');
+      } catch (error) {
+        console.error('❌ Error deleting document from MongoDB:', error);
+        alert('Error deleting document');
+      }
+    }
+  };
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [templatesLastUpdated, setTemplatesLastUpdated] = useState<Date>(new Date());
@@ -100,6 +152,10 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
   const [mergePreviewPdfBlob, setMergePreviewPdfBlob] = useState<Blob | null>(null);
   const [mergePreviewFileName, setMergePreviewFileName] = useState<string>('');
   const [showPdfViewer, setShowPdfViewer] = useState<boolean>(false);
+  
+  // Saved documents state
+  const [savedDocuments, setSavedDocuments] = useState<SavedDocument[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
 
   const getStatusColor = (status: Quote['status']) => {
     switch (status) {
@@ -1230,6 +1286,96 @@ The client will receive an email with the PDF quote and a link to complete the d
             </div>
           </div>
         )}
+      </div>
+
+      {/* Saved Documents Section */}
+      <div className="mb-12">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+          <FileText className="w-7 h-7 text-blue-600" />
+          Saved Documents ({savedDocuments.length})
+        </h2>
+        
+        {loadingDocuments ? (
+          <div className="text-center py-8">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading documents...</p>
+          </div>
+        ) : savedDocuments.length === 0 ? (
+          <div className="bg-gray-50 rounded-xl p-8 text-center">
+            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-600">No saved documents yet. Generate an agreement in the Quote session to save it here.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {savedDocuments.map((doc) => (
+              <div key={doc.id} className="bg-white rounded-xl shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                      <FileText className="w-6 h-6 text-red-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 text-sm">{doc.company}</h3>
+                      <p className="text-xs text-gray-500">{new Date(doc.generatedDate).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="w-4 h-4 text-gray-400" />
+                    <span className="text-gray-700">{doc.clientName}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Mail className="w-4 h-4 text-gray-400" />
+                    <span className="text-gray-600 truncate">{doc.clientEmail}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="w-4 h-4 text-gray-400" />
+                    <span className="text-gray-600">{doc.templateName}</span>
+                  </div>
+                  {doc.metadata?.totalCost && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <DollarSign className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-700 font-semibold">{formatCurrency(doc.metadata.totalCost)}</span>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleViewDocument(doc)}
+                    className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View
+                  </button>
+                  <button
+                    onClick={() => handleDownloadDocument(doc)}
+                    className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                  <button
+                    onClick={() => handleDeleteDocument(doc.id)}
+                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Quotes Section */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+          <FileText className="w-7 h-7 text-green-600" />
+          Quotes ({quotes.length})
+        </h2>
       </div>
 
       {/* Documents List */}
