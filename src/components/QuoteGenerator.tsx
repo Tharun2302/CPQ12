@@ -18,6 +18,7 @@ import {
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
+import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 // EmailJS import removed - now using server-side email with attachment support
@@ -1849,10 +1850,20 @@ Total Price: {{total price}}`;
       const timestamp = new Date().toISOString().slice(0, 10);
       const filename = `CPQ_Quote_${clientInfo.clientName.replace(/\s+/g, '_')}_${timestamp}.pdf`;
 
-      // Download the PDF
-      pdf.save(filename);
+      // Convert PDF to blob and save to database
+      const pdfBlob = pdf.output('blob');
       
-      console.log('✅ PDF generated and downloaded successfully');
+      // Download and save to database
+      await downloadAndSavePDF(
+        pdfBlob,
+        filename,
+        clientInfo.clientName,
+        clientInfo.company,
+        undefined, // quoteId
+        calculation?.totalCost
+      );
+      
+      console.log('✅ PDF generated, downloaded, and saved to database successfully');
       
     } catch (error) {
       console.error('❌ Error generating PDF:', error);

@@ -263,8 +263,15 @@ function generateClientEmailHTML(workflowData) {
           <div style="text-align: center; margin: 30px 0;">
             <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
                style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
-              Track Status
+              Review & Approve Document
             </a>
+          </div>
+          
+          <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
+            <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Action Required</p>
+            <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
+              Please review the document details and approve or deny this request. Your decision is required to complete the approval process.
+            </p>
           </div>
         </div>
         
@@ -1125,7 +1132,7 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
         template: {
           id: templateId,
           name: name || file.originalname,
-        description: description || '',
+          description: description || '',
           fileName: file.originalname,
           fileType,
           fileSize: file.size,
@@ -1904,6 +1911,130 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
 });
 
 // API endpoint for sending approval workflow emails
+// Sequential email sending - Manager only
+app.post('/api/send-manager-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { managerEmail, workflowData } = req.body;
+    
+    console.log('📧 Sending email to Manager only (sequential approval)...');
+    console.log('Manager:', managerEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Send email to Manager only
+    const managerResult = await sendEmail(
+      managerEmail,
+      `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      generateManagerEmailHTML(workflowData)
+    );
+
+    console.log('✅ Manager email sent:', managerResult.success);
+
+    res.json({
+      success: managerResult.success,
+      message: 'Manager email sent successfully',
+      result: { role: 'Manager', email: managerEmail, success: managerResult.success },
+      workflowData: workflowData
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending Manager email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Sequential email sending - CEO only (after Manager approves)
+app.post('/api/send-ceo-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { ceoEmail, workflowData } = req.body;
+    
+    console.log('📧 Sending email to CEO (after Manager approval)...');
+    console.log('CEO:', ceoEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Send email to CEO only
+    const ceoResult = await sendEmail(
+      ceoEmail,
+      `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      generateCEOEmailHTML(workflowData)
+    );
+
+    console.log('✅ CEO email sent:', ceoResult.success);
+
+    res.json({
+      success: ceoResult.success,
+      message: 'CEO email sent successfully',
+      result: { role: 'CEO', email: ceoEmail, success: ceoResult.success },
+      workflowData: workflowData
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending CEO email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Sequential email sending - Client only (after CEO approves)
+app.post('/api/send-client-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { clientEmail, workflowData } = req.body;
+    
+    console.log('📧 Sending email to Client (after CEO approval)...');
+    console.log('Client:', clientEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Send email to Client only
+    const clientResult = await sendEmail(
+      clientEmail,
+      `Document Submitted for Approval: ${workflowData.documentId}`,
+      generateClientEmailHTML(workflowData)
+    );
+
+    console.log('✅ Client email sent:', clientResult.success);
+
+    res.json({
+      success: clientResult.success,
+      message: 'Client email sent successfully',
+      result: { role: 'Client', email: clientEmail, success: clientResult.success },
+      workflowData: workflowData
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending Client email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Legacy endpoint - kept for backward compatibility
 app.post('/api/send-approval-emails', async (req, res) => {
   try {
     if (!isEmailConfigured) {
@@ -1915,7 +2046,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
 
     const { managerEmail, ceoEmail, clientEmail, workflowData } = req.body;
     
-    console.log('📧 Sending approval workflow emails...');
+    console.log('📧 Sending approval workflow emails (legacy - all at once)...');
     console.log('Manager:', managerEmail);
     console.log('CEO:', ceoEmail);
     console.log('Client:', clientEmail);
@@ -1976,6 +2107,337 @@ app.post('/api/send-approval-emails', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error sending approval emails:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// API endpoint to save PDF documents to MongoDB
+app.post('/api/documents', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot save documents without database connection'
+      });
+    }
+
+    // Check if we have file data (either from upload or base64)
+    if (!req.file && !fileData) {
+      return res.status(400).json({
+        success: false,
+        error: 'No document file provided'
+      });
+    }
+
+    const { clientName, company, quoteId, totalCost, fileName, fileData, fileSize } = req.body;
+    const file = req.file;
+    
+    // Generate unique ID for document
+    const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    
+    // Handle both file upload and base64 data
+    let finalFileName, finalFileData, finalFileSize;
+    
+    if (req.file) {
+      // File upload
+      finalFileName = file.originalname;
+      finalFileData = file.buffer;
+      finalFileSize = file.size;
+    } else {
+      // Base64 data
+      finalFileName = fileName || `document_${documentId}.pdf`;
+      finalFileData = Buffer.from(fileData, 'base64');
+      finalFileSize = parseInt(fileSize) || finalFileData.length;
+    }
+    
+    console.log('📄 Processing document:', {
+      id: documentId,
+      fileName: finalFileName,
+      fileSize: finalFileSize,
+      clientName,
+      company,
+      quoteId,
+      source: req.file ? 'upload' : 'base64'
+    });
+
+    const document = {
+      id: documentId,
+      fileName: finalFileName,
+      fileData: finalFileData,
+      fileSize: finalFileSize,
+      clientName: clientName || 'Unknown Client',
+      company: company || 'Unknown Company',
+      quoteId: quoteId || null,
+      metadata: {
+        totalCost: totalCost ? parseFloat(totalCost) : 0
+      },
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      generatedDate: new Date().toISOString()
+    };
+    
+    await db.collection('documents').insertOne(document);
+
+    console.log('✅ Document saved to database:', documentId);
+    
+    res.json({
+      success: true,
+      message: 'Document uploaded successfully',
+      document: {
+        id: documentId,
+        fileName: file.originalname,
+        clientName: document.clientName,
+        company: document.company,
+        quoteId: document.quoteId,
+        fileSize: file.size,
+        createdAt: document.createdAt
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error uploading document:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// API endpoint to fetch PDF documents from MongoDB
+app.get('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch documents without database connection'
+      });
+    }
+
+    console.log('📄 Fetching PDF documents from database...');
+    
+    const documents = await db.collection('documents')
+      .find({}, { fileData: 0 }) // Exclude file data from list for performance
+      .sort({ createdAt: -1 })
+      .toArray();
+    
+    console.log(`✅ Found ${documents.length} documents in database`);
+    
+    res.json({
+      success: true,
+      documents: documents,
+      count: documents.length
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching documents:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// API endpoint to get specific PDF document file
+app.get('/api/documents/:id/file', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch document files without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    
+    console.log('📄 Fetching document file:', id);
+    
+    const document = await db.collection('documents').findOne({ id: id });
+    
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
+    let fileBuffer;
+    if (Buffer.isBuffer(document.fileData)) {
+      fileBuffer = document.fileData;
+    } else if (document.fileData && document.fileData.buffer) {
+      // Some drivers store Binary with .buffer
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (typeof document.fileData === 'string') {
+      // Base64 string
+      fileBuffer = Buffer.from(document.fileData, 'base64');
+    } else {
+      throw new Error('Unsupported document fileData format');
+    }
+    
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${document.fileName}"`,
+      'Content-Length': fileBuffer.length
+    });
+    
+    res.send(fileBuffer);
+    
+  } catch (error) {
+    console.error('❌ Error fetching document file:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get PDF preview data (base64 encoded for inline display)
+app.get('/api/documents/:id/preview', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch document previews without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    
+    console.log('📄 Fetching document preview:', id);
+    
+    const document = await db.collection('documents').findOne({ id: id });
+    
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
+    let fileBuffer;
+    if (Buffer.isBuffer(document.fileData)) {
+      fileBuffer = document.fileData;
+    } else if (document.fileData && document.fileData.buffer) {
+      // Some drivers store Binary with .buffer
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (typeof document.fileData === 'string') {
+      // Base64 string
+      fileBuffer = Buffer.from(document.fileData, 'base64');
+    } else {
+      throw new Error('Unsupported document fileData format');
+    }
+    
+    console.log('✅ PDF preview data found:', document.fileName);
+    
+    // Convert binary data to base64 for inline display
+    const base64Data = fileBuffer.toString('base64');
+    const dataUrl = `data:application/pdf;base64,${base64Data}`;
+    
+    res.json({
+      success: true,
+      dataUrl: dataUrl,
+      fileName: document.fileName,
+      fileSize: document.fileSize
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching PDF preview:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// API endpoint to create test documents
+app.post('/api/documents/test', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot create test documents without database connection'
+      });
+    }
+
+    console.log('📄 Creating test documents...');
+
+    const testDocuments = [
+      {
+        id: `doc_${Date.now()}_test1`,
+        fileName: 'Contact_Company_Inc__2025-10-07.pdf',
+        fileData: Buffer.from('Test PDF content 1'),
+        fileSize: 206427,
+        clientName: 'John Smith',
+        company: 'Contact Company Inc.',
+        quoteId: 'Q-509892-Z51G3F',
+        metadata: {
+          totalCost: 21527.2
+        },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        generatedDate: new Date().toISOString()
+      },
+      {
+        id: `doc_${Date.now()}_test2`,
+        fileName: 'Test_Client_2025-10-08.pdf',
+        fileData: Buffer.from('Test PDF content 2'),
+        fileSize: 156789,
+        clientName: 'Jane Doe',
+        company: 'Test Company Ltd.',
+        quoteId: 'Q-692746-ZR6R2F',
+        metadata: {
+          totalCost: 18450.0
+        },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        generatedDate: new Date().toISOString()
+      },
+      {
+        id: `doc_${Date.now()}_test3`,
+        fileName: 'Sample_Quote_2025-10-08.pdf',
+        fileData: Buffer.from('Test PDF content 3'),
+        fileSize: 98765,
+        clientName: 'Bob Wilson',
+        company: 'Sample Corp',
+        quoteId: 'Q-514467-J0776B',
+        metadata: {
+          totalCost: 32400.0
+        },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        generatedDate: new Date().toISOString()
+      }
+    ];
+
+    // Insert test documents
+    const result = await db.collection('documents').insertMany(testDocuments);
+
+    console.log(`✅ Created ${result.insertedCount} test documents`);
+
+    res.json({
+      success: true,
+      message: `Successfully created ${result.insertedCount} test documents`,
+      documents: testDocuments.map(doc => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        clientName: doc.clientName,
+        company: doc.company,
+        quoteId: doc.quoteId,
+        totalCost: doc.metadata.totalCost
+      }))
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating test documents:', error);
     res.status(500).json({
       success: false,
       error: error.message

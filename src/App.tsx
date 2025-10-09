@@ -15,6 +15,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
 import ManagerApprovalDashboard from './components/ManagerApprovalDashboard';
 import CEOApprovalDashboard from './components/CEOApprovalDashboard';
+import ClientNotification from './components/ClientNotification';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -1459,6 +1460,11 @@ function App() {
             <Route path="/ceo-approval" element={
               <CEOApprovalDashboard 
                 ceoEmail="ceo@company.com"
+                onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
+              />
+            } />
+            <Route path="/client-notification" element={
+              <ClientNotification 
                 onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
             } />

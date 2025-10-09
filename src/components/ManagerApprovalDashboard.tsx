@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, RefreshCw, Clock, User, BarChart3, X, FileCheck, MessageCircle, Users, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ManagerApprovalDashboardProps {
   managerEmail?: string;
@@ -11,13 +12,14 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   onBackToDashboard 
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
-  const [workflows] = useState<any[]>([]);
-  const [isLoading] = useState(false);
+  const { workflows, isLoading, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('ManagerApprovalDashboard rendered for:', managerEmail);
+  console.log('📊 Available workflows:', workflows.length);
+  console.log('📋 Workflows data:', workflows);
 
   const tabs = [
-    { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => w.status === 'in_progress' && w.currentStep === 1).length },
+    { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => w.status === 'pending' && w.currentStep === 1).length },
     { id: 'pending', label: 'Pending Approvals', icon: Clock, count: workflows.filter(w => w.status === 'pending').length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length },
     { id: 'history', label: 'My Approval History', icon: FileCheck, count: workflows.filter(w => w.status === 'approved' || w.status === 'denied').length },
@@ -28,14 +30,58 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     console.log('Refresh clicked');
   };
 
-  const handleApprove = (workflowId: string) => {
+  const handleApprove = async (workflowId: string) => {
     console.log('Approving workflow:', workflowId);
-    // TODO: Implement approval logic
+    try {
+      // Update workflow step
+      updateWorkflowStep(workflowId, 1, { status: 'approved' });
+      
+      // Get workflow data to send CEO email
+      const workflow = workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        // Send email to CEO
+        console.log('📧 Sending email to CEO after Manager approval...');
+        const response = await fetch('http://localhost:3001/api/send-ceo-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ceoEmail: workflow.workflowSteps?.find(step => step.role === 'CEO')?.email || 'ceo@company.com',
+            workflowData: {
+              documentId: workflow.documentId,
+              documentType: workflow.documentType,
+              clientName: workflow.clientName,
+              amount: workflow.amount,
+              workflowId: workflow.id
+            }
+          })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          alert('✅ Workflow approved successfully!\n📧 CEO has been notified for next approval.');
+        } else {
+          alert('✅ Workflow approved but CEO email failed.\nPlease notify CEO manually.');
+        }
+      } else {
+        alert('✅ Workflow approved successfully!');
+      }
+    } catch (error) {
+      console.error('Error approving workflow:', error);
+      alert('❌ Failed to approve workflow. Please try again.');
+    }
   };
 
   const handleDeny = (workflowId: string) => {
     console.log('Denying workflow:', workflowId);
-    // TODO: Implement denial logic
+    try {
+      updateWorkflowStep(workflowId, 1, { status: 'denied' });
+      alert('❌ Workflow denied successfully!');
+    } catch (error) {
+      console.error('Error denying workflow:', error);
+      alert('❌ Failed to deny workflow. Please try again.');
+    }
   };
 
   const handleAddComment = (workflowId: string) => {
@@ -80,7 +126,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     // Filter workflows for manager-specific view
     const filteredWorkflows = workflows.filter(workflow => {
       switch (activeTab) {
-        case 'queue': return workflow.status === 'in_progress' && workflow.currentStep === 1;
+        case 'queue': return workflow.status === 'pending' && workflow.currentStep === 1;
         case 'pending': return workflow.status === 'pending';
         case 'denied': return workflow.status === 'denied';
         case 'history': return workflow.status === 'approved' || workflow.status === 'denied';
@@ -204,7 +250,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       <div className="space-y-4">
         {filteredWorkflows.map((workflow) => {
           const StatusIcon = getStatusIcon(workflow.status);
-          const isMyTurn = workflow.status === 'in_progress' && workflow.currentStep === 1;
+          const isMyTurn = workflow.status === 'pending' && workflow.currentStep === 1;
           
           return (
             <div key={workflow.id} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
