@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft, RefreshCw, Clock, User, BarChart3, X, FileCheck, MessageCircle, Users, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Clock, BarChart3, X, FileCheck, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown } from 'lucide-react';
+import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface CEOApprovalDashboardProps {
   ceoEmail?: string;
@@ -11,14 +12,15 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   onBackToDashboard 
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
-  const [workflows] = useState<any[]>([]);
-  const [isLoading] = useState(false);
+  const { workflows, isLoading, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('CEOApprovalDashboard rendered for:', ceoEmail);
+  console.log('📊 Available workflows:', workflows.length);
+  console.log('📋 Workflows data:', workflows);
 
   const tabs = [
-    { id: 'queue', label: 'My Approval Queue', icon: Crown, count: workflows.filter(w => w.status === 'in_progress' && w.currentStep === 2).length },
-    { id: 'pending', label: 'Pending Approvals', icon: Clock, count: workflows.filter(w => w.status === 'pending').length },
+    { id: 'queue', label: 'My Approval Queue', icon: Crown, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 2).length },
+    { id: 'pending', label: 'Pending Approvals', icon: Clock, count: workflows.filter(w => w.status === 'pending' || w.status === 'in_progress').length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length },
     { id: 'history', label: 'My Approval History', icon: FileCheck, count: workflows.filter(w => w.status === 'approved' || w.status === 'denied').length },
     { id: 'comments', label: 'My Comments', icon: MessageCircle, count: 0 }
@@ -28,14 +30,52 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     console.log('Refresh clicked');
   };
 
-  const handleApprove = (workflowId: string) => {
+  const handleApprove = async (workflowId: string) => {
     console.log('CEO Approving workflow:', workflowId);
-    // TODO: Implement CEO approval logic
+    try {
+      // Update workflow step
+      updateWorkflowStep(workflowId, 2, { status: 'approved' });
+      
+      // Get workflow data to send Client email
+      const workflow = workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        // Send email to Client
+        console.log('📧 Sending email to Client after CEO approval...');
+        const response = await fetch('http://localhost:3001/api/send-client-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clientEmail: workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com',
+            workflowData: {
+              documentId: workflow.documentId,
+              documentType: workflow.documentType,
+              clientName: workflow.clientName,
+              amount: workflow.amount,
+              workflowId: workflow.id
+            }
+          })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          alert('✅ Workflow approved successfully!\n📧 Client has been notified for final approval.');
+        } else {
+          alert('✅ Workflow approved but Client email failed.\nPlease notify Client manually.');
+        }
+      } else {
+        alert('✅ Workflow approved successfully!');
+      }
+    } catch (error) {
+      console.error('Error approving workflow:', error);
+      alert('❌ Failed to approve workflow. Please try again.');
+    }
   };
 
   const handleDeny = (workflowId: string) => {
     console.log('CEO Denying workflow:', workflowId);
-    // TODO: Implement CEO denial logic
+    updateWorkflowStep(workflowId, 2, { status: 'denied' });
   };
 
   const handleAddComment = (workflowId: string) => {
@@ -80,8 +120,8 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     // Filter workflows for CEO-specific view
     const filteredWorkflows = workflows.filter(workflow => {
       switch (activeTab) {
-        case 'queue': return workflow.status === 'in_progress' && workflow.currentStep === 2;
-        case 'pending': return workflow.status === 'pending';
+        case 'queue': return (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
+        case 'pending': return workflow.status === 'pending' || workflow.status === 'in_progress';
         case 'denied': return workflow.status === 'denied';
         case 'history': return workflow.status === 'approved' || workflow.status === 'denied';
         case 'status': return true;
@@ -200,11 +240,11 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       );
     }
 
-    return (
-      <div className="space-y-4">
-        {filteredWorkflows.map((workflow) => {
-          const StatusIcon = getStatusIcon(workflow.status);
-          const isMyTurn = workflow.status === 'in_progress' && workflow.currentStep === 2;
+     return (
+       <div className="space-y-4">
+         {filteredWorkflows.map((workflow) => {
+           const StatusIcon = getStatusIcon(workflow.status);
+           const isMyTurn = (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
           
           return (
             <div key={workflow.id} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
@@ -237,27 +277,27 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-2 mb-4">
-                {workflow.workflowSteps.map((step: any) => {
-                  const StepIcon = getStatusIcon(step.status);
-                  const isMyStep = step.step === 2 && step.role === 'CEO';
-                  return (
-                    <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-purple-50 border border-purple-200' : ''}`}>
-                      <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
-                        <StepIcon className="w-4 h-4" />
-                      </div>
-                      <span className="font-medium">{step.role}</span>
-                      <span className="text-gray-500">{step.email}</span>
-                      {isMyStep && <span className="text-purple-600 font-semibold text-xs">(Your Turn)</span>}
-                      {step.timestamp && (
-                        <span className="text-gray-400 ml-auto">
-                          {new Date(step.timestamp).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+               <div className="space-y-2 mb-4">
+                 {workflow.workflowSteps.map((step: any) => {
+                   const StepIcon = getStatusIcon(step.status);
+                   const isMyStep = step.step === 2 && step.role === 'CEO' && isMyTurn;
+                   return (
+                     <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-purple-50 border border-purple-200' : ''}`}>
+                       <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
+                         <StepIcon className="w-4 h-4" />
+                       </div>
+                       <span className="font-medium">{step.role}</span>
+                       <span className="text-gray-500">{step.email}</span>
+                       {isMyStep && <span className="text-purple-600 font-semibold text-xs">(Your Turn)</span>}
+                       {step.timestamp && (
+                         <span className="text-gray-400 ml-auto">
+                           {new Date(step.timestamp).toLocaleDateString()}
+                         </span>
+                       )}
+                     </div>
+                   );
+                 })}
+               </div>
 
               {/* Action Buttons for CEO */}
               {isMyTurn && (

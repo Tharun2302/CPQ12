@@ -8,25 +8,54 @@ export const useApprovalWorkflows = () => {
 
   // Load workflows from localStorage on mount
   useEffect(() => {
+    console.log('🔄 Loading workflows from localStorage on mount...');
     const savedWorkflows = localStorage.getItem('approval_workflows');
+    console.log('📦 Raw localStorage data on mount:', savedWorkflows);
+    
     if (savedWorkflows) {
       try {
-        setWorkflows(JSON.parse(savedWorkflows));
+        const parsed = JSON.parse(savedWorkflows);
+        console.log('✅ Successfully loaded workflows:', parsed.length, 'workflows');
+        console.log('📋 Loaded workflows data:', parsed);
+        setWorkflows(parsed);
       } catch (err) {
-        console.error('Error loading workflows from localStorage:', err);
+        console.error('❌ Error loading workflows from localStorage:', err);
         setError('Failed to load workflows');
       }
+    } else {
+      console.log('⚠️ No workflows found in localStorage on mount');
     }
   }, []);
 
   // Save workflows to localStorage whenever workflows change
   useEffect(() => {
+    console.log('💾 Saving workflows to localStorage:', workflows.length, 'workflows');
     if (workflows.length > 0) {
       localStorage.setItem('approval_workflows', JSON.stringify(workflows));
+      console.log('✅ Workflows saved to localStorage');
+    } else {
+      console.log('⚠️ No workflows to save');
     }
   }, [workflows]);
 
   const createWorkflow = (workflowData: Omit<ApprovalWorkflow, 'id' | 'createdAt' | 'updatedAt' | 'currentStep' | 'status'>) => {
+    console.log('🔄 Creating new workflow:', workflowData);
+    
+    // Check for duplicate workflows based on documentId and clientName
+    const existingWorkflow = workflows.find(w => 
+      w.documentId === workflowData.documentId && 
+      w.clientName === workflowData.clientName &&
+      w.status === 'pending'
+    );
+    
+    if (existingWorkflow) {
+      console.log('⚠️ Duplicate workflow detected:', existingWorkflow.id);
+      console.log('📋 Existing workflow:', existingWorkflow);
+      console.log('🔄 New workflow data:', workflowData);
+      alert(`A pending workflow already exists for this document:\n\nDocument: ${workflowData.documentId}\nClient: ${workflowData.clientName}\n\nPlease delete the existing workflow first or use a different document.`);
+      return existingWorkflow;
+    }
+    
     const newWorkflow: ApprovalWorkflow = {
       ...workflowData,
       id: `WF-${Date.now()}`,
@@ -36,7 +65,12 @@ export const useApprovalWorkflows = () => {
       updatedAt: new Date().toISOString()
     };
 
-    setWorkflows(prev => [newWorkflow, ...prev]);
+    console.log('✅ New workflow created:', newWorkflow);
+    setWorkflows(prev => {
+      const updated = [newWorkflow, ...prev];
+      console.log('📋 Updated workflows array:', updated.length, 'workflows');
+      return updated;
+    });
     return newWorkflow;
   };
 
@@ -89,7 +123,38 @@ export const useApprovalWorkflows = () => {
   };
 
   const deleteWorkflow = (workflowId: string) => {
-    setWorkflows(prev => prev.filter(workflow => workflow.id !== workflowId));
+    console.log('🗑️ Deleting workflow:', workflowId);
+    setWorkflows(prev => {
+      const filtered = prev.filter(workflow => workflow.id !== workflowId);
+      console.log('📋 Workflows after deletion:', filtered.length, 'workflows');
+      return filtered;
+    });
+  };
+
+  const removeDuplicateWorkflows = () => {
+    console.log('🔍 Checking for duplicate workflows...');
+    const seen = new Set();
+    const duplicates: string[] = [];
+    
+    const uniqueWorkflows = workflows.filter(workflow => {
+      const key = `${workflow.documentId}-${workflow.clientName}-${workflow.status}`;
+      if (seen.has(key)) {
+        duplicates.push(workflow.id);
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+    
+    if (duplicates.length > 0) {
+      console.log('⚠️ Found duplicate workflows:', duplicates);
+      setWorkflows(uniqueWorkflows);
+      console.log('✅ Removed duplicate workflows. Remaining:', uniqueWorkflows.length);
+      alert(`Removed ${duplicates.length} duplicate workflow(s). Remaining: ${uniqueWorkflows.length}`);
+    } else {
+      console.log('✅ No duplicate workflows found');
+      alert('No duplicate workflows found.');
+    }
   };
 
   const getWorkflowById = (workflowId: string) => {
@@ -123,6 +188,7 @@ export const useApprovalWorkflows = () => {
     updateWorkflow,
     updateWorkflowStep,
     deleteWorkflow,
+    removeDuplicateWorkflows,
     getWorkflowById,
     getWorkflowsByStatus,
     refreshWorkflows

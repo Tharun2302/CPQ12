@@ -1,4 +1,4 @@
-import { PDFDocument, PDFPage, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsPDF from 'jspdf';
 import { saveAs } from 'file-saver';
@@ -209,7 +209,7 @@ export async function processPDFTemplate(
     
     // For each page, we'll need to replace text
     // Note: This is a simplified approach. For complex PDFs, you might need more sophisticated text replacement
-    pages.forEach((page, index) => {
+    pages.forEach((_, index) => {
       console.log(`📄 Processing page ${index + 1}`);
       // Here you would implement text replacement logic
       // This is complex and depends on your specific PDF structure
@@ -217,7 +217,7 @@ export async function processPDFTemplate(
     
     // Generate the processed PDF
     const pdfBytes = await pdfDoc.save();
-    const processedPDF = new Blob([pdfBytes], { type: 'application/pdf' });
+    const processedPDF = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
     
     console.log('✅ PDF template processed successfully');
     
@@ -241,7 +241,6 @@ export async function generateQuotePDF(quoteData: QuoteData): Promise<Blob> {
     
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
     
     // Set up fonts and colors
     doc.setFont('helvetica');
@@ -325,6 +324,100 @@ export function downloadPDF(pdfBlob: Blob, filename: string): void {
   } catch (error) {
     console.error('❌ Error downloading PDF:', error);
     throw new Error('Failed to download PDF');
+  }
+}
+
+// Save PDF to MongoDB database
+export async function savePDFToDatabase(
+  pdfBlob: Blob, 
+  filename: string, 
+  clientName: string, 
+  company: string, 
+  quoteId?: string, 
+  totalCost?: number
+): Promise<boolean> {
+  try {
+    console.log('💾 Saving PDF to database:', filename);
+    
+    // Convert blob to base64
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data URL prefix
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(pdfBlob);
+    });
+    
+    // Prepare document data
+    const documentData = {
+      fileName: filename,
+      fileData: base64,
+      fileSize: pdfBlob.size,
+      clientName: clientName || 'Unknown Client',
+      company: company || 'Unknown Company',
+      quoteId: quoteId || null,
+      metadata: {
+        totalCost: totalCost || 0
+      },
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      generatedDate: new Date().toISOString()
+    };
+    
+    // Send to backend
+    const response = await fetch('http://localhost:3001/api/documents', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(documentData)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('✅ PDF saved to database successfully:', result.document.id);
+      return true;
+    } else {
+      console.error('❌ Failed to save PDF to database:', result.error);
+      return false;
+    }
+    
+  } catch (error) {
+    console.error('❌ Error saving PDF to database:', error);
+    return false;
+  }
+}
+
+// Download PDF and save to database
+export async function downloadAndSavePDF(
+  pdfBlob: Blob, 
+  filename: string, 
+  clientName: string, 
+  company: string, 
+  quoteId?: string, 
+  totalCost?: number
+): Promise<void> {
+  try {
+    // Download PDF to user's computer
+    downloadPDF(pdfBlob, filename);
+    
+    // Save PDF to database
+    const saved = await savePDFToDatabase(pdfBlob, filename, clientName, company, quoteId, totalCost);
+    
+    if (saved) {
+      console.log('✅ PDF downloaded and saved to database');
+    } else {
+      console.log('⚠️ PDF downloaded but failed to save to database');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in download and save:', error);
+    throw error;
   }
 }
 
