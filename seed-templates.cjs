@@ -13,8 +13,9 @@ async function seedDefaultTemplates(db) {
 
   console.log('🌱 Starting template seeding process...');
 
-  // Define default templates structure
+  // Define default templates structure (Messaging + Content)
   const defaultTemplates = [
+    // MESSAGING TEMPLATES
     {
       name: 'SLACK TO TEAMS Basic',
       description: 'Basic template for Slack to Teams migration - suitable for small to medium projects',
@@ -54,6 +55,67 @@ async function seedDefaultTemplates(db) {
       combination: 'slack-to-google-chat',
       planType: 'advanced',
       keywords: ['advanced', 'slack', 'google-chat', 'messaging', 'enterprise']
+    },
+    // CONTENT TEMPLATES (Basic, Standard, Advanced)
+    {
+      name: 'DROPBOX TO MYDRIVE Basic',
+      description: 'Basic template for Dropbox to Google MyDrive migration - suitable for small to medium projects',
+      fileName: 'dropbox-to-google-mydrive-basic.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-mydrive',
+      planType: 'basic',
+      keywords: ['basic', 'dropbox', 'mydrive', 'content', 'google']
+    },
+    {
+      name: 'DROPBOX TO MYDRIVE Standard',
+      description: 'Standard template for Dropbox to Google MyDrive migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-google-mydrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-mydrive',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'mydrive', 'content', 'google']
+    },
+    {
+      name: 'DROPBOX TO MYDRIVE Advanced',
+      description: 'Advanced template for Dropbox to Google MyDrive migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-google-mydrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-mydrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'mydrive', 'content', 'google', 'enterprise']
+    },
+    {
+      name: 'DROPBOX TO SHAREDRIVE Basic',
+      description: 'Basic template for Dropbox to Google SharedDrive migration - suitable for small to medium projects',
+      fileName: 'dropbox-to-google-sharedrive-basic.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-sharedrive',
+      planType: 'basic',
+      keywords: ['basic', 'dropbox', 'sharedrive', 'content', 'google']
+    },
+    {
+      name: 'DROPBOX TO SHAREDRIVE Standard',
+      description: 'Standard template for Dropbox to Google SharedDrive migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-google-sharedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-sharedrive',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'sharedrive', 'content', 'google']
+    },
+    {
+      name: 'DROPBOX TO SHAREDRIVE Advanced',
+      description: 'Advanced template for Dropbox to Google SharedDrive migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-google-sharedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-sharedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'sharedrive', 'content', 'google', 'enterprise']
     }
   ];
 
@@ -167,6 +229,7 @@ async function seedDefaultTemplates(db) {
   }
 
   console.log(`🎉 Template seeding completed! Uploaded ${uploadedCount} templates`);
+  console.log(`📊 Total templates: 4 Messaging + 6 Content (Basic, Standard, Advanced)`);
   return uploadedCount > 0;
 }
 

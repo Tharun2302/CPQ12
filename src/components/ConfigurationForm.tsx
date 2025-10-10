@@ -565,7 +565,34 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </label>
               <select
                 value={config.migrationType}
-                onChange={(e) => handleChange('migrationType', e.target.value as 'Messaging' | 'Content')}
+                onChange={(e) => {
+                  const newMigrationType = e.target.value as 'Messaging' | 'Content';
+                  console.log(`🔄 Migration type changing from "${config.migrationType}" to "${newMigrationType}"`);
+                  
+                  // Create new config with updated migration type and cleared combination
+                  const newConfig = { 
+                    ...config, 
+                    migrationType: newMigrationType,
+                    combination: '' // Clear combination when migration type changes
+                  };
+                  
+                  // Update state immediately
+                  setConfig(newConfig);
+                  setCombination('');
+                  onConfigurationChange(newConfig);
+                  
+                  // Persist to sessionStorage
+                  try {
+                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                    const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                    navState.migrationType = newMigrationType;
+                    navState.combination = '';
+                    sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                    console.log(`✅ Migration type changed to "${newMigrationType}" and combination cleared`);
+                  } catch (error) {
+                    console.warn('Could not save to sessionStorage:', error);
+                  }
+                }}
                 className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
               >
                 <option value="">Select Migration Type</option>
@@ -611,8 +638,20 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   className="w-full px-6 py-4 border-2 border-purple-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-purple-300 text-lg font-medium"
                 >
                   <option value="">Select Combination</option>
-                  <option value="slack-to-teams">SLACK TO TEAMS</option>
-                  <option value="slack-to-google-chat">SLACK TO GOOGLE CHAT</option>
+                  {/* Messaging combinations */}
+                  {config.migrationType === 'Messaging' && (
+                    <>
+                      <option value="slack-to-teams">SLACK TO TEAMS</option>
+                      <option value="slack-to-google-chat">SLACK TO GOOGLE CHAT</option>
+                    </>
+                  )}
+                  {/* Content combinations */}
+                  {config.migrationType === 'Content' && (
+                    <>
+                      <option value="dropbox-to-mydrive">DROPBOX TO MYDRIVE</option>
+                      <option value="dropbox-to-sharedrive">DROPBOX TO SHAREDRIVE</option>
+                    </>
+                  )}
                 </select>
                 <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
                   <p className="text-sm text-purple-700">
