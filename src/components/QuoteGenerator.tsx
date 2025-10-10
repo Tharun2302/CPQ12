@@ -217,6 +217,30 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     };
   }, []);
 
+  // Load configuration from sessionStorage if prop is undefined
+  useEffect(() => {
+    if (!configuration || !calculation) {
+      try {
+        const savedConfig = sessionStorage.getItem('cpq_configuration_session');
+        const savedNav = sessionStorage.getItem('cpq_navigation_state');
+        
+        if (savedConfig) {
+          const parsedConfig = JSON.parse(savedConfig);
+          console.log('✅ QuoteGenerator: Loaded configuration from sessionStorage:', parsedConfig);
+        }
+        
+        if (savedNav) {
+          const parsedNav = JSON.parse(savedNav);
+          if (parsedNav.sessionState?.selectedTier) {
+            console.log('✅ QuoteGenerator: Found selectedTier in navigation state:', parsedNav.sessionState.selectedTier);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not load configuration/calculation from storage:', error);
+      }
+    }
+  }, [configuration, calculation]);
+
   // Persist and restore Quote session client inputs so they remain across navigation
   useEffect(() => {
     // Load client info from storage on mount

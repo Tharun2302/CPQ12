@@ -221,6 +221,22 @@ export class DocxTemplateProcessor {
         console.log('🔍 No placeholders found in clean text');
       }
       
+      // Before processing, auto-fix a class of malformed placeholders that sometimes
+      // appear in uploaded DOCX files where the closing brace is missing right
+      // before adjacent text, e.g. "{{Company_Name}By" instead of "{{Company_Name}} By".
+      // This causes Docxtemplater to throw "Unclosed tag" errors. We fix such
+      // cases by inserting the missing brace and a space.
+      try {
+        const originalXml = zip.files['word/document.xml'].asText();
+        const fixedXml = originalXml.replace(/\{\{([^}]+)\}([A-Za-z])/g, '{{$1}} $2');
+        if (fixedXml !== originalXml) {
+          zip.file('word/document.xml', fixedXml);
+          console.log('🩹 Auto-fixed malformed placeholders in document.xml (missing \"}\" before text).');
+        }
+      } catch (autoFixErr) {
+        console.warn('⚠️ Unable to auto-fix malformed placeholders:', autoFixErr);
+      }
+
       // For now, let's always try to process the template first
       // The fallback will be triggered if processing fails
       console.log('🔄 Attempting to process template with Docxtemplater...');
