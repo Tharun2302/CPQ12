@@ -780,7 +780,13 @@ Quote ID: ${quoteData.id}
         const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
         const instanceType = configuration?.instanceType || 'Standard';
         const numberOfInstances = configuration?.numberOfInstances || 1;
-        const dataSizeGB = configuration?.dataSizeGB || 0;
+        const dataSizeGB = configuration?.dataSizeGB ?? 0;
+        
+        // Debug: Log data size for email function
+        console.log('🔍 EMAIL FUNCTION - DATA SIZE DEBUG:');
+        console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
+        console.log('  Final dataSizeGB value:', dataSizeGB);
+        console.log('  dataCost value:', dataCost);
         
         // Calculate discount for this function scope
         const localDiscountPercent = clientInfo.discount ?? 0;
@@ -817,9 +823,9 @@ Quote ID: ${quoteData.id}
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
-          '{{data_size}}': dataSizeGB.toString(),
-          '{{dataSizeGB}}': dataSizeGB.toString(),
-          '{{data_size_gb}}': dataSizeGB.toString(),
+          '{{data_size}}': (dataSizeGB ?? 0).toString(),
+          '{{dataSizeGB}}': (dataSizeGB ?? 0).toString(),
+          '{{data_size_gb}}': (dataSizeGB ?? 0).toString(),
           
           // Pricing breakdown - all costs
           '{{users_cost}}': formatCurrency(userCost || 0),
@@ -841,6 +847,20 @@ Quote ID: ${quoteData.id}
           '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
           '{{user_rate}}': formatCurrency((userCost || 0) / (userCount || 1)),
           '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          
+          // Per-data cost calculations - cost per GB
+          '{{per_data_cost}}': (() => {
+            const safeDataSize = dataSizeGB ?? 0;
+            const safeDataCost = dataCost ?? 0;
+            const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
+            console.log('🔍 PER_DATA_COST CALCULATION (handleEmailAgreement):', {
+              dataSizeGB: safeDataSize,
+              dataCost: safeDataCost,
+              perDataCost: perDataCost,
+              formatted: formatCurrency(perDataCost)
+            });
+            return formatCurrency(perDataCost);
+          })(),
           
           // Total pricing
           '{{total price}}': formatCurrency(totalCost || 0),
@@ -1156,6 +1176,21 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{instance_type}}': quote.configuration.instanceType || 'Standard',
       '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(quote.configuration.instanceType || 'Standard')),
       '{{per_user_cost}}': formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1)),
+      '{{data_size}}': (quote.configuration.dataSizeGB ?? 0).toString(),
+      '{{dataSizeGB}}': (quote.configuration.dataSizeGB ?? 0).toString(),
+      '{{data_size_gb}}': (quote.configuration.dataSizeGB ?? 0).toString(),
+      '{{per_data_cost}}': (() => {
+        const safeDataSize = quote.configuration.dataSizeGB ?? 0;
+        const safeDataCost = safeCalculation.dataCost ?? 0;
+        const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
+        console.log('🔍 PER_DATA_COST CALCULATION (generatePlaceholderPreview):', {
+          dataSizeGB: safeDataSize,
+          dataCost: safeDataCost,
+          perDataCost: perDataCost,
+          formatted: formatCurrency(perDataCost)
+        });
+        return formatCurrency(perDataCost);
+      })(),
       '{{total price}}': formatCurrency(safeCalculation.totalCost),
       // New tokens related to discount and final total - hide when discount is 0
       '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
@@ -2235,7 +2270,26 @@ Total Price: {{total price}}`;
         const tierName = quoteData.calculation?.tier?.name || 'Advanced';
         const instanceType = quoteData.configuration?.instanceType || 'Standard';
         const numberOfInstances = quoteData.configuration?.numberOfInstances || 1;
-        const dataSizeGB = quoteData.configuration?.dataSizeGB || 0;
+        const dataSizeGB = quoteData.configuration?.dataSizeGB ?? configuration?.dataSizeGB ?? 0;
+        
+        // Debug: Log critical data extraction
+        console.log('🔍 DATA SIZE DEBUG:');
+        console.log('  quoteData.configuration?.dataSizeGB:', quoteData.configuration?.dataSizeGB);
+        console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
+        console.log('  finalConfiguration?.dataSizeGB:', finalConfiguration?.dataSizeGB);
+        console.log('  Final dataSizeGB value:', dataSizeGB);
+        console.log('  typeof dataSizeGB:', typeof dataSizeGB);
+        console.log('  dataSizeGB === undefined:', dataSizeGB === undefined);
+        console.log('  dataSizeGB === null:', dataSizeGB === null);
+        console.log('  dataCost value:', dataCost);
+        console.log('  typeof dataCost:', typeof dataCost);
+        console.log('  Per data cost calculation:', (dataCost || 0) / (dataSizeGB || 1));
+        
+        // CRITICAL: Check all configuration sources
+        console.log('🔍 CONFIGURATION SOURCES:');
+        console.log('  configuration prop:', configuration);
+        console.log('  finalConfiguration:', finalConfiguration);
+        console.log('  quoteData.configuration:', quoteData.configuration);
         
         // Debug: Log the date values being used
         console.log('🔍 Template Data Debug:');
@@ -2278,9 +2332,9 @@ Total Price: {{total price}}`;
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
-          '{{data_size}}': dataSizeGB.toString(),
-          '{{dataSizeGB}}': dataSizeGB.toString(),
-          '{{data_size_gb}}': dataSizeGB.toString(),
+          '{{data_size}}': (dataSizeGB ?? 0).toString(),
+          '{{dataSizeGB}}': (dataSizeGB ?? 0).toString(),
+          '{{data_size_gb}}': (dataSizeGB ?? 0).toString(),
           
           // Project dates - formatted as mm/dd/yyyy
           // Use configuration.startDate (Project Start Date) for Start_date
@@ -2436,6 +2490,20 @@ Total Price: {{total price}}`;
           '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
           '{{user_rate}}': formatCurrency((userCost || 0) / (userCount || 1)),
           '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          
+          // Per-data cost calculations - cost per GB
+          '{{per_data_cost}}': (() => {
+            const safeDataSize = dataSizeGB ?? 0;
+            const safeDataCost = dataCost ?? 0;
+            const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
+            console.log('🔍 PER_DATA_COST CALCULATION (handleGenerateAgreement):', {
+              dataSizeGB: safeDataSize,
+              dataCost: safeDataCost,
+              perDataCost: perDataCost,
+              formatted: formatCurrency(perDataCost)
+            });
+            return formatCurrency(perDataCost);
+          })(),
           
           // Total pricing
           '{{total price}}': formatCurrency(totalCost || 0),

@@ -393,26 +393,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Enhanced Header with Gradient */}
-        <div className="text-center mb-12 relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-3xl blur-3xl"></div>
-          <div className="relative">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl transform hover:scale-110 transition-transform duration-300">
-              <Calculator className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-5xl font-black bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 bg-clip-text text-transparent mb-4">
-              FILL DETAILS HERE
-            </h1>
-            <p className="text-xl text-gray-600 font-medium">
-              Configure your project requirements to get accurate pricing
-            </p>
-          </div>
-        </div>
-
         {/* Contact Information Display - Show when deal data exists */}
         {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
-          <div className="mb-6 bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl shadow-md border border-emerald-200 p-6">
-            <div className="flex items-center gap-3 mb-4">
+          <div className="mb-6 bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl shadow-lg border border-emerald-200 p-8">
+            <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
                 <Users className="w-5 h-5 text-white" />
               </div>
@@ -885,30 +869,32 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </div>
                 )}
 
-                {/* Messages Field */}
-                <div className="group">
-                  <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                      <MessageSquare className="w-4 h-4 text-white" />
-                    </div>
-                    Messages
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={config.messages || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const numValue = value === '' ? 0 : parseInt(value) || 0;
-                      handleChange('messages', numValue);
-                    }}
-                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                    placeholder="Enter number of messages"
-                    autoComplete="off"
-                  />
-                  <p className="text-xs text-gray-500 mt-2">Number of messages for the migration.</p>
-                </div>
+                {/* Messages Field - Show for Messaging, Hide for Content */}
+                {config.migrationType === 'Messaging' && (
+                  <div className="group">
+                    <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                      <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                        <MessageSquare className="w-4 h-4 text-white" />
+                      </div>
+                      Messages
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={config.messages || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const numValue = value === '' ? 0 : parseInt(value) || 0;
+                        handleChange('messages', numValue);
+                      }}
+                      className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                      placeholder="Enter number of messages"
+                      autoComplete="off"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">Number of messages for the migration.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
