@@ -338,7 +338,11 @@ export class DocxTemplateProcessor {
         'total_price': processedData['{{total_price}}'] || processedData['{{total price}}'] || processedData['{{prices}}'] || '$0.00',
         'price_migration': processedData['{{price_migration}}'] || processedData['{{migration_price}}'] || '$0.00',
         'instance_cost': processedData['{{instance_cost}}'] || processedData['{{instanceCost}}'] || '$0.00',
-        'per_user_cost': processedData['{{per_user_cost}}'] || processedData['{{per_user_monthly_cost}}'] || '$0.00'
+        'per_user_cost': processedData['{{per_user_cost}}'] || processedData['{{per_user_monthly_cost}}'] || '$0.00',
+        'data_size': processedData['{{data_size}}'] || processedData['{{dataSizeGB}}'] || processedData['{{data_size_gb}}'] || '0',
+        'dataSizeGB': processedData['{{dataSizeGB}}'] || processedData['{{data_size}}'] || processedData['{{data_size_gb}}'] || '0',
+        'data_size_gb': processedData['{{data_size_gb}}'] || processedData['{{data_size}}'] || processedData['{{dataSizeGB}}'] || '0',
+        'per_data_cost': processedData['{{per_data_cost}}'] || '$0.00'
       };
       
       // Add common tokens to docxtemplater data
@@ -371,6 +375,8 @@ export class DocxTemplateProcessor {
         console.log('  Company_Name:', docxtemplaterData['Company_Name']);
         console.log('  users_count:', docxtemplaterData['users_count']);
         console.log('  per_user_cost:', docxtemplaterData['per_user_cost']);
+        console.log('  data_size:', docxtemplaterData['data_size']);
+        console.log('  per_data_cost:', docxtemplaterData['per_data_cost']);
         
         // CRITICAL: Final validation before rendering
         console.log('🔍 FINAL VALIDATION BEFORE RENDERING:');
@@ -874,11 +880,15 @@ export class DocxTemplateProcessor {
     console.log('  Checking {{instance_cost}} - input value:', data['{{instance_cost}}']);
     console.log('  Checking {{Duration_of_months}} - input value:', data['{{Duration_of_months}}']);
     console.log('  Checking {{per_user_cost}} - input value:', (data as any)['{{per_user_cost}}']);
+    console.log('  Checking {{data_size}} - input value:', (data as any)['{{data_size}}']);
+    console.log('  Checking {{per_data_cost}} - input value:', (data as any)['{{per_data_cost}}']);
     console.log('  Final values that will be used:');
     console.log('    users_cost final value:', userCost);
     console.log('    instance_cost input:', (data as any)['{{instance_cost}}']);
     console.log('    Duration_of_months final value:', duration);
     console.log('    per_user_cost calculated:', (data as any)['{{per_user_cost}}']);
+    console.log('    data_size input:', (data as any)['{{data_size}}']);
+    console.log('    per_data_cost input:', (data as any)['{{per_data_cost}}']);
     
     // Create comprehensive token mapping covering ALL possible variations
     const tokenMappings = {
@@ -1031,6 +1041,14 @@ export class DocxTemplateProcessor {
       '{{numberOfInstances}}': (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || (data as any)['{{instances}}'] || '1',
       '{{number_of_instances}}': (data as any)['{{number_of_instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
       '{{instances}}': (data as any)['{{instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
+      
+      // Data size tokens
+      '{{data_size}}': (data as any)['{{data_size}}'] || (data as any)['{{dataSizeGB}}'] || (data as any)['{{data_size_gb}}'] || '0',
+      '{{dataSizeGB}}': (data as any)['{{dataSizeGB}}'] || (data as any)['{{data_size}}'] || (data as any)['{{data_size_gb}}'] || '0',
+      '{{data_size_gb}}': (data as any)['{{data_size_gb}}'] || (data as any)['{{data_size}}'] || (data as any)['{{dataSizeGB}}'] || '0',
+      
+      // Per-data cost tokens
+      '{{per_data_cost}}': (data as any)['{{per_data_cost}}'] || '$0.00',
       
       // Legacy support (for backward compatibility)
       company: companyName,
