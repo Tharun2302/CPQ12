@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { ArrowLeft, RefreshCw, Clock, BarChart3, X, FileCheck, CheckCircle, AlertCircle, Trash2, Eye, FileText } from 'lucide-react';
+import { RefreshCw, Clock, BarChart3, X, FileCheck, CheckCircle, AlertCircle, Trash2, Eye, FileText } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ApprovalDashboardProps {
-  onBackToDashboard?: () => void;
 }
 
-const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard }) => {
+const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
@@ -58,14 +57,12 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
       setDocumentPreview(null);
       
       try {
-        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
         const result = await response.json();
         
-        if (result.success && result.document && result.document.fileData) {
-          // Create a data URL for the PDF
-          const pdfDataUrl = `data:application/pdf;base64,${result.document.fileData}`;
-          setDocumentPreview(pdfDataUrl);
-          console.log('✅ Document preview loaded:', result.document.fileName);
+        if (result.success && result.dataUrl) {
+          setDocumentPreview(result.dataUrl);
+          console.log('✅ Document preview loaded:', result.fileName);
         } else {
           console.log('⚠️ Document not found or no file data');
         }
@@ -513,14 +510,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
       {/* Header */}
       <div className="bg-white shadow-lg border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-between mb-6">
-            <button
-              onClick={onBackToDashboard}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-700"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Dashboard
-            </button>
+          <div className="mb-6">
           </div>
           
            <div className="text-center">

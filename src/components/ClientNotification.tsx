@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, CheckCircle, X, MessageCircle, FileText, DollarSign, Calendar, User, Eye } from 'lucide-react';
+import { CheckCircle, X, MessageCircle, FileText, DollarSign, Calendar, User } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ClientNotificationProps {
-  onBackToDashboard?: () => void;
 }
 
-const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboard }) => {
+const ClientNotification: React.FC<ClientNotificationProps> = () => {
   const [workflow, setWorkflow] = useState<any>(null);
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -39,13 +38,13 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
         comments: comment || 'Approved by client'
       });
       
-      alert('✅ Document approved successfully!\n\nYour approval has been recorded and the workflow is now complete.');
+      alert('✅ Request approved successfully!\n\nYour approval has been recorded and the workflow is now complete.');
       
       // Reset form
       setComment('');
     } catch (error) {
       console.error('❌ Error approving workflow:', error);
-      alert('❌ Failed to approve document. Please try again.');
+      alert('❌ Failed to approve request. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -67,13 +66,13 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
         comments: comment
       });
       
-      alert('❌ Document denied.\n\nYour decision has been recorded and the workflow is now closed.');
+      alert('❌ Request denied.\n\nYour decision has been recorded and the workflow is now closed.');
       
       // Reset form
       setComment('');
     } catch (error) {
       console.error('❌ Error denying workflow:', error);
-      alert('❌ Failed to deny document. Please try again.');
+      alert('❌ Failed to deny request. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -119,27 +118,16 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
     );
   }
 
-  const managerStep = workflow.workflowSteps?.find(step => step.role === 'Manager');
-  const ceoStep = workflow.workflowSteps?.find(step => step.role === 'CEO');
-  const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+  const managerStep = workflow.workflowSteps?.find((step: any) => step.role === 'Manager');
+  const ceoStep = workflow.workflowSteps?.find((step: any) => step.role === 'CEO');
+  const clientStep = workflow.workflowSteps?.find((step: any) => step.role === 'Client');
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-lg border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-between mb-6">
-            <button
-              onClick={onBackToDashboard || (() => window.location.href = '/')}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-700"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Homepage
-            </button>
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Workflow ID</p>
-              <p className="font-mono text-sm text-gray-700">{workflow.id}</p>
-            </div>
+          <div className="mb-6">
           </div>
           
           <div className="text-center">
@@ -147,9 +135,9 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
               <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
                 <FileText className="w-6 h-6 text-green-600" />
               </div>
-              <h1 className="text-4xl font-bold text-gray-900">Document Approval</h1>
+              <h1 className="text-4xl font-bold text-gray-900">Client Approval</h1>
             </div>
-            <p className="text-xl text-gray-600">Review and approve your document</p>
+            <p className="text-xl text-gray-600">Review and approve your request</p>
             <p className="text-sm text-gray-500 mt-1">Client: {workflow.clientName}</p>
           </div>
         </div>
@@ -312,7 +300,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                placeholder="Add your comments about this document..."
+                placeholder="Add your comments about this request..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none"
                 rows={4}
               />
@@ -326,7 +314,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
                 className="flex items-center gap-2 px-8 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors font-semibold"
               >
                 <CheckCircle className="w-5 h-5" />
-                {isLoading ? 'Processing...' : 'Approve Document'}
+                {isLoading ? 'Processing...' : 'Approve Request'}
               </button>
               
               <button
@@ -335,7 +323,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
                 className="flex items-center gap-2 px-8 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg transition-colors font-semibold"
               >
                 <X className="w-5 h-5" />
-                {isLoading ? 'Processing...' : 'Deny Document'}
+                {isLoading ? 'Processing...' : 'Deny Request'}
               </button>
             </div>
 
@@ -343,8 +331,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = ({ onBackToDashboa
             <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <h4 className="font-semibold text-blue-900 mb-2">Instructions:</h4>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li>• <strong>Approve:</strong> Click "Approve Document" to accept this document</li>
-                <li>• <strong>Deny:</strong> Click "Deny Document" to reject this document (comments required)</li>
+                <li>• <strong>Approve:</strong> Click "Approve Request" to accept this request</li>
+                <li>• <strong>Deny:</strong> Click "Deny Request" to reject this request (comments required)</li>
                 <li>• <strong>Comments:</strong> Add any feedback or notes about your decision</li>
                 <li>• <strong>Final Decision:</strong> Once you approve or deny, the workflow will be completed</li>
               </ul>
