@@ -174,6 +174,7 @@ function generateManagerEmailHTML(workflowData) {
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
             <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
@@ -220,6 +221,7 @@ function generateCEOEmailHTML(workflowData) {
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
             <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
@@ -265,6 +267,7 @@ function generateClientEmailHTML(workflowData) {
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
             <p><strong>Status:</strong> Pending Approval</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
           
           <p>Our team will review your document and get back to you soon.</p>
@@ -2134,11 +2137,48 @@ app.post('/api/send-manager-email', async (req, res) => {
     console.log('Manager:', managerEmail);
     console.log('Workflow Data:', workflowData);
 
-    // Send email to Manager only
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Send email to Manager only with attachment
     const managerResult = await sendEmail(
       managerEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-      generateManagerEmailHTML(workflowData)
+      generateManagerEmailHTML(workflowData),
+      attachments
     );
 
     console.log('✅ Manager email sent:', managerResult.success);
@@ -2147,7 +2187,8 @@ app.post('/api/send-manager-email', async (req, res) => {
       success: managerResult.success,
       message: 'Manager email sent successfully',
       result: { role: 'Manager', email: managerEmail, success: managerResult.success },
-      workflowData: workflowData
+      workflowData: workflowData,
+      attachmentCount: attachments.length
     });
 
   } catch (error) {
@@ -2175,11 +2216,48 @@ app.post('/api/send-ceo-email', async (req, res) => {
     console.log('CEO:', ceoEmail);
     console.log('Workflow Data:', workflowData);
 
-    // Send email to CEO only
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Send email to CEO only with attachment
     const ceoResult = await sendEmail(
       ceoEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-      generateCEOEmailHTML(workflowData)
+      generateCEOEmailHTML(workflowData),
+      attachments
     );
 
     console.log('✅ CEO email sent:', ceoResult.success);
@@ -2188,7 +2266,8 @@ app.post('/api/send-ceo-email', async (req, res) => {
       success: ceoResult.success,
       message: 'CEO email sent successfully',
       result: { role: 'CEO', email: ceoEmail, success: ceoResult.success },
-      workflowData: workflowData
+      workflowData: workflowData,
+      attachmentCount: attachments.length
     });
 
   } catch (error) {
@@ -2216,11 +2295,48 @@ app.post('/api/send-client-email', async (req, res) => {
     console.log('Client:', clientEmail);
     console.log('Workflow Data:', workflowData);
 
-    // Send email to Client only
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Send email to Client only with attachment
     const clientResult = await sendEmail(
       clientEmail,
       `Document Submitted for Approval: ${workflowData.documentId}`,
-      generateClientEmailHTML(workflowData)
+      generateClientEmailHTML(workflowData),
+      attachments
     );
 
     console.log('✅ Client email sent:', clientResult.success);
@@ -2229,7 +2345,8 @@ app.post('/api/send-client-email', async (req, res) => {
       success: clientResult.success,
       message: 'Client email sent successfully',
       result: { role: 'Client', email: clientEmail, success: clientResult.success },
-      workflowData: workflowData
+      workflowData: workflowData,
+      attachmentCount: attachments.length
     });
 
   } catch (error) {
