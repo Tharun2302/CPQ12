@@ -374,160 +374,38 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     
     console.log('✅ Form validation passed, submitting configuration');
     onSubmit();
-    
-    // Scroll to pricing section after a short delay to allow the component to render
-    setTimeout(() => {
-      const pricingSection = document.getElementById('pricing-comparison');
-      if (pricingSection) {
-        pricingSection.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'start' 
-        });
-        console.log('✅ Scrolled to pricing section');
-      } else {
-        console.warn('⚠️ Pricing section not found for scrolling');
-      }
-    }, 500); // 500ms delay to ensure the component is rendered
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Contact Information Display - Show when deal data exists */}
-        {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
-          <div className="mb-6 bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl shadow-lg border border-emerald-200 p-8">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-white" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900">Contact Information</h3>
-              <span className="ml-auto text-xs text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-                {dealData && !contactInfo.clientName && !contactInfo.clientEmail ? 'From HubSpot Deal' : 'Saved Contact'}
-              </span>
+        {/* Enhanced Header with Gradient */}
+        <div className="text-center mb-12 relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-3xl blur-3xl"></div>
+          <div className="relative">
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl transform hover:scale-110 transition-transform duration-300">
+              <Calculator className="w-10 h-10 text-white" />
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Contact Name */}
-              <div className="bg-white rounded-lg p-4 border border-emerald-100">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Contact Name
-                </label>
-                <input
-                  type="text"
-                  value={contactInfo.clientName || dealData?.contactName || ''}
-                  onChange={(e) => {
-                    const newContactInfo = {
-                      ...contactInfo,
-                      clientName: e.target.value
-                    };
-                    setContactInfo(newContactInfo);
-                    
-                    // Save to localStorage
-                    try {
-                      localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
-                    } catch (error) {
-                      console.warn('Could not save contact info to localStorage:', error);
-                    }
-                    
-                    // Notify parent component
-                    if (onContactInfoChange) {
-                      onContactInfoChange({
-                        clientName: newContactInfo.clientName,
-                        clientEmail: newContactInfo.clientEmail,
-                        company: newContactInfo.company,
-                        companyName2: newContactInfo.companyName2 || newContactInfo.company
-                      });
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-sm font-medium"
-                  placeholder="Enter contact name"
-                />
-              </div>
-              
-              {/* Contact Email */}
-              <div className="bg-white rounded-lg p-4 border border-emerald-100">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Contact Email
-                </label>
-                <input
-                  type="email"
-                  value={contactInfo.clientEmail || dealData?.contactEmail || ''}
-                  onChange={(e) => {
-                    const newContactInfo = {
-                      ...contactInfo,
-                      clientEmail: e.target.value
-                    };
-                    setContactInfo(newContactInfo);
-                    
-                    // Save to localStorage
-                    try {
-                      localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
-                    } catch (error) {
-                      console.warn('Could not save contact info to localStorage:', error);
-                    }
-                    
-                    // Notify parent component
-                    if (onContactInfoChange) {
-                      onContactInfoChange({
-                        clientName: newContactInfo.clientName,
-                        clientEmail: newContactInfo.clientEmail,
-                        company: newContactInfo.company,
-                        companyName2: newContactInfo.companyName2 || newContactInfo.company
-                      });
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-sm font-medium"
-                  placeholder="Enter contact email"
-                />
-              </div>
-              
-              {/* Company Name */}
-              <div className="bg-white rounded-lg p-4 border border-emerald-100">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Company Name
-                </label>
-                <input
-                  type="text"
-                  value={contactInfo.company || contactInfo.companyName2 || dealData?.companyByContact || dealData?.company || ''}
-                  onChange={(e) => {
-                    const newContactInfo = {
-                      ...contactInfo,
-                      company: e.target.value,
-                      companyName2: e.target.value
-                    };
-                    setContactInfo(newContactInfo);
-                    
-                    // Save to localStorage
-                    try {
-                      localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
-                    } catch (error) {
-                      console.warn('Could not save contact info to localStorage:', error);
-                    }
-                    
-                    // Notify parent component
-                    if (onContactInfoChange) {
-                      onContactInfoChange({
-                        clientName: newContactInfo.clientName,
-                        clientEmail: newContactInfo.clientEmail,
-                        company: newContactInfo.company,
-                        companyName2: newContactInfo.companyName2 || newContactInfo.company
-                      });
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-sm font-medium"
-                  placeholder="Enter company name"
-                />
-              </div>
-            </div>
-            
-            <div className="mt-4 p-3 bg-emerald-100/50 rounded-lg border border-emerald-200">
-              <p className="text-xs text-emerald-800">
-                <strong>📌 Note:</strong> Edit the contact information above. Changes will be automatically saved and reflected in your quotes and agreements.
-              </p>
-            </div>
+            <h1 className="text-5xl font-black bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 bg-clip-text text-transparent mb-4">
+              FILL DETAILS HERE
+            </h1>
+            <p className="text-xl text-gray-600 font-medium">
+              Configure your project requirements to get accurate pricing
+            </p>
+          </div>
+        </div>
+
+        {/* Debug: Show contact info source */}
+        {(dealData || contactInfo.clientName || contactInfo.clientEmail) && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-700">
+              <strong>ℹ️ Contact Information:</strong> 
+              {dealData && !contactInfo.clientName && !contactInfo.clientEmail ? 
+                ' Using deal data from HubSpot' : 
+                ' Using manually entered or previously saved data'}
+            </p>
           </div>
         )}
-
 
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Migration Type - Primary Component */}
@@ -549,34 +427,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </label>
               <select
                 value={config.migrationType}
-                onChange={(e) => {
-                  const newMigrationType = e.target.value as 'Messaging' | 'Content';
-                  console.log(`🔄 Migration type changing from "${config.migrationType}" to "${newMigrationType}"`);
-                  
-                  // Create new config with updated migration type and cleared combination
-                  const newConfig = { 
-                    ...config, 
-                    migrationType: newMigrationType,
-                    combination: '' // Clear combination when migration type changes
-                  };
-                  
-                  // Update state immediately
-                  setConfig(newConfig);
-                  setCombination('');
-                  onConfigurationChange(newConfig);
-                  
-                  // Persist to sessionStorage
-                  try {
-                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                    const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-                    navState.migrationType = newMigrationType;
-                    navState.combination = '';
-                    sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                    console.log(`✅ Migration type changed to "${newMigrationType}" and combination cleared`);
-                  } catch (error) {
-                    console.warn('Could not save to sessionStorage:', error);
-                  }
-                }}
+                onChange={(e) => handleChange('migrationType', e.target.value as 'Messaging' | 'Content')}
                 className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
               >
                 <option value="">Select Migration Type</option>
@@ -622,20 +473,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   className="w-full px-6 py-4 border-2 border-purple-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-purple-300 text-lg font-medium"
                 >
                   <option value="">Select Combination</option>
-                  {/* Messaging combinations */}
-                  {config.migrationType === 'Messaging' && (
-                    <>
-                      <option value="slack-to-teams">SLACK TO TEAMS</option>
-                      <option value="slack-to-google-chat">SLACK TO GOOGLE CHAT</option>
-                    </>
-                  )}
-                  {/* Content combinations */}
-                  {config.migrationType === 'Content' && (
-                    <>
-                      <option value="dropbox-to-mydrive">DROPBOX TO MYDRIVE</option>
-                      <option value="dropbox-to-sharedrive">DROPBOX TO SHAREDRIVE</option>
-                    </>
-                  )}
+                  <option value="slack-to-teams">SLACK TO TEAMS</option>
+                  <option value="slack-to-google-chat">SLACK TO GOOGLE CHAT</option>
                 </select>
                 <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
                   <p className="text-sm text-purple-700">
@@ -869,32 +708,30 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </div>
                 )}
 
-                {/* Messages Field - Show for Messaging, Hide for Content */}
-                {config.migrationType === 'Messaging' && (
-                  <div className="group">
-                    <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                        <MessageSquare className="w-4 h-4 text-white" />
-                      </div>
-                      Messages
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={config.messages || ''}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        const numValue = value === '' ? 0 : parseInt(value) || 0;
-                        handleChange('messages', numValue);
-                      }}
-                      className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                      placeholder="Enter number of messages"
-                      autoComplete="off"
-                    />
-                    <p className="text-xs text-gray-500 mt-2">Number of messages for the migration.</p>
-                  </div>
-                )}
+                {/* Messages Field */}
+                <div className="group">
+                  <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                      <MessageSquare className="w-4 h-4 text-white" />
+                    </div>
+                    Messages
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={config.messages || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const numValue = value === '' ? 0 : parseInt(value) || 0;
+                      handleChange('messages', numValue);
+                    }}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                    placeholder="Enter number of messages"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-gray-500 mt-2">Number of messages for the migration.</p>
+                </div>
               </div>
             </div>
           )}
