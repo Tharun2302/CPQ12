@@ -321,6 +321,20 @@ function App() {
     company: string;
   } | null>(null);
 
+  // Load persisted contact info from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const savedContactInfo = sessionStorage.getItem('cpq_configure_contact_info');
+      if (savedContactInfo) {
+        const parsed = JSON.parse(savedContactInfo);
+        setConfigureContactInfo(parsed);
+        console.log('✅ App: Loaded persisted contact info from sessionStorage:', parsed);
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not load persisted contact info:', error);
+    }
+  }, []);
+
   // Debug configureContactInfo changes
   useEffect(() => {
     console.log('🔍 App: configureContactInfo state changed:', configureContactInfo);
@@ -558,6 +572,15 @@ function App() {
   const handleConfigureContactInfoChange = useCallback((contactInfo: { clientName: string; clientEmail: string; company: string }) => {
     console.log('🔍 App: Received contact info change from configure session:', contactInfo);
     setConfigureContactInfo(contactInfo);
+    
+    // Persist contact info to sessionStorage for consistency across navigation
+    try {
+      sessionStorage.setItem('cpq_configure_contact_info', JSON.stringify(contactInfo));
+      console.log('✅ App: Contact info persisted to sessionStorage:', contactInfo);
+    } catch (error) {
+      console.warn('⚠️ Could not persist contact info to sessionStorage:', error);
+    }
+    
     console.log('✅ App: Contact info updated from configure session:', contactInfo);
   }, []);
 
@@ -1116,24 +1139,33 @@ function App() {
       return planTypeMatches[0];
     }
 
-    // Second priority: Try exact match for SLACK TO TEAMS and SLACK TO GOOGLE CHAT templates by name
+    // Second priority: Try exact match for templates by name (Messaging & Content)
     const exactMatches = templates.filter(t => {
       const name = (t?.name || '').toLowerCase();
       
-      // Look for exact pattern: "slack to teams [plan]" or "slack to google chat [plan]"
+      // Messaging combinations
       const isSlackToTeams = name.includes('slack') && name.includes('teams');
       const isSlackToGoogleChat = name.includes('slack') && name.includes('google') && name.includes('chat');
+      
+      // Content combinations
+      const isDropboxToMyDrive = name.includes('dropbox') && name.includes('mydrive');
+      const isDropboxToSharedDrive = name.includes('dropbox') && name.includes('sharedrive');
+      
       const matchesPlan = name.includes(safeTier);
       
       // Check if the template matches the selected combination
       const matchesCombination = !combination || 
         (combination === 'slack-to-teams' && isSlackToTeams) ||
-        (combination === 'slack-to-google-chat' && isSlackToGoogleChat);
+        (combination === 'slack-to-google-chat' && isSlackToGoogleChat) ||
+        (combination === 'dropbox-to-mydrive' && isDropboxToMyDrive) ||
+        (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive);
       
       console.log('🔍 Name-based template matching:', { 
         templateName: name, 
         isSlackToTeams, 
         isSlackToGoogleChat,
+        isDropboxToMyDrive,
+        isDropboxToSharedDrive,
         matchesPlan, 
         matchesCombination,
         safeTier,
@@ -1141,7 +1173,7 @@ function App() {
         planType: t?.planType 
       });
       
-      return (isSlackToTeams || isSlackToGoogleChat) && matchesPlan && matchesCombination;
+      return (isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive) && matchesPlan && matchesCombination;
     });
 
     if (exactMatches.length > 0) {
