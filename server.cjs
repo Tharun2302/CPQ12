@@ -77,6 +77,15 @@ async function initializeDatabase() {
     await templatesCollection.createIndex({ is_default: 1 });
     await templatesCollection.createIndex({ created_at: 1 });
     
+    // Create documents collection with indexes
+    const documentsCollection = db.collection('documents');
+    await documentsCollection.createIndex({ id: 1 }, { unique: true });
+    await documentsCollection.createIndex({ company: 1 });
+    await documentsCollection.createIndex({ clientEmail: 1 });
+    await documentsCollection.createIndex({ generatedDate: -1 });
+    await documentsCollection.createIndex({ status: 1 });
+    console.log('✅ Documents collection ready with indexes');
+    
     console.log('✅ Connected to MongoDB Atlas successfully');
     console.log('📊 Database name:', DB_NAME);
     
@@ -1249,6 +1258,204 @@ app.get('/api/templates/:id/file', async (req, res) => {
     });
   }
 });
+
+// ============================================
+// PDF DOCUMENTS API ENDPOINTS
+// ============================================
+
+// Save PDF document to MongoDB (similar to template save)
+app.post('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const { fileName, fileData, fileSize, clientName, clientEmail, company, templateName, quoteId, metadata } = req.body;
+
+    if (!fileName || !fileData) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+
+    console.log('📄 Saving PDF document to MongoDB:', {
+      fileName,
+      company,
+      fileSize,
+      clientName
+    });
+
+    // Convert base64 to Buffer (same as templates)
+    const fileBuffer = Buffer.from(fileData, 'base64');
+
+    const document = {
+      id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      fileName,
+      fileData: fileBuffer, // Store as Buffer like templates
+      fileSize,
+      clientName,
+      clientEmail,
+      company,
+      templateName,
+      generatedDate: new Date(),
+      quoteId,
+      metadata,
+      createdAt: new Date(),
+      status: 'active'
+    };
+
+    const documentsCollection = db.collection('documents');
+    const result = await documentsCollection.insertOne(document);
+
+    if (result.insertedId) {
+      console.log('✅ PDF document saved to MongoDB:', document.id);
+      console.log('   MongoDB _id:', result.insertedId);
+      console.log('   Company:', company);
+      console.log('   File size:', Math.round(fileSize / 1024), 'KB');
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Document saved successfully',
+      documentId: document.id
+    });
+  } catch (error) {
+    console.error('❌ Error saving document:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to save document',
+      details: error.message 
+    });
+  }
+});
+
+// Get all PDF documents (convert Buffer to base64 for frontend)
+app.get('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const documentsCollection = db.collection('documents');
+    const documents = await documentsCollection
+      .find({})
+      .sort({ generatedDate: -1 })
+      .toArray();
+
+    console.log('✅ Retrieved documents from MongoDB:', documents.length);
+
+    // Convert Buffer to base64 for frontend (same as templates)
+    const documentsWithBase64 = documents.map(doc => {
+      let base64 = '';
+      try {
+        // Handle both Buffer and BSON Binary
+        if (doc.fileData) {
+          if (Buffer.isBuffer(doc.fileData)) {
+            base64 = doc.fileData.toString('base64');
+          } else if (doc.fileData.buffer) {
+            base64 = Buffer.from(doc.fileData.buffer).toString('base64');
+          } else if (doc.fileData.data) {
+            base64 = Buffer.from(doc.fileData.data).toString('base64');
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not convert document Buffer to base64 for id:', doc.id, e?.message);
+      }
+      return { ...doc, fileData: base64 };
+    });
+
+    res.json({ 
+      success: true, 
+      documents: documentsWithBase64
+    });
+  } catch (error) {
+    console.error('❌ Error retrieving documents:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to retrieve documents',
+      details: error.message 
+    });
+  }
+});
+
+// Get single PDF document by ID (convert Buffer to base64)
+app.get('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const documentsCollection = db.collection('documents');
+    const document = await documentsCollection.findOne({ id: req.params.id });
+
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    console.log('✅ Retrieved document from MongoDB:', document.id);
+
+    // Convert Buffer to base64 for frontend
+    let base64 = '';
+    try {
+      if (document.fileData) {
+        if (Buffer.isBuffer(document.fileData)) {
+          base64 = document.fileData.toString('base64');
+        } else if (document.fileData.buffer) {
+          base64 = Buffer.from(document.fileData.buffer).toString('base64');
+        } else if (document.fileData.data) {
+          base64 = Buffer.from(document.fileData.data).toString('base64');
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not convert single document Buffer to base64 for id:', document.id, e?.message);
+    }
+    const documentWithBase64 = { ...document, fileData: base64 };
+
+    res.json({ 
+      success: true, 
+      document: documentWithBase64
+    });
+  } catch (error) {
+    console.error('❌ Error retrieving document:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to retrieve document',
+      details: error.message 
+    });
+  }
+});
+
+// Delete PDF document by ID
+app.delete('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const documentsCollection = db.collection('documents');
+    const result = await documentsCollection.deleteOne({ id: req.params.id });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    console.log('✅ Deleted document from MongoDB:', req.params.id);
+
+    res.json({ 
+      success: true, 
+      message: 'Document deleted successfully' 
+    });
+  } catch (error) {
+    console.error('❌ Error deleting document:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete document',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
+// DOCX TO PDF CONVERSION
+// ============================================
 
 // Convert DOCX to PDF using multiple fallback methods
 app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => {

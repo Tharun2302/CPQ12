@@ -58,11 +58,18 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   // Business rule: if users > 25,000 show ONLY the Advanced plan
   const enforceAdvancedOnly = (configuration?.numberOfUsers || 0) > 25000;
 
-  // Filter plans accordingly
+  // Filter plans based on migration type
   const filteredCalculations = calculations.filter(calc => {
     if (enforceAdvancedOnly) {
       return calc.tier.name === 'Advanced';
     }
+    
+    // For Content migration: show all 3 plans (Basic, Standard, Advanced)
+    if (configuration?.migrationType === 'Content') {
+      return calc.tier.name === 'Basic' || calc.tier.name === 'Standard' || calc.tier.name === 'Advanced';
+    }
+    
+    // For Messaging migration: show only 2 plans (Basic, Advanced)
     return calc.tier.name === 'Basic' || calc.tier.name === 'Advanced';
   });
 
@@ -95,8 +102,18 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   const isSingle = filteredCalculations.length === 1;
 
+  // Determine the appropriate container class based on the number of filtered plans
+  let containerClass = '';
+  if (filteredCalculations.length === 1) {
+    containerClass = 'flex justify-center';
+  } else if (filteredCalculations.length === 2) {
+    containerClass = 'flex flex-col md:flex-row justify-center items-center gap-8';
+  } else if (filteredCalculations.length === 3) {
+    containerClass = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8';
+  }
+
   return (
-    <div className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-8 backdrop-blur-sm">
+    <div id="pricing-comparison" className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-8 backdrop-blur-sm">
       <div className="text-center mb-10">
         <h2 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-3">
           Choose Your Perfect Plan
@@ -104,14 +121,16 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         <p className="text-gray-600 text-lg">Compare our pricing tiers and find the best fit for your project</p>
       </div>
       
-      <div className={`grid grid-cols-1 ${isSingle ? 'md:grid-cols-1 justify-items-center' : 'md:grid-cols-2'} gap-8 max-w-4xl mx-auto`}>
+      <div className={`${containerClass} max-w-6xl mx-auto`}>
         {filteredCalculations.map((calc) => {
           const discountInfo = calculateDiscountedPrice(calc.totalCost);
           
           return (
             <div
               key={calc.tier.id}
-              className="relative rounded-2xl border-2 border-gray-200 bg-white p-8 transition-all duration-500 hover:shadow-2xl transform hover:-translate-y-2 hover:border-blue-300 w-full max-w-sm"
+              className={`relative rounded-2xl border-2 border-gray-200 bg-white p-8 transition-all duration-500 hover:shadow-2xl transform hover:-translate-y-2 hover:border-blue-300 ${
+                filteredCalculations.length === 2 ? 'w-full max-w-sm' : 'w-full max-w-sm'
+              }`}
             >
 
               <div className="text-center mb-6">
