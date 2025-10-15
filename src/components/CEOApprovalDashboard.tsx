@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
-import { ArrowLeft, RefreshCw, Clock, BarChart3, X, FileCheck, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown } from 'lucide-react';
+import { RefreshCw, Clock, BarChart3, X, FileCheck, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface CEOApprovalDashboardProps {
   ceoEmail?: string;
-  onBackToDashboard?: () => void;
 }
 
 const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({ 
-  ceoEmail = 'ceo@company.com',
-  onBackToDashboard 
+  ceoEmail = 'ceo@company.com'
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [commentWorkflowId, setCommentWorkflowId] = useState<string | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState<string | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const { workflows, isLoading, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('CEOApprovalDashboard rendered for:', ceoEmail);
@@ -23,7 +28,10 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     { id: 'pending', label: 'Pending Approvals', icon: Clock, count: workflows.filter(w => w.status === 'pending' || w.status === 'in_progress').length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length },
     { id: 'history', label: 'My Approval History', icon: FileCheck, count: workflows.filter(w => w.status === 'approved' || w.status === 'denied').length },
-    { id: 'comments', label: 'My Comments', icon: MessageCircle, count: 0 }
+    { id: 'comments', label: 'My Comments', icon: MessageCircle, count: workflows.filter(w => {
+      const ceoStep = w.workflowSteps?.find(step => step.role === 'CEO');
+      return ceoStep?.comments && ceoStep.comments.trim() !== '';
+    }).length }
   ];
 
   const handleRefresh = () => {
@@ -80,7 +88,73 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
 
   const handleAddComment = (workflowId: string) => {
     console.log('CEO Adding comment to workflow:', workflowId);
-    // TODO: Implement CEO comment logic
+    setCommentWorkflowId(workflowId);
+    setCommentText('');
+    setShowCommentModal(true);
+  };
+
+  const handleSaveComment = async () => {
+    if (!commentWorkflowId || !commentText.trim()) {
+      alert('Please enter a comment');
+      return;
+    }
+
+    try {
+      console.log('💬 CEO Saving comment for workflow:', commentWorkflowId);
+      updateWorkflowStep(commentWorkflowId, 2, { 
+        comments: commentText.trim(),
+        timestamp: new Date().toISOString()
+      });
+      
+      alert('✅ Comment added successfully!');
+      setShowCommentModal(false);
+      setCommentText('');
+      setCommentWorkflowId(null);
+    } catch (error) {
+      console.error('❌ Error adding comment:', error);
+      alert('❌ Failed to add comment. Please try again.');
+    }
+  };
+
+  const handleCancelComment = () => {
+    setShowCommentModal(false);
+    setCommentText('');
+    setCommentWorkflowId(null);
+  };
+
+  const handleViewDocument = async (workflow: any) => {
+    console.log('👁️ CEO Viewing document for workflow:', workflow);
+    setSelectedWorkflow(workflow);
+    setShowDocumentModal(true);
+    
+    // Fetch document preview
+    if (workflow.documentId) {
+      setIsLoadingPreview(true);
+      setDocumentPreview(null);
+      
+      try {
+        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        const result = await response.json();
+        
+        if (result.success && result.dataUrl) {
+          setDocumentPreview(result.dataUrl);
+          console.log('✅ Document preview loaded:', result.fileName);
+        } else {
+          console.log('⚠️ Document not found or no file data');
+        }
+      } catch (error) {
+        console.error('❌ Error fetching document preview:', error);
+      } finally {
+        setIsLoadingPreview(false);
+      }
+    }
+  };
+
+  const closeDocumentModal = () => {
+    setShowDocumentModal(false);
+    setSelectedWorkflow(null);
+    setDocumentPreview(null);
+    setIsLoadingPreview(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -106,13 +180,74 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   const renderTabContent = () => {
     // Handle special tabs that don't filter workflows
     if (activeTab === 'comments') {
-      return (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <MessageCircle className="w-8 h-8 text-gray-400" />
+      const ceoComments = workflows.filter(workflow => {
+        const ceoStep = workflow.workflowSteps?.find(step => step.role === 'CEO');
+        return ceoStep?.comments && ceoStep.comments.trim() !== '';
+      });
+
+      if (ceoComments.length === 0) {
+        return (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <MessageCircle className="w-8 h-8 text-gray-400" />
+            </div>
+            <p className="text-gray-500 italic text-lg">No comments found.</p>
+            <p className="text-gray-400 text-sm mt-2">Your comments will appear here when you add them to workflows.</p>
           </div>
-          <p className="text-gray-500 italic text-lg">No comments found.</p>
-          <p className="text-gray-400 text-sm mt-2">Your comments will appear here when you add them to workflows.</p>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-purple-600" />
+              <h3 className="font-semibold text-purple-800">My Comments ({ceoComments.length})</h3>
+            </div>
+            <p className="text-purple-600 text-sm mt-1">Comments you've added to approval workflows</p>
+          </div>
+          
+          {ceoComments.map((workflow) => {
+            const ceoStep = workflow.workflowSteps?.find(step => step.role === 'CEO');
+            return (
+              <div key={workflow.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h4 className="font-semibold text-gray-900">{workflow.documentId}</h4>
+                    <p className="text-sm text-gray-500">{workflow.clientName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-gray-900">${workflow.amount.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">
+                      {ceoStep?.timestamp ? new Date(ceoStep.timestamp).toLocaleDateString() : 'Unknown date'}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageCircle className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-800">Your Comment:</span>
+                  </div>
+                  <p className="text-gray-700 text-sm italic">"{ceoStep?.comments}"</p>
+                </div>
+                
+                <div className="mt-3 flex items-center gap-2">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    workflow.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                    workflow.status === 'approved' ? 'bg-green-100 text-green-800' :
+                    workflow.status === 'denied' ? 'bg-red-100 text-red-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {workflow.status}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Step {workflow.currentStep} of {workflow.totalSteps}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       );
     }
@@ -300,31 +435,40 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
                </div>
 
               {/* Action Buttons for CEO */}
-              {isMyTurn && (
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => handleApprove(workflow.id)}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                  >
-                    <ThumbsUp className="w-4 h-4" />
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => handleDeny(workflow.id)}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                  >
-                    <ThumbsDown className="w-4 h-4" />
-                    Deny
-                  </button>
-                  <button
-                    onClick={() => handleAddComment(workflow.id)}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    Add Comment
-                  </button>
-                </div>
-              )}
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => handleViewDocument(workflow)}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Document
+                </button>
+                {isMyTurn && (
+                  <>
+                    <button
+                      onClick={() => handleApprove(workflow.id)}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      <ThumbsUp className="w-4 h-4" />
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleDeny(workflow.id)}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                      Deny
+                    </button>
+                    <button
+                      onClick={() => handleAddComment(workflow.id)}
+                      className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      Add Comment
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           );
         })}
@@ -337,14 +481,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       {/* Header */}
       <div className="bg-white shadow-lg border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-between mb-6">
-            <button
-              onClick={onBackToDashboard}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-700"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Dashboard
-            </button>
+          <div className="flex items-center justify-end mb-6">
             <button
               onClick={handleRefresh}
               disabled={isLoading}
@@ -423,6 +560,150 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Document Preview Modal */}
+      {showDocumentModal && selectedWorkflow && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-teal-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Document Preview</h2>
+                  <p className="text-sm text-gray-500">ID: {selectedWorkflow.documentId}</p>
+                </div>
+              </div>
+              <button
+                onClick={closeDocumentModal}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
+              <div className="bg-gray-100 rounded-lg p-4">
+                {isLoadingPreview ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600 text-sm">Loading document preview...</p>
+                  </div>
+                ) : documentPreview ? (
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                      <iframe
+                        src={documentPreview}
+                        className="w-full h-[85vh] border-0"
+                        title="Document Preview"
+                      />
+                    </div>
+                    <div className="flex justify-center">
+                      <button
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = documentPreview;
+                          link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
+                          link.click();
+                        }}
+                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+                      >
+                        Download PDF
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-32 h-40 bg-white rounded-lg shadow-sm mx-auto mb-4 flex items-center justify-center">
+                      <FileText className="w-16 h-16 text-gray-400" />
+                    </div>
+                    <p className="text-gray-600 text-sm mb-4">
+                      Document preview not available
+                    </p>
+                    <button
+                      onClick={() => {
+                        if (selectedWorkflow.documentId) {
+                          handleViewDocument(selectedWorkflow);
+                        }
+                      }}
+                      className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+                    >
+                      Retry Loading
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={closeDocumentModal}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comment Modal */}
+      {showCommentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Add Comment</h2>
+                  <p className="text-sm text-gray-500">Add your feedback for this workflow</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCancelComment}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Comment
+                  </label>
+                  <textarea
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    placeholder="Enter your comment here..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
+                    rows={4}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={handleCancelComment}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveComment}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              >
+                Save Comment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
