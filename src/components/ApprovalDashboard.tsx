@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, RefreshCw, Clock, BarChart3, X, FileCheck, MessageCircle, Users, CheckCircle, AlertCircle, Plus, Trash2, Eye } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Clock, BarChart3, X, FileCheck, CheckCircle, AlertCircle, Trash2, Eye, FileText } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ApprovalDashboardProps {
@@ -10,7 +10,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
-  const { workflows, isLoading, createWorkflow, deleteWorkflow, removeDuplicateWorkflows } = useApprovalWorkflows();
+  const [documentPreview, setDocumentPreview] = useState<string | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const { workflows, deleteWorkflow } = useApprovalWorkflows();
   
   console.log('ApprovalDashboard rendered');
   console.log('📊 Available workflows:', workflows.length);
@@ -20,64 +22,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
     { id: 'pending', label: 'Pending Approvals', icon: Clock, count: workflows.filter(w => w && w.status === 'pending').length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length },
     { id: 'denied', label: 'Denied Requests', icon: X, count: workflows.filter(w => w && w.status === 'denied').length },
-    { id: 'history', label: 'Approval History', icon: FileCheck, count: workflows.filter(w => w && w.status === 'approved').length },
-    { id: 'comments', label: 'Approval Comments', icon: MessageCircle, count: 0 },
-    { id: 'feedback', label: 'Client Feedback', icon: Users, count: 0 }
+    { id: 'history', label: 'Approval History', icon: FileCheck, count: workflows.filter(w => w && w.status === 'approved').length }
   ];
 
-  const handleRefresh = () => {
-    console.log('Refresh clicked');
-    // Force reload workflows from localStorage
-    const savedWorkflows = localStorage.getItem('approval_workflows');
-    console.log('🔄 Refreshing workflows from localStorage:', savedWorkflows);
-    if (savedWorkflows) {
-      try {
-        const parsedWorkflows = JSON.parse(savedWorkflows);
-        console.log('📋 Parsed workflows:', parsedWorkflows);
-      } catch (err) {
-        console.error('❌ Error parsing workflows:', err);
-      }
-    }
-  };
 
-  const handleCreateTestWorkflow = () => {
-    console.log('🧪 Creating test workflow...');
-    const testWorkflow = createWorkflow({
-      documentId: 'TEST-DOC-001',
-      documentType: 'PDF Quote',
-      clientName: 'Test Client',
-      amount: 5000,
-      totalSteps: 3,
-      workflowSteps: [
-        { step: 1, role: 'Manager', email: 'manager@test.com', status: 'pending' },
-        { step: 2, role: 'CEO', email: 'ceo@test.com', status: 'pending' },
-        { step: 3, role: 'Client', email: 'client@test.com', status: 'pending' }
-      ]
-    });
-    console.log('✅ Test workflow created:', testWorkflow);
-    alert('Test workflow created successfully!');
-  };
 
-  const handleDebugLocalStorage = () => {
-    console.log('🔍 Debugging localStorage...');
-    const savedWorkflows = localStorage.getItem('approval_workflows');
-    console.log('📦 Raw localStorage data:', savedWorkflows);
-    
-    if (savedWorkflows) {
-      try {
-        const parsed = JSON.parse(savedWorkflows);
-        console.log('📋 Parsed workflows:', parsed);
-        console.log('📊 Count:', parsed.length);
-        alert(`Found ${parsed.length} workflows in localStorage. Check console for details.`);
-      } catch (err) {
-        console.error('❌ Error parsing localStorage:', err);
-        alert('Error parsing localStorage data. Check console.');
-      }
-    } else {
-      console.log('⚠️ No workflows found in localStorage');
-      alert('No workflows found in localStorage');
-    }
-  };
 
   const handleDeleteWorkflow = (workflowId: string, workflowName: string) => {
     const confirmed = window.confirm(
@@ -97,40 +46,42 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
     }
   };
 
-  const handleDeleteAllWorkflows = () => {
-    if (workflows.length === 0) {
-      alert('No workflows to delete.');
-      return;
-    }
 
-    const confirmed = window.confirm(
-      `Are you sure you want to delete ALL workflows?\n\nThis will delete ${workflows.length} workflow(s).\n\nThis action cannot be undone.`
-    );
-    
-    if (confirmed) {
-      try {
-        console.log('🗑️ Deleting all workflows:', workflows.length);
-        workflows.forEach(workflow => {
-          deleteWorkflow(workflow.id);
-        });
-        console.log('✅ All workflows deleted successfully');
-        alert(`Successfully deleted ${workflows.length} workflow(s)!`);
-      } catch (error) {
-        console.error('❌ Error deleting workflows:', error);
-        alert('Failed to delete workflows. Please try again.');
-      }
-    }
-  };
-
-  const handleViewWorkflow = (workflow: any) => {
+  const handleViewWorkflow = async (workflow: any) => {
     console.log('👁️ Viewing workflow:', workflow);
     setSelectedWorkflow(workflow);
     setShowWorkflowModal(true);
+    
+    // Fetch document preview
+    if (workflow.documentId) {
+      setIsLoadingPreview(true);
+      setDocumentPreview(null);
+      
+      try {
+        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+        const result = await response.json();
+        
+        if (result.success && result.document && result.document.fileData) {
+          // Create a data URL for the PDF
+          const pdfDataUrl = `data:application/pdf;base64,${result.document.fileData}`;
+          setDocumentPreview(pdfDataUrl);
+          console.log('✅ Document preview loaded:', result.document.fileName);
+        } else {
+          console.log('⚠️ Document not found or no file data');
+        }
+      } catch (error) {
+        console.error('❌ Error fetching document preview:', error);
+      } finally {
+        setIsLoadingPreview(false);
+      }
+    }
   };
 
   const closeWorkflowModal = () => {
     setShowWorkflowModal(false);
     setSelectedWorkflow(null);
+    setDocumentPreview(null);
+    setIsLoadingPreview(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -154,30 +105,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
   };
 
   const renderTabContent = () => {
-    // Handle special tabs that don't filter workflows
-    if (activeTab === 'comments') {
-      return (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <MessageCircle className="w-8 h-8 text-gray-400" />
-          </div>
-          <p className="text-gray-500 italic text-lg">No approval comments found.</p>
-          <p className="text-gray-400 text-sm mt-2">Comments will appear here when approvers add them to workflows.</p>
-        </div>
-      );
-    }
-
-    if (activeTab === 'feedback') {
-      return (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8 text-gray-400" />
-          </div>
-          <p className="text-gray-500 italic text-lg">No client feedback found.</p>
-          <p className="text-gray-400 text-sm mt-2">Client feedback will appear here when clients respond to approval requests.</p>
-        </div>
-      );
-    }
 
      // Special handling for Workflow Status tab - show table format
      if (activeTab === 'status') {
@@ -594,46 +521,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
               <ArrowLeft className="w-4 h-4" />
               Back to Dashboard
             </button>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleCreateTestWorkflow}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors text-white text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Create Test Workflow
-              </button>
-              <button
-                onClick={handleDebugLocalStorage}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors text-white text-sm"
-              >
-                <BarChart3 className="w-4 h-4" />
-                Debug localStorage
-              </button>
-              <button
-                onClick={removeDuplicateWorkflows}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors text-white text-sm"
-              >
-                <AlertCircle className="w-4 h-4" />
-                Remove Duplicates
-              </button>
-              {workflows.length > 0 && (
-                <button
-                  onClick={handleDeleteAllWorkflows}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors text-white text-sm"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete All ({workflows.length})
-                </button>
-              )}
-              <button
-                onClick={handleRefresh}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 text-white"
-              >
-                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                Refresh Dashboard
-              </button>
-            </div>
           </div>
           
            <div className="text-center">
@@ -707,7 +594,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
        {/* Workflow Details Modal */}
        {showWorkflowModal && selectedWorkflow && (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+           <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden">
              <div className="flex items-center justify-between p-6 border-b border-gray-200">
                <div className="flex items-center gap-3">
                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -726,8 +613,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
                </button>
              </div>
              
-             <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+             <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
+               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                  {/* Basic Information */}
                  <div className="space-y-4">
                    <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
@@ -799,47 +686,105 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
                      </div>
                    </div>
                  </div>
-               </div>
 
-               {/* Workflow Steps */}
-               <div className="mt-8">
-                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Approval Steps</h3>
-                 <div className="space-y-3">
-                   {(selectedWorkflow.workflowSteps || []).map((step: any, index: number) => {
-                     const StepIcon = getStatusIcon(step.status);
-                     return (
-                       <div key={step.step || index} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                         <div className={`p-2 rounded-lg ${getStatusColor(step.status)}`}>
-                           <StepIcon className="w-5 h-5" />
-                         </div>
-                         <div className="flex-1">
-                           <div className="flex items-center justify-between">
-                             <h4 className="font-medium text-gray-900">{step.role || 'Unknown Role'}</h4>
-                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                               step.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                               step.status === 'approved' ? 'bg-green-100 text-green-800' :
-                               step.status === 'denied' ? 'bg-red-100 text-red-800' :
-                               'bg-gray-100 text-gray-800'
-                             }`}>
-                               {step.status || 'pending'}
-                             </span>
+                 {/* Approval Steps - Small Third Column */}
+                 <div className="space-y-4">
+                   <h3 className="text-lg font-semibold text-gray-900">Approval Steps</h3>
+                   <div className="space-y-2">
+                     {(selectedWorkflow.workflowSteps || []).map((step: any, index: number) => {
+                       const StepIcon = getStatusIcon(step.status);
+                       return (
+                         <div key={step.step || index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                           <div className={`p-1.5 rounded-lg ${getStatusColor(step.status)}`}>
+                             <StepIcon className="w-4 h-4" />
                            </div>
-                           <p className="text-sm text-gray-600 mt-1">{step.email || 'No email provided'}</p>
-                           {step.comments && (
-                             <p className="text-sm text-gray-500 mt-2 italic">"{step.comments}"</p>
-                           )}
-                           {step.timestamp && (
-                             <p className="text-xs text-gray-400 mt-2">
-                               {new Date(step.timestamp).toLocaleString()}
-                             </p>
-                           )}
+                           <div className="flex-1 min-w-0">
+                             <div className="flex items-center justify-between">
+                               <h4 className="font-medium text-gray-900 text-sm truncate">{step.role || 'Unknown Role'}</h4>
+                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                 step.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                 step.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                 step.status === 'denied' ? 'bg-red-100 text-red-800' :
+                                 'bg-gray-100 text-gray-800'
+                               }`}>
+                                 {step.status || 'pending'}
+                               </span>
+                             </div>
+                             <p className="text-xs text-gray-600 mt-1 truncate">{step.email || 'No email provided'}</p>
+                             {step.comments && (
+                               <p className="text-xs text-gray-500 mt-1 italic truncate">"{step.comments}"</p>
+                             )}
+                             {step.timestamp && (
+                               <p className="text-xs text-gray-400 mt-1">
+                                 {new Date(step.timestamp).toLocaleString()}
+                               </p>
+                             )}
+                           </div>
                          </div>
+                       );
+                     })}
+                   </div>
+                 </div>
+
+                 {/* Document Preview Section */}
+                 <div className="lg:col-span-2">
+                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Document Preview</h3>
+                 
+                 <div className="bg-gray-100 rounded-lg p-4">
+                   {isLoadingPreview ? (
+                     <div className="text-center py-8">
+                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                       <p className="text-gray-600 text-sm">Loading document preview...</p>
+                     </div>
+                   ) : documentPreview ? (
+                     <div className="space-y-4">
+                       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                         <iframe
+                           src={documentPreview}
+                           className="w-full h-[85vh] border-0"
+                           title="Document Preview"
+                         />
                        </div>
-                     );
-                   })}
+                       <div className="flex justify-center">
+                         <button
+                           onClick={() => {
+                             // Download the PDF file
+                             const link = document.createElement('a');
+                             link.href = documentPreview;
+                             link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
+                             link.click();
+                           }}
+                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                         >
+                           Download PDF
+                         </button>
+                       </div>
+                     </div>
+                   ) : (
+                     <div className="text-center py-8">
+                       <div className="w-32 h-40 bg-white rounded-lg shadow-sm mx-auto mb-4 flex items-center justify-center">
+                         <FileText className="w-16 h-16 text-gray-400" />
+                       </div>
+                       <p className="text-gray-600 text-sm mb-4">
+                         Document preview not available
+                       </p>
+                       <button
+                         onClick={() => {
+                           // Try to fetch document again
+                           if (selectedWorkflow.documentId) {
+                             handleViewWorkflow(selectedWorkflow);
+                           }
+                         }}
+                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                       >
+                         Retry Loading
+                       </button>
+                     </div>
+                   )}
                  </div>
                </div>
              </div>
+           </div>
 
              <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
                <button
