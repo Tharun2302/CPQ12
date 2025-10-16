@@ -6,7 +6,7 @@ interface ApprovalDashboardProps {
 }
 
 const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
-  const [activeTab, setActiveTab] = useState('pending');
+  const [activeTab, setActiveTab] = useState('status');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   const [documentPreview, setDocumentPreview] = useState<string | null>(null);
@@ -18,9 +18,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
   console.log('📋 Workflows data:', workflows);
 
   const tabs = [
-    { id: 'pending', label: 'Pending Approvals', icon: Clock, count: workflows.filter(w => w && w.status === 'pending').length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length },
-    { id: 'denied', label: 'Denied Requests', icon: X, count: workflows.filter(w => w && w.status === 'denied').length },
     { id: 'history', label: 'Approval History', icon: FileCheck, count: workflows.filter(w => w && w.status === 'approved').length }
   ];
 
@@ -125,9 +123,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
              <tbody>
                {workflows.filter(w => w).map((workflow) => {
                  const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
-                 const managerStep = workflow.workflowSteps?.find(step => step.role === 'Manager');
-                 const ceoStep = workflow.workflowSteps?.find(step => step.role === 'CEO');
-                 const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+                 const managerStep = workflow.workflowSteps?.find(step => step.role === 'Role 1');
+                 const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Role 2');
+                 const clientStep = workflow.workflowSteps?.find(step => step.role === 'Role 3');
                  
                  return (
                    <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -235,9 +233,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
              <tbody>
                {completedWorkflows.map((workflow) => {
                  const completedDate = workflow.updatedAt ? new Date(workflow.updatedAt) : new Date();
-                 const managerStep = workflow.workflowSteps?.find(step => step.role === 'Manager');
-                 const ceoStep = workflow.workflowSteps?.find(step => step.role === 'CEO');
-                 const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+                 const managerStep = workflow.workflowSteps?.find(step => step.role === 'Role 1');
+                 const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Role 2');
+                 const clientStep = workflow.workflowSteps?.find(step => step.role === 'Role 3');
                  
                  // Determine final status based on workflow completion
                  const finalStatus = workflow.status === 'approved' ? 'accepted_by_client' : workflow.status;
@@ -342,15 +340,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
              {React.createElement(tabs.find(t => t.id === activeTab)?.icon || Clock, { className: "w-8 h-8 text-gray-400" })}
            </div>
            <p className="text-gray-500 italic text-lg">
-             {activeTab === 'pending' && 'No pending approvals found.'}
-             {activeTab === 'denied' && 'No denied requests found.'}
            </p>
          </div>
        );
      }
 
      // Special table format for pending approvals
-     if (activeTab === 'pending') {
+     if (false) { // Removed pending tab
        return (
          <div className="overflow-x-auto">
            <table className="w-full border-collapse">
@@ -372,9 +368,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
              <tbody>
                {filteredWorkflows.map((workflow) => {
                  const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
-                 const managerStep = workflow.workflowSteps?.find(step => step.role === 'Manager');
-                 const ceoStep = workflow.workflowSteps?.find(step => step.role === 'CEO');
-                 const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+                 const managerStep = workflow.workflowSteps?.find(step => step.role === 'Role 1');
+                 const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Role 2');
+                 const clientStep = workflow.workflowSteps?.find(step => step.role === 'Role 3');
                  
                  return (
                    <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">

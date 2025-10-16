@@ -1,44 +1,34 @@
 import { useState, useEffect } from 'react';
 import { ApprovalWorkflow, ApprovalStep } from '../types/approval';
+import { approvalWorkflowServiceMongoDB } from '../services/approvalWorkflowServiceMongoDB';
 
 export const useApprovalWorkflows = () => {
   const [workflows, setWorkflows] = useState<ApprovalWorkflow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load workflows from localStorage on mount
+  // Load workflows from MongoDB on mount
   useEffect(() => {
-    console.log('🔄 Loading workflows from localStorage on mount...');
-    const savedWorkflows = localStorage.getItem('approval_workflows');
-    console.log('📦 Raw localStorage data on mount:', savedWorkflows);
-    
-    if (savedWorkflows) {
-      try {
-        const parsed = JSON.parse(savedWorkflows);
-        console.log('✅ Successfully loaded workflows:', parsed.length, 'workflows');
-        console.log('📋 Loaded workflows data:', parsed);
-        setWorkflows(parsed);
-      } catch (err) {
-        console.error('❌ Error loading workflows from localStorage:', err);
-        setError('Failed to load workflows');
-      }
-    } else {
-      console.log('⚠️ No workflows found in localStorage on mount');
-    }
+    loadWorkflowsFromMongoDB();
   }, []);
 
-  // Save workflows to localStorage whenever workflows change
-  useEffect(() => {
-    console.log('💾 Saving workflows to localStorage:', workflows.length, 'workflows');
-    if (workflows.length > 0) {
-      localStorage.setItem('approval_workflows', JSON.stringify(workflows));
-      console.log('✅ Workflows saved to localStorage');
-    } else {
-      console.log('⚠️ No workflows to save');
+  const loadWorkflowsFromMongoDB = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      console.log('🔄 Loading workflows from MongoDB...');
+      const workflows = await approvalWorkflowServiceMongoDB.getAllWorkflows();
+      console.log('✅ Successfully loaded workflows from MongoDB:', workflows.length, 'workflows');
+      setWorkflows(workflows);
+    } catch (err) {
+      console.error('❌ Error loading workflows from MongoDB:', err);
+      setError('Failed to load workflows from database');
+    } finally {
+      setIsLoading(false);
     }
-  }, [workflows]);
+  };
 
-  const createWorkflow = (workflowData: Omit<ApprovalWorkflow, 'id' | 'createdAt' | 'updatedAt' | 'currentStep' | 'status'>) => {
+  const createWorkflow = async (workflowData: Omit<ApprovalWorkflow, 'id' | 'createdAt' | 'updatedAt' | 'currentStep' | 'status'>) => {
     console.log('🔄 Creating new workflow:', workflowData);
     
     // Check for duplicate workflows based on documentId and clientName
@@ -56,79 +46,111 @@ export const useApprovalWorkflows = () => {
       return existingWorkflow;
     }
     
-    const newWorkflow: ApprovalWorkflow = {
-      ...workflowData,
-      id: `WF-${Date.now()}`,
-      status: 'pending',
-      currentStep: 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    try {
+      // Save to MongoDB
+      const workflowId = await approvalWorkflowServiceMongoDB.saveWorkflow(workflowData);
+      
+      const newWorkflow: ApprovalWorkflow = {
+        ...workflowData,
+        id: workflowId,
+        status: 'pending',
+        currentStep: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
 
-    console.log('✅ New workflow created:', newWorkflow);
-    setWorkflows(prev => {
-      const updated = [newWorkflow, ...prev];
-      console.log('📋 Updated workflows array:', updated.length, 'workflows');
-      return updated;
-    });
-    return newWorkflow;
+      console.log('✅ New workflow created and saved to MongoDB:', newWorkflow);
+      
+      // Update local state
+      setWorkflows(prev => {
+        const updated = [newWorkflow, ...prev];
+        console.log('📋 Updated workflows array:', updated.length, 'workflows');
+        return updated;
+      });
+      
+      return newWorkflow;
+    } catch (error) {
+      console.error('❌ Error creating workflow in MongoDB:', error);
+      throw error;
+    }
   };
 
-  const updateWorkflow = (workflowId: string, updates: Partial<ApprovalWorkflow>) => {
-    setWorkflows(prev => 
-      prev.map(workflow => 
-        workflow.id === workflowId 
-          ? { ...workflow, ...updates, updatedAt: new Date().toISOString() }
-          : workflow
-      )
-    );
+  const updateWorkflow = async (workflowId: string, updates: Partial<ApprovalWorkflow>) => {
+    try {
+      await approvalWorkflowServiceMongoDB.updateWorkflow(workflowId, updates);
+      
+      setWorkflows(prev => 
+        prev.map(workflow => 
+          workflow.id === workflowId 
+            ? { ...workflow, ...updates, updatedAt: new Date().toISOString() }
+            : workflow
+        )
+      );
+    } catch (error) {
+      console.error('❌ Error updating workflow in MongoDB:', error);
+      throw error;
+    }
   };
 
-  const updateWorkflowStep = (workflowId: string, stepNumber: number, stepUpdates: Partial<ApprovalStep>) => {
-    setWorkflows(prev => 
-      prev.map(workflow => {
-        if (workflow.id === workflowId) {
-          const updatedSteps = workflow.workflowSteps.map(step =>
-            step.step === stepNumber 
-              ? { ...step, ...stepUpdates, timestamp: new Date().toISOString() }
-              : step
-          );
+  const updateWorkflowStep = async (workflowId: string, stepNumber: number, stepUpdates: Partial<ApprovalStep>) => {
+    try {
+      await approvalWorkflowServiceMongoDB.updateWorkflowStep(workflowId, stepNumber, stepUpdates);
+      
+      setWorkflows(prev => 
+        prev.map(workflow => {
+          if (workflow.id === workflowId) {
+            const updatedSteps = workflow.workflowSteps.map(step =>
+              step.step === stepNumber 
+                ? { ...step, ...stepUpdates, timestamp: new Date().toISOString() }
+                : step
+            );
 
-          // Update current step and status based on step updates
-          let newCurrentStep = workflow.currentStep;
-          let newStatus = workflow.status;
+            // Update current step and status based on step updates
+            let newCurrentStep = workflow.currentStep;
+            let newStatus = workflow.status;
 
-          if (stepUpdates.status === 'approved') {
-            if (stepNumber < workflow.totalSteps) {
-              newCurrentStep = stepNumber + 1;
-              newStatus = 'in_progress';
-            } else {
-              newStatus = 'approved';
+            if (stepUpdates.status === 'approved') {
+              if (stepNumber < workflow.totalSteps) {
+                newCurrentStep = stepNumber + 1;
+                newStatus = 'in_progress';
+              } else {
+                newStatus = 'approved';
+              }
+            } else if (stepUpdates.status === 'denied') {
+              newStatus = 'denied';
             }
-          } else if (stepUpdates.status === 'denied') {
-            newStatus = 'denied';
-          }
 
-          return {
-            ...workflow,
-            workflowSteps: updatedSteps,
-            currentStep: newCurrentStep,
-            status: newStatus,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return workflow;
-      })
-    );
+            return {
+              ...workflow,
+              workflowSteps: updatedSteps,
+              currentStep: newCurrentStep,
+              status: newStatus,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return workflow;
+        })
+      );
+    } catch (error) {
+      console.error('❌ Error updating workflow step in MongoDB:', error);
+      throw error;
+    }
   };
 
-  const deleteWorkflow = (workflowId: string) => {
-    console.log('🗑️ Deleting workflow:', workflowId);
-    setWorkflows(prev => {
-      const filtered = prev.filter(workflow => workflow.id !== workflowId);
-      console.log('📋 Workflows after deletion:', filtered.length, 'workflows');
-      return filtered;
-    });
+  const deleteWorkflow = async (workflowId: string) => {
+    try {
+      await approvalWorkflowServiceMongoDB.deleteWorkflow(workflowId);
+      
+      console.log('🗑️ Deleting workflow:', workflowId);
+      setWorkflows(prev => {
+        const filtered = prev.filter(workflow => workflow.id !== workflowId);
+        console.log('📋 Workflows after deletion:', filtered.length, 'workflows');
+        return filtered;
+      });
+    } catch (error) {
+      console.error('❌ Error deleting workflow from MongoDB:', error);
+      throw error;
+    }
   };
 
   const removeDuplicateWorkflows = () => {
@@ -166,18 +188,7 @@ export const useApprovalWorkflows = () => {
   };
 
   const refreshWorkflows = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      // In a real app, you would fetch from your API here
-    } catch (err) {
-      setError('Failed to refresh workflows');
-    } finally {
-      setIsLoading(false);
-    }
+    await loadWorkflowsFromMongoDB();
   };
 
   return {

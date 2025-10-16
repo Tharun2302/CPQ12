@@ -13,7 +13,9 @@ import {
   Sparkles,
   Eye,
   Briefcase,
-  Calendar
+  Calendar,
+  Workflow,
+  X
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -21,6 +23,7 @@ import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
+import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -375,6 +378,16 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Approval workflow state
+  const { createWorkflow } = useApprovalWorkflows();
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalEmails, setApprovalEmails] = useState({
+    role1: '',
+    role2: '',
+    role3: ''
+  });
+  const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
 
   const ensureDocxPreviewStylesInjected = () => {
     const existing = document.getElementById('docx-preview-css');
@@ -1467,6 +1480,106 @@ Total Price: {{total price}}`;
           alert('Unable to download document. Please try again or contact support.');
         }
       }
+    }
+  };
+
+  // Handle starting approval workflow
+  const handleStartApprovalWorkflow = async () => {
+    if (!processedAgreement) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
+
+    // Validate email addresses
+    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role3) {
+      alert('Please fill in all three role email addresses.');
+      return;
+    }
+
+    setIsStartingWorkflow(true);
+    try {
+      // First, save the PDF to MongoDB if not already saved
+      const { templateService } = await import('../utils/templateService');
+      const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      
+      const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
+      const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
+      
+      const savedDoc = {
+        fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
+        fileData: base64Data,
+        fileSize: pdfBlob.size,
+        clientName: clientInfo.clientName || 'Unknown',
+        clientEmail: clientInfo.clientEmail || '',
+        company: clientInfo.company || 'Unknown Company',
+        templateName: selectedTemplate?.name || 'Agreement',
+        generatedDate: new Date(),
+        quoteId: quoteId,
+        metadata: {
+          totalCost: calculation?.totalCost || 0,
+          duration: configuration?.duration || 0,
+          migrationType: configuration?.migrationType || 'Messaging',
+          numberOfUsers: configuration?.numberOfUsers || 0
+        }
+      };
+      
+      const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
+      console.log('✅ PDF saved to MongoDB for workflow:', documentId);
+
+      // Create the approval workflow
+      const workflowData = {
+        documentId: documentId,
+        documentType: 'PDF Agreement',
+        clientName: clientInfo.clientName || 'Unknown Client',
+        amount: calculation?.totalCost || 0,
+        totalSteps: 3,
+        workflowSteps: [
+          { step: 1, role: 'Role 1', email: approvalEmails.role1, status: 'pending' as const },
+          { step: 2, role: 'Role 2', email: approvalEmails.role2, status: 'pending' as const },
+          { step: 3, role: 'Role 3', email: approvalEmails.role3, status: 'pending' as const }
+        ]
+      };
+
+      const newWorkflow = await createWorkflow(workflowData);
+      console.log('✅ Approval workflow created:', newWorkflow);
+
+      // Send email ONLY to Role 1 first (sequential approval)
+      try {
+        const response = await fetch('http://localhost:3001/api/send-manager-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            managerEmail: approvalEmails.role1,
+            workflowData: {
+              documentId: documentId,
+              documentType: 'PDF Agreement',
+              clientName: clientInfo.clientName || 'Unknown Client',
+              amount: calculation?.totalCost || 0,
+              workflowId: newWorkflow.id
+            }
+          })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          alert('✅ Approval workflow started successfully!\n📧 Role 1 has been notified. The workflow will continue sequentially when each role approves.');
+          setShowApprovalModal(false);
+          setApprovalEmails({ role1: '', role2: '', role3: '' });
+        } else {
+          alert('✅ Workflow created but Role 1 email failed.\nPlease notify Role 1 manually.');
+        }
+      } catch (emailError) {
+        console.error('❌ Error sending Role 1 email:', emailError);
+        alert('✅ Workflow created but Role 1 email failed.\nPlease notify Role 1 manually.');
+      }
+
+    } catch (error) {
+      console.error('❌ Error starting approval workflow:', error);
+      alert('Error starting approval workflow. Please try again.');
+    } finally {
+      setIsStartingWorkflow(false);
     }
   };
 
@@ -3181,13 +3294,18 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
           const base64Data = await documentServiceMongoDB.blobToBase64(processedDocument);
           
+          // Define variables for the saved document
+          const finalCompanyName = clientInfo.company || 'Unknown Company';
+          const clientName = clientInfo.clientName || 'Unknown';
+          const clientEmail = clientInfo.clientEmail || '';
+          
           const savedDoc = {
             fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
             fileData: base64Data,
             fileSize: processedDocument.size,
-            clientName: clientName || 'Unknown',
-            clientEmail: clientEmail || '',
-            company: finalCompanyName || 'Unknown Company',
+            clientName: clientName,
+            clientEmail: clientEmail,
+            company: finalCompanyName,
             templateName: selectedTemplate.name,
             generatedDate: new Date(),
             quoteId: quoteId,
@@ -4384,6 +4502,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
+                        onClick={() => setShowApprovalModal(true)}
+                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
+                        title="Start Approval Workflow"
+                      >
+                        <Workflow className="w-3 h-3 inline mr-1" />
+                        Start Workflow
+                      </button>
+                      <button
                         onClick={handleEmailAgreement}
                         disabled={isEmailingAgreement}
                         className={`transition-colors px-3 py-1 rounded-lg text-xs font-semibold ${
@@ -4663,6 +4789,97 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   </div>
                 </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Approval Workflow Modal */}
+        {showApprovalModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Workflow className="w-5 h-5 text-blue-600" />
+                  Start Approval Workflow
+                </h3>
+                <button
+                  onClick={() => setShowApprovalModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-4">
+                Enter email addresses for the three approval roles. Each role will receive the document and can approve or deny it.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role 1 Email
+                  </label>
+                  <input
+                    type="email"
+                    value={approvalEmails.role1}
+                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role1: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="role1@company.com"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role 2 Email
+                  </label>
+                  <input
+                    type="email"
+                    value={approvalEmails.role2}
+                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role2: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="role2@company.com"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role 3 Email
+                  </label>
+                  <input
+                    type="email"
+                    value={approvalEmails.role3}
+                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role3: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="role3@company.com"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowApprovalModal(false)}
+                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartApprovalWorkflow}
+                  disabled={isStartingWorkflow}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {isStartingWorkflow ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Workflow className="w-4 h-4" />
+                      Start Workflow
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>

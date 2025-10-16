@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, X, MessageCircle, FileText, DollarSign, Calendar, User } from 'lucide-react';
+import { CheckCircle, X, MessageCircle, FileText, DollarSign, Calendar, User, Eye, Download } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ClientNotificationProps {
@@ -9,6 +9,9 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
   const [workflow, setWorkflow] = useState<any>(null);
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showDocumentPreview, setShowDocumentPreview] = useState(false);
+  const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
+  const [isLoadingDocument, setIsLoadingDocument] = useState(false);
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
   // Get workflow ID from URL parameters
@@ -98,6 +101,69 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     }
   };
 
+  const handleViewDocument = async () => {
+    if (!workflow?.documentId) {
+      alert('❌ No document available for preview.');
+      return;
+    }
+
+    setIsLoadingDocument(true);
+    try {
+      console.log('📄 Fetching document for preview:', workflow.documentId);
+      
+      // Fetch document from MongoDB
+      const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch document');
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDocumentPreviewUrl(url);
+      setShowDocumentPreview(true);
+      
+      console.log('✅ Document loaded for preview');
+    } catch (error) {
+      console.error('❌ Error loading document:', error);
+      alert('❌ Failed to load document preview. Please try again.');
+    } finally {
+      setIsLoadingDocument(false);
+    }
+  };
+
+  const handleDownloadDocument = async () => {
+    if (!workflow?.documentId) {
+      alert('❌ No document available for download.');
+      return;
+    }
+
+    try {
+      console.log('📥 Downloading document:', workflow.documentId);
+      
+      const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch document');
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      // Create download link
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${workflow.documentId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log('✅ Document downloaded');
+    } catch (error) {
+      console.error('❌ Error downloading document:', error);
+      alert('❌ Failed to download document. Please try again.');
+    }
+  };
+
   if (!workflow) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -118,9 +184,9 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     );
   }
 
-  const managerStep = workflow.workflowSteps?.find((step: any) => step.role === 'Manager');
-  const ceoStep = workflow.workflowSteps?.find((step: any) => step.role === 'CEO');
-  const clientStep = workflow.workflowSteps?.find((step: any) => step.role === 'Client');
+  const managerStep = workflow.workflowSteps?.find((step: any) => step.role === 'Role 1');
+  const ceoStep = workflow.workflowSteps?.find((step: any) => step.role === 'Role 2');
+  const clientStep = workflow.workflowSteps?.find((step: any) => step.role === 'Role 3');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -306,6 +372,30 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
               />
             </div>
 
+            {/* Document Preview Buttons */}
+            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+              <h4 className="font-semibold text-gray-900 mb-3">Document Preview</h4>
+              <p className="text-sm text-gray-600 mb-4">Review the document before making your decision:</p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={handleViewDocument}
+                  disabled={isLoadingDocument}
+                  className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors font-medium"
+                >
+                  <Eye className="w-4 h-4" />
+                  {isLoadingDocument ? 'Loading...' : 'View Document'}
+                </button>
+                
+                <button
+                  onClick={handleDownloadDocument}
+                  className="flex items-center gap-2 px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium"
+                >
+                  <Download className="w-4 h-4" />
+                  Download PDF
+                </button>
+              </div>
+            </div>
+
             {/* Action Buttons */}
             <div className="flex gap-4 justify-center">
               <button
@@ -340,6 +430,36 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
           </div>
         </div>
       </div>
+
+      {/* Document Preview Modal */}
+      {showDocumentPreview && documentPreviewUrl && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-6xl h-5/6 flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Document Preview</h3>
+              <button
+                onClick={() => {
+                  setShowDocumentPreview(false);
+                  if (documentPreviewUrl) {
+                    URL.revokeObjectURL(documentPreviewUrl);
+                    setDocumentPreviewUrl(null);
+                  }
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex-1 p-4">
+              <iframe
+                src={documentPreviewUrl}
+                className="w-full h-full border-0 rounded-lg"
+                title="Document Preview"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
