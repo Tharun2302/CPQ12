@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText } from 'lucide-react';
+import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface CEOApprovalDashboardProps {
@@ -17,7 +17,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [documentPreview, setDocumentPreview] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-  const { workflows, isLoading, updateWorkflowStep } = useApprovalWorkflows();
+  const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('CEOApprovalDashboard rendered for:', ceoEmail);
   console.log('📊 Available workflows:', workflows.length);
@@ -28,9 +28,6 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
 
-  const handleRefresh = () => {
-    console.log('Refresh clicked');
-  };
 
   const handleViewWorkflow = async (workflow: any) => {
     console.log('Viewing workflow:', workflow.id);
@@ -172,7 +169,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       case 'pending': return Clock;
       case 'approved': return CheckCircle;
       case 'denied': return X;
-      case 'in_progress': return RefreshCw;
+      case 'in_progress': return Clock;
       default: return AlertCircle;
     }
   };
@@ -402,16 +399,6 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       {/* Header */}
       <div className="bg-white shadow-lg border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-end mb-6">
-            <button
-              onClick={handleRefresh}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50 text-white"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh Dashboard
-            </button>
-          </div>
           
           <div className="text-center">
             <div className="flex items-center justify-center gap-3 mb-2">
@@ -470,9 +457,6 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
               <h2 className="text-xl font-semibold text-gray-900">
                 {tabs.find(t => t.id === activeTab)?.label}
               </h2>
-            </div>
-            <div className="mt-3 px-4 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium border border-purple-200">
-              CEO Executive Approval Actions
             </div>
           </div>
           
