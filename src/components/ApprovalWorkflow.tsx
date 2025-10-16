@@ -204,15 +204,15 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       amount: selectedDocument?.amount || 0,
       totalSteps: 3,
       workflowSteps: [
-        { step: 1, role: 'Manager', email: formData.managerEmail, status: 'pending' as const },
-        { step: 2, role: 'CEO', email: formData.ceoEmail, status: 'pending' as const },
-        { step: 3, role: 'Client', email: formData.clientEmail, status: 'pending' as const }
+        { step: 1, role: 'Role 1', email: formData.managerEmail, status: 'pending' as const },
+        { step: 2, role: 'Role 2', email: formData.ceoEmail, status: 'pending' as const },
+        { step: 3, role: 'Role 3', email: formData.clientEmail, status: 'pending' as const }
       ]
     };
 
     // Create the workflow using the hook
     console.log('🔄 About to create workflow with data:', workflowData);
-    const newWorkflow = createWorkflow(workflowData);
+    const newWorkflow = await createWorkflow(workflowData);
     console.log('✅ Workflow created successfully:', newWorkflow);
 
     if (onStartWorkflow) {
