@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, Clock, User, BarChart3, X, FileCheck, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText } from 'lucide-react';
+import { RefreshCw, Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ManagerApprovalDashboardProps {
@@ -25,17 +25,17 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
 
   const tabs = [
     { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => w.status === 'pending' && w.currentStep === 1).length },
-    { id: 'pending', label: 'Pending Approvals', icon: Clock, count: workflows.filter(w => w.status === 'pending').length },
-    { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length },
-    { id: 'history', label: 'My Approval History', icon: FileCheck, count: workflows.filter(w => w.status === 'approved' || w.status === 'denied').length },
-    { id: 'comments', label: 'My Comments', icon: MessageCircle, count: workflows.filter(w => {
-      const managerStep = w.workflowSteps?.find(step => step.role === 'Manager');
-      return managerStep?.comments && managerStep.comments.trim() !== '';
-    }).length }
+    { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
 
   const handleRefresh = () => {
     console.log('Refresh clicked');
+  };
+
+  const handleViewWorkflow = async (workflow: any) => {
+    console.log('Viewing workflow:', workflow.id);
+    setSelectedWorkflow(workflow);
+    setShowDocumentModal(true);
   };
 
   const handleApprove = async (workflowId: string) => {
@@ -55,7 +55,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            ceoEmail: workflow.workflowSteps?.find(step => step.role === 'CEO')?.email || 'ceo@company.com',
+            ceoEmail: workflow.workflowSteps?.find(step => step.role === 'Role 2')?.email || 'ceo@company.com',
             workflowData: {
               documentId: workflow.documentId,
               documentType: workflow.documentType,
@@ -184,87 +184,11 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   };
 
   const renderTabContent = () => {
-    // Handle special tabs that don't filter workflows
-    if (activeTab === 'comments') {
-      const managerComments = workflows.filter(workflow => {
-        const managerStep = workflow.workflowSteps?.find(step => step.role === 'Manager');
-        return managerStep?.comments && managerStep.comments.trim() !== '';
-      });
-
-      if (managerComments.length === 0) {
-        return (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <MessageCircle className="w-8 h-8 text-gray-400" />
-            </div>
-            <p className="text-gray-500 italic text-lg">No comments found.</p>
-            <p className="text-gray-400 text-sm mt-2">Your comments will appear here when you add them to workflows.</p>
-          </div>
-        );
-      }
-
-      return (
-        <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="w-5 h-5 text-blue-600" />
-              <h3 className="font-semibold text-blue-800">My Comments ({managerComments.length})</h3>
-            </div>
-            <p className="text-blue-600 text-sm mt-1">Comments you've added to approval workflows</p>
-          </div>
-          
-          {managerComments.map((workflow) => {
-            const managerStep = workflow.workflowSteps?.find(step => step.role === 'Manager');
-            return (
-              <div key={workflow.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h4 className="font-semibold text-gray-900">{workflow.documentId}</h4>
-                    <p className="text-sm text-gray-500">{workflow.clientName}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-gray-900">${workflow.amount.toLocaleString()}</p>
-                    <p className="text-xs text-gray-500">
-                      {managerStep?.timestamp ? new Date(managerStep.timestamp).toLocaleDateString() : 'Unknown date'}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MessageCircle className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">Your Comment:</span>
-                  </div>
-                  <p className="text-gray-700 text-sm italic">"{managerStep?.comments}"</p>
-                </div>
-                
-                <div className="mt-3 flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    workflow.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                    workflow.status === 'approved' ? 'bg-green-100 text-green-800' :
-                    workflow.status === 'denied' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {workflow.status}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    Step {workflow.currentStep} of {workflow.totalSteps}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
 
     // Filter workflows for manager-specific view
     const filteredWorkflows = workflows.filter(workflow => {
       switch (activeTab) {
         case 'queue': return workflow.status === 'pending' && workflow.currentStep === 1;
-        case 'pending': return workflow.status === 'pending';
-        case 'denied': return workflow.status === 'denied';
-        case 'history': return workflow.status === 'approved' || workflow.status === 'denied';
         case 'status': return true;
         default: return true;
       }
@@ -278,105 +202,102 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
           </div>
           <p className="text-gray-500 italic text-lg">
             {activeTab === 'queue' && 'No items in your approval queue.'}
-            {activeTab === 'pending' && 'No pending approvals found.'}
-            {activeTab === 'denied' && 'No denied requests found.'}
-            {activeTab === 'history' && 'No approval history found.'}
             {activeTab === 'status' && 'No workflows found.'}
           </p>
         </div>
       );
     }
 
-    // Special handling for Workflow Status tab - show overview
+    // Special handling for Workflow Status tab - show table format
     if (activeTab === 'status') {
-      const statusCounts = {
-        pending: workflows.filter(w => w.status === 'pending').length,
-        in_progress: workflows.filter(w => w.status === 'in_progress').length,
-        approved: workflows.filter(w => w.status === 'approved').length,
-        denied: workflows.filter(w => w.status === 'denied').length
-      };
+      return (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Manager Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Manager Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workflows.map((workflow) => {
+                const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
+                const managerStep = workflow.workflowSteps?.find(step => step.role === 'Role 1');
+                const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Role 2');
+                const clientStep = workflow.workflowSteps?.find(step => step.role === 'Role 3');
 
       return (
-        <div className="space-y-6">
-          {/* Status Overview Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-yellow-600" />
-                </div>
+                  <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-4 px-4 text-gray-900 font-medium">
+                      {workflow.documentId || 'Unknown Document'}
+                    </td>
+                    <td className="py-4 px-4 text-gray-700">
+                      {workflow.clientName || 'Unknown Client'}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                        managerStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        managerStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {managerStep?.status || 'pending'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">
+                      {managerStep?.comments || 'No comments'}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                        ceoStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        ceoStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {ceoStep?.status || 'pending'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">
+                      {ceoStep?.comments || 'No comments'}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                        clientStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        clientStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {clientStep?.status || 'pending'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">
+                      {clientStep?.comments || 'No comments'}
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">
                 <div>
-                  <p className="text-2xl font-bold text-yellow-800">{statusCounts.pending}</p>
-                  <p className="text-sm text-yellow-600">Pending</p>
+                        <div>{createdDate.toLocaleDateString('en-GB')}</div>
+                        <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                 </div>
-              </div>
-            </div>
-            
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <RefreshCw className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-blue-800">{statusCounts.in_progress}</p>
-                  <p className="text-sm text-blue-600">In Progress</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-green-800">{statusCounts.approved}</p>
-                  <p className="text-sm text-green-600">Approved</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                  <X className="w-5 h-5 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-800">{statusCounts.denied}</p>
-                  <p className="text-sm text-red-600">Denied</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* All Workflows List */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">All Workflows</h3>
-            <div className="space-y-3">
-              {workflows.map((workflow) => {
-                const StatusIcon = getStatusIcon(workflow.status);
-                return (
-                  <div key={workflow.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${getStatusColor(workflow.status)}`}>
-                          <StatusIcon className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="font-medium text-gray-900">{workflow.documentId}</h4>
-                          <p className="text-sm text-gray-500">{workflow.clientName}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-gray-900">${workflow.amount.toLocaleString()}</p>
-                        <p className="text-sm text-gray-500">Step {workflow.currentStep} of {workflow.totalSteps}</p>
-                      </div>
-                    </div>
-                  </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <button
+                        onClick={() => handleViewWorkflow(workflow)}
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
+                      >
+                        <Eye className="w-3 h-3" />
+                        View
+                      </button>
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          </div>
+            </tbody>
+          </table>
         </div>
       );
     }
@@ -421,7 +342,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               <div className="space-y-2 mb-4">
                 {workflow.workflowSteps.map((step: any) => {
                   const StepIcon = getStatusIcon(step.status);
-                  const isMyStep = step.step === 1 && step.role === 'Manager';
+                  const isMyStep = step.step === 1 && step.role === 'Role 1';
                   return (
                     <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-blue-50 border border-blue-200' : ''}`}>
                       <div className={`p-1 rounded ${getStatusColor(step.status)}`}>

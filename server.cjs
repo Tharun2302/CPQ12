@@ -1266,6 +1266,77 @@ app.get('/api/templates/:id/file', async (req, res) => {
 // PDF DOCUMENTS API ENDPOINTS
 // ============================================
 
+// Get PDF document by ID
+app.get('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    console.log('📄 Fetching document:', id);
+
+    const documentsCollection = db.collection('documents');
+    const document = await documentsCollection.findOne({ id: id });
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    console.log('📄 Document found:', {
+      id: document.id,
+      fileName: document.fileName,
+      fileDataType: typeof document.fileData,
+      isBuffer: Buffer.isBuffer(document.fileData),
+      hasBuffer: !!document.fileData?.buffer,
+      hasData: !!document.fileData?.data
+    });
+
+    // Convert document data to buffer
+    let fileBuffer;
+    if (Buffer.isBuffer(document.fileData)) {
+      fileBuffer = document.fileData;
+    } else if (document.fileData.buffer) {
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (document.fileData.data) {
+      fileBuffer = Buffer.from(document.fileData.data);
+    } else if (typeof document.fileData === 'string') {
+      // Handle base64 string
+      fileBuffer = Buffer.from(document.fileData, 'base64');
+    } else {
+      console.error('❌ Unknown document data format:', typeof document.fileData);
+      return res.status(500).json({
+        success: false,
+        error: 'Invalid document data format'
+      });
+    }
+
+    console.log('✅ Document found, size:', fileBuffer.length, 'bytes');
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${document.fileName || id}.pdf"`,
+      'Content-Length': fileBuffer.length
+    });
+
+    res.send(fileBuffer);
+
+  } catch (error) {
+    console.error('❌ Error fetching document:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch document',
+      details: error.message
+    });
+  }
+});
+
 // Save PDF document to MongoDB (similar to template save)
 app.post('/api/documents', async (req, res) => {
   try {
@@ -2806,6 +2877,291 @@ app.post('/api/email/test', async (req, res) => {
       message: 'Email test failed',
       error: error.message,
       code: error.code
+    });
+  }
+});
+
+// ============================================
+// APPROVAL WORKFLOW ENDPOINTS
+// ============================================
+
+// Create approval workflow
+app.post('/api/approval-workflows', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot create workflow without database connection'
+      });
+    }
+
+    const workflowData = req.body;
+    console.log('📋 Creating approval workflow:', workflowData);
+
+    // Generate unique ID
+    const workflowId = `WF-${Date.now()}`;
+    
+    const workflow = {
+      id: workflowId,
+      ...workflowData,
+      status: 'pending',
+      currentStep: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Save to MongoDB
+    console.log('💾 Attempting to save workflow to database...');
+    console.log('💾 Database object:', !!db);
+    console.log('💾 Collection exists:', !!db?.collection);
+    
+    const result = await db.collection('approval_workflows').insertOne(workflow);
+    console.log('💾 Insert result:', result);
+    
+    if (result.insertedId) {
+      console.log('✅ Approval workflow created:', workflowId);
+      res.json({
+        success: true,
+        workflowId: workflowId,
+        workflow: workflow
+      });
+    } else {
+      console.log('❌ Failed to insert workflow - no insertedId');
+      throw new Error('Failed to insert workflow');
+    }
+  } catch (error) {
+    console.error('❌ Error creating approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create approval workflow',
+      details: error.message
+    });
+  }
+});
+
+// Get all approval workflows
+app.get('/api/approval-workflows', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch workflows without database connection'
+      });
+    }
+
+    console.log('📄 Fetching approval workflows from MongoDB...');
+    
+    const workflows = await db.collection('approval_workflows')
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+    
+    console.log(`✅ Found ${workflows.length} workflows in database`);
+    
+    res.json({
+      success: true,
+      workflows: workflows,
+      count: workflows.length
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching approval workflows:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get single approval workflow
+app.get('/api/approval-workflows/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    console.log('📄 Fetching approval workflow:', id);
+    
+    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      workflow: workflow
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update approval workflow
+app.put('/api/approval-workflows/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    const updates = req.body;
+    
+    console.log('📝 Updating approval workflow:', id, updates);
+    
+    // Add updatedAt timestamp
+    updates.updatedAt = new Date().toISOString();
+    
+    const result = await db.collection('approval_workflows').updateOne(
+      { id: id },
+      { $set: updates }
+    );
+    
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    console.log('✅ Approval workflow updated');
+    res.json({
+      success: true,
+      message: 'Workflow updated successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error updating approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update workflow step
+app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id, stepNumber } = req.params;
+    const stepUpdates = req.body;
+    
+    console.log('📝 Updating workflow step:', id, stepNumber, stepUpdates);
+    
+    // Get current workflow
+    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    // Update the specific step
+    const updatedSteps = workflow.workflowSteps.map(step =>
+      step.step === parseInt(stepNumber)
+        ? { ...step, ...stepUpdates, timestamp: new Date().toISOString() }
+        : step
+    );
+    
+    // Update current step and status based on step updates
+    let newCurrentStep = workflow.currentStep;
+    let newStatus = workflow.status;
+
+    if (stepUpdates.status === 'approved') {
+      if (parseInt(stepNumber) < workflow.totalSteps) {
+        newCurrentStep = parseInt(stepNumber) + 1;
+        newStatus = 'in_progress';
+      } else {
+        newStatus = 'approved';
+      }
+    } else if (stepUpdates.status === 'denied') {
+      newStatus = 'denied';
+    }
+    
+    const updateData = {
+      workflowSteps: updatedSteps,
+      currentStep: newCurrentStep,
+      status: newStatus,
+      updatedAt: new Date().toISOString()
+    };
+    
+    await db.collection('approval_workflows').updateOne(
+      { id: id },
+      { $set: updateData }
+    );
+    
+    console.log('✅ Workflow step updated');
+    res.json({
+      success: true,
+      message: 'Workflow step updated successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error updating workflow step:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Delete approval workflow
+app.delete('/api/approval-workflows/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    console.log('🗑️ Deleting approval workflow:', id);
+    
+    const result = await db.collection('approval_workflows').deleteOne({ id: id });
+    
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    console.log('✅ Approval workflow deleted');
+    res.json({
+      success: true,
+      message: 'Workflow deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error deleting approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
