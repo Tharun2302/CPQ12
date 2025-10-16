@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText } from 'lucide-react';
+import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ManagerApprovalDashboardProps {
@@ -17,7 +17,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentWorkflowId, setCommentWorkflowId] = useState<string | null>(null);
-  const { workflows, isLoading, updateWorkflowStep } = useApprovalWorkflows();
+  const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('ManagerApprovalDashboard rendered for:', managerEmail);
   console.log('📊 Available workflows:', workflows.length);
@@ -28,9 +28,6 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
 
-  const handleRefresh = () => {
-    console.log('Refresh clicked');
-  };
 
   const handleViewWorkflow = async (workflow: any) => {
     console.log('Viewing workflow:', workflow.id);
@@ -178,7 +175,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       case 'pending': return Clock;
       case 'approved': return CheckCircle;
       case 'denied': return X;
-      case 'in_progress': return RefreshCw;
+      case 'in_progress': return Clock;
       default: return AlertCircle;
     }
   };
@@ -408,16 +405,6 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       {/* Header */}
       <div className="bg-white shadow-lg border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-end mb-6">
-            <button
-              onClick={handleRefresh}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 text-white"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh Dashboard
-            </button>
-          </div>
           
           <div className="text-center">
             <div className="flex items-center justify-center gap-3 mb-2">
@@ -476,9 +463,6 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               <h2 className="text-xl font-semibold text-gray-900">
                 {tabs.find(t => t.id === activeTab)?.label}
               </h2>
-            </div>
-            <div className="mt-3 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium border border-blue-200">
-              Manager Approval Actions
             </div>
           </div>
           
