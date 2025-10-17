@@ -84,6 +84,82 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
     setIsLoadingPreview(false);
   };
 
+  const handleSendToESign = async (workflow: any) => {
+    try {
+      const clientStep = workflow?.workflowSteps?.find((s: any) => s.role === 'Client');
+      const clientEmail = clientStep?.email;
+      if (!clientEmail) {
+        alert('Client email is missing in workflow steps. Please add client email to send for e-sign.');
+        return;
+      }
+
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const resp = await fetch(`${backendUrl}/api/boldsign/create-embedded-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: workflow.documentId,
+          clientEmail,
+          clientName: workflow.clientName || 'Client',
+          title: `${workflow.documentType || 'Agreement'} - ${workflow.clientName || ''}`,
+          redirectUrl: window.location.origin
+        })
+      });
+
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error(t || 'Failed to create BoldSign request');
+      }
+      const result = await resp.json();
+      
+      // Handle free plan mode
+      if (result.freePlanMode) {
+        const message = `📄 BoldSign Free Plan Mode\n\n` +
+          `1. Click OK to download the approved document\n` +
+          `2. Then you'll be redirected to BoldSign to upload it\n` +
+          `3. Add signature fields and send to:\n   ${clientEmail} (${workflow.clientName})\n\n` +
+          `💡 Tip: Upgrade to a paid plan for direct API integration!`;
+
+        if (confirm(message)) {
+          // Try to download without navigating away; if it fails, still open BoldSign
+          try {
+            const fileResp = await fetch(result.downloadUrl);
+            if (fileResp.ok) {
+              const blob = await fileResp.blob();
+              const urlObj = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = urlObj;
+              a.download = `${workflow.documentId}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(urlObj);
+            } else {
+              console.warn('Download failed with status:', fileResp.status);
+              alert('Could not auto-download the document (it may have been removed). You can still upload it manually in BoldSign.');
+            }
+          } catch (err) {
+            console.warn('Download error:', err);
+            alert('Download failed due to a network or server issue. You can still upload it manually in BoldSign.');
+          }
+
+          // Open BoldSign regardless of download outcome
+          window.open(result.url, '_blank');
+        }
+        return;
+      }
+      
+      // Normal API mode (paid plans)
+      const url = result.url;
+      if (!url) throw new Error('No URL returned from BoldSign');
+      window.open(url, '_blank');
+      
+    } catch (e: any) {
+      console.error('❌ Error sending to e-sign:', e);
+      alert(`Failed to send for e-sign: ${e?.message || e}`);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'text-yellow-600 bg-yellow-100';
@@ -182,15 +258,25 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
                          <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
-                     <td className="py-4 px-4">
-                       <button
-                         onClick={() => handleViewWorkflow(workflow)}
-                         className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
-                       >
-                         <Eye className="w-3 h-3" />
-                         View
-                       </button>
-                     </td>
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleViewWorkflow(workflow)}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
+                        >
+                          <Eye className="w-3 h-3" />
+                          View
+                        </button>
+                        <button
+                          onClick={() => handleSendToESign(workflow)}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
+                          title="Send for e-signature"
+                        >
+                          <FileText className="w-3 h-3" />
+                          eSign
+                        </button>
+                      </div>
+                    </td>
                    </tr>
                  );
                })}
@@ -310,15 +396,27 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
                          <div className="text-xs text-gray-500">{completedDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
-                     <td className="py-4 px-4">
-                       <button
-                         onClick={() => handleViewWorkflow(workflow)}
-                         className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
-                       >
-                         <Eye className="w-3 h-3" />
-                         View
-                       </button>
-                     </td>
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleViewWorkflow(workflow)}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
+                        >
+                          <Eye className="w-3 h-3" />
+                          View
+                        </button>
+                        {workflow.status === 'approved' && (
+                          <button
+                            onClick={() => handleSendToESign(workflow)}
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
+                            title="Send approved document for e-signature"
+                          >
+                            <FileText className="w-3 h-3" />
+                            eSign
+                          </button>
+                        )}
+                      </div>
+                    </td>
                    </tr>
                  );
                })}
@@ -420,15 +518,36 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onBackToDashboard
                          <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
-                     <td className="py-4 px-4">
-                       <button
-                         onClick={() => handleViewWorkflow(workflow)}
-                         className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
-                       >
-                         <Eye className="w-3 h-3" />
-                         View
-                       </button>
-                     </td>
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleViewWorkflow(workflow)}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
+                        >
+                          <Eye className="w-3 h-3" />
+                          View
+                        </button>
+                        {/* Allow eSign when Manager and CEO have approved */}
+                        {(() => {
+                          const managerStep = workflow.workflowSteps?.find((s: any) => s.role === 'Manager');
+                          const ceoStep = workflow.workflowSteps?.find((s: any) => s.role === 'CEO');
+                          const canSend = managerStep?.status === 'approved' && ceoStep?.status === 'approved';
+                          return (
+                            <button
+                              onClick={() => canSend && handleSendToESign(workflow)}
+                              className={`inline-flex items-center gap-1 px-3 py-1 text-white text-sm rounded-lg transition-colors ${
+                                canSend ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-300 cursor-not-allowed'
+                              }`}
+                              title={canSend ? 'Send for e-signature' : 'Requires Manager and CEO approval'}
+                              disabled={!canSend}
+                            >
+                              <FileText className="w-3 h-3" />
+                              eSign
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    </td>
                    </tr>
                  );
                })}
