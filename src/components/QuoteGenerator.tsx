@@ -385,7 +385,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [approvalEmails, setApprovalEmails] = useState({
     role1: '',
     role2: '',
-    role3: ''
+    role3: '',
+    role4: ''
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
 
@@ -1491,8 +1492,8 @@ Total Price: {{total price}}`;
     }
 
     // Validate email addresses
-    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role3) {
-      alert('Please fill in all three role email addresses.');
+    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role3 || !approvalEmails.role4) {
+      alert('Please fill in all four role email addresses.');
       return;
     }
 
@@ -1532,11 +1533,12 @@ Total Price: {{total price}}`;
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        totalSteps: 3,
+        totalSteps: 4,
         workflowSteps: [
           { step: 1, role: 'Role 1', email: approvalEmails.role1, status: 'pending' as const },
           { step: 2, role: 'Role 2', email: approvalEmails.role2, status: 'pending' as const },
-          { step: 3, role: 'Role 3', email: approvalEmails.role3, status: 'pending' as const }
+          { step: 3, role: 'Role 3', email: approvalEmails.role3, status: 'pending' as const },
+          { step: 4, role: 'Role 4', email: approvalEmails.role4, status: 'pending' as const }
         ]
       };
 
@@ -1566,7 +1568,7 @@ Total Price: {{total price}}`;
         if (result.success) {
           alert('✅ Approval workflow started successfully!\n📧 Role 1 has been notified. The workflow will continue sequentially when each role approves.');
           setShowApprovalModal(false);
-          setApprovalEmails({ role1: '', role2: '', role3: '' });
+          setApprovalEmails({ role1: '', role2: '', role3: '', role4: '' });
         } else {
           alert('✅ Workflow created but Role 1 email failed.\nPlease notify Role 1 manually.');
         }
@@ -4812,7 +4814,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </div>
               
               <p className="text-sm text-gray-600 mb-4">
-                Enter email addresses for the three approval roles. Each role will receive the document and can approve or deny it.
+                Enter email addresses for the four approval roles. Each role will receive the document and can approve or deny it.
               </p>
               
               <div className="space-y-4">
@@ -4852,6 +4854,19 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     onChange={(e) => setApprovalEmails(prev => ({ ...prev, role3: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="role3@company.com"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Role 4 Email
+                  </label>
+                  <input
+                    type="email"
+                    value={approvalEmails.role4}
+                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role4: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="role4@company.com"
                   />
                 </div>
               </div>
