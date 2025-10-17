@@ -1150,6 +1150,8 @@ function App() {
       // Content combinations
       const isDropboxToMyDrive = name.includes('dropbox') && name.includes('mydrive');
       const isDropboxToSharedDrive = name.includes('dropbox') && name.includes('sharedrive');
+      const isDropboxToSharePoint = name.includes('dropbox') && name.includes('sharepoint');
+      const isDropboxToOneDrive = name.includes('dropbox') && name.includes('onedrive');
       
       const matchesPlan = name.includes(safeTier);
       
@@ -1158,7 +1160,9 @@ function App() {
         (combination === 'slack-to-teams' && isSlackToTeams) ||
         (combination === 'slack-to-google-chat' && isSlackToGoogleChat) ||
         (combination === 'dropbox-to-mydrive' && isDropboxToMyDrive) ||
-        (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive);
+        (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive) ||
+        (combination === 'dropbox-to-sharepoint' && isDropboxToSharePoint) ||
+        (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive);
       
       console.log('🔍 Name-based template matching:', { 
         templateName: name, 
@@ -1166,6 +1170,8 @@ function App() {
         isSlackToGoogleChat,
         isDropboxToMyDrive,
         isDropboxToSharedDrive,
+        isDropboxToSharePoint,
+        isDropboxToOneDrive,
         matchesPlan, 
         matchesCombination,
         safeTier,
@@ -1173,7 +1179,7 @@ function App() {
         planType: t?.planType 
       });
       
-      return (isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive) && matchesPlan && matchesCombination;
+      return (isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive || isDropboxToSharePoint || isDropboxToOneDrive) && matchesPlan && matchesCombination;
     });
 
     if (exactMatches.length > 0) {
