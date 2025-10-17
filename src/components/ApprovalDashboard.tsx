@@ -11,6 +11,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   const [documentPreview, setDocumentPreview] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
   const { workflows, deleteWorkflow } = useApprovalWorkflows();
   
   console.log('ApprovalDashboard rendered');
@@ -21,6 +23,45 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length },
     { id: 'history', label: 'Approval History', icon: FileCheck, count: workflows.filter(w => w && w.status === 'approved').length }
   ];
+
+  // Filter workflows based on selected filters
+  const getFilteredWorkflows = () => {
+    let filtered = workflows.filter(w => w);
+
+    // Apply status filter
+    if (statusFilter === 'denied') {
+      filtered = filtered.filter(w => w.status === 'denied');
+    } else if (statusFilter === 'approved') {
+      filtered = filtered.filter(w => w.status === 'approved');
+    } else if (statusFilter === 'pending') {
+      filtered = filtered.filter(w => w.status === 'pending' || w.status === 'in_progress');
+    }
+
+    // Apply role filter
+    if (roleFilter === 'role1_approved') {
+      filtered = filtered.filter(w => {
+        const role1Step = w.workflowSteps?.find(step => step.role === 'Role 1');
+        return role1Step?.status === 'approved';
+      });
+    } else if (roleFilter === 'role2_approved') {
+      filtered = filtered.filter(w => {
+        const role2Step = w.workflowSteps?.find(step => step.role === 'Role 2');
+        return role2Step?.status === 'approved';
+      });
+    } else if (roleFilter === 'role3_approved') {
+      filtered = filtered.filter(w => {
+        const role3Step = w.workflowSteps?.find(step => step.role === 'Role 3');
+        return role3Step?.status === 'approved';
+      });
+    } else if (roleFilter === 'role4_approved') {
+      filtered = filtered.filter(w => {
+        const role4Step = w.workflowSteps?.find(step => step.role === 'Role 4');
+        return role4Step?.status === 'approved';
+      });
+    }
+
+    return filtered;
+  };
 
 
 
@@ -179,81 +220,137 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
 
      // Special handling for Workflow Status tab - show table format
      if (activeTab === 'status') {
+       const filteredWorkflows = getFilteredWorkflows();
        return (
-         <div className="overflow-x-auto">
-           <table className="w-full border-collapse">
+         <div>
+           {/* Filter Controls */}
+           <div className="mb-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-sm">
+             <div className="flex flex-col sm:flex-row gap-3">
+               <div className="flex-1">
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   Filter by Status:
+                 </label>
+                 <select
+                   value={statusFilter}
+                   onChange={(e) => setStatusFilter(e.target.value)}
+                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm font-medium"
+                 >
+                   <option value="all">All Statuses</option>
+                   <option value="pending">Pending/In Progress</option>
+                   <option value="approved">Approved</option>
+                   <option value="denied">Denied</option>
+                 </select>
+               </div>
+               
+               <div className="flex-1">
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   Filter by Role Approval:
+                 </label>
+                 <select
+                   value={roleFilter}
+                   onChange={(e) => setRoleFilter(e.target.value)}
+                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm font-medium"
+                 >
+                   <option value="all">All Roles</option>
+                   <option value="role1_approved">Role 1 Approved</option>
+                   <option value="role2_approved">Role 2 Approved</option>
+                   <option value="role3_approved">Role 3 Approved</option>
+                   <option value="role4_approved">Role 4 Approved</option>
+                 </select>
+               </div>
+               
+               <div className="flex items-end">
+                 <button
+                   onClick={() => {
+                     setStatusFilter('all');
+                     setRoleFilter('all');
+                   }}
+                   className="px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm"
+                 >
+                   Clear Filters
+                 </button>
+               </div>
+             </div>
+             
+             <div className="mt-2 text-xs text-gray-500">
+               <span className="text-blue-600 font-medium">{filteredWorkflows.length}</span> of <span className="font-medium">{workflows.length}</span> workflows
+             </div>
+           </div>
+           
+           <div className="overflow-x-auto w-full">
+           <table className="w-full border-collapse bg-white rounded-lg overflow-hidden shadow-sm min-w-full">
              <thead>
-               <tr className="border-b border-gray-200 bg-gray-50">
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Manager Status</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Manager Comments</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Status</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Comments</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+               <tr className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-blue-200">
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Document</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Client</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Manager Status</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Manager Comments</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">CEO Status</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">CEO Comments</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Client Status</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Client Comments</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Created</th>
+                 <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Actions</th>
                </tr>
              </thead>
              <tbody>
-               {workflows.filter(w => w).map((workflow) => {
+               {filteredWorkflows.map((workflow) => {
                  const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
                  const managerStep = workflow.workflowSteps?.find(step => step.role === 'Role 1');
                  const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Role 2');
                  const clientStep = workflow.workflowSteps?.find(step => step.role === 'Role 3');
                  
                  return (
-                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
-                     <td className="py-4 px-4 text-gray-900 font-medium">
-                       {workflow.documentId || 'Unknown Document'}
+                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-blue-50 transition-colors duration-200">
+                     <td className="py-4 px-6 text-gray-900 font-semibold">
+                       <span className="text-blue-600 font-mono text-sm">{workflow.documentId || 'Unknown Document'}</span>
                      </td>
-                     <td className="py-4 px-4 text-gray-700">
+                     <td className="py-4 px-6 text-gray-700 font-medium">
                        {workflow.clientName || 'Unknown Client'}
                      </td>
-                     <td className="py-4 px-4">
-                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                         managerStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                         managerStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
-                         'bg-yellow-100 text-yellow-800'
+                     <td className="py-4 px-6">
+                       <span className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold ${
+                         managerStep?.status === 'approved' ? 'bg-green-100 text-green-800 border border-green-200' :
+                         managerStep?.status === 'denied' ? 'bg-red-100 text-red-800 border border-red-200' :
+                         'bg-yellow-100 text-yellow-800 border border-yellow-200'
                        }`}>
                          {managerStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {managerStep?.comments || 'No comments'}
                      </td>
-                     <td className="py-4 px-4">
-                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                         ceoStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                         ceoStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
-                         'bg-yellow-100 text-yellow-800'
+                     <td className="py-4 px-6">
+                       <span className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold ${
+                         ceoStep?.status === 'approved' ? 'bg-green-100 text-green-800 border border-green-200' :
+                         ceoStep?.status === 'denied' ? 'bg-red-100 text-red-800 border border-red-200' :
+                         'bg-yellow-100 text-yellow-800 border border-yellow-200'
                        }`}>
                          {ceoStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {ceoStep?.comments || 'No comments'}
                      </td>
-                     <td className="py-4 px-4">
-                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                         clientStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                         clientStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
-                         'bg-yellow-100 text-yellow-800'
+                     <td className="py-4 px-6">
+                       <span className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold ${
+                         clientStep?.status === 'approved' ? 'bg-green-100 text-green-800 border border-green-200' :
+                         clientStep?.status === 'denied' ? 'bg-red-100 text-red-800 border border-red-200' :
+                         'bg-yellow-100 text-yellow-800 border border-yellow-200'
                        }`}>
                          {clientStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {clientStep?.comments || 'No comments'}
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        <div>
                          <div>{createdDate.toLocaleDateString('en-GB')}</div>
                          <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
-                    <td className="py-4 px-4">
+                    <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleViewWorkflow(workflow)}
@@ -277,6 +374,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                })}
              </tbody>
            </table>
+           </div>
          </div>
        );
      }
@@ -328,16 +426,16 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  
                  return (
                    <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
-                     <td className="py-4 px-4 text-gray-900 font-medium">
+                     <td className="py-4 px-6 text-gray-900 font-medium">
                        {workflow.documentId || 'Unknown Document'}
                      </td>
-                     <td className="py-4 px-4 text-gray-700">
+                     <td className="py-4 px-6 text-gray-700">
                        {workflow.clientName || 'Unknown Client'}
                      </td>
-                     <td className="py-4 px-4 text-gray-700">
+                     <td className="py-4 px-6 text-gray-700">
                        {finalStatus}
                      </td>
-                     <td className="py-4 px-4">
+                     <td className="py-4 px-6">
                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
                          managerStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
                          managerStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
@@ -346,7 +444,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          {managerStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4">
+                     <td className="py-4 px-6">
                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
                          ceoStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
                          ceoStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
@@ -355,7 +453,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          {ceoStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {managerStep?.comments ? (
                          <span className="inline-flex px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
                            [{managerStep.comments}]
@@ -364,7 +462,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'No comments'
                        )}
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {ceoStep?.comments ? (
                          <span className="inline-flex px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
                            [{ceoStep.comments}]
@@ -373,10 +471,10 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'No comments'
                        )}
                      </td>
-                     <td className="py-4 px-4 text-gray-700">
+                     <td className="py-4 px-6 text-gray-700">
                        {clientStep?.status || 'pending'}
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {clientStep?.comments ? (
                          <span className="inline-flex px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs">
                            [{clientStep.comments}]
@@ -385,13 +483,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'No comments'
                        )}
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        <div>
                          <div>{completedDate.toLocaleDateString('en-GB')}</div>
                          <div className="text-xs text-gray-500">{completedDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
-                    <td className="py-4 px-4">
+                    <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleViewWorkflow(workflow)}
@@ -472,46 +570,46 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  
                  return (
                    <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
-                     <td className="py-4 px-4 text-gray-900 font-medium">
+                     <td className="py-4 px-6 text-gray-900 font-medium">
                        {workflow.documentId || 'Unknown Document'}
                      </td>
-                     <td className="py-4 px-4 text-gray-700">
+                     <td className="py-4 px-6 text-gray-700">
                        {workflow.clientName || 'Unknown Client'}
                      </td>
-                     <td className="py-4 px-4 text-gray-700">
+                     <td className="py-4 px-6 text-gray-700">
                        {workflow.documentType || 'PDF'}
                      </td>
-                     <td className="py-4 px-4">
+                     <td className="py-4 px-6">
                        <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                          {managerStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {managerStep?.comments || 'No comments'}
                      </td>
-                     <td className="py-4 px-4">
+                     <td className="py-4 px-6">
                        <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                          {ceoStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {ceoStep?.comments || 'No comments'}
                      </td>
-                     <td className="py-4 px-4">
+                     <td className="py-4 px-6">
                        <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                          {clientStep?.status || 'pending'}
                        </span>
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        {clientStep?.comments || 'No comments'}
                      </td>
-                     <td className="py-4 px-4 text-gray-600 text-sm">
+                     <td className="py-4 px-6 text-gray-600 text-sm">
                        <div>
                          <div>{createdDate.toLocaleDateString('en-GB')}</div>
                          <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
-                    <td className="py-4 px-4">
+                    <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleViewWorkflow(workflow)}
@@ -621,29 +719,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50 w-full flex flex-col">
       {/* Header */}
       <div className="bg-white shadow-lg border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="mb-6">
-          </div>
-          
-           <div className="text-center">
-             <div className="flex items-center justify-center gap-3 mb-2">
-               <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                 <FileCheck className="w-6 h-6 text-blue-600" />
-               </div>
-               <h1 className="text-4xl font-bold text-gray-900">Admin Approval Tracking</h1>
-             </div>
-             <p className="text-xl text-gray-600">Manage document approvals and workflow status</p>
-           </div>
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-2">
         </div>
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Clean Sub-Navigation Tabs */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-1 overflow-x-auto py-2">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex space-x-3">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -651,17 +737,19 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm whitespace-nowrap transition-all duration-200 ${
+                  className={`flex items-center gap-3 px-6 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all duration-300 border-0 ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-sky-200 text-sky-800 shadow-lg transform scale-105'
+                      : 'bg-white text-gray-700 hover:bg-gray-100 hover:shadow-md'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-5 h-5" />
                   {tab.label}
                   {tab.count > 0 && (
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      isActive 
+                        ? 'bg-white/30 text-white border border-white/40' 
+                        : 'bg-sky-200 text-sky-800 border border-sky-300'
                     }`}>
                       {tab.count}
                     </span>
@@ -674,23 +762,10 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
       </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-          <div className="px-6 py-5 border-b border-gray-200 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                {React.createElement(tabs.find(t => t.id === activeTab)?.icon || Clock, { className: "w-4 h-4 text-blue-600" })}
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900">
-                {tabs.find(t => t.id === activeTab)?.label}
-              </h2>
-            </div>
-            <div className="mt-3 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium border border-blue-200">
-              Documents Awaiting Approval
-            </div>
-          </div>
+      <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-4 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden w-full h-full flex flex-col">
           
-          <div className="p-6">
+          <div className="flex-1 p-6 overflow-auto">
             {renderTabContent()}
           </div>
          </div>
