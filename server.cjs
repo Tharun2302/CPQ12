@@ -28,8 +28,36 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors());
+// Middleware - Configure CORS to allow frontend requests
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
+}));
+
+// Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
+app.use((req, res, next) => {
+  const allowedOrigins = new Set([
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    process.env.APP_BASE_URL?.replace(/\/$/, '')
+  ].filter(Boolean));
+
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-KEY');
+  }
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -402,6 +430,134 @@ app.get('/api/database/health', async (req, res) => {
       success: false,
       message: 'MongoDB connection failed',
       error: error.message
+    });
+  }
+});
+
+// Download document for BoldSign (free plan workaround)
+app.get('/api/boldsign/download-document/:documentId', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database not available' });
+    }
+
+    const { documentId } = req.params;
+    
+    // Try documents collection first
+    const documentsCollection = db.collection('documents');
+    const document = await documentsCollection.findOne({ id: documentId });
+
+    if (document && document.fileData) {
+      let fileBuffer;
+      if (Buffer.isBuffer(document.fileData)) {
+        fileBuffer = document.fileData;
+      } else if (document.fileData.buffer) {
+        fileBuffer = Buffer.from(document.fileData.buffer);
+      } else if (document.fileData.data) {
+        fileBuffer = Buffer.from(document.fileData.data);
+      }
+
+      const fileName = document.fileName || `${documentId}.pdf`;
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Length': fileBuffer.length
+      });
+      return res.send(fileBuffer);
+    }
+
+    // Fallback: try templates collection (in case approved file is stored as a template)
+    const templatesCollection = db.collection('templates');
+    const template = await templatesCollection.findOne({ id: documentId });
+    if (template && template.fileData) {
+      let fileBuffer;
+      if (Buffer.isBuffer(template.fileData)) {
+        fileBuffer = template.fileData;
+      } else if (template.fileData.buffer) {
+        fileBuffer = Buffer.from(template.fileData.buffer);
+      } else if (template.fileData.data) {
+        fileBuffer = Buffer.from(template.fileData.data);
+      }
+
+      const isPdf = (template.fileType || '').toLowerCase() === 'pdf';
+      const contentType = isPdf
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const fileExt = isPdf ? 'pdf' : 'docx';
+      const fileName = template.fileName || `${documentId}.${fileExt}`;
+
+      res.set({
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Length': fileBuffer.length
+      });
+      return res.send(fileBuffer);
+    }
+
+    return res.status(404).json({ success: false, message: 'Document not found' });
+  } catch (error) {
+    console.error('❌ Error downloading document:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to download document', 
+      error: error.message 
+    });
+  }
+});
+
+// Create BoldSign redirect (free plan compatible)
+app.post('/api/boldsign/create-embedded-send', async (req, res) => {
+  try {
+    const { documentId, clientEmail, clientName } = req.body || {};
+    
+    if (!documentId) {
+      return res.status(400).json({ success: false, message: 'documentId is required' });
+    }
+
+    // Determine best download URL based on where the file exists
+    const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+    let resolvedDownloadUrl = null;
+
+    try {
+      // Prefer documents/:id/file if present
+      const doc = await db.collection('documents').findOne({ id: documentId });
+      if (doc && doc.fileData) {
+        resolvedDownloadUrl = `${baseAppUrl}/api/documents/${documentId}/file`;
+      } else {
+        // Fallback to templates/:id/file if present
+        const tpl = await db.collection('templates').findOne({ id: documentId });
+        if (tpl && tpl.fileData) {
+          resolvedDownloadUrl = `${baseAppUrl}/api/templates/${documentId}/file`;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not resolve download URL for documentId:', documentId, e?.message);
+    }
+
+    // As a last resort, keep previous fallback (combined resolver)
+    if (!resolvedDownloadUrl) {
+      resolvedDownloadUrl = `${baseAppUrl}/api/boldsign/download-document/${documentId}`;
+    }
+
+    // For free plan: provide BoldSign upload page + resolved download URL
+    const APP_BASE = (process.env.BOLDSIGN_APP_URL || 'https://app.boldsign.com').replace(/\/$/, '');
+    const uploadUrl = `${APP_BASE}/document/new`;
+    
+    return res.json({ 
+      success: true, 
+      url: uploadUrl,
+      downloadUrl: resolvedDownloadUrl,
+      clientEmail,
+      clientName,
+      instructions: 'Free plan: Download the document and upload it manually to BoldSign',
+      freePlanMode: true
+    });
+  } catch (error) {
+    console.error('❌ BoldSign redirect error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create BoldSign redirect', 
+      error: error.message 
     });
   }
 });
