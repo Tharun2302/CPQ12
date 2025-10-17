@@ -634,6 +634,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     <>
                       <option value="dropbox-to-mydrive">DROPBOX TO MYDRIVE</option>
                       <option value="dropbox-to-sharedrive">DROPBOX TO SHAREDRIVE</option>
+                      <option value="dropbox-to-sharepoint">DROPBOX TO SHAREPOINT</option>
+                      <option value="dropbox-to-onedrive">DROPBOX TO ONEDRIVE</option>
                     </>
                   )}
                 </select>
