@@ -31,7 +31,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [pdfPreviewData, setPdfPreviewData] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
-  // Load available documents from quotes
+  // Optional: show quotes list (not used for eSign document download)
   useEffect(() => {
     if (quotes && quotes.length > 0) {
       setAvailableDocuments(quotes.map(quote => ({
@@ -45,6 +45,37 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       })));
     }
   }, [quotes]);
+
+  // Auto-load documents on mount, but silently skip if backend is unavailable
+  useEffect(() => {
+    const loadDocsOnMount = async () => {
+      try {
+        setIsLoadingDocuments(true);
+        const response = await fetch('http://localhost:3001/api/documents', { signal: AbortSignal.timeout(3000) });
+        const result = await response.json();
+        if (result.success && result.documents) {
+          const convertedDocuments = result.documents.map((doc: any) => ({
+            id: doc.id,
+            name: doc.fileName || `Document ${doc.id}`,
+            type: 'PDF Quote',
+            clientName: doc.clientName || 'Unknown Client',
+            amount: doc.metadata?.totalCost || 0,
+            status: doc.status || 'Active',
+            createdAt: doc.createdAt || doc.generatedDate,
+            fileName: doc.fileName,
+            company: doc.company,
+            quoteId: doc.quoteId
+          }));
+          setAvailableDocuments(convertedDocuments);
+        }
+      } catch (err) {
+        console.warn('Auto-load documents skipped:', err);
+      } finally {
+        setIsLoadingDocuments(false);
+      }
+    };
+    loadDocsOnMount();
+  }, []);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -194,8 +225,22 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       return;
     }
 
-    // Find the selected document to get client name and amount
-    const selectedDocument = availableDocuments.find(doc => doc.id === formData.documentId);
+    // Validate the selected document exists in database
+    let selectedDocument = availableDocuments.find(doc => doc.id === formData.documentId);
+    try {
+      const checkResp = await fetch(`http://localhost:3001/api/documents/${formData.documentId}`);
+      if (!checkResp.ok) {
+        // Fallback: reload documents and ask user to pick again
+        await handleLoadDocuments();
+        selectedDocument = availableDocuments.find(doc => doc.id === formData.documentId);
+        if (!selectedDocument) {
+          alert('Selected document was not found in the database. Click "Load Documents" and choose a saved PDF.');
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Document validation failed:', e);
+    }
     
     const workflowData = {
       documentId: formData.documentId,
