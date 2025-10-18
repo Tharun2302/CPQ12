@@ -36,7 +36,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   };
 
   const handleApprove = async (workflowId: string) => {
-    console.log('CEO Approving workflow:', workflowId);
+    console.log('Legal Team Approving workflow:', workflowId);
     try {
       // Update workflow step
       updateWorkflowStep(workflowId, 2, { status: 'approved' });
@@ -45,14 +45,14 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
         // Send email to Client
-        console.log('📧 Sending email to Client after CEO approval...');
+        console.log('📧 Sending email to Client after Legal Team approval...');
         const response = await fetch('http://localhost:3001/api/send-client-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            clientEmail: workflow.workflowSteps?.find(step => step.role === 'Role 3')?.email || 'client@company.com',
+            clientEmail: workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com',
             workflowData: {
               documentId: workflow.documentId,
               documentType: workflow.documentType,
@@ -79,12 +79,12 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   };
 
   const handleDeny = (workflowId: string) => {
-    console.log('CEO Denying workflow:', workflowId);
+    console.log('Legal Team Denying workflow:', workflowId);
     updateWorkflowStep(workflowId, 2, { status: 'denied' });
   };
 
   const handleAddComment = (workflowId: string) => {
-    console.log('CEO Adding comment to workflow:', workflowId);
+    console.log('Legal Team Adding comment to workflow:', workflowId);
     setCommentWorkflowId(workflowId);
     setCommentText('');
     setShowCommentModal(true);
@@ -97,7 +97,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     }
 
     try {
-      console.log('💬 CEO Saving comment for workflow:', commentWorkflowId);
+      console.log('💬 Legal Team Saving comment for workflow:', commentWorkflowId);
       updateWorkflowStep(commentWorkflowId, 2, { 
         comments: commentText.trim(),
         timestamp: new Date().toISOString()
@@ -120,7 +120,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   };
 
   const handleViewDocument = async (workflow: any) => {
-    console.log('👁️ CEO Viewing document for workflow:', workflow);
+    console.log('👁️ Legal Team Viewing document for workflow:', workflow);
     setSelectedWorkflow(workflow);
     setShowDocumentModal(true);
     
@@ -176,7 +176,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
 
   const renderTabContent = () => {
 
-    // Filter workflows for CEO-specific view
+    // Filter workflows for Legal Team-specific view
     const filteredWorkflows = workflows.filter(workflow => {
       switch (activeTab) {
         case 'queue': return (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
@@ -208,10 +208,10 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Manager Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Manager Comments</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
@@ -221,9 +221,9 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
             <tbody>
               {workflows.map((workflow) => {
                 const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
-                const managerStep = workflow.workflowSteps?.find(step => step.role === 'Role 1');
-                const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Role 2');
-                const clientStep = workflow.workflowSteps?.find(step => step.role === 'Role 3');
+                const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
+                const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+                const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
                 
                 return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -235,27 +235,27 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        managerStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                        managerStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                        technicalTeamStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        technicalTeamStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
                         'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {managerStep?.status || 'pending'}
+                        {technicalTeamStep?.status || 'pending'}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
-                      {managerStep?.comments || 'No comments'}
+                      {technicalTeamStep?.comments || 'No comments'}
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        ceoStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                        ceoStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                        legalTeamStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        legalTeamStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
                         'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {ceoStep?.status || 'pending'}
+                        {legalTeamStep?.status || 'pending'}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
-                      {ceoStep?.comments || 'No comments'}
+                      {legalTeamStep?.comments || 'No comments'}
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
@@ -331,28 +331,31 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
               </div>
 
                <div className="space-y-2 mb-4">
-                 {workflow.workflowSteps.map((step: any) => {
-                   const StepIcon = getStatusIcon(step.status);
-                   const isMyStep = step.step === 2 && step.role === 'Role 2' && isMyTurn;
-                   return (
-                     <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-purple-50 border border-purple-200' : ''}`}>
-                       <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
-                         <StepIcon className="w-4 h-4" />
+                 {/* Only show the current step for Legal Team in My Approval Queue */}
+                 {workflow.workflowSteps
+                   .filter((step: any) => step.step === 2 && step.role === 'Legal Team')
+                   .map((step: any) => {
+                     const StepIcon = getStatusIcon(step.status);
+                     const isMyStep = step.step === 2 && step.role === 'Legal Team' && isMyTurn;
+                     return (
+                       <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-purple-50 border border-purple-200' : ''}`}>
+                         <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
+                           <StepIcon className="w-4 h-4" />
+                         </div>
+                         <span className="font-medium">{step.role}</span>
+                         <span className="text-gray-500">{step.email}</span>
+                         {isMyStep && <span className="text-purple-600 font-semibold text-xs">(Your Turn)</span>}
+                         {step.timestamp && (
+                           <span className="text-gray-400 ml-auto">
+                             {new Date(step.timestamp).toLocaleDateString()}
+                           </span>
+                         )}
                        </div>
-                       <span className="font-medium">{step.role}</span>
-                       <span className="text-gray-500">{step.email}</span>
-                       {isMyStep && <span className="text-purple-600 font-semibold text-xs">(Your Turn)</span>}
-                       {step.timestamp && (
-                         <span className="text-gray-400 ml-auto">
-                           {new Date(step.timestamp).toLocaleDateString()}
-                         </span>
-                       )}
-                     </div>
-                   );
-                 })}
+                     );
+                   })}
                </div>
 
-              {/* Action Buttons for CEO */}
+              {/* Action Buttons for Legal Team */}
               <div className="flex gap-3 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => handleViewDocument(workflow)}
@@ -405,9 +408,9 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
               <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
                 <Crown className="w-6 h-6 text-purple-600" />
               </div>
-              <h1 className="text-4xl font-bold text-gray-900">CEO Approval Portal</h1>
+              <h1 className="text-4xl font-bold text-gray-900">Legal Team Approval Portal</h1>
             </div>
-            <p className="text-xl text-gray-600">Executive review and approval of document workflows</p>
+            <p className="text-xl text-gray-600">Legal review and approval of document workflows</p>
             <p className="text-sm text-gray-500 mt-1">Logged in as: {ceoEmail}</p>
           </div>
         </div>
