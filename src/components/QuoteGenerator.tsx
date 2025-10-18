@@ -1535,17 +1535,17 @@ Total Price: {{total price}}`;
         amount: calculation?.totalCost || 0,
         totalSteps: 4,
         workflowSteps: [
-          { step: 1, role: 'Role 1', email: approvalEmails.role1, status: 'pending' as const },
-          { step: 2, role: 'Role 2', email: approvalEmails.role2, status: 'pending' as const },
-          { step: 3, role: 'Role 3', email: approvalEmails.role3, status: 'pending' as const },
-          { step: 4, role: 'Role 4', email: approvalEmails.role4, status: 'pending' as const }
+          { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
+          { step: 2, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
+          { step: 3, role: 'Client', email: approvalEmails.role3, status: 'pending' as const },
+          { step: 4, role: 'E-signed', email: approvalEmails.role4, status: 'pending' as const }
         ]
       };
 
       const newWorkflow = await createWorkflow(workflowData);
       console.log('✅ Approval workflow created:', newWorkflow);
 
-      // Send email ONLY to Role 1 first (sequential approval)
+      // Send email ONLY to Technical Team first (sequential approval)
       try {
         const response = await fetch('http://localhost:3001/api/send-manager-email', {
           method: 'POST',
@@ -1566,15 +1566,15 @@ Total Price: {{total price}}`;
 
         const result = await response.json();
         if (result.success) {
-          alert('✅ Approval workflow started successfully!\n📧 Role 1 has been notified. The workflow will continue sequentially when each role approves.');
+          alert('✅ Approval workflow started successfully!\n📧 Technical Team has been notified. The workflow will continue sequentially when each role approves.');
           setShowApprovalModal(false);
           setApprovalEmails({ role1: '', role2: '', role3: '', role4: '' });
         } else {
-          alert('✅ Workflow created but Role 1 email failed.\nPlease notify Role 1 manually.');
+          alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
         }
       } catch (emailError) {
-        console.error('❌ Error sending Role 1 email:', emailError);
-        alert('✅ Workflow created but Role 1 email failed.\nPlease notify Role 1 manually.');
+        console.error('❌ Error sending Technical Team email:', emailError);
+        alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
       }
 
     } catch (error) {
@@ -4820,53 +4820,53 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role 1 Email
+                    Technical Team Email
                   </label>
                   <input
                     type="email"
                     value={approvalEmails.role1}
                     onChange={(e) => setApprovalEmails(prev => ({ ...prev, role1: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="role1@company.com"
+                    placeholder="technical@company.com"
                   />
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role 2 Email
+                    Legal Team Email
                   </label>
                   <input
                     type="email"
                     value={approvalEmails.role2}
                     onChange={(e) => setApprovalEmails(prev => ({ ...prev, role2: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="role2@company.com"
+                    placeholder="legal@company.com"
                   />
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role 3 Email
+                    Client Email
                   </label>
                   <input
                     type="email"
                     value={approvalEmails.role3}
                     onChange={(e) => setApprovalEmails(prev => ({ ...prev, role3: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="role3@company.com"
+                    placeholder="client@company.com"
                   />
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role 4 Email
+                    E-signed Email
                   </label>
                   <input
                     type="email"
                     value={approvalEmails.role4}
                     onChange={(e) => setApprovalEmails(prev => ({ ...prev, role4: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="role4@company.com"
+                    placeholder="esign@company.com"
                   />
                 </div>
               </div>

@@ -120,25 +120,25 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       workflowSteps: [
           {
             step: 1,
-            role: 'Role 1',
+            role: 'Technical Team',
             email: formData.role1Email,
             status: 'pending'
           },
           {
             step: 2,
-            role: 'Role 2',
+            role: 'Legal Team',
             email: formData.role2Email,
             status: 'pending'
           },
           {
             step: 3,
-            role: 'Role 3',
+            role: 'Client',
             email: formData.role3Email,
             status: 'pending'
           },
           {
             step: 4,
-            role: 'Role 4',
+            role: 'E-signed',
             email: formData.role4Email,
             status: 'pending'
           }
@@ -230,10 +230,10 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 </h3>
                 <p className="text-xs text-gray-600 mb-4">Configure email addresses for each approval role</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Role 1 Email */}
+                  {/* Technical Team Email */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Role 1 Email
+                      Technical Team Email
                     </label>
                     <div className="relative">
                       <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -242,15 +242,15 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                         value={formData.role1Email}
                         onChange={(e) => setFormData(prev => ({ ...prev, role1Email: e.target.value }))}
                         className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-                        placeholder="role1@company.com"
+                        placeholder="technical@company.com"
                       />
                     </div>
             </div>
 
-                  {/* Role 2 Email */}
+                  {/* Legal Team Email */}
             <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Role 2 Email
+                      Legal Team Email
               </label>
               <div className="relative">
                       <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -259,15 +259,15 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                         value={formData.role2Email}
                         onChange={(e) => setFormData(prev => ({ ...prev, role2Email: e.target.value }))}
                         className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-                        placeholder="role2@company.com"
+                        placeholder="legal@company.com"
                 />
               </div>
             </div>
 
-                  {/* Role 3 Email */}
+                  {/* Client Email */}
             <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Role 3 Email
+                      Client Email
               </label>
               <div className="relative">
                       <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -276,15 +276,15 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                         value={formData.role3Email}
                         onChange={(e) => setFormData(prev => ({ ...prev, role3Email: e.target.value }))}
                         className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-                        placeholder="role3@company.com"
+                        placeholder="client@company.com"
                 />
               </div>
             </div>
 
-                  {/* Role 4 Email */}
+                  {/* E-signed Email */}
             <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Role 4 Email
+                      E-signed Email
               </label>
               <div className="relative">
                       <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -293,7 +293,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                         value={formData.role4Email}
                         onChange={(e) => setFormData(prev => ({ ...prev, role4Email: e.target.value }))}
                         className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-                        placeholder="role4@company.com"
+                        placeholder="esign@company.com"
                 />
               </div>
                   </div>
@@ -301,7 +301,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
             </div>
               
               <p className="text-sm text-gray-500">
-                Emails for the approval workflow roles. Role 4 will receive the final approved document.
+                Emails for the approval workflow roles. E-signed will receive the final approved document.
               </p>
 
             {/* Start Workflow Button */}
