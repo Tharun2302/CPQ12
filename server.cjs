@@ -183,18 +183,18 @@ function generateManagerEmailHTML(workflowData) {
     <html>
     <head>
       <meta charset="utf-8">
-      <title>Manager Approval Required</title>
+      <title>Technical Team Approval Required</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
       <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #3B82F6, #1E40AF); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1>🔔 Manager Approval Required</h1>
+          <h1>🔔 Technical Team Approval Required</h1>
         </div>
         
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
-          <h2>Hello Manager,</h2>
+          <h2>Hello Technical Team,</h2>
           
-          <p>A new document requires your <strong>Manager</strong> approval:</p>
+          <p>A new document requires your <strong>Technical Team</strong> approval:</p>
           
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
@@ -230,18 +230,18 @@ function generateCEOEmailHTML(workflowData) {
     <html>
     <head>
       <meta charset="utf-8">
-      <title>CEO Approval Required</title>
+      <title>Legal Team Approval Required</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
       <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #8B5CF6, #7C3AED); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1>👑 CEO Approval Required</h1>
+          <h1>👑 Legal Team Approval Required</h1>
         </div>
         
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
-          <h2>Hello CEO,</h2>
+          <h2>Hello Legal Team,</h2>
           
-          <p>A new document requires your <strong>CEO</strong> approval:</p>
+          <p>A new document requires your <strong>Legal Team</strong> approval:</p>
           
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
@@ -2730,7 +2730,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
 
     const { ceoEmail, workflowData } = req.body;
     
-    console.log('📧 Sending email to CEO (after Manager approval)...');
+    console.log('📧 Sending email to CEO (after Technical Team approval)...');
     console.log('CEO:', ceoEmail);
     console.log('Workflow Data:', workflowData);
 
@@ -2809,7 +2809,7 @@ app.post('/api/send-client-email', async (req, res) => {
 
     const { clientEmail, workflowData } = req.body;
     
-    console.log('📧 Sending email to Client (after CEO approval)...');
+    console.log('📧 Sending email to Client (after Legal Team approval)...');
     console.log('Client:', clientEmail);
     console.log('Workflow Data:', workflowData);
 

@@ -1,0 +1,242 @@
+═══════════════════════════════════════════════════════════════════════════════
+  DROPBOX TO SHAREPOINT - COMPLETE SYSTEM FLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+                              🎯 USER JOURNEY
+                              
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  Step 1: SELECT MIGRATION TYPE                                             │
+│  ┌─────────────────────────────────────────────────────────────────┐       │
+│  │  Migration Type: [Content ▼]                                    │       │
+│  └─────────────────────────────────────────────────────────────────┘       │
+│                                                                             │
+│  Step 2: SELECT COMBINATION                                                │
+│  ┌─────────────────────────────────────────────────────────────────┐       │
+│  │  Combination: [DROPBOX TO SHAREPOINT ▼]                         │       │
+│  │                                                                  │       │
+│  │  Options shown:                                                 │       │
+│  │    • DROPBOX TO MYDRIVE                                         │       │
+│  │    • DROPBOX TO SHAREDRIVE                                      │       │
+│  │    • DROPBOX TO SHAREPOINT ⭐ (NEW!)                            │       │
+│  └─────────────────────────────────────────────────────────────────┘       │
+│                                                                             │
+│  Step 3: CONFIGURE PROJECT                                                 │
+│  ┌─────────────────────────────────────────────────────────────────┐       │
+│  │  Number of Users: [100]                                         │       │
+│  │  Data Size (GB): [500]                                          │       │
+│  │  Duration (months): [6]                                         │       │
+│  │  Number of Instances: [2]                                       │       │
+│  │  Instance Type: [Standard ▼]                                    │       │
+│  └─────────────────────────────────────────────────────────────────┘       │
+│                                                                             │
+│                      [Calculate Pricing]                                   │
+│                              ↓                                              │
+│                                                                             │
+│  Step 4: VIEW PRICING PLANS                                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                     │
+│  │   BASIC      │  │  STANDARD ⭐ │  │  ADVANCED ⭐ │                     │
+│  │  $7,622.40   │  │  $7,992.80   │  │  $8,343.20   │                     │
+│  │              │  │              │  │              │                     │
+│  │ [Select]     │  │ [Select]     │  │ [Select]     │                     │
+│  └──────────────┘  └──────────────┘  └──────────────┘                     │
+│                                                                             │
+│  ⚠️ Note: Basic plan available but no template yet                         │
+│                                                                             │
+│  Step 5: SELECT PLAN → AUTO-SELECT TEMPLATE                                │
+│                                                                             │
+│  If Standard selected:                                                     │
+│  ✅ Template: "DROPBOX TO SHAREPOINT Standard"                             │
+│                                                                             │
+│  If Advanced selected:                                                     │
+│  ✅ Template: "DROPBOX TO SHAREPOINT Advanced"                             │
+│                                                                             │
+│  Step 6: GENERATE AGREEMENT                                                │
+│  ┌─────────────────────────────────────────────────────────────────┐       │
+│  │  Contact Information:                                           │       │
+│  │  Name: [John Smith]                                             │       │
+│  │  Email: [john.smith@example.com]                                │       │
+│  │  Legal Entity: [Example Corp]                                   │       │
+│  │  Dates: [Select dates]                                          │       │
+│  │                                                                  │       │
+│  │         [Preview Agreement]                                     │       │
+│  └─────────────────────────────────────────────────────────────────┘       │
+│                                                                             │
+│  Step 7: DOCUMENT GENERATED ✅                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐       │
+│  │  📄 Agreement_Example_Corp_20250117.docx                        │       │
+│  │  Using: DROPBOX TO SHAREPOINT [Standard/Advanced] Template      │       │
+│  └─────────────────────────────────────────────────────────────────┘       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  🔧 BACKEND FLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+1. SERVER STARTUP
+   ↓
+2. Connect to MongoDB
+   ↓
+3. Call seedDefaultTemplates(db)
+   ↓
+4. Read template definitions from seed-templates.cjs
+   ↓
+5. For each template:
+   ├─ Check if template exists in DB
+   ├─ If not, read DOCX file from backend-templates/
+   ├─ Convert to base64
+   ├─ Store in MongoDB with metadata:
+   │  • name: "DROPBOX TO SHAREPOINT Standard"
+   │  • combination: "dropbox-to-sharepoint"
+   │  • planType: "standard"
+   │  • category: "content"
+   │  • fileData: base64 string
+   └─ Log success
+   ↓
+6. Server ready ✅
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  📊 DATABASE STRUCTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+MongoDB Collection: templates
+
+Document Structure:
+{
+  "_id": ObjectId("..."),
+  "id": "template-1234567890-abc123",
+  "name": "DROPBOX TO SHAREPOINT Standard",
+  "description": "Standard template for Dropbox to SharePoint migration",
+  "fileName": "dropbox-to-sharepoint-standard.docx",
+  "fileSize": 12345,
+  "fileData": "UEsDBBQABgAIAAAAIQD..." (base64),
+  "fileType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "isDefault": false,
+  "category": "content",
+  "combination": "dropbox-to-sharepoint",
+  "planType": "standard",
+  "keywords": ["standard", "dropbox", "sharepoint", "content", "microsoft"],
+  "createdAt": ISODate("2025-01-17T..."),
+  "lastModified": ISODate("2025-01-17T..."),
+  "uploadedBy": "system-seed",
+  "status": "active",
+  "version": 1.0
+}
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  🎯 TEMPLATE MATCHING ALGORITHM
+═══════════════════════════════════════════════════════════════════════════════
+
+When user selects a plan, autoSelectTemplateForPlan() is called:
+
+PRIORITY 1: Match by planType + combination fields
+┌─────────────────────────────────────────────────────────────────┐
+│ Filter templates where:                                         │
+│   template.planType === selectedPlan (e.g., "standard")         │
+│   AND                                                            │
+│   template.combination === selectedCombination                  │
+│   (e.g., "dropbox-to-sharepoint")                              │
+└─────────────────────────────────────────────────────────────────┘
+        ↓
+   Found? → Return template ✅
+        ↓ No match
+        
+PRIORITY 2: Match by name keywords
+┌─────────────────────────────────────────────────────────────────┐
+│ Filter templates where name includes:                           │
+│   • "dropbox" AND "sharepoint" (for combination)                │
+│   • "standard" or "advanced" (for plan)                         │
+└─────────────────────────────────────────────────────────────────┘
+        ↓
+   Found? → Return template ✅
+        ↓ No match
+        
+PRIORITY 3: Scoring system fallback
+┌─────────────────────────────────────────────────────────────────┐
+│ Score each template based on:                                   │
+│   • planType match: +15 points                                  │
+│   • Plan name in template name: +10 points                      │
+│   • Combination keywords match: +8 points                       │
+│   • Migration type match: +5 points                             │
+│   • DOCX file type: +2 points                                   │
+│   • isDefault flag: +1 point                                    │
+│                                                                  │
+│ Return template with highest score ✅                           │
+└─────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  📁 FILE STRUCTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+CPQ12/
+├── backend-templates/
+│   ├── slack-to-teams-basic.docx
+│   ├── slack-to-teams-advanced.docx
+│   ├── slack-to-google-chat-basic.docx
+│   ├── slack-to-google-chat-advanced.docx
+│   ├── dropbox-to-google-mydrive-basic.docx
+│   ├── dropbox-to-google-mydrive-standard.docx
+│   ├── dropbox-to-google-mydrive-advanced.docx
+│   ├── dropbox-to-google-sharedrive-basic.docx
+│   ├── dropbox-to-google-sharedrive-standard.docx
+│   ├── dropbox-to-google-sharedrive-advanced.docx
+│   ├── dropbox-to-sharepoint-standard.docx ⭐ NEW
+│   └── dropbox-to-sharepoint-advanced.docx ⭐ NEW
+│
+├── src/
+│   ├── components/
+│   │   └── ConfigurationForm.tsx ✅ MODIFIED (added dropdown option)
+│   └── App.tsx ✅ MODIFIED (added template matching)
+│
+├── seed-templates.cjs ✅ MODIFIED (added template definitions)
+├── server.cjs (calls seedDefaultTemplates on startup)
+│
+└── Documentation (NEW):
+    ├── DROPBOX_TO_SHAREPOINT_IMPLEMENTATION.md
+    ├── TESTING_SHAREPOINT.md
+    ├── CHANGES_SUMMARY.txt
+    └── SYSTEM_FLOW_DIAGRAM.txt
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  ✅ VERIFICATION CHECKLIST
+═══════════════════════════════════════════════════════════════════════════════
+
+Code Changes:
+[✅] ConfigurationForm.tsx - Added "DROPBOX TO SHAREPOINT" option
+[✅] App.tsx - Added template matching logic for SharePoint
+[✅] seed-templates.cjs - Added 2 template definitions
+[✅] No linter errors
+
+Template Files:
+[✅] dropbox-to-sharepoint-standard.docx exists in backend-templates/
+[✅] dropbox-to-sharepoint-advanced.docx exists in backend-templates/
+
+Documentation:
+[✅] Technical implementation guide created
+[✅] Testing guide created
+[✅] Changes summary created
+[✅] System flow diagram created
+
+Ready for Testing:
+[⏳] Server startup and template seeding
+[⏳] UI dropdown shows new option
+[⏳] Template auto-selection works
+[⏳] Document generation works
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  🚀 NEXT: START SERVER AND TEST
+═══════════════════════════════════════════════════════════════════════════════
+
+Run: node server.cjs
+Then: Open browser and test
+See: TESTING_SHAREPOINT.md for detailed testing steps
+
+═══════════════════════════════════════════════════════════════════════════════
+
