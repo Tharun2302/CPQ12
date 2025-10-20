@@ -122,10 +122,14 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
 
   const handleSendToESign = async (workflow: any) => {
     try {
-      const clientStep = workflow?.workflowSteps?.find((s: any) => s.role === 'Client');
-      const clientEmail = clientStep?.email;
-      if (!clientEmail) {
-        alert('Client email is missing in workflow steps. Please add client email to send for e-sign.');
+      // Get all 3 roles for e-signature (Manager, CEO, Client)
+      const managerStep = workflow?.workflowSteps?.find((s: any) => s.role === 'Role 1');
+      const ceoStep = workflow?.workflowSteps?.find((s: any) => s.role === 'Role 2');
+      const clientStep = workflow?.workflowSteps?.find((s: any) => s.role === 'Role 3');
+      
+      // Check if all required emails are present
+      if (!managerStep?.email || !ceoStep?.email || !clientStep?.email) {
+        alert('Missing email addresses in workflow steps. Please ensure all roles (Manager, CEO, Client) have email addresses.');
         return;
       }
 
@@ -135,8 +139,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentId: workflow.documentId,
-          clientEmail,
-          clientName: workflow.clientName || 'Client',
+          signers: [
+            { name: 'Manager', email: managerStep.email },
+            { name: 'CEO', email: ceoStep.email },
+            { name: 'Client', email: clientStep.email }
+          ],
           title: `${workflow.documentType || 'Agreement'} - ${workflow.clientName || ''}`,
           redirectUrl: window.location.origin
         })
@@ -150,10 +157,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
       
       // Handle free plan mode
       if (result.freePlanMode) {
+        const signerList = result.signers?.map((s: any) => `${s.name} (${s.email})`).join('\n   ') || 'Multiple signers';
         const message = `📄 BoldSign Free Plan Mode\n\n` +
           `1. Click OK to download the approved document\n` +
           `2. Then you'll be redirected to BoldSign to upload it\n` +
-          `3. Add signature fields and send to:\n   ${clientEmail} (${workflow.clientName})\n\n` +
+          `3. Add signature fields and send to:\n   ${signerList}\n\n` +
           `💡 Tip: Upgrade to a paid plan for direct API integration!`;
 
         if (confirm(message)) {
@@ -188,7 +196,19 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
       // Normal API mode (paid plans)
       const url = result.url;
       if (!url) throw new Error('No URL returned from BoldSign');
+      
+      console.log('✅ BoldSign API success. Mode:', result.mode);
+      console.log('🔗 Opening BoldSign URL:', url);
+      
+      // Open BoldSign document prepare/edit page
       window.open(url, '_blank');
+      
+      alert(`✅ Document uploaded to BoldSign!\n\n` +
+        `The document is now open in BoldSign where you can:\n` +
+        `1. Add signature fields by dragging from the left panel\n` +
+        `2. Review recipients: Manager, CEO, and Client\n` +
+        `3. Click Send to deliver for e-signature\n\n` +
+        `BoldSign Template ID: ${result.templateId || 'N/A'}`);
       
     } catch (e: any) {
       console.error('❌ Error sending to e-sign:', e);

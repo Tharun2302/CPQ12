@@ -505,52 +505,198 @@ app.get('/api/boldsign/download-document/:documentId', async (req, res) => {
   }
 });
 
-// Create BoldSign redirect (free plan compatible)
+// Create BoldSign embedded send (Enterprise API compatible)
 app.post('/api/boldsign/create-embedded-send', async (req, res) => {
   try {
-    const { documentId, clientEmail, clientName } = req.body || {};
+    console.log('🔍 BoldSign API request received:', req.body);
+    const { documentId, signers, title } = req.body || {};
     
     if (!documentId) {
+      console.log('❌ Missing documentId');
       return res.status(400).json({ success: false, message: 'documentId is required' });
     }
 
-    // Determine best download URL based on where the file exists
-    const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-    let resolvedDownloadUrl = null;
+    if (!signers || !Array.isArray(signers) || signers.length === 0) {
+      console.log('❌ Missing or invalid signers:', signers);
+      return res.status(400).json({ success: false, message: 'signers array is required' });
+    }
 
-    try {
-      // Prefer documents/:id/file if present
-      const doc = await db.collection('documents').findOne({ id: documentId });
-      if (doc && doc.fileData) {
-        resolvedDownloadUrl = `${baseAppUrl}/api/documents/${documentId}/file`;
+    // Check for BoldSign API key (Enterprise plan)
+    const API_KEY = process.env.BOLDSIGN_API_KEY;
+    const BASE_URL = process.env.BOLDSIGN_BASE_URL || 'https://api.boldsign.com';
+
+    if (!API_KEY) {
+      console.log('⚠️ No BoldSign API key found, using free plan mode');
+      
+      // Free plan fallback
+      const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+      const resolvedDownloadUrl = `${baseAppUrl}/api/boldsign/download-document/${documentId}`;
+      const APP_BASE = (process.env.BOLDSIGN_APP_URL || 'https://app.boldsign.com').replace(/\/$/, '');
+      const uploadUrl = `${APP_BASE}/document/new`;
+      
+      return res.json({ 
+        success: true, 
+        url: uploadUrl,
+        downloadUrl: resolvedDownloadUrl,
+        signers: signers,
+        instructions: 'Free plan: Download the document and upload it manually to BoldSign',
+        freePlanMode: true
+      });
+    }
+
+    // Enterprise API integration
+    console.log('🔄 Using BoldSign Enterprise API...');
+    console.log('📄 Document:', documentId, '| Signers:', signers.length);
+    console.log('🔑 API Key:', API_KEY ? `${API_KEY.substring(0, 15)}...` : 'MISSING');
+    
+    // Get document from database
+    const document = await db.collection('documents').findOne({ id: documentId }) ||
+                    await db.collection('templates').findOne({ id: documentId });
+    
+    if (!document || !document.fileData) {
+      return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    // Prepare file buffer
+    let fileBuffer;
+    if (document.fileData.buffer) {
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (document.fileData.data) {
+      fileBuffer = Buffer.from(document.fileData.data);
+    } else {
+      return res.status(400).json({ success: false, message: 'Document file data not found' });
+    }
+
+    // Create template in BoldSign with all signers
+    const FormData = require('form-data');
+    const templateForm = new FormData();
+    
+    // BoldSign requires 'Title' field (not 'TemplateTitle')
+    templateForm.append('Title', title || `Agreement - ${signers[0]?.name || 'Client'}`);
+    
+    // Enable auto-detection of text tags for field placement
+    templateForm.append('AutoDetectFields', 'true');
+    // Ensure Helvetica styling for auto-generated fields when possible (BoldSign may ignore styling on tags)
+    templateForm.append('DefaultFont', 'Helvetica');
+    templateForm.append('DefaultFontSize', '13');
+    
+    // Add all signers as roles (CEO = s1, Client = s2)
+    signers.forEach((signer, index) => {
+      const signerIndex = index + 1; // s1, s2, etc.
+      templateForm.append(`Roles[${index}].name`, signer.name);
+      templateForm.append(`Roles[${index}].index`, signerIndex);
+      templateForm.append(`Roles[${index}].signerType`, 'Signer');
+      templateForm.append(`Roles[${index}].signerOrder`, signerIndex);
+      templateForm.append(`Roles[${index}].defaultSignerName`, signer.name);
+      templateForm.append(`Roles[${index}].defaultSignerEmail`, signer.email);
+    });
+    
+    console.log('🏷️ AutoDetectFields enabled for text tag processing');
+    console.log('👥 Signers configured:', signers.map(s => `${s.name} (${s.email})`));
+    
+    // Attach the PDF file
+    templateForm.append('Files', fileBuffer, {
+      filename: document.fileName || `${documentId}.pdf`,
+      contentType: 'application/pdf'
+    });
+
+    // Get form headers
+    const templateHeaders = templateForm.getHeaders();
+    console.log('📋 Step 1: Creating template in BoldSign...');
+
+    // Create template
+    const templateEndpoint = `${BASE_URL}/v1/template/create`;
+    console.log('📤 Template endpoint:', templateEndpoint);
+    
+    // Use node-fetch with proper FormData handling
+    const fetch = require('node-fetch');
+    const templateResp = await fetch(templateEndpoint, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': API_KEY,
+        ...templateHeaders
+      },
+      body: templateForm
+    });
+
+    const templateText = await templateResp.text();
+    console.log('📥 Template response status:', templateResp.status);
+    console.log('📥 Template response:', templateText.substring(0, 500));
+    
+    let templateJson;
+    try { templateJson = JSON.parse(templateText); } catch { templateJson = { raw: templateText }; }
+
+    if (templateResp.ok && templateJson?.templateId) {
+      const templateId = templateJson.templateId;
+      console.log('✅ Template created! ID:', templateId);
+      
+      // Step 2: Create embedded request URL from template
+      console.log('📋 Step 2: Creating embedded request URL from template...');
+      const embeddedEndpoint = `${BASE_URL}/v1/template/createEmbeddedRequestUrl`;
+      console.log('📤 Embedded endpoint:', embeddedEndpoint);
+      
+      const embeddedResp = await fetch(embeddedEndpoint, {
+        method: 'POST',
+        headers: {
+          'X-API-KEY': API_KEY,
+          'Content-Type': 'application/json;charset=utf-8'
+        },
+        body: JSON.stringify({
+          templateId: templateId,
+          redirectUrl: 'http://localhost:5173/approval-tracking'
+        })
+      });
+      
+      const embeddedText = await embeddedResp.text();
+      console.log('📥 Embedded URL response status:', embeddedResp.status);
+      console.log('📥 Embedded URL response:', embeddedText.substring(0, 500));
+      
+      let embeddedJson;
+      try { embeddedJson = JSON.parse(embeddedText); } catch { embeddedJson = { raw: embeddedText }; }
+      
+      if (embeddedResp.ok && embeddedJson?.sendUrl) {
+        console.log('✅ Embedded request URL created successfully!');
+        console.log('🔗 Send URL:', embeddedJson.sendUrl);
+        
+        // Note: The embedded URL is for the sender (you) to configure fields
+        // BoldSign will automatically send email to signers when you click "Send" in the UI
+        // The email will have subject: "Signature Request: [CompanyName] has requested you to sign [DocumentTitle]"
+        // And will include a "Review and Sign" button
+        
+        return res.json({ 
+          success: true, 
+          url: embeddedJson.sendUrl,
+          templateId: templateId,
+          response: embeddedJson,
+          mode: 'api-template-embedded',
+          message: 'Template created successfully. Configure fields and click Send in BoldSign to email signers.'
+        });
       } else {
-        // Fallback to templates/:id/file if present
-        const tpl = await db.collection('templates').findOne({ id: documentId });
-        if (tpl && tpl.fileData) {
-          resolvedDownloadUrl = `${baseAppUrl}/api/templates/${documentId}/file`;
-        }
+        console.warn('⚠️ Embedded URL creation failed. Status:', embeddedResp.status);
+        console.warn('Response:', embeddedJson);
       }
-    } catch (e) {
-      console.warn('⚠️ Could not resolve download URL for documentId:', documentId, e?.message);
+    } else {
+      console.warn('⚠️ Template creation failed. Status:', templateResp.status);
+      console.warn('Response:', templateJson);
     }
 
-    // As a last resort, keep previous fallback (combined resolver)
-    if (!resolvedDownloadUrl) {
-      resolvedDownloadUrl = `${baseAppUrl}/api/boldsign/download-document/${documentId}`;
-    }
-
-    // For free plan: provide BoldSign upload page + resolved download URL
+    // API failed - fall back to manual upload flow
+    console.warn('⚠️ BoldSign API integration failed, using manual mode');
+    
+    const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+    const downloadUrl = `${baseAppUrl}/api/boldsign/download-document/${documentId}`;
     const APP_BASE = (process.env.BOLDSIGN_APP_URL || 'https://app.boldsign.com').replace(/\/$/, '');
-    const uploadUrl = `${APP_BASE}/document/new`;
     
     return res.json({ 
       success: true, 
-      url: uploadUrl,
-      downloadUrl: resolvedDownloadUrl,
-      clientEmail,
-      clientName,
-      instructions: 'Free plan: Download the document and upload it manually to BoldSign',
-      freePlanMode: true
+      url: `${APP_BASE}/document/new`,
+      downloadUrl,
+      signers: signers,
+      freePlanMode: true,
+      debug: {
+        templateStatus: templateResp?.status || 'unknown',
+        templateResponse: templateJson || 'unknown'
+      }
     });
   } catch (error) {
     console.error('❌ BoldSign redirect error:', error);
@@ -559,6 +705,107 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
       message: 'Failed to create BoldSign redirect', 
       error: error.message 
     });
+  }
+});
+
+// BoldSign webhook to capture signing lifecycle and fetch final signed PDF
+app.post('/api/boldsign/webhook', async (req, res) => {
+  try {
+    const API_KEY = process.env.BOLDSIGN_API_KEY;
+    const BASE_URL = process.env.BOLDSIGN_BASE_URL || 'https://api.boldsign.com';
+    const payload = req.body || {};
+    console.log('📥 BoldSign webhook received:', JSON.stringify(payload).substring(0, 1000));
+
+    const eventType = payload.EventType || payload.eventType || payload.event || '';
+    const boldsignDocumentId = payload.DocumentId || payload.documentId || payload.Document?.DocumentId || payload.document?.documentId;
+
+    if (!boldsignDocumentId) {
+      console.warn('⚠️ Webhook missing BoldSign documentId');
+      return res.json({ success: true });
+    }
+
+    // Map event type to lowercase
+    const type = String(eventType).toLowerCase();
+
+    // When completed, download the final signed PDF and store it
+    if (type.includes('completed') || type === 'documentcompleted') {
+      if (!API_KEY) {
+        console.warn('⚠️ Cannot download signed PDF: Missing BOLDSIGN_API_KEY');
+        return res.json({ success: true });
+      }
+
+      try {
+        const fetch = require('node-fetch');
+        const dlResp = await fetch(`${BASE_URL}/v1/document/download?documentId=${encodeURIComponent(boldsignDocumentId)}`, {
+          method: 'GET',
+          headers: { 'X-API-KEY': API_KEY }
+        });
+        if (!dlResp.ok) {
+          const t = await dlResp.text();
+          console.warn('⚠️ Failed to download signed PDF:', dlResp.status, t.substring(0, 500));
+        } else {
+          const signedBuffer = Buffer.from(await dlResp.arrayBuffer());
+
+          // Find related workflow
+          const workflow = await db.collection('approval_workflows').findOne({ 'boldsign.documentId': boldsignDocumentId });
+
+          const documentId = `signed_${boldsignDocumentId}_${Date.now()}`;
+          const fileName = `Signed_${workflow?.documentType || 'Agreement'}_${(workflow?.clientName || 'Client').replace(/\s+/g, '_')}.pdf`;
+          await db.collection('documents').insertOne({
+            id: documentId,
+            fileName,
+            fileData: signedBuffer,
+            fileSize: signedBuffer.length,
+            status: 'signed',
+            createdAt: new Date().toISOString(),
+            source: 'boldsign',
+            boldsignDocumentId
+          });
+
+          if (workflow) {
+            await db.collection('approval_workflows').updateOne(
+              { id: workflow.id },
+              { $set: {
+                  'boldsign.status': 'completed',
+                  'boldsign.completedAt': new Date().toISOString(),
+                  'boldsign.signedDbDocumentId': documentId
+                } }
+            );
+          }
+          console.log('✅ Stored signed PDF from BoldSign:', documentId, '| bytes:', signedBuffer.length);
+        }
+      } catch (err) {
+        console.error('❌ Error handling BoldSign completion webhook:', err?.message || err);
+      }
+    }
+
+    // Always acknowledge
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ BoldSign webhook error:', err?.message || err);
+    res.json({ success: true });
+  }
+});
+
+// Stream the final signed PDF for a workflow (if available)
+app.get('/api/boldsign/final/:workflowId', async (req, res) => {
+  try {
+    const workflowId = req.params.workflowId;
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    const docId = workflow?.boldsign?.signedDbDocumentId;
+    if (!docId) {
+      return res.status(404).json({ success: false, message: 'Signed document not available yet' });
+    }
+    const document = await db.collection('documents').findOne({ id: docId });
+    if (!document) {
+      return res.status(404).json({ success: false, message: 'Signed document not found' });
+    }
+    const buf = document.fileData?.buffer ? Buffer.from(document.fileData.buffer) : Buffer.from(document.fileData);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${document.fileName || 'signed.pdf'}"`, 'Content-Length': buf.length });
+    return res.send(buf);
+  } catch (e) {
+    console.error('❌ Error streaming signed PDF:', e?.message || e);
+    return res.status(500).json({ success: false, message: 'Failed to stream signed PDF' });
   }
 });
 
@@ -915,12 +1162,7 @@ app.put('/api/quotes/:id', async (req, res) => {
     
     await db.collection('quotes').updateOne(
       { id: id },
-      { 
-        $set: { 
-          status: status,
-          updated_at: new Date()
-        }
-      }
+      { $set: { status: status, updated_at: new Date() } }
     );
     
     res.json({ success: true, message: 'Quote status updated successfully' });
@@ -1734,7 +1976,7 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       conversion.stderr.on('data', (data) => { stderr += data.toString(); });
       
       const conversionPromise = new Promise((resolve, reject) => {
-        conversion.on('close', (code) => {
+        conversion.on('close', async (code) => {
           console.log('📄 LibreOffice exit code:', code);
           console.log('📄 LibreOffice stdout:', stdout);
           console.log('📄 LibreOffice stderr:', stderr);
@@ -1753,9 +1995,40 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
             return;
           }
           
-          const pdfBuffer = fs.readFileSync(expectedPdfPath);
+          let pdfBuffer = fs.readFileSync(expectedPdfPath);
           console.log('✅ PDF generated successfully with LibreOffice');
           console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
+          
+          // Add BoldSign text tags to the PDF for auto-field detection
+          try {
+            const { PDFDocument, rgb } = require('pdf-lib');
+            const pdfDoc = await PDFDocument.load(pdfBuffer);
+            const pages = pdfDoc.getPages();
+            // Prefer page 3 (index 2) if present, otherwise use last page
+            const pageIdx = pages.length >= 3 ? 2 : pages.length - 1;
+            const targetPage = pages[pageIdx];
+            
+            console.log('🏷️ Adding BoldSign text tags for auto-placement...');
+            
+            // Add invisible text tags next to By/Name/Title/Date labels
+            // Coordinates tuned for typical A4/Letter layout with two columns
+            // Left column (CEO - s1)
+            targetPage.drawText('{{s1:signature}}', { x: 150, y: 520, size: 1, color: rgb(1, 1, 1) }); // By:
+            targetPage.drawText('{{s1:text}}',      { x: 150, y: 480, size: 1, color: rgb(1, 1, 1) }); // Name:
+            targetPage.drawText('{{s1:text}}',      { x: 150, y: 440, size: 1, color: rgb(1, 1, 1) }); // Title:
+            targetPage.drawText('{{s1:date}}',      { x: 150, y: 400, size: 1, color: rgb(1, 1, 1) }); // Date:
+
+            // Right column (Client - s2)
+            targetPage.drawText('{{s2:signature}}', { x: 466.1, y: 520, size: 1, color: rgb(1, 1, 1) }); // By:
+            targetPage.drawText('{{s2:text}}',      { x: 466.1, y: 480, size: 1, color: rgb(1, 1, 1) }); // Name:
+            targetPage.drawText('{{s2:text}}',      { x: 466.1, y: 440, size: 1, color: rgb(1, 1, 1) }); // Title:
+            targetPage.drawText('{{s2:date}}',      { x: 466.1, y: 408.5, size: 1, color: rgb(1, 1, 1) }); // Date:
+            
+            pdfBuffer = Buffer.from(await pdfDoc.save());
+            console.log('✅ BoldSign text tags added to LibreOffice PDF');
+          } catch (tagErr) {
+            console.warn('⚠️ Could not add text tags to PDF (will use explicit fields):', tagErr.message);
+          }
           
           // Cleanup
           try { fs.unlinkSync(inputPath); } catch {}
@@ -1877,6 +2150,24 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
         pdf.setFontSize(10);
         pdf.text(`Page ${i} of ${totalPages}`, 180, 290);
       }
+      
+      // Add invisible text tags for BoldSign auto-placement
+      // CEO (s1) and Client (s2) signature and date fields
+      console.log('🏷️ Adding BoldSign text tags for auto-placement...');
+      
+      // Add text tags at the end of the document (invisible)
+      pdf.setFontSize(1); // Very small font
+      pdf.setTextColor(255, 255, 255); // White text (invisible on white background)
+      
+      // CEO signature and date fields (s1)
+      pdf.text('{{s1:signature}}', 10, 10); // CEO signature
+      pdf.text('{{s1:date}}', 10, 15); // CEO date
+      
+      // Client signature and date fields (s2)  
+      pdf.text('{{s2:signature}}', 10, 20); // Client signature
+      pdf.text('{{s2:date}}', 10, 25); // Client date
+      
+      console.log('✅ BoldSign text tags added for CEO (s1) and Client (s2)');
       
       const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
       
@@ -3251,8 +3542,497 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
       if (parseInt(stepNumber) < workflow.totalSteps) {
         newCurrentStep = parseInt(stepNumber) + 1;
         newStatus = 'in_progress';
+
+        // NEW: Trigger eSign right after client (step 3) approval when steps 1-3 are approved
+        try {
+          const steps1To3Approved = updatedSteps
+            .filter(s => s.step <= 3)
+            .every(s => s.status === 'approved');
+          const alreadySent = !!(workflow.boldsign && workflow.boldsign.status === 'sent');
+
+          if (steps1To3Approved && !alreadySent) {
+            console.log('🎯 Client (step 3) approved and steps 1-3 complete → auto-trigger eSign now');
+
+            setImmediate(async () => {
+              try {
+                const clientStepNow = updatedSteps.find(s => s.step === 3);
+                const ceoStepNow = updatedSteps.find(s => s.step === 2);
+                if (!clientStepNow?.email) {
+                  console.warn('⚠️ Cannot auto-trigger eSign (step 3): Client email not found');
+                  return;
+                }
+
+                const signerSummary = ceoStepNow?.email
+                  ? [
+                      { name: 'CEO', email: ceoStepNow.email },
+                      { name: workflow.clientName || 'Client', email: clientStepNow.email }
+                    ]
+                  : [
+                      { name: workflow.clientName || 'Client', email: clientStepNow.email }
+                    ];
+                console.log('📧 Auto-sending eSign request (step 3):', signerSummary.map(s => `${s.name}:${s.email}`).join(', '));
+                console.log('🧾 eSign payload summary:', {
+                  title: `${workflow.documentType || 'Agreement'} - ${workflow.clientName || 'Client'}`,
+                  signers: signerSummary,
+                  workflowId: workflow.id,
+                  documentId: workflow.documentId
+                });
+
+                const FormData = require('form-data');
+                const fetch = require('node-fetch');
+
+                const document = await db.collection('documents').findOne({ id: workflow.documentId }) ||
+                                await db.collection('templates').findOne({ id: workflow.documentId });
+                if (!document || !document.fileData) {
+                  console.warn('⚠️ Cannot auto-trigger eSign (step 3): Document not found');
+                  return;
+                }
+
+                let fileBuffer;
+                if (document.fileData.buffer) {
+                  fileBuffer = Buffer.from(document.fileData.buffer);
+                } else if (document.fileData.data) {
+                  fileBuffer = Buffer.from(document.fileData.data);
+                } else {
+                  console.warn('⚠️ Cannot auto-trigger eSign (step 3): Invalid document data');
+                  return;
+                }
+
+                const API_KEY = process.env.BOLDSIGN_API_KEY;
+                const BASE_URL = process.env.BOLDSIGN_BASE_URL || 'https://api.boldsign.com';
+                if (!API_KEY) {
+                  console.warn('⚠️ Cannot auto-trigger eSign (step 3): No API key configured');
+                  return;
+                }
+
+                const form = new FormData();
+                form.append('Title', `${workflow.documentType || 'Agreement'} - ${workflow.clientName || 'Client'}`);
+                form.append('Message', 'Please review and sign this document.');
+                form.append('EnableSigningOrder', 'true');
+                form.append('SendNow', 'true');
+                form.append('DisableEmails', 'false');
+                
+                if (ceoStepNow?.email) {
+                  // Two signers: CEO (signer 1) and Client (signer 2)
+                  form.append('Signers[0].Name', 'CEO');
+                  form.append('Signers[0].EmailAddress', ceoStepNow.email);
+                  form.append('Signers[0].SignerType', 'Signer');
+                  form.append('Signers[0].SignerOrder', 1);
+                  // CEO signature field (By: line, left column)
+                  form.append('Signers[0].FormFields[0].FieldType', 'Signature');
+                  form.append('Signers[0].FormFields[0].PageNumber', 1);
+                  form.append('Signers[0].FormFields[0].Bounds.X', 150);
+                  form.append('Signers[0].FormFields[0].Bounds.Y', 282);
+                  form.append('Signers[0].FormFields[0].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[0].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[0].IsRequired', 'true');
+                  // CEO date field (Date:, left column)
+                  form.append('Signers[0].FormFields[1].FieldType', 'DateSigned');
+                  form.append('Signers[0].FormFields[1].PageNumber', 1);
+                  form.append('Signers[0].FormFields[1].Bounds.X', 150);
+                  form.append('Signers[0].FormFields[1].Bounds.Y', 408.5);
+                  form.append('Signers[0].FormFields[1].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[1].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[1].IsRequired', 'true');
+                  form.append('Signers[0].FormFields[1].DateFormat', 'MM/dd/yyyy');
+                  // CEO name text field (Name:, left column)
+                  form.append('Signers[0].FormFields[2].FieldType', 'Text');
+                  form.append('Signers[0].FormFields[2].PageNumber', 1);
+                  form.append('Signers[0].FormFields[2].Bounds.X', 150);
+                  form.append('Signers[0].FormFields[2].Bounds.Y', 325);
+                  form.append('Signers[0].FormFields[2].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[2].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[2].IsRequired', 'true');
+                  // CEO title text field (Title:, left column)
+                  form.append('Signers[0].FormFields[3].FieldType', 'Text');
+                  form.append('Signers[0].FormFields[3].PageNumber', 1);
+                  form.append('Signers[0].FormFields[3].Bounds.X', 150);
+                  form.append('Signers[0].FormFields[3].Bounds.Y', 368);
+                  form.append('Signers[0].FormFields[3].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[3].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[3].IsRequired', 'true');
+
+                  form.append('Signers[1].Name', workflow.clientName || clientStepNow.email);
+                  form.append('Signers[1].EmailAddress', clientStepNow.email);
+                  form.append('Signers[1].SignerType', 'Signer');
+                  form.append('Signers[1].SignerOrder', 2);
+                  // Client signature field (By:, right column)
+                  form.append('Signers[1].FormFields[0].FieldType', 'Signature');
+                  form.append('Signers[1].FormFields[0].PageNumber', 1);
+                  form.append('Signers[1].FormFields[0].Bounds.X', 466.1);
+                  form.append('Signers[1].FormFields[0].Bounds.Y', 282);
+                  form.append('Signers[1].FormFields[0].Bounds.Width', 245);
+                  form.append('Signers[1].FormFields[0].Bounds.Height', 28);
+                  form.append('Signers[1].FormFields[0].IsRequired', 'true');
+                  // Client name text field (Name:, right column)
+                  form.append('Signers[1].FormFields[1].FieldType', 'Text');
+                  form.append('Signers[1].FormFields[1].PageNumber', 1);
+                  form.append('Signers[1].FormFields[1].Bounds.X', 466.1);
+                  form.append('Signers[1].FormFields[1].Bounds.Y', 325);
+                  form.append('Signers[1].FormFields[1].Bounds.Width', 245);
+                  form.append('Signers[1].FormFields[1].Bounds.Height', 28);
+                  form.append('Signers[1].FormFields[1].IsRequired', 'true');
+                  // Client title text field (Title:, right column)
+                  form.append('Signers[1].FormFields[2].FieldType', 'Text');
+                  form.append('Signers[1].FormFields[2].PageNumber', 1);
+                  form.append('Signers[1].FormFields[2].Bounds.X', 466.1);
+                  form.append('Signers[1].FormFields[2].Bounds.Y', 368);
+                  form.append('Signers[1].FormFields[2].Bounds.Width', 245);
+                  form.append('Signers[1].FormFields[2].Bounds.Height', 28);
+                  form.append('Signers[1].FormFields[2].IsRequired', 'true');
+                  // Client date field (Date:, right column)
+                  form.append('Signers[1].FormFields[3].FieldType', 'DateSigned');
+                  form.append('Signers[1].FormFields[3].PageNumber', 1);
+                  form.append('Signers[1].FormFields[3].Bounds.X', 466.1);
+                  form.append('Signers[1].FormFields[3].Bounds.Y', 408.5);
+                  form.append('Signers[1].FormFields[3].Bounds.Width', 245);
+                  form.append('Signers[1].FormFields[3].Bounds.Height', 28);
+                  form.append('Signers[1].FormFields[3].IsRequired', 'true');
+                  form.append('Signers[1].FormFields[3].DateFormat', 'MM/dd/yyyy');
+                } else {
+                  // Fallback: single signer (client) - right column
+                  form.append('Signers[0].Name', workflow.clientName || clientStepNow.email);
+                  form.append('Signers[0].EmailAddress', clientStepNow.email);
+                  form.append('Signers[0].SignerType', 'Signer');
+                  form.append('Signers[0].SignerOrder', 1);
+                  // Client signature field
+                  form.append('Signers[0].FormFields[0].FieldType', 'Signature');
+                  form.append('Signers[0].FormFields[0].PageNumber', 1);
+                  form.append('Signers[0].FormFields[0].Bounds.X', 466.1);
+                  form.append('Signers[0].FormFields[0].Bounds.Y', 282);
+                  form.append('Signers[0].FormFields[0].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[0].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[0].IsRequired', 'true');
+                  // Client name field
+                  form.append('Signers[0].FormFields[1].FieldType', 'Text');
+                  form.append('Signers[0].FormFields[1].PageNumber', 1);
+                  form.append('Signers[0].FormFields[1].Bounds.X', 466.1);
+                  form.append('Signers[0].FormFields[1].Bounds.Y', 325);
+                  form.append('Signers[0].FormFields[1].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[1].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[1].IsRequired', 'true');
+                  // Client title field
+                  form.append('Signers[0].FormFields[2].FieldType', 'Text');
+                  form.append('Signers[0].FormFields[2].PageNumber', 1);
+                  form.append('Signers[0].FormFields[2].Bounds.X', 466.1);
+                  form.append('Signers[0].FormFields[2].Bounds.Y', 368);
+                  form.append('Signers[0].FormFields[2].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[2].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[2].IsRequired', 'true');
+                  // Client date field
+                  form.append('Signers[0].FormFields[3].FieldType', 'DateSigned');
+                  form.append('Signers[0].FormFields[3].PageNumber', 1);
+                  form.append('Signers[0].FormFields[3].Bounds.X', 466.1);
+                  form.append('Signers[0].FormFields[3].Bounds.Y', 408.5);
+                  form.append('Signers[0].FormFields[3].Bounds.Width', 245);
+                  form.append('Signers[0].FormFields[3].Bounds.Height', 28);
+                  form.append('Signers[0].FormFields[3].IsRequired', 'true');
+                  form.append('Signers[0].FormFields[3].DateFormat', 'MM/dd/yyyy');
+                }
+                form.append('Files', fileBuffer, { filename: document.fileName || `${workflow.documentId}.pdf`, contentType: 'application/pdf' });
+
+                console.log('📤 Sending document to BoldSign with auto-send (step 3)...');
+                const response = await fetch(`${BASE_URL}/v1/document/send`, {
+                  method: 'POST',
+                  headers: { 'X-API-KEY': API_KEY, ...form.getHeaders() },
+                  body: form
+                });
+                const responseText = await response.text();
+                console.log('📥 BoldSign auto-send response status (step 3):', response.status);
+                if (response.ok) {
+                  const result = JSON.parse(responseText);
+                  console.log('✅ eSign email automatically sent to client (step 3)!');
+                  console.log('📧 BoldSign Document ID:', result.documentId);
+                  try {
+                    await db.collection('approval_workflows').updateOne(
+                      { id: workflow.id },
+                      { $set: {
+                          'boldsign.documentId': result.documentId,
+                          'boldsign.sentAt': new Date().toISOString(),
+                          'boldsign.signerEmail': clientStepNow.email,
+                          'boldsign.title': `${workflow.documentType || 'Agreement'} - ${workflow.clientName || 'Client'}`,
+                          'boldsign.status': 'sent'
+                        } }
+                    );
+                    console.log('💾 Saved BoldSign metadata on workflow (step 3):', workflow.id);
+                    // Auto-complete Step 4 (bookkeeping) so UI shows final step done
+                    await db.collection('approval_workflows').updateOne(
+                      { id: workflow.id, 'workflowSteps.step': 4 },
+                      { $set: {
+                          'workflowSteps.$.status': 'approved',
+                          'workflowSteps.$.timestamp': new Date().toISOString(),
+                          currentStep: 4,
+                          status: 'approved'
+                        } }
+                    );
+                    console.log('✅ Auto-completed Step 4 after eSign send for:', workflow.id);
+                  } catch (persistErr) {
+                    console.warn('⚠️ Failed to persist BoldSign metadata (step 3):', persistErr?.message || persistErr);
+                  }
+                } else {
+                  console.warn('⚠️ BoldSign auto-send failed (step 3):', responseText.substring(0, 500));
+                  try {
+                    await db.collection('approval_workflows').updateOne(
+                      { id: workflow.id },
+                      { $set: {
+                          'boldsign.lastError': responseText.substring(0, 1000),
+                          'boldsign.failedAt': new Date().toISOString(),
+                          'boldsign.status': 'failed'
+                        } }
+                    );
+                  } catch (persistErr) {
+                    console.warn('⚠️ Failed to store BoldSign error details (step 3):', persistErr?.message || persistErr);
+                  }
+                }
+              } catch (err) {
+                console.error('❌ Error auto-triggering eSign (step 3):', err?.message || err);
+              }
+            });
+          }
+        } catch (e) {
+          console.warn('⚠️ Step-3 trigger evaluation failed:', e?.message || e);
+        }
       } else {
         newStatus = 'approved';
+        
+        // 🎯 AUTO-TRIGGER ESIGN: When the final step (Role 4) approves, automatically send to BoldSign
+        const alreadySentFinal = !!(workflow.boldsign && workflow.boldsign.status === 'sent');
+        if (parseInt(stepNumber) === workflow.totalSteps && !alreadySentFinal) {
+          console.log('🎯 Client approved! Auto-triggering eSign process...');
+          
+          // Trigger eSign in background (don't block the response)
+          setImmediate(async () => {
+            try {
+              const clientStep = workflow.workflowSteps.find(s => s.step === workflow.totalSteps);
+              
+              if (!clientStep?.email) {
+                console.warn('⚠️ Cannot auto-trigger eSign: Client email not found');
+                return;
+              }
+              
+              console.log('📧 Auto-sending eSign request to client:', clientStep.email);
+              console.log('🧾 eSign payload summary:', {
+                title: `${workflow.documentType || 'Agreement'} - ${workflow.clientName || 'Client'}`,
+                signerEmail: clientStep.email,
+                workflowId: workflow.id,
+                documentId: workflow.documentId
+              });
+              
+              // Call the BoldSign API integration
+              const FormData = require('form-data');
+              const fetch = require('node-fetch');
+              
+              // Get document
+              const document = await db.collection('documents').findOne({ id: workflow.documentId }) ||
+                              await db.collection('templates').findOne({ id: workflow.documentId });
+              
+              if (!document || !document.fileData) {
+                console.warn('⚠️ Cannot auto-trigger eSign: Document not found');
+                return;
+              }
+              
+              // Prepare file buffer
+              let fileBuffer;
+              if (document.fileData.buffer) {
+                fileBuffer = Buffer.from(document.fileData.buffer);
+              } else if (document.fileData.data) {
+                fileBuffer = Buffer.from(document.fileData.data);
+              } else {
+                console.warn('⚠️ Cannot auto-trigger eSign: Invalid document data');
+                return;
+              }
+              
+              const API_KEY = process.env.BOLDSIGN_API_KEY;
+              const BASE_URL = process.env.BOLDSIGN_BASE_URL || 'https://api.boldsign.com';
+              
+              if (!API_KEY) {
+                console.warn('⚠️ Cannot auto-trigger eSign: No API key configured');
+                return;
+              }
+              
+              // Create FormData for BoldSign
+              const form = new FormData();
+              form.append('Title', `${workflow.documentType || 'Agreement'} - ${workflow.clientName || 'Client'}`);
+              form.append('Message', 'Please review and sign this document.');
+              form.append('SendNow', 'true');
+              form.append('DisableEmails', 'false');
+              form.append('EnableSigningOrder', 'true');  // Enable sequential signing (CEO first, then Client)
+              form.append('HideDocumentId', 'false');
+              // Webhook to receive BoldSign events and fetch final signed PDF
+              try {
+                const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+                form.append('CallBackUrl', `${baseAppUrl}/api/boldsign/webhook`);
+              } catch {}
+              
+              // Determine CEO and Client from workflow for sequential signing (CEO -> Client)
+              const ceoStep = (workflow.workflowSteps || []).find(s => (s.role === 'Role 2') || /ceo/i.test(s?.name || ''));
+              const clientEmail = clientStep.email;
+              const ceoEmail = ceoStep?.email;
+              
+              // Helper to append complete signature fields for a signer with precise alignment
+              const appendSignerWithFields = (idx, name, email, order, isLeftColumn) => {
+                form.append(`Signers[${idx}].Name`, name || email);
+                form.append(`Signers[${idx}].EmailAddress`, email);
+                form.append(`Signers[${idx}].SignerType`, 'Signer');
+                form.append(`Signers[${idx}].SignerOrder`, order);
+                
+                // Column positioning - fields sit ON the underlines next to labels
+                // Measured from the screenshot for perfect alignment
+                // Right column matches UI value X≈466.1; left column tuned to align with CloudFuze section
+                const baseX = isLeftColumn ? 150 : 466.1;
+                
+                // Field Y positions - positioned to sit directly ON the underlines
+                // These values are calibrated to match the screenshot exactly
+                const byY = 282;        // ON "By :" underline
+                const nameY = 325;      // ON "Name:" underline
+                const titleY = 368;     // ON "Title :" underline
+                const dateY = 408.5;    // ON "Date :" underline
+                
+                // Field dimensions - matching the screenshot
+                const fieldWidth = 245;
+                const fieldHeight = 28;  // Height to sit nicely on underline
+                
+                let fieldIdx = 0;
+                const columnPrefix = isLeftColumn ? 'CEO' : 'Client';
+                
+                // 1. By: Signature field (sits on the "By :" underline)
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Id`, `${columnPrefix}_Signature_${idx}`);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FieldType`, 'Signature');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].PageNumber`, 1);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.X`, baseX);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Y`, byY);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Width`, fieldWidth);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Height`, fieldHeight);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].IsRequired`, 'true');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Tooltip`, 'Sign Here');
+                // Font configuration
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Font`, 'Helvetica');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FontSize`, 13);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].LineHeight`, 15);
+                fieldIdx++;
+                
+                // 2. Name: Text field (sits on the "Name:" underline)
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Id`, `${columnPrefix}_Name_${idx}`);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FieldType`, 'Text');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].PageNumber`, 1);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.X`, baseX);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Y`, nameY);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Width`, fieldWidth);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Height`, fieldHeight);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].IsRequired`, 'true');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].PlaceholderText`, 'Name');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Font`, 'Helvetica');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FontSize`, 13);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].LineHeight`, 15);
+                fieldIdx++;
+                
+                // 3. Title: Text field (sits on the "Title :" underline)
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Id`, `${columnPrefix}_Title_${idx}`);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FieldType`, 'Text');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].PageNumber`, 1);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.X`, baseX);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Y`, titleY);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Width`, fieldWidth);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Height`, fieldHeight);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].IsRequired`, 'true');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].PlaceholderText`, 'Title');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Font`, 'Helvetica');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FontSize`, 13);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].LineHeight`, 15);
+                fieldIdx++;
+                
+                // 4. Date: Date field (sits on the "Date :" underline)
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Id`, `${columnPrefix}_Date_${idx}`);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FieldType`, 'DateSigned');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].PageNumber`, 1);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.X`, baseX);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Y`, dateY);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Width`, fieldWidth);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Bounds.Height`, fieldHeight);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].IsRequired`, 'true');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].DateFormat`, 'MM/dd/yyyy');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].Font`, 'Helvetica');
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].FontSize`, 13);
+                form.append(`Signers[${idx}].FormFields[${fieldIdx}].LineHeight`, 15);
+              };
+              
+              let signerIdx = 0;
+              // CEO signs first (left column - CloudFuze, Inc.)
+              if (ceoEmail) {
+                appendSignerWithFields(signerIdx++, 'CEO', ceoEmail, 1, true);
+              }
+              // Client signs second (right column - Contact Company Inc.)
+              appendSignerWithFields(signerIdx++, workflow.clientName, clientEmail, ceoEmail ? 2 : 1, false);
+              
+              // Attach PDF
+              form.append('Files', fileBuffer, {
+                filename: document.fileName || `${workflow.documentId}.pdf`,
+                contentType: 'application/pdf'
+              });
+              
+              console.log('📤 Sending document to BoldSign with auto-send...');
+              console.log('📋 Field Configuration:');
+              console.log(`   - CEO (order 1): Signature, Name (TextBox), Title (TextBox), Date (DateSigned)`);
+              console.log(`   - Client (order ${ceoEmail ? 2 : 1}): Signature, Name (TextBox), Title (TextBox), Date (DateSigned)`);
+              console.log('📍 Field Positioning (aligned to match screenshot):');
+              console.log(`   - CEO column: X=135, Y=[280,325,368,408], Size=245x28`);
+              console.log(`   - Client column: X=490, Y=[280,325,368,408], Size=245x28`);
+              
+              const response = await fetch(`${BASE_URL}/v1/document/send`, {
+                method: 'POST',
+                headers: {
+                  'X-API-KEY': API_KEY,
+                  ...form.getHeaders()
+                },
+                body: form
+              });
+              
+              const responseText = await response.text();
+              console.log('📥 BoldSign auto-send response status:', response.status);
+              console.log('📥 BoldSign response (first 1000 chars):', responseText.substring(0, 1000));
+              
+              if (response.ok) {
+                const result = JSON.parse(responseText);
+                console.log('✅ eSign email automatically sent to client!');
+                console.log('📧 BoldSign Document ID:', result.documentId);
+                // Persist BoldSign metadata on the workflow for audit/debug
+                try {
+                  await db.collection('approval_workflows').updateOne(
+                    { id: workflow.id },
+                    { $set: {
+                        'boldsign.documentId': result.documentId,
+                        'boldsign.sentAt': new Date().toISOString(),
+                        'boldsign.signerEmail': clientStep.email,
+                        'boldsign.title': `${workflow.documentType || 'Agreement'} - ${workflow.clientName || 'Client'}`,
+                        'boldsign.status': 'sent'
+                      } }
+                  );
+                  console.log('💾 Saved BoldSign metadata on workflow:', workflow.id);
+                } catch (persistErr) {
+                  console.warn('⚠️ Failed to persist BoldSign metadata:', persistErr?.message || persistErr);
+                }
+              } else {
+                console.warn('⚠️ BoldSign auto-send failed:', responseText.substring(0, 500));
+                // Persist last error for visibility in UI/ops
+                try {
+                  await db.collection('approval_workflows').updateOne(
+                    { id: workflow.id },
+                    { $set: {
+                        'boldsign.lastError': responseText.substring(0, 1000),
+                        'boldsign.failedAt': new Date().toISOString(),
+                        'boldsign.status': 'failed'
+                      } }
+                  );
+                } catch (persistErr) {
+                  console.warn('⚠️ Failed to store BoldSign error details:', persistErr?.message || persistErr);
+                }
+              }
+              
+            } catch (error) {
+              console.error('❌ Error auto-triggering eSign:', error.message);
+            }
+          });
+        }
       }
     } else if (stepUpdates.status === 'denied') {
       newStatus = 'denied';
