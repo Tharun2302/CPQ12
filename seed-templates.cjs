@@ -116,6 +116,48 @@ async function seedDefaultTemplates(db) {
       combination: 'dropbox-to-sharedrive',
       planType: 'advanced',
       keywords: ['advanced', 'dropbox', 'sharedrive', 'content', 'google', 'enterprise']
+    },
+    // DROPBOX TO SHAREPOINT templates (Standard & Advanced only)
+    {
+      name: 'DROPBOX TO SHAREPOINT Standard',
+      description: 'Standard template for Dropbox to SharePoint migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-sharepoint-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-sharepoint',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'sharepoint', 'content', 'microsoft']
+    },
+    {
+      name: 'DROPBOX TO SHAREPOINT Advanced',
+      description: 'Advanced template for Dropbox to SharePoint migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-sharepoint-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-sharepoint',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'sharepoint', 'content', 'microsoft', 'enterprise']
+    },
+    // DROPBOX TO ONEDRIVE templates (Standard & Advanced only)
+    {
+      name: 'DROPBOX TO ONEDRIVE Standard',
+      description: 'Standard template for Dropbox to OneDrive migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'onedrive', 'content', 'microsoft']
+    },
+    {
+      name: 'DROPBOX TO ONEDRIVE Advanced',
+      description: 'Advanced template for Dropbox to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'onedrive', 'content', 'microsoft', 'enterprise']
     }
   ];
 
@@ -229,7 +271,11 @@ async function seedDefaultTemplates(db) {
   }
 
   console.log(`🎉 Template seeding completed! Uploaded ${uploadedCount} templates`);
-  console.log(`📊 Total templates: 4 Messaging + 6 Content (Basic, Standard, Advanced)`);
+  console.log(`📊 Total templates: 4 Messaging + 10 Content (14 templates total)`);
+  console.log(`   - Messaging: SLACK TO TEAMS, SLACK TO GOOGLE CHAT (Basic, Advanced)`);
+  console.log(`   - Content: DROPBOX TO MYDRIVE, DROPBOX TO SHAREDRIVE (Basic, Standard, Advanced)`);
+  console.log(`   - Content: DROPBOX TO SHAREPOINT (Standard, Advanced only)`);
+  console.log(`   - Content: DROPBOX TO ONEDRIVE (Standard, Advanced only)`);
   return uploadedCount > 0;
 }
 
