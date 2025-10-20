@@ -53,11 +53,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
         const role3Step = w.workflowSteps?.find(step => step.role === 'Client');
         return role3Step?.status === 'approved';
       });
-    } else if (roleFilter === 'role4_approved') {
-      filtered = filtered.filter(w => {
-        const role4Step = w.workflowSteps?.find(step => step.role === 'E-signed');
-        return role4Step?.status === 'approved';
-      });
     }
 
     return filtered;
@@ -255,7 +250,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                    <option value="role1_approved">Technical Team Approved</option>
                    <option value="role2_approved">Legal Team Approved</option>
                    <option value="role3_approved">Client Approved</option>
-                   <option value="role4_approved">E-signed Approved</option>
                  </select>
                </div>
                
@@ -667,7 +661,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  <div className="flex items-center gap-3">
                    <div className="text-right">
                      <p className="text-lg font-bold text-gray-900">${(workflow.amount || 0).toLocaleString()}</p>
-                     <p className="text-sm text-gray-500">Step {workflow.currentStep || 1} of {workflow.totalSteps || 3}</p>
+                     <p className="text-sm text-gray-500">Step {workflow.currentStep || 1} of 3</p>
                    </div>
                    <button
                      onClick={() => handleDeleteWorkflow(workflow.id, workflow.documentId || 'Unknown Document')}
@@ -682,12 +676,12 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                <div className="mb-4">
                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                    <span>Progress</span>
-                   <span>{Math.round(((workflow.currentStep || 1) / (workflow.totalSteps || 3)) * 100)}%</span>
+                   <span>{Math.round(((workflow.currentStep || 1) / 3) * 100)}%</span>
                  </div>
                  <div className="w-full bg-gray-200 rounded-full h-2">
                    <div 
                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                     style={{ width: `${((workflow.currentStep || 1) / (workflow.totalSteps || 3)) * 100}%` }}
+                     style={{ width: `${((workflow.currentStep || 1) / 3) * 100}%` }}
                    ></div>
                  </div>
                </div>
@@ -835,19 +829,19 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                    <div className="space-y-3">
                      <div>
                        <label className="text-sm font-medium text-gray-600">Current Step</label>
-                       <p className="text-gray-900">Step {selectedWorkflow.currentStep || 1} of {selectedWorkflow.totalSteps || 3}</p>
+                       <p className="text-gray-900">Step {selectedWorkflow.currentStep || 1} of 3</p>
                      </div>
                      <div>
                        <label className="text-sm font-medium text-gray-600">Progress</label>
                        <div className="mt-2">
                          <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
                            <span>Completion</span>
-                           <span>{Math.round(((selectedWorkflow.currentStep || 1) / (selectedWorkflow.totalSteps || 3)) * 100)}%</span>
+                           <span>{Math.round(((selectedWorkflow.currentStep || 1) / 3) * 100)}%</span>
                          </div>
                          <div className="w-full bg-gray-200 rounded-full h-2">
                            <div 
                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                             style={{ width: `${((selectedWorkflow.currentStep || 1) / (selectedWorkflow.totalSteps || 3)) * 100}%` }}
+                             style={{ width: `${((selectedWorkflow.currentStep || 1) / 3) * 100}%` }}
                            ></div>
                          </div>
                        </div>
@@ -871,7 +865,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  <div className="space-y-4">
                    <h3 className="text-lg font-semibold text-gray-900">Approval Steps</h3>
                    <div className="space-y-2">
-                     {(selectedWorkflow.workflowSteps || []).map((step: any, index: number) => {
+                     {(selectedWorkflow.workflowSteps || []).filter((step: any) => step.role !== 'E-signed').map((step: any, index: number) => {
                        const StepIcon = getStatusIcon(step.status);
                        return (
                          <div key={step.step || index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">

@@ -346,12 +346,55 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <div className="flex-1 p-4">
+            <div className="flex-1 p-4" style={{ height: 'calc(100% - 120px)' }}>
               <iframe
                 src={documentPreviewUrl}
                 className="w-full h-full border-0 rounded-lg"
                 title="Document Preview"
               />
+            </div>
+            {/* Action Buttons - Always visible at bottom */}
+            <div className="flex items-center justify-between gap-3 p-4 border-t border-gray-200 bg-gray-50">
+              <div className="flex gap-3">
+                <button
+                  onClick={handleApprove}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Approve
+                </button>
+                <button
+                  onClick={handleDeny}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  Deny
+                </button>
+                <button
+                  onClick={() => {
+                    const commentInput = document.querySelector('textarea[name="comment"]') as HTMLTextAreaElement;
+                    if (commentInput) {
+                      commentInput.focus();
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Add Comment
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDocumentPreview(false);
+                  if (documentPreviewUrl) {
+                    URL.revokeObjectURL(documentPreviewUrl);
+                    setDocumentPreviewUrl(null);
+                  }
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

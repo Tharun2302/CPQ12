@@ -319,19 +319,19 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-gray-900">${workflow.amount.toLocaleString()}</p>
-                  <p className="text-sm text-gray-500">Step {workflow.currentStep} of {workflow.totalSteps}</p>
+                  <p className="text-sm text-gray-500">Step {workflow.currentStep} of 3</p>
                 </div>
               </div>
               
               <div className="mb-4">
                 <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                   <span>Progress</span>
-                  <span>{Math.round((workflow.currentStep / workflow.totalSteps) * 100)}%</span>
+                  <span>{Math.round((workflow.currentStep / 3) * 100)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(workflow.currentStep / workflow.totalSteps) * 100}%` }}
+                    style={{ width: `${(workflow.currentStep / 3) * 100}%` }}
                   ></div>
                 </div>
               </div>
@@ -497,7 +497,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
+            <div className="p-6 overflow-y-auto max-h-[calc(95vh-200px)]">
               <div className="bg-gray-100 rounded-lg p-4">
                 {isLoadingPreview ? (
                   <div className="text-center py-8">
@@ -509,7 +509,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                     <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                       <iframe
                         src={documentPreview}
-                        className="w-full h-[85vh] border-0"
+                        className="w-full h-[70vh] border-0"
                         title="Document Preview"
                       />
                     </div>
@@ -550,14 +550,38 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
-              <button
-                onClick={closeDocumentModal}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                Close
-              </button>
-            </div>
+            {/* Action Buttons - Always visible at bottom */}
+            <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
+               <div className="flex gap-3">
+                 <button
+                   onClick={() => handleApprove(selectedWorkflow.id)}
+                   className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                 >
+                   <ThumbsUp className="w-4 h-4" />
+                   Approve
+                 </button>
+                 <button
+                   onClick={() => handleDeny(selectedWorkflow.id)}
+                   className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                 >
+                   <ThumbsDown className="w-4 h-4" />
+                   Deny
+                 </button>
+                 <button
+                   onClick={() => handleAddComment(selectedWorkflow.id)}
+                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                 >
+                   <MessageCircle className="w-4 h-4" />
+                   Add Comment
+                 </button>
+               </div>
+               <button
+                 onClick={closeDocumentModal}
+                 className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+               >
+                 Close
+               </button>
+             </div>
           </div>
         </div>
       )}
