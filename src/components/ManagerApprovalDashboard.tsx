@@ -94,11 +94,11 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       // Update workflow step
       await updateWorkflowStep(workflowId, 1, { status: 'approved' });
       
-      // Get workflow data to send CEO email
+      // Get workflow data to send Legal Team email
       const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
-        // Send email to CEO
-        console.log('📧 Sending email to CEO after Technical Team approval...');
+        // Send email to Legal Team
+        console.log('📧 Sending email to Legal Team after Technical Team approval...');
         const response = await fetch('http://localhost:3001/api/send-ceo-email', {
           method: 'POST',
           headers: {
@@ -118,9 +118,9 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
 
         const result = await response.json();
         if (result.success) {
-          alert('✅ Workflow approved successfully!\n📧 CEO has been notified for next approval.');
+          alert('✅ Workflow approved successfully!\n📧 Legal Team has been notified for next approval.');
         } else {
-          alert('✅ Workflow approved but CEO email failed.\nPlease notify CEO manually.');
+          alert('✅ Workflow approved but Legal Team email failed.\nPlease notify Legal Team manually.');
         }
       } else {
         alert('✅ Workflow approved successfully!');
