@@ -147,11 +147,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     // Load persisted contact info if available (user may have edited manually earlier)
     let savedContactInfo = null;
     try {
-      const savedContact = localStorage.getItem('cpq_contact_info');
-      if (savedContact) {
-        savedContactInfo = JSON.parse(savedContact);
+      // First try sessionStorage (preferred for current session)
+      const savedContactSession = sessionStorage.getItem('cpq_configure_contact_info');
+      if (savedContactSession) {
+        savedContactInfo = JSON.parse(savedContactSession);
+        console.log('🔍 ConfigurationForm: Loaded contact info from sessionStorage:', savedContactInfo);
+      } else {
+        // Fallback to localStorage
+        const savedContact = localStorage.getItem('cpq_contact_info');
+        if (savedContact) {
+          savedContactInfo = JSON.parse(savedContact);
+          console.log('🔍 ConfigurationForm: Loaded contact info from localStorage:', savedContactInfo);
+        }
       }
-    } catch {}
+    } catch (error) {
+      console.warn('Could not load contact info from storage:', error);
+    }
 
     // Priority 1: Use manually edited contact info if it exists (override dealData)
     if (savedContactInfo && (savedContactInfo.clientName || savedContactInfo.clientEmail || savedContactInfo.company)) {
@@ -422,11 +433,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     };
                     setContactInfo(newContactInfo);
                     
-                    // Save to localStorage
+                    // Save to both localStorage and sessionStorage for consistency
                     try {
                       localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
+                      sessionStorage.setItem('cpq_configure_contact_info', JSON.stringify({
+                        clientName: newContactInfo.clientName,
+                        clientEmail: newContactInfo.clientEmail,
+                        company: newContactInfo.company
+                      }));
                     } catch (error) {
-                      console.warn('Could not save contact info to localStorage:', error);
+                      console.warn('Could not save contact info to storage:', error);
                     }
                     
                     // Notify parent component
@@ -459,11 +475,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     };
                     setContactInfo(newContactInfo);
                     
-                    // Save to localStorage
+                    // Save to both localStorage and sessionStorage for consistency
                     try {
                       localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
+                      sessionStorage.setItem('cpq_configure_contact_info', JSON.stringify({
+                        clientName: newContactInfo.clientName,
+                        clientEmail: newContactInfo.clientEmail,
+                        company: newContactInfo.company
+                      }));
                     } catch (error) {
-                      console.warn('Could not save contact info to localStorage:', error);
+                      console.warn('Could not save contact info to storage:', error);
                     }
                     
                     // Notify parent component
@@ -497,11 +518,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     };
                     setContactInfo(newContactInfo);
                     
-                    // Save to localStorage
+                    // Save to both localStorage and sessionStorage for consistency
                     try {
                       localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
+                      sessionStorage.setItem('cpq_configure_contact_info', JSON.stringify({
+                        clientName: newContactInfo.clientName,
+                        clientEmail: newContactInfo.clientEmail,
+                        company: newContactInfo.company
+                      }));
                     } catch (error) {
-                      console.warn('Could not save contact info to localStorage:', error);
+                      console.warn('Could not save contact info to storage:', error);
                     }
                     
                     // Notify parent component
