@@ -30,7 +30,14 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'],
+  origin: [
+    'http://localhost:5173', 
+    'http://localhost:3000', 
+    'http://localhost:3001',
+    'https://zenop.ai',
+    'https://www.zenop.ai',
+    'http://159.89.175.168:3001'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
@@ -42,6 +49,9 @@ app.use((req, res, next) => {
     'http://localhost:5173',
     'http://localhost:3000',
     'http://localhost:3001',
+    'https://zenop.ai',
+    'https://www.zenop.ai',
+    'http://159.89.175.168:3001',
     process.env.APP_BASE_URL?.replace(/\/$/, '')
   ].filter(Boolean));
 
