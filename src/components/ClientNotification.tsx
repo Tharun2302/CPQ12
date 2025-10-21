@@ -36,15 +36,17 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     setIsLoading(true);
     try {
       console.log('✅ Client approving workflow:', workflow.id);
-      updateWorkflowStep(workflow.id, 3, { 
+      await updateWorkflowStep(workflow.id, 3, { 
         status: 'approved',
         comments: comment || 'Approved by client'
       });
       
       alert('✅ Request approved successfully!\n\nYour approval has been recorded and the workflow is now complete.');
       
-      // Reset form
+      // Reset form and refresh page
       setComment('');
+      // Refresh the page to get updated workflow status
+      window.location.reload();
     } catch (error) {
       console.error('❌ Error approving workflow:', error);
       alert('❌ Failed to approve request. Please try again.');
@@ -64,15 +66,17 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     setIsLoading(true);
     try {
       console.log('❌ Client denying workflow:', workflow.id);
-      updateWorkflowStep(workflow.id, 3, { 
+      await updateWorkflowStep(workflow.id, 3, { 
         status: 'denied',
         comments: comment
       });
       
       alert('❌ Request denied.\n\nYour decision has been recorded and the workflow is now closed.');
       
-      // Reset form
+      // Reset form and refresh page
       setComment('');
+      // Refresh the page to get updated workflow status
+      window.location.reload();
     } catch (error) {
       console.error('❌ Error denying workflow:', error);
       alert('❌ Failed to deny request. Please try again.');
@@ -92,7 +96,23 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       console.log('📄 Fetching document for preview:', workflow.documentId);
       
-      // Fetch document from MongoDB
+      // Try preview API first
+      try {
+        const previewResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        if (previewResponse.ok) {
+          const result = await previewResponse.json();
+          if (result.success && result.dataUrl) {
+            setDocumentPreviewUrl(result.dataUrl);
+            setShowDocumentPreview(true);
+            console.log('✅ Document preview loaded successfully:', result.fileName);
+            return;
+          }
+        }
+      } catch (previewError) {
+        console.log('⚠️ Preview API failed, trying direct method:', previewError);
+      }
+      
+      // Fallback: Fetch document directly
       const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch document');
@@ -103,7 +123,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       setDocumentPreviewUrl(url);
       setShowDocumentPreview(true);
       
-      console.log('✅ Document loaded for preview');
+      console.log('✅ Document loaded for preview via direct method');
     } catch (error) {
       console.error('❌ Error loading document:', error);
       alert('❌ Failed to load document preview. Please try again.');
@@ -292,26 +312,45 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
             </div>
 
 
-            {/* Action Buttons */}
-            <div className="flex flex-row gap-3 justify-center">
-              <button
-                onClick={handleApprove}
-                disabled={isLoading}
-                className="flex items-center justify-center gap-2 px-6 lg:px-8 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors font-semibold text-sm lg:text-base"
-              >
-                <CheckCircle className="w-4 lg:w-5 h-4 lg:h-5" />
-                {isLoading ? 'Processing...' : 'Approve Request'}
-              </button>
+            {/* Action Buttons - Only show if workflow is still pending */}
+            {(() => {
+              // Check if it's still the client's turn (Step 3, pending status)
+              const isMyTurn = workflow?.currentStep === 3 && 
+                workflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Client')?.status === 'pending';
               
-              <button
-                onClick={handleDeny}
-                disabled={isLoading}
-                className="flex items-center justify-center gap-2 px-6 lg:px-8 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg transition-colors font-semibold text-sm lg:text-base"
-              >
-                <X className="w-4 lg:w-5 h-4 lg:h-5" />
-                {isLoading ? 'Processing...' : 'Deny Request'}
-              </button>
-            </div>
+              return isMyTurn ? (
+                <div className="flex flex-row gap-3 justify-center">
+                  <button
+                    onClick={handleApprove}
+                    disabled={isLoading}
+                    className="flex items-center justify-center gap-2 px-6 lg:px-8 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors font-semibold text-sm lg:text-base"
+                  >
+                    <CheckCircle className="w-4 lg:w-5 h-4 lg:h-5" />
+                    {isLoading ? 'Processing...' : 'Approve Request'}
+                  </button>
+                  
+                  <button
+                    onClick={handleDeny}
+                    disabled={isLoading}
+                    className="flex items-center justify-center gap-2 px-6 lg:px-8 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg transition-colors font-semibold text-sm lg:text-base"
+                  >
+                    <X className="w-4 lg:w-5 h-4 lg:h-5" />
+                    {isLoading ? 'Processing...' : 'Deny Request'}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center p-6 bg-gray-50 rounded-lg">
+                  <div className="text-lg font-semibold text-gray-700 mb-2">
+                    {workflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Client')?.status === 'approved' 
+                      ? '✅ Request Already Approved' 
+                      : '❌ Request Already Processed'}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    This workflow has already been processed and is no longer awaiting your action.
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Instructions */}
             <div className="mt-6 lg:mt-8 p-3 lg:p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -353,36 +392,48 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                 title="Document Preview"
               />
             </div>
-            {/* Action Buttons - Always visible at bottom */}
+            {/* Action Buttons - Only show if workflow is still pending */}
             <div className="flex items-center justify-between gap-3 p-4 border-t border-gray-200 bg-gray-50">
-              <div className="flex gap-3">
-                <button
-                  onClick={handleApprove}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  Approve
-                </button>
-                <button
-                  onClick={handleDeny}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                  Deny
-                </button>
-                <button
-                  onClick={() => {
-                    const commentInput = document.querySelector('textarea[name="comment"]') as HTMLTextAreaElement;
-                    if (commentInput) {
-                      commentInput.focus();
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  Add Comment
-                </button>
-              </div>
+              {(() => {
+                // Check if it's still the client's turn (Step 3, pending status)
+                const isMyTurn = workflow?.currentStep === 3 && 
+                  workflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Client')?.status === 'pending';
+                
+                return isMyTurn ? (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleApprove}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      Approve
+                    </button>
+                    <button
+                      onClick={handleDeny}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                      Deny
+                    </button>
+                    <button
+                      onClick={() => {
+                        const commentInput = document.querySelector('textarea[name="comment"]') as HTMLTextAreaElement;
+                        if (commentInput) {
+                          commentInput.focus();
+                        }
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      Add Comment
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">
+                    This workflow is no longer awaiting your approval
+                  </div>
+                );
+              })()}
               <button
                 onClick={() => {
                   setShowDocumentPreview(false);

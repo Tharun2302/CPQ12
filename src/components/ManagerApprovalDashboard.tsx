@@ -17,6 +17,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentWorkflowId, setCommentWorkflowId] = useState<string | null>(null);
+  const [modalOpenedFromTab, setModalOpenedFromTab] = useState<string>('queue');
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('ManagerApprovalDashboard rendered for:', managerEmail);
@@ -32,14 +33,66 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const handleViewWorkflow = async (workflow: any) => {
     console.log('Viewing workflow:', workflow.id);
     setSelectedWorkflow(workflow);
+    setModalOpenedFromTab('status'); // Track that modal was opened from status tab
     setShowDocumentModal(true);
+    
+    // Fetch document preview (same as handleViewDocument)
+    if (workflow.documentId) {
+      setIsLoadingPreview(true);
+      setDocumentPreview(null);
+      
+      try {
+        console.log('🔄 Fetching document preview for:', workflow.documentId);
+        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response ok:', response.ok);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('📄 API Response:', result);
+        
+        if (result.success && result.dataUrl) {
+          setDocumentPreview(result.dataUrl);
+          console.log('✅ Document preview loaded successfully:', result.fileName);
+          console.log('📄 Data URL length:', result.dataUrl.length);
+        } else {
+          console.log('⚠️ Document not found or no file data');
+          console.log('📄 Result:', result);
+          
+          // Fallback: Try to load document directly
+          console.log('🔄 Trying fallback method...');
+          try {
+            const directResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+            if (directResponse.ok) {
+              const blob = await directResponse.blob();
+              const url = URL.createObjectURL(blob);
+              setDocumentPreview(url);
+              console.log('✅ Document loaded via fallback method');
+            }
+          } catch (fallbackError) {
+            console.error('❌ Fallback method also failed:', fallbackError);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error fetching document preview:', error);
+        console.error('❌ Error details:', (error as Error).message);
+      } finally {
+        setIsLoadingPreview(false);
+      }
+    } else {
+      console.log('⚠️ No documentId in workflow');
+    }
   };
 
   const handleApprove = async (workflowId: string) => {
     console.log('Approving workflow:', workflowId);
     try {
       // Update workflow step
-      updateWorkflowStep(workflowId, 1, { status: 'approved' });
+      await updateWorkflowStep(workflowId, 1, { status: 'approved' });
       
       // Get workflow data to send CEO email
       const workflow = workflows.find(w => w.id === workflowId);
@@ -72,17 +125,42 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       } else {
         alert('✅ Workflow approved successfully!');
       }
+      
+      // Close modal and refresh data
+      closeDocumentModal();
+      // Refresh workflows to get updated status
+      window.location.reload(); // Simple refresh to get updated data
     } catch (error) {
       console.error('Error approving workflow:', error);
       alert('❌ Failed to approve workflow. Please try again.');
     }
   };
 
-  const handleDeny = (workflowId: string) => {
+  const handleDeny = async (workflowId: string) => {
     console.log('Denying workflow:', workflowId);
+    
+    // Check if comment is provided
+    if (!commentText.trim()) {
+      alert('⚠️ Please provide a reason for denial before proceeding.');
+      setCommentWorkflowId(workflowId);
+      setShowCommentModal(true);
+      return;
+    }
+    
     try {
-      updateWorkflowStep(workflowId, 1, { status: 'denied' });
+      await updateWorkflowStep(workflowId, 1, { 
+        status: 'denied',
+        comments: commentText.trim()
+      });
       alert('❌ Workflow denied successfully!');
+      
+      // Reset comment and close modals
+      setCommentText('');
+      setCommentWorkflowId(null);
+      setShowCommentModal(false);
+      closeDocumentModal();
+      // Refresh workflows to get updated status
+      window.location.reload(); // Simple refresh to get updated data
     } catch (error) {
       console.error('Error denying workflow:', error);
       alert('❌ Failed to deny workflow. Please try again.');
@@ -128,6 +206,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const handleViewDocument = async (workflow: any) => {
     console.log('👁️ Viewing document for workflow:', workflow);
     setSelectedWorkflow(workflow);
+    setModalOpenedFromTab('queue'); // Track that modal was opened from queue tab
     setShowDocumentModal(true);
     
     // Fetch document preview
@@ -136,20 +215,49 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       setDocumentPreview(null);
       
       try {
+        console.log('🔄 Fetching document preview for:', workflow.documentId);
         const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response ok:', response.ok);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const result = await response.json();
+        console.log('📄 API Response:', result);
         
         if (result.success && result.dataUrl) {
           setDocumentPreview(result.dataUrl);
-          console.log('✅ Document preview loaded:', result.fileName);
+          console.log('✅ Document preview loaded successfully:', result.fileName);
+          console.log('📄 Data URL length:', result.dataUrl.length);
         } else {
           console.log('⚠️ Document not found or no file data');
+          console.log('📄 Result:', result);
+          
+          // Fallback: Try to load document directly
+          console.log('🔄 Trying fallback method...');
+          try {
+            const directResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+            if (directResponse.ok) {
+              const blob = await directResponse.blob();
+              const url = URL.createObjectURL(blob);
+              setDocumentPreview(url);
+              console.log('✅ Document loaded via fallback method');
+            }
+          } catch (fallbackError) {
+            console.error('❌ Fallback method also failed:', fallbackError);
+          }
         }
       } catch (error) {
         console.error('❌ Error fetching document preview:', error);
+        console.error('❌ Error details:', (error as Error).message);
       } finally {
         setIsLoadingPreview(false);
       }
+    } else {
+      console.log('⚠️ No documentId in workflow');
     }
   };
 
@@ -303,7 +411,6 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       <div className="space-y-4">
         {filteredWorkflows.map((workflow) => {
           const StatusIcon = getStatusIcon(workflow.status);
-          const isMyTurn = workflow.status === 'pending' && workflow.currentStep === 1;
           
           return (
             <div key={workflow.id} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
@@ -361,7 +468,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                   })}
               </div>
 
-              {/* Action Buttons for Technical Team */}
+              {/* Action Buttons for Technical Team - Only View Document */}
               <div className="flex gap-3 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => handleViewDocument(workflow)}
@@ -370,31 +477,6 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                   <Eye className="w-4 h-4" />
                   View Document
                 </button>
-                {isMyTurn && (
-                  <>
-                    <button
-                      onClick={() => handleApprove(workflow.id)}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      <ThumbsUp className="w-4 h-4" />
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleDeny(workflow.id)}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                    >
-                      <ThumbsDown className="w-4 h-4" />
-                      Deny
-                    </button>
-                    <button
-                      onClick={() => handleAddComment(workflow.id)}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      Add Comment
-                    </button>
-                  </>
-                )}
               </div>
             </div>
           );
@@ -550,31 +632,57 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               </div>
             </div>
 
-            {/* Action Buttons - Always visible at bottom */}
+            {/* Action Buttons - Only show when opened from "My Approval Queue" tab and it's user's turn */}
             <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
-               <div className="flex gap-3">
-                 <button
-                   onClick={() => handleApprove(selectedWorkflow.id)}
-                   className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                 >
-                   <ThumbsUp className="w-4 h-4" />
-                   Approve
-                 </button>
-                 <button
-                   onClick={() => handleDeny(selectedWorkflow.id)}
-                   className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                 >
-                   <ThumbsDown className="w-4 h-4" />
-                   Deny
-                 </button>
-                 <button
-                   onClick={() => handleAddComment(selectedWorkflow.id)}
-                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                 >
-                   <MessageCircle className="w-4 h-4" />
-                   Add Comment
-                 </button>
-               </div>
+               {modalOpenedFromTab === 'queue' ? (
+                 (() => {
+                   // Check if it's still the user's turn (Technical Team, Step 1, pending status)
+                   const isMyTurn = selectedWorkflow?.currentStep === 1 && 
+                     selectedWorkflow?.workflowSteps?.find((step: any) => step.step === 1 && step.role === 'Technical Team')?.status === 'pending';
+                   
+                   return isMyTurn ? (
+                     <div className="flex gap-3">
+                       <button
+                         onClick={() => handleApprove(selectedWorkflow.id)}
+                         className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                       >
+                         <ThumbsUp className="w-4 h-4" />
+                         Approve
+                       </button>
+                       <button
+                         onClick={() => {
+                           if (!commentText.trim()) {
+                             alert('⚠️ Please provide a reason for denial before proceeding.');
+                             setCommentWorkflowId(selectedWorkflow.id);
+                             setShowCommentModal(true);
+                           } else {
+                             handleDeny(selectedWorkflow.id);
+                           }
+                         }}
+                         className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                       >
+                         <ThumbsDown className="w-4 h-4" />
+                         Deny
+                       </button>
+                       <button
+                         onClick={() => handleAddComment(selectedWorkflow.id)}
+                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                       >
+                         <MessageCircle className="w-4 h-4" />
+                         Add Comment
+                       </button>
+                     </div>
+                   ) : (
+                     <div className="text-sm text-gray-500">
+                       This workflow is no longer awaiting your approval
+                     </div>
+                   );
+                 })()
+               ) : (
+                 <div className="text-sm text-gray-500">
+                   Read-only view from Workflow Status
+                 </div>
+               )}
                <button
                  onClick={closeDocumentModal}
                  className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
