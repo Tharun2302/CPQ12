@@ -1512,12 +1512,32 @@ app.post('/api/documents', async (req, res) => {
       fileSize,
       clientName
     });
+    
+    console.log('🔍 Document ID generation data:', {
+      clientName: clientName,
+      company: company,
+      clientNameType: typeof clientName,
+      companyType: typeof company
+    });
 
     // Convert base64 to Buffer (same as templates)
     const fileBuffer = Buffer.from(fileData, 'base64');
 
+    // Generate document ID with client and company names
+    const sanitizeForId = (str) => {
+      if (!str) return 'Unknown';
+      return str
+        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
+        .substring(0, 20) // Limit length
+        .replace(/^[0-9]/, 'C$&'); // Ensure doesn't start with number
+    };
+    
+    const sanitizedCompany = sanitizeForId(company);
+    const sanitizedClient = sanitizeForId(clientName);
+    const timestamp = Date.now().toString().slice(-5); // Keep only last 5 digits
+    
     const document = {
-      id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `${sanitizedCompany}_${sanitizedClient}_${timestamp}`,
       fileName,
       fileData: fileBuffer, // Store as Buffer like templates
       fileSize,
@@ -2687,8 +2707,20 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
     const { clientName, company, quoteId, totalCost, fileName, fileData, fileSize } = req.body;
     const file = req.file;
     
-    // Generate unique ID for document
-    const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    // Generate document ID with client and company names
+    const sanitizeForId = (str) => {
+      if (!str) return 'Unknown';
+      return str
+        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
+        .substring(0, 20) // Limit length
+        .replace(/^[0-9]/, 'C$&'); // Ensure doesn't start with number
+    };
+    
+    const sanitizedCompany = sanitizeForId(company);
+    const sanitizedClient = sanitizeForId(clientName);
+    const timestamp = Date.now().toString().slice(-5); // Keep only last 5 digits
+    
+    const documentId = `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
     
     // Handle both file upload and base64 data
     let finalFileName, finalFileData, finalFileSize;
@@ -2713,6 +2745,16 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
       company,
       quoteId,
       source: req.file ? 'upload' : 'base64'
+    });
+    
+    console.log('🔍 Document ID generation data (endpoint 2):', {
+      clientName: clientName,
+      company: company,
+      clientNameType: typeof clientName,
+      companyType: typeof company,
+      sanitizedCompany: sanitizedCompany,
+      sanitizedClient: sanitizedClient,
+      timestamp: timestamp
     });
 
     const document = {

@@ -211,10 +211,22 @@ class DocumentService {
   }
 
   /**
-   * Generate unique ID for document
+   * Generate unique ID for document with client and company names
    */
-  generateDocumentId(): string {
-    return `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  generateDocumentId(clientName?: string, company?: string): string {
+    const sanitizeForId = (str: string) => {
+      if (!str) return 'Unknown';
+      return str
+        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
+        .substring(0, 20) // Limit length
+        .replace(/^[0-9]/, 'C$&'); // Ensure doesn't start with number
+    };
+    
+    const sanitizedCompany = sanitizeForId(company || 'UnknownCompany');
+    const sanitizedClient = sanitizeForId(clientName || 'UnknownClient');
+    const timestamp = Date.now().toString().slice(-5); // Keep only last 5 digits
+    
+    return `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
   }
 }
 

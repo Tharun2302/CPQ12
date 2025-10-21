@@ -115,81 +115,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
     setIsLoadingPreview(false);
   };
 
-  const handleSendToESign = async (workflow: any) => {
-    try {
-      const clientStep = workflow?.workflowSteps?.find((s: any) => s.role === 'Client');
-      const clientEmail = clientStep?.email;
-      if (!clientEmail) {
-        alert('Client email is missing in workflow steps. Please add client email to send for e-sign.');
-        return;
-      }
-
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const resp = await fetch(`${backendUrl}/api/boldsign/create-embedded-send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          documentId: workflow.documentId,
-          clientEmail,
-          clientName: workflow.clientName || 'Client',
-          title: `${workflow.documentType || 'Agreement'} - ${workflow.clientName || ''}`,
-          redirectUrl: window.location.origin
-        })
-      });
-
-      if (!resp.ok) {
-        const t = await resp.text();
-        throw new Error(t || 'Failed to create BoldSign request');
-      }
-      const result = await resp.json();
-      
-      // Handle free plan mode
-      if (result.freePlanMode) {
-        const message = `📄 BoldSign Free Plan Mode\n\n` +
-          `1. Click OK to download the approved document\n` +
-          `2. Then you'll be redirected to BoldSign to upload it\n` +
-          `3. Add signature fields and send to:\n   ${clientEmail} (${workflow.clientName})\n\n` +
-          `💡 Tip: Upgrade to a paid plan for direct API integration!`;
-
-        if (confirm(message)) {
-          // Try to download without navigating away; if it fails, still open BoldSign
-          try {
-            const fileResp = await fetch(result.downloadUrl);
-            if (fileResp.ok) {
-              const blob = await fileResp.blob();
-              const urlObj = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = urlObj;
-              a.download = `${workflow.documentId}.pdf`;
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-              URL.revokeObjectURL(urlObj);
-            } else {
-              console.warn('Download failed with status:', fileResp.status);
-              alert('Could not auto-download the document (it may have been removed). You can still upload it manually in BoldSign.');
-            }
-          } catch (err) {
-            console.warn('Download error:', err);
-            alert('Download failed due to a network or server issue. You can still upload it manually in BoldSign.');
-          }
-
-          // Open BoldSign regardless of download outcome
-          window.open(result.url, '_blank');
-        }
-        return;
-      }
-      
-      // Normal API mode (paid plans)
-      const url = result.url;
-      if (!url) throw new Error('No URL returned from BoldSign');
-      window.open(url, '_blank');
-      
-    } catch (e: any) {
-      console.error('❌ Error sending to e-sign:', e);
-      alert(`Failed to send for e-sign: ${e?.message || e}`);
-    }
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -353,14 +278,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                           <Eye className="w-3 h-3" />
                           View
                         </button>
-                        <button
-                          onClick={() => handleSendToESign(workflow)}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
-                          title="Send for e-signature"
-                        >
-                          <FileText className="w-3 h-3" />
-                          eSign
-                        </button>
                       </div>
                     </td>
                    </tr>
@@ -397,12 +314,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                <tr className="border-b border-gray-200 bg-gray-50">
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Final Status</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Decision</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Decision</th>
+                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Decision</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
-                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Decision</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Completed</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Action</th>
@@ -415,8 +331,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
                  const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
                  
-                 // Determine final status based on workflow completion
-                 const finalStatus = workflow.status === 'approved' ? 'accepted_by_client' : workflow.status;
                  
                  return (
                    <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -425,9 +339,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      </td>
                      <td className="py-4 px-6 text-gray-700">
                        {workflow.clientName || 'Unknown Client'}
-                     </td>
-                     <td className="py-4 px-6 text-gray-700">
-                       {finalStatus}
                      </td>
                      <td className="py-4 px-6">
                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
@@ -445,6 +356,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'bg-yellow-100 text-yellow-800'
                        }`}>
                          {legalTeamStep?.status || 'pending'}
+                       </span>
+                     </td>
+                     <td className="py-4 px-6">
+                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                         clientStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                         clientStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                         'bg-yellow-100 text-yellow-800'
+                       }`}>
+                         {clientStep?.status || 'pending'}
                        </span>
                      </td>
                      <td className="py-4 px-6 text-gray-600 text-sm">
@@ -465,11 +385,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'No comments'
                        )}
                      </td>
-                     <td className="py-4 px-6 text-gray-700">
-                       {clientStep?.status || 'pending'}
-                     </td>
                      <td className="py-4 px-6 text-gray-600 text-sm">
-                       {clientStep?.comments ? (
+                       {clientStep?.comments && clientStep.comments !== 'Approved by client' ? (
                          <span className="inline-flex px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs">
                            [{clientStep.comments}]
                          </span>
@@ -492,16 +409,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                           <Eye className="w-3 h-3" />
                           View
                         </button>
-                        {workflow.status === 'approved' && (
-                          <button
-                            onClick={() => handleSendToESign(workflow)}
-                            className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
-                            title="Send approved document for e-signature"
-                          >
-                            <FileText className="w-3 h-3" />
-                            eSign
-                          </button>
-                        )}
                       </div>
                     </td>
                    </tr>
@@ -612,25 +519,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                           <Eye className="w-3 h-3" />
                           View
                         </button>
-                        {/* Allow eSign when Technical Team and Legal Team have approved */}
-                        {(() => {
-                          const technicalTeamStep = workflow.workflowSteps?.find((s: any) => s.role === 'Technical Team');
-                          const legalTeamStep = workflow.workflowSteps?.find((s: any) => s.role === 'Legal Team');
-                          const canSend = technicalTeamStep?.status === 'approved' && legalTeamStep?.status === 'approved';
-                          return (
-                            <button
-                              onClick={() => canSend && handleSendToESign(workflow)}
-                              className={`inline-flex items-center gap-1 px-3 py-1 text-white text-sm rounded-lg transition-colors ${
-                                canSend ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-300 cursor-not-allowed'
-                              }`}
-                              title={canSend ? 'Send for e-signature' : 'Requires Technical Team and Legal Team approval'}
-                              disabled={!canSend}
-                            >
-                              <FileText className="w-3 h-3" />
-                              eSign
-                            </button>
-                          );
-                        })()}
                       </div>
                     </td>
                    </tr>
@@ -788,7 +676,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
              </div>
              
              <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
-               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+               {/* Top Section - 4 Column Grid for Information */}
+               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
                  {/* Basic Information */}
                  <div className="space-y-4">
                    <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
@@ -861,7 +750,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                    </div>
                  </div>
 
-                 {/* Approval Steps - Small Third Column */}
+                 {/* Approval Steps */}
                  <div className="space-y-4">
                    <h3 className="text-lg font-semibold text-gray-900">Approval Steps</h3>
                    <div className="space-y-2">
@@ -900,8 +789,12 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                    </div>
                  </div>
 
-                 {/* Document Preview Section */}
-                 <div className="lg:col-span-2">
+                 {/* Empty 4th column for spacing */}
+                 <div></div>
+               </div>
+
+               {/* Document Preview Section - Full width at bottom */}
+               <div className="w-full">
                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Document Preview</h3>
                  
                  <div className="bg-gray-100 rounded-lg p-4">
@@ -915,7 +808,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                          <iframe
                            src={documentPreview}
-                           className="w-full h-[85vh] border-0"
+                           className="w-full h-[70vh] border-0"
                            title="Document Preview"
                          />
                        </div>
@@ -958,7 +851,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  </div>
                </div>
              </div>
-           </div>
 
              <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
                <button
