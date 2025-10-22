@@ -317,6 +317,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Decision</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Decision</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Decision</th>
+                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
@@ -365,6 +366,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'bg-yellow-100 text-yellow-800'
                        }`}>
                          {clientStep?.status || 'pending'}
+                       </span>
+                     </td>
+                     <td className="py-4 px-6">
+                       <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                         Notified
                        </span>
                      </td>
                      <td className="py-4 px-6 text-gray-600 text-sm">

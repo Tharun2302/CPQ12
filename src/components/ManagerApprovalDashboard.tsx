@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
@@ -23,6 +23,51 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   console.log('ManagerApprovalDashboard rendered for:', managerEmail);
   console.log('📊 Available workflows:', workflows.length);
   console.log('📋 Workflows data:', workflows);
+
+  // Auto-open document preview when coming from Gmail link
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const workflowId = urlParams.get('workflow');
+    
+    if (workflowId) {
+      // First try to find in loaded workflows
+      const foundWorkflow = workflows.find(w => w.id === workflowId);
+      if (foundWorkflow) {
+        console.log('🔗 Opening document preview from Gmail link for workflow:', workflowId);
+        handleViewDocument(foundWorkflow);
+      } else if (workflows.length > 0) {
+        // If workflows are loaded but this one not found, it doesn't exist
+        console.error('❌ Workflow not found in loaded workflows:', workflowId);
+      } else {
+        // If workflows not loaded yet, fetch this specific workflow directly
+        console.log('🔄 Workflows not loaded yet, fetching specific workflow:', workflowId);
+        fetchSpecificWorkflow(workflowId);
+      }
+    }
+  }, [workflows]);
+
+  const fetchSpecificWorkflow = async (workflowId: string) => {
+    try {
+      console.log('📄 Fetching specific workflow from API:', workflowId);
+      const response = await fetch(`http://localhost:3001/api/approval-workflows/${workflowId}`);
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.workflow) {
+          console.log('📋 Manager viewing workflow from API:', result.workflow);
+          // Auto-open document preview when coming from Gmail link
+          console.log('🔗 Auto-opening document preview from Gmail link for workflow:', workflowId);
+          handleViewDocument(result.workflow);
+        } else {
+          console.error('❌ Workflow not found in API response:', workflowId);
+        }
+      } else {
+        console.error('❌ Failed to fetch workflow from API:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching specific workflow:', error);
+    }
+  };
 
   const tabs = [
     { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => w.status === 'pending' && w.currentStep === 1).length },
@@ -328,6 +373,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
@@ -382,6 +428,11 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
                       {clientStep?.comments || 'No comments'}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        Notified
+                      </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
                 <div>

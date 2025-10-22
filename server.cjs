@@ -334,6 +334,62 @@ function generateClientEmailHTML(workflowData) {
   `;
 }
 
+function generateDealDeskEmailHTML(workflowData) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Approval Workflow Completed</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #3B82F6, #1D4ED8); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>✅ Approval Workflow Completed</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Deal Desk Team,</h2>
+          
+          <p>The approval workflow has been completed successfully:</p>
+          
+          <div style="background: #EFF6FF; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #93C5FD;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Status:</strong> All Approvals Complete</p>
+            <p><strong>📎 Document:</strong> The approved PDF document is attached to this email.</p>
+          </div>
+          
+          <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
+            <h3>✅ Approval Summary</h3>
+            <ul style="margin: 0; padding-left: 20px;">
+              <li>✅ Technical Team - Approved</li>
+              <li>✅ Legal Team - Approved</li>
+              <li>✅ Client - Approved</li>
+            </ul>
+          </div>
+          
+          <p>The document is now ready for your review and any necessary follow-up actions.</p>
+          
+          <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
+            <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Next Steps</p>
+            <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
+              Please review the approved document and proceed with any necessary deal desk processes.
+            </p>
+          </div>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated notification from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 // Email sending function using SendGrid
 async function sendEmail(to, subject, html, attachments = []) {
   try {
@@ -2615,6 +2671,85 @@ app.post('/api/send-client-email', async (req, res) => {
   }
 });
 
+// Send Deal Desk notification email (after client approval)
+app.post('/api/send-deal-desk-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { dealDeskEmail, workflowData } = req.body;
+    
+    console.log('📧 Sending notification email to Deal Desk (after client approval)...');
+    console.log('Deal Desk:', dealDeskEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Send notification email to Deal Desk
+    const dealDeskResult = await sendEmail(
+      dealDeskEmail,
+      `Approval Workflow Completed: ${workflowData.documentId}`,
+      generateDealDeskEmailHTML(workflowData),
+      attachments
+    );
+
+    console.log('✅ Deal Desk notification email sent:', dealDeskResult.success);
+
+    res.json({
+      success: dealDeskResult.success,
+      message: 'Deal Desk notification email sent successfully',
+      result: { role: 'Deal Desk', email: dealDeskEmail, success: dealDeskResult.success },
+      workflowData: workflowData,
+      attachmentCount: attachments.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending Deal Desk email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Legacy endpoint - kept for backward compatibility
 app.post('/api/send-approval-emails', async (req, res) => {
   try {
@@ -3195,10 +3330,15 @@ app.get('/api/approval-workflows/:id', async (req, res) => {
 
     const { id } = req.params;
     console.log('📄 Fetching approval workflow:', id);
+    console.log('📄 Database available:', !!db);
+    console.log('📄 Collection available:', !!db?.collection);
     
     const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    console.log('📄 Workflow found:', !!workflow);
+    console.log('📄 Workflow data:', workflow ? { id: workflow.id, status: workflow.status, currentStep: workflow.currentStep } : 'null');
     
     if (!workflow) {
+      console.log('❌ Workflow not found in database for ID:', id);
       return res.status(404).json({
         success: false,
         error: 'Workflow not found'
