@@ -18,6 +18,8 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const [commentText, setCommentText] = useState('');
   const [commentWorkflowId, setCommentWorkflowId] = useState<string | null>(null);
   const [modalOpenedFromTab, setModalOpenedFromTab] = useState<string>('queue');
+  const [hasTakenAction, setHasTakenAction] = useState(false);
+  const [denyAfterComment, setDenyAfterComment] = useState(false);
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('ManagerApprovalDashboard rendered for:', managerEmail);
@@ -136,8 +138,16 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const handleApprove = async (workflowId: string) => {
     console.log('Approving workflow:', workflowId);
     try {
+      setHasTakenAction(true);
       // Update workflow step
       await updateWorkflowStep(workflowId, 1, { status: 'approved' });
+      // Optimistically reflect status in the open modal to avoid stale UI
+      setSelectedWorkflow((prev: any) => prev ? {
+        ...prev,
+        status: 'in_progress',
+        currentStep: 2,
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
+      } : prev);
       
       // Get workflow data to send Legal Team email
       const workflow = workflows.find(w => w.id === workflowId);
@@ -193,10 +203,17 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     }
     
     try {
+      setHasTakenAction(true);
       await updateWorkflowStep(workflowId, 1, { 
         status: 'denied',
         comments: commentText.trim()
       });
+      // Optimistically reflect status locally so buttons hide immediately
+      setSelectedWorkflow((prev: any) => prev ? {
+        ...prev,
+        status: 'denied',
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
+      } : prev);
       alert('❌ Workflow denied successfully!');
       
       // Reset comment and close modals
@@ -217,6 +234,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     setCommentWorkflowId(workflowId);
     setCommentText('');
     setShowCommentModal(true);
+    setDenyAfterComment(false);
   };
 
   const handleSaveComment = async () => {
@@ -226,11 +244,28 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     }
 
     try {
+      if (denyAfterComment) {
+        const id = commentWorkflowId;
+        setShowCommentModal(false);
+        await handleDeny(id);
+        setDenyAfterComment(false);
+        return;
+      }
+
       console.log('💬 Saving comment for workflow:', commentWorkflowId);
       updateWorkflowStep(commentWorkflowId, 1, { 
         comments: commentText.trim(),
         timestamp: new Date().toISOString()
       });
+      // Optimistically reflect the new comment locally without changing status
+      setSelectedWorkflow((prev: any) => prev && prev.id === commentWorkflowId ? {
+        ...prev,
+        workflowSteps: prev.workflowSteps?.map((s: any) =>
+          s.step === 1 && s.role === 'Technical Team'
+            ? { ...s, comments: commentText.trim(), timestamp: new Date().toISOString() }
+            : s
+        )
+      } : prev);
       
       alert('✅ Comment added successfully!');
       setShowCommentModal(false);
@@ -246,6 +281,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     setShowCommentModal(false);
     setCommentText('');
     setCommentWorkflowId(null);
+    setDenyAfterComment(false);
   };
 
   const handleViewDocument = async (workflow: any) => {
@@ -687,9 +723,11 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
             <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
                {modalOpenedFromTab === 'queue' ? (
                  (() => {
-                   // Check if it's still the user's turn (Technical Team, Step 1, pending status)
-                   const isMyTurn = selectedWorkflow?.currentStep === 1 && 
-                     selectedWorkflow?.workflowSteps?.find((step: any) => step.step === 1 && step.role === 'Technical Team')?.status === 'pending';
+                  // Use latest workflow state from store to avoid stale selectedWorkflow after actions
+                  const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
+                  // Check if it's still the user's turn (Technical Team, Step 1, pending status)
+                  const techStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 1 && step.role === 'Technical Team');
+                  const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 1 && techStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
                    
                    return isMyTurn ? (
                      <div className="flex gap-3">
@@ -706,6 +744,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                              alert('⚠️ Please provide a reason for denial before proceeding.');
                              setCommentWorkflowId(selectedWorkflow.id);
                              setShowCommentModal(true);
+                            setDenyAfterComment(true);
                            } else {
                              handleDeny(selectedWorkflow.id);
                            }
@@ -755,8 +794,8 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                   <MessageCircle className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Add Comment</h2>
-                  <p className="text-sm text-gray-500">Add your feedback for this workflow</p>
+                  <h2 className="text-xl font-semibold text-gray-900">{denyAfterComment ? 'Provide Reason for Denial' : 'Add Comment'}</h2>
+                  <p className="text-sm text-gray-500">{denyAfterComment ? 'This reason will be saved and the request will be denied.' : 'Add your feedback for this workflow'}</p>
                 </div>
               </div>
               <button
@@ -795,7 +834,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                 onClick={handleSaveComment}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
-                Save Comment
+                {denyAfterComment ? 'Save & Deny' : 'Save Comment'}
               </button>
             </div>
           </div>
