@@ -13,6 +13,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [isLoadingDocument, setIsLoadingDocument] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const [hasTakenAction, setHasTakenAction] = useState(false);
   const { workflows, updateWorkflowStep, updateWorkflow } = useApprovalWorkflows();
   
   // Get workflow ID from URL parameters and auto-open document preview
@@ -95,6 +96,18 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     setIsLoading(true);
     try {
       console.log('✅ Client approving workflow:', workflow.id);
+      setHasTakenAction(true);
+      // Optimistically update local workflow so buttons hide immediately
+      setWorkflow((prev: any) => prev ? {
+        ...prev,
+        status: 'approved',
+        currentStep: 4,
+        workflowSteps: prev.workflowSteps?.map((s: any) => 
+          s.step === 3 && s.role === 'Client' 
+            ? { ...s, status: 'approved', comments: comment || 'Approved by client', timestamp: new Date().toISOString() } 
+            : s
+        )
+      } : prev);
       await updateWorkflowStep(workflow.id, 3, { 
         status: 'approved',
         comments: comment || 'Approved by client'
@@ -171,6 +184,17 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     setIsLoading(true);
     try {
       console.log('❌ Client denying workflow:', workflow.id);
+      setHasTakenAction(true);
+      // Optimistically update local workflow so buttons hide immediately
+      setWorkflow((prev: any) => prev ? {
+        ...prev,
+        status: 'denied',
+        workflowSteps: prev.workflowSteps?.map((s: any) => 
+          s.step === 3 && s.role === 'Client' 
+            ? { ...s, status: 'denied', comments: comment, timestamp: new Date().toISOString() } 
+            : s
+        )
+      } : prev);
       await updateWorkflowStep(workflow.id, 3, { 
         status: 'denied',
         comments: comment
@@ -410,6 +434,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
+              name="comment"
                 placeholder="Add your comments about this request..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none"
                 rows={4}
@@ -420,8 +445,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
             {/* Action Buttons - Only show if workflow is still pending */}
             {(() => {
               // Check if it's still the client's turn (Step 3, pending status)
-              const isMyTurn = workflow?.currentStep === 3 && 
-                workflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Client')?.status === 'pending';
+              const isMyTurn = !hasTakenAction && workflow?.currentStep === 3 && 
+                workflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Client')?.status === 'pending' && workflow?.status !== 'denied';
               
               return isMyTurn ? (
                 <div className="flex flex-row gap-3 justify-center">
@@ -502,8 +527,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
             <div className="flex items-center justify-between gap-3 p-4 border-t border-gray-200 bg-gray-50">
               {(() => {
                 // Check if it's still the client's turn (Step 3, pending status)
-                const isMyTurn = workflow?.currentStep === 3 && 
-                  workflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Client')?.status === 'pending';
+                const isMyTurn = !hasTakenAction && workflow?.currentStep === 3 && 
+                  workflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Client')?.status === 'pending' && workflow?.status !== 'denied';
                 
                 return isMyTurn ? (
                   <div className="flex gap-3">
