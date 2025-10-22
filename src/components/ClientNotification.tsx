@@ -12,23 +12,82 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
   const [showDocumentPreview, setShowDocumentPreview] = useState(false);
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [isLoadingDocument, setIsLoadingDocument] = useState(false);
-  const { workflows, updateWorkflowStep } = useApprovalWorkflows();
+  const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const { workflows, updateWorkflowStep, updateWorkflow } = useApprovalWorkflows();
   
-  // Get workflow ID from URL parameters
+  // Get workflow ID from URL parameters and auto-open document preview
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const workflowId = urlParams.get('workflow');
     
-    if (workflowId) {
+    console.log('🔍 ClientNotification useEffect - workflowId:', workflowId);
+    console.log('🔍 ClientNotification useEffect - workflows.length:', workflows.length);
+    console.log('🔍 ClientNotification useEffect - current workflow:', workflow);
+    
+    if (workflowId && !workflow) {
+      // Only fetch if we don't already have a workflow
+      // First try to find in loaded workflows
       const foundWorkflow = workflows.find(w => w.id === workflowId);
       if (foundWorkflow) {
         setWorkflow(foundWorkflow);
-        console.log('📋 Client viewing workflow:', foundWorkflow);
+        setHasAutoOpened(false); // Reset auto-open flag for new workflow
+        console.log('📋 Client viewing workflow from loaded data:', foundWorkflow);
+      } else if (workflows.length > 0) {
+        // If workflows are loaded but this one not found, it doesn't exist
+        console.error('❌ Workflow not found in loaded workflows:', workflowId);
+        console.error('❌ Available workflow IDs:', workflows.map(w => w.id));
       } else {
-        console.error('❌ Workflow not found:', workflowId);
+        // If workflows not loaded yet, fetch this specific workflow directly
+        console.log('🔄 Workflows not loaded yet, fetching specific workflow:', workflowId);
+        fetchSpecificWorkflow(workflowId);
       }
     }
-  }, [workflows]);
+  }, [workflows, workflow]);
+
+  const fetchSpecificWorkflow = async (workflowId: string) => {
+    try {
+      console.log('📄 Fetching specific workflow from API:', workflowId);
+      const response = await fetch(`http://localhost:3001/api/approval-workflows/${workflowId}`);
+      
+      console.log('📄 API Response status:', response.status);
+      console.log('📄 API Response ok:', response.ok);
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('📄 API Response result:', result);
+        
+        if (result.success && result.workflow) {
+          setWorkflow(result.workflow);
+          setHasAutoOpened(false); // Reset auto-open flag for new workflow
+          console.log('📋 Client viewing workflow from API:', result.workflow);
+        } else {
+          console.error('❌ Workflow not found in API response:', workflowId);
+          console.error('❌ API Response:', result);
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch workflow from API:', response.status);
+        console.error('❌ Error response:', errorText);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching specific workflow:', error);
+    }
+  };
+
+  // Auto-open document preview when workflow is loaded from Gmail link
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const workflowId = urlParams.get('workflow');
+    
+    if (workflow && workflowId && !showDocumentPreview && !hasAutoOpened) {
+      console.log('🔗 Auto-opening document preview from Gmail link for workflow:', workflowId);
+      setHasAutoOpened(true); // Mark as auto-opened to prevent reopening
+      // Use setTimeout to ensure the component is fully rendered
+      setTimeout(() => {
+        handleViewDocument();
+      }, 100);
+    }
+  }, [workflow, showDocumentPreview, hasAutoOpened]);
 
   const handleApprove = async () => {
     if (!workflow) return;
@@ -41,7 +100,53 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         comments: comment || 'Approved by client'
       });
       
-      alert('✅ Request approved successfully!\n\nYour approval has been recorded and the workflow is now complete.');
+      // Update workflow status to approved since all steps are complete
+      await updateWorkflow(workflow.id, { 
+        status: 'approved',
+        currentStep: 4 // Move to Deal Desk step
+      });
+      
+      // Send email to Deal Desk after client approval
+      try {
+        console.log('📧 Sending email to Deal Desk after client approval...');
+        console.log('📧 Workflow data:', workflow);
+        console.log('📧 Deal Desk email:', workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email);
+        
+        const dealDeskEmail = workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email || 'dealdesk@company.com';
+        console.log('📧 Using Deal Desk email:', dealDeskEmail);
+        
+        const response = await fetch('http://localhost:3001/api/send-deal-desk-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            dealDeskEmail: dealDeskEmail,
+            workflowData: {
+              documentId: workflow.documentId,
+              documentType: workflow.documentType,
+              clientName: workflow.clientName,
+              amount: workflow.amount,
+              workflowId: workflow.id
+            }
+          })
+        });
+
+        console.log('📧 Deal Desk email response status:', response.status);
+        const result = await response.json();
+        console.log('📧 Deal Desk email response:', result);
+        
+        if (result.success) {
+          console.log('✅ Deal Desk email sent successfully');
+        } else {
+          console.log('⚠️ Deal Desk email failed, but workflow is complete');
+          console.log('⚠️ Error details:', result.error || result.message);
+        }
+      } catch (emailError) {
+        console.error('❌ Error sending Deal Desk email:', emailError);
+      }
+      
+      alert('✅ Request approved successfully!\n\nYour approval has been recorded and Deal Desk has been notified. The workflow is now complete.');
       
       // Reset form and refresh page
       setComment('');
@@ -375,6 +480,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
               <button
                 onClick={() => {
                   setShowDocumentPreview(false);
+                  setHasAutoOpened(true); // Mark as manually closed to prevent auto-reopening
                   if (documentPreviewUrl) {
                     URL.revokeObjectURL(documentPreviewUrl);
                     setDocumentPreviewUrl(null);
@@ -437,6 +543,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
               <button
                 onClick={() => {
                   setShowDocumentPreview(false);
+                  setHasAutoOpened(true); // Mark as manually closed to prevent auto-reopening
                   if (documentPreviewUrl) {
                     URL.revokeObjectURL(documentPreviewUrl);
                     setDocumentPreviewUrl(null);
