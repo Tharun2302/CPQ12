@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText } from 'lucide-react';
+import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface CEOApprovalDashboardProps {
@@ -20,6 +20,9 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   const [modalOpenedFromTab, setModalOpenedFromTab] = useState<string>('queue');
   const [hasTakenAction, setHasTakenAction] = useState(false);
   const [denyAfterComment, setDenyAfterComment] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [isDenying, setIsDenying] = useState(false);
+  const [isSavingComment, setIsSavingComment] = useState(false);
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('CEOApprovalDashboard rendered for:', ceoEmail);
@@ -136,7 +139,11 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   };
 
   const handleApprove = async (workflowId: string) => {
+    if (isApproving) return; // Prevent double-clicks
+    
     console.log('Legal Team Approving workflow:', workflowId);
+    setIsApproving(true);
+    
     try {
       setHasTakenAction(true);
       // Update workflow step
@@ -186,10 +193,14 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     } catch (error) {
       console.error('Error approving workflow:', error);
       alert('❌ Failed to approve workflow. Please try again.');
+    } finally {
+      setIsApproving(false);
     }
   };
 
   const handleDeny = async (workflowId: string) => {
+    if (isDenying) return; // Prevent double-clicks
+    
     console.log('Legal Team Denying workflow:', workflowId);
     
     // Check if comment is provided
@@ -200,6 +211,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       return;
     }
     
+    setIsDenying(true);
     try {
       setHasTakenAction(true);
       await updateWorkflowStep(workflowId, 2, { 
@@ -222,6 +234,8 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     } catch (error) {
       console.error('Error denying workflow:', error);
       alert('❌ Failed to deny workflow. Please try again.');
+    } finally {
+      setIsDenying(false);
     }
   };
 
@@ -234,11 +248,14 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   };
 
   const handleSaveComment = async () => {
+    if (isSavingComment) return; // Prevent double-clicks
+    
     if (!commentWorkflowId || !commentText.trim()) {
       alert('Please enter a comment');
       return;
     }
 
+    setIsSavingComment(true);
     try {
       if (denyAfterComment) {
         const id = commentWorkflowId;
@@ -270,6 +287,8 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
     } catch (error) {
       console.error('❌ Error adding comment:', error);
       alert('❌ Failed to add comment. Please try again.');
+    } finally {
+      setIsSavingComment(false);
     }
   };
 
@@ -730,10 +749,20 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
                      <div className="flex gap-3">
                        <button
                          onClick={() => handleApprove(selectedWorkflow.id)}
-                         className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                         disabled={isApproving}
+                         className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                        >
-                         <ThumbsUp className="w-4 h-4" />
-                         Approve
+                         {isApproving ? (
+                           <>
+                             <Loader2 className="w-4 h-4 animate-spin" />
+                             Approving...
+                           </>
+                         ) : (
+                           <>
+                             <ThumbsUp className="w-4 h-4" />
+                             Approve
+                           </>
+                         )}
                        </button>
                        <button
                          onClick={() => {
@@ -746,10 +775,20 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
                              handleDeny(selectedWorkflow.id);
                            }
                          }}
-                         className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                         disabled={isDenying}
+                         className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                        >
-                         <ThumbsDown className="w-4 h-4" />
-                         Deny
+                         {isDenying ? (
+                           <>
+                             <Loader2 className="w-4 h-4 animate-spin" />
+                             Denying...
+                           </>
+                         ) : (
+                           <>
+                             <ThumbsDown className="w-4 h-4" />
+                             Deny
+                           </>
+                         )}
                        </button>
                        <button
                          onClick={() => handleAddComment(selectedWorkflow.id)}
@@ -829,9 +868,19 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
               </button>
               <button
                 onClick={handleSaveComment}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                disabled={isSavingComment}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {denyAfterComment ? 'Save & Deny' : 'Save Comment'}
+                {isSavingComment ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    {denyAfterComment ? 'Save & Deny' : 'Save Comment'}
+                  </>
+                )}
               </button>
             </div>
           </div>
