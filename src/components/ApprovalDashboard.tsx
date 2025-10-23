@@ -43,15 +43,45 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
         const role1Step = w.workflowSteps?.find(step => step.role === 'Technical Team');
         return role1Step?.status === 'approved';
       });
+    } else if (roleFilter === 'role1_denied') {
+      filtered = filtered.filter(w => {
+        const role1Step = w.workflowSteps?.find(step => step.role === 'Technical Team');
+        return role1Step?.status === 'denied';
+      });
+    } else if (roleFilter === 'role1_pending') {
+      filtered = filtered.filter(w => {
+        const role1Step = w.workflowSteps?.find(step => step.role === 'Technical Team');
+        return role1Step?.status === 'pending';
+      });
     } else if (roleFilter === 'role2_approved') {
       filtered = filtered.filter(w => {
         const role2Step = w.workflowSteps?.find(step => step.role === 'Legal Team');
         return role2Step?.status === 'approved';
       });
+    } else if (roleFilter === 'role2_denied') {
+      filtered = filtered.filter(w => {
+        const role2Step = w.workflowSteps?.find(step => step.role === 'Legal Team');
+        return role2Step?.status === 'denied';
+      });
+    } else if (roleFilter === 'role2_pending') {
+      filtered = filtered.filter(w => {
+        const role2Step = w.workflowSteps?.find(step => step.role === 'Legal Team');
+        return role2Step?.status === 'pending';
+      });
     } else if (roleFilter === 'role3_approved') {
       filtered = filtered.filter(w => {
         const role3Step = w.workflowSteps?.find(step => step.role === 'Client');
         return role3Step?.status === 'approved';
+      });
+    } else if (roleFilter === 'role3_denied') {
+      filtered = filtered.filter(w => {
+        const role3Step = w.workflowSteps?.find(step => step.role === 'Client');
+        return role3Step?.status === 'denied';
+      });
+    } else if (roleFilter === 'role3_pending') {
+      filtered = filtered.filter(w => {
+        const role3Step = w.workflowSteps?.find(step => step.role === 'Client');
+        return role3Step?.status === 'pending';
       });
     }
 
@@ -172,9 +202,21 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm font-medium"
                  >
                    <option value="all">All Roles</option>
-                   <option value="role1_approved">Technical Team Approved</option>
-                   <option value="role2_approved">Legal Team Approved</option>
-                   <option value="role3_approved">Client Approved</option>
+                   <optgroup label="Technical Team">
+                     <option value="role1_approved">Technical Team Approved</option>
+                     <option value="role1_denied">Technical Team Denied</option>
+                     <option value="role1_pending">Technical Team Pending</option>
+                   </optgroup>
+                   <optgroup label="Legal Team">
+                     <option value="role2_approved">Legal Team Approved</option>
+                     <option value="role2_denied">Legal Team Denied</option>
+                     <option value="role2_pending">Legal Team Pending</option>
+                   </optgroup>
+                   <optgroup label="Client">
+                     <option value="role3_approved">Client Approved</option>
+                     <option value="role3_denied">Client Denied</option>
+                     <option value="role3_pending">Client Pending</option>
+                   </optgroup>
                  </select>
                </div>
                
@@ -191,8 +233,29 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                </div>
              </div>
              
-             <div className="mt-2 text-xs text-gray-500">
-               <span className="text-blue-600 font-medium">{filteredWorkflows.length}</span> of <span className="font-medium">{workflows.length}</span> workflows
+             <div className="mt-3 flex items-center justify-between">
+               <div className="text-sm text-gray-600">
+                 <span className="text-blue-600 font-semibold">{filteredWorkflows.length}</span> of <span className="font-medium">{workflows.length}</span> workflows
+                 {(statusFilter !== 'all' || roleFilter !== 'all') && (
+                   <span className="ml-2 text-green-600">
+                     (filtered)
+                   </span>
+                 )}
+               </div>
+               {(statusFilter !== 'all' || roleFilter !== 'all') && (
+                 <div className="flex items-center gap-2">
+                   {statusFilter !== 'all' && (
+                     <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                       Status: {statusFilter === 'pending' ? 'Pending/In Progress' : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                     </span>
+                   )}
+                   {roleFilter !== 'all' && (
+                     <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full font-medium">
+                       Role: {roleFilter.replace('role1_', 'Technical Team ').replace('role2_', 'Legal Team ').replace('role3_', 'Client ').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                     </span>
+                   )}
+                 </div>
+               )}
              </div>
            </div>
            
