@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, Clock, BarChart3, X, FileCheck, CheckCircle, AlertCircle, Trash2, Eye, FileText } from 'lucide-react';
+import { RefreshCw, Clock, BarChart3, X, FileCheck, CheckCircle, AlertCircle, Trash2, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface ApprovalDashboardProps {
@@ -13,6 +13,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [isDeleting, setIsDeleting] = useState(false);
   const { workflows, deleteWorkflow } = useApprovalWorkflows();
   
   console.log('ApprovalDashboard rendered');
@@ -91,20 +92,25 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
 
 
 
-  const handleDeleteWorkflow = (workflowId: string, workflowName: string) => {
+  const handleDeleteWorkflow = async (workflowId: string, workflowName: string) => {
+    if (isDeleting) return; // Prevent double-clicks
+    
     const confirmed = window.confirm(
       `Are you sure you want to delete this workflow?\n\nDocument: ${workflowName}\nID: ${workflowId}\n\nThis action cannot be undone.`
     );
     
     if (confirmed) {
+      setIsDeleting(true);
       try {
         console.log('🗑️ Deleting workflow:', workflowId);
-        deleteWorkflow(workflowId);
+        await deleteWorkflow(workflowId);
         console.log('✅ Workflow deleted successfully');
         alert('Workflow deleted successfully!');
       } catch (error) {
         console.error('❌ Error deleting workflow:', error);
         alert('Failed to delete workflow. Please try again.');
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -929,13 +935,24 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  Close
                </button>
                <button
-                 onClick={() => {
-                   handleDeleteWorkflow(selectedWorkflow.id, selectedWorkflow.documentId || 'Unknown Document');
+                 onClick={async () => {
+                   await handleDeleteWorkflow(selectedWorkflow.id, selectedWorkflow.documentId || 'Unknown Document');
                    closeWorkflowModal();
                  }}
-                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                 disabled={isDeleting}
+                 className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                >
-                 Delete Workflow
+                 {isDeleting ? (
+                   <>
+                     <Loader2 className="w-4 h-4 animate-spin" />
+                     Deleting...
+                   </>
+                 ) : (
+                   <>
+                     <Trash2 className="w-4 h-4" />
+                     Delete Workflow
+                   </>
+                 )}
                </button>
              </div>
            </div>
