@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
+import { convertDocxToPdfLight } from '../utils/docxToPdfLight';
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
