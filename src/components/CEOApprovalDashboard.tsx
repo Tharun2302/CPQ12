@@ -181,10 +181,8 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
         alert('✅ Workflow approved successfully!');
       }
       
-      // Close modal and refresh data
+      // Close modal - state is already updated by updateWorkflowStep
       closeDocumentModal();
-      // Refresh workflows to get updated status
-      window.location.reload(); // Simple refresh to get updated data
     } catch (error) {
       console.error('Error approving workflow:', error);
       alert('❌ Failed to approve workflow. Please try again.');
@@ -216,13 +214,11 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       } : prev);
       alert('❌ Workflow denied successfully!');
       
-      // Reset comment and close modals
+      // Reset comment and close modals - state is already updated by updateWorkflowStep
       setCommentText('');
       setCommentWorkflowId(null);
       setShowCommentModal(false);
       closeDocumentModal();
-      // Refresh workflows to get updated status
-      window.location.reload(); // Simple refresh to get updated data
     } catch (error) {
       console.error('Error denying workflow:', error);
       alert('❌ Failed to deny workflow. Please try again.');

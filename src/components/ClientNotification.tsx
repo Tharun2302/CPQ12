@@ -180,10 +180,10 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       
       alert('✅ Request approved successfully!\n\nYour approval has been recorded and Deal Desk has been notified. The workflow is now complete.');
       
-      // Reset form and refresh page
+      // Reset form and close document preview
       setComment('');
-      // Refresh the page to get updated workflow status
-      window.location.reload();
+      setShowDocumentPreview(false);
+      setShowCommentInModal(false);
     } catch (error) {
       console.error('❌ Error approving workflow:', error);
       alert('❌ Failed to approve request. Please try again.');
@@ -221,10 +221,10 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       
       alert('❌ Request denied.\n\nYour decision has been recorded and the workflow is now closed.');
       
-      // Reset form and refresh page
+      // Reset form and close document preview
       setComment('');
-      // Refresh the page to get updated workflow status
-      window.location.reload();
+      setShowDocumentPreview(false);
+      setShowCommentInModal(false);
     } catch (error) {
       console.error('❌ Error denying workflow:', error);
       alert('❌ Failed to deny request. Please try again.');
