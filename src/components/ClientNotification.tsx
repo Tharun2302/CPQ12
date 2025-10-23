@@ -14,6 +14,9 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
   const [isLoadingDocument, setIsLoadingDocument] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [hasTakenAction, setHasTakenAction] = useState(false);
+  const [showCommentInModal, setShowCommentInModal] = useState(false);
+  const [loadingWorkflow, setLoadingWorkflow] = useState(true);
+  const [workflowNotFound, setWorkflowNotFound] = useState(false);
   const { workflows, updateWorkflowStep, updateWorkflow } = useApprovalWorkflows();
   
   // Get workflow ID from URL parameters and auto-open document preview
@@ -32,21 +35,29 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       if (foundWorkflow) {
         setWorkflow(foundWorkflow);
         setHasAutoOpened(false); // Reset auto-open flag for new workflow
+        setWorkflowNotFound(false);
+        setLoadingWorkflow(false);
         console.log('📋 Client viewing workflow from loaded data:', foundWorkflow);
       } else if (workflows.length > 0) {
         // If workflows are loaded but this one not found, it doesn't exist
         console.error('❌ Workflow not found in loaded workflows:', workflowId);
         console.error('❌ Available workflow IDs:', workflows.map(w => w.id));
+        setWorkflowNotFound(true);
+        setLoadingWorkflow(false);
       } else {
         // If workflows not loaded yet, fetch this specific workflow directly
         console.log('🔄 Workflows not loaded yet, fetching specific workflow:', workflowId);
         fetchSpecificWorkflow(workflowId);
       }
+    } else if (!workflowId) {
+      // No workflowId in URL; stop loading state
+      setLoadingWorkflow(false);
     }
   }, [workflows, workflow]);
 
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {
+      setLoadingWorkflow(true);
       console.log('📄 Fetching specific workflow from API:', workflowId);
       const response = await fetch(`http://localhost:3001/api/approval-workflows/${workflowId}`);
       
@@ -60,18 +71,26 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         if (result.success && result.workflow) {
           setWorkflow(result.workflow);
           setHasAutoOpened(false); // Reset auto-open flag for new workflow
+          setWorkflowNotFound(false);
+          setLoadingWorkflow(false);
           console.log('📋 Client viewing workflow from API:', result.workflow);
         } else {
           console.error('❌ Workflow not found in API response:', workflowId);
           console.error('❌ API Response:', result);
+          setWorkflowNotFound(true);
+          setLoadingWorkflow(false);
         }
       } else {
         const errorText = await response.text();
         console.error('❌ Failed to fetch workflow from API:', response.status);
         console.error('❌ Error response:', errorText);
+        setWorkflowNotFound(true);
+        setLoadingWorkflow(false);
       }
     } catch (error) {
       console.error('❌ Error fetching specific workflow:', error);
+      setWorkflowNotFound(true);
+      setLoadingWorkflow(false);
     }
   };
 
@@ -294,7 +313,21 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     }
   };
 
-  if (!workflow) {
+  if (loadingWorkflow) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Eye className="w-8 h-8 text-blue-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Loading workflow...</h1>
+          <p className="text-gray-600">Please wait while we load your approval request.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (workflowNotFound || !workflow) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -523,6 +556,23 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                 title="Document Preview"
               />
             </div>
+            {/* Optional in-modal comment box (triggered by Add Comment button) */}
+            {showCommentInModal && (
+              <div className="px-4 pb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <MessageCircle className="w-4 h-4 inline mr-1" />
+                  Add Comment
+                </label>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Add your comments about this request..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none"
+                  rows={3}
+                />
+              </div>
+            )}
+
             {/* Action Buttons - Only show if workflow is still pending */}
             <div className="flex items-center justify-between gap-3 p-4 border-t border-gray-200 bg-gray-50">
               {(() => {
@@ -547,12 +597,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                       Deny
                     </button>
                     <button
-                      onClick={() => {
-                        const commentInput = document.querySelector('textarea[name="comment"]') as HTMLTextAreaElement;
-                        if (commentInput) {
-                          commentInput.focus();
-                        }
-                      }}
+                      onClick={() => setShowCommentInModal(true)}
                       className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       <MessageCircle className="w-4 h-4" />
@@ -569,6 +614,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                 onClick={() => {
                   setShowDocumentPreview(false);
                   setHasAutoOpened(true); // Mark as manually closed to prevent auto-reopening
+                  setShowCommentInModal(false);
                   if (documentPreviewUrl) {
                     URL.revokeObjectURL(documentPreviewUrl);
                     setDocumentPreviewUrl(null);
