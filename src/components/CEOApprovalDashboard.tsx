@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
+// Get backend URL from environment variables
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '${BACKEND_URL}';
+
 interface CEOApprovalDashboardProps {
   ceoEmail?: string;
 }
@@ -54,7 +57,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {
       console.log('📄 Fetching specific workflow from API:', workflowId);
-      const response = await fetch(`http://localhost:3001/api/approval-workflows/${workflowId}`);
+      const response = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
       
       if (response.ok) {
         const result = await response.json();
@@ -93,7 +96,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       
       try {
         console.log('🔄 Fetching document preview for:', workflow.documentId);
-        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         
         console.log('📡 Response status:', response.status);
         console.log('📡 Response ok:', response.ok);
@@ -116,7 +119,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
           // Fallback: Try to load document directly
           console.log('🔄 Trying fallback method...');
           try {
-            const directResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+            const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
             if (directResponse.ok) {
               const blob = await directResponse.blob();
               const url = URL.createObjectURL(blob);
@@ -161,7 +164,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       if (workflow) {
         // Send email to Client
         console.log('📧 Sending email to Client after Legal Team approval...');
-        const response = await fetch('http://localhost:3001/api/send-client-email', {
+        const response = await fetch('${BACKEND_URL}/api/send-client-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -312,7 +315,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       
       try {
         console.log('🔄 Fetching document preview for:', workflow.documentId);
-        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         
         console.log('📡 Response status:', response.status);
         console.log('📡 Response ok:', response.ok);
@@ -335,7 +338,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
           // Fallback: Try to load document directly
           console.log('🔄 Trying fallback method...');
           try {
-            const directResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+            const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
             if (directResponse.ok) {
               const blob = await directResponse.blob();
               const url = URL.createObjectURL(blob);

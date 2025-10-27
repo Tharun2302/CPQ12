@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { RefreshCw, Clock, BarChart3, X, FileCheck, CheckCircle, AlertCircle, Trash2, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
+// Get backend URL from environment variables
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+
 interface ApprovalDashboardProps {
 }
 
@@ -127,7 +130,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
       setDocumentPreview(null);
       
       try {
-        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         const result = await response.json();
         
         if (result.success && result.dataUrl) {

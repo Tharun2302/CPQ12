@@ -3,6 +3,9 @@ import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, 
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
 
+// Get backend URL from environment variables
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '${BACKEND_URL}';
+
 interface ApprovalWorkflowProps {
   quotes?: any[];
   onStartWorkflow?: (workflowData: any) => void;
@@ -52,7 +55,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const loadAvailableDocuments = async () => {
     setIsLoadingDocuments(true);
     try {
-      const response = await fetch('http://localhost:3001/api/documents');
+      const response = await fetch('${BACKEND_URL}/api/documents');
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.documents) {
@@ -83,7 +86,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     setPdfPreviewData(null);
 
     try {
-      const response = await fetch(`http://localhost:3001/api/documents/${document.id}/preview`);
+      const response = await fetch(`${BACKEND_URL}/api/documents/${document.id}/preview`);
       if (response.ok) {
       const result = await response.json();
       if (result.success && result.dataUrl) {
