@@ -216,7 +216,7 @@ function generateManagerEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/technical-approval?workflow=${workflowData.workflowId}" 
                style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -263,7 +263,7 @@ function generateCEOEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/legal-approval?workflow=${workflowData.workflowId}" 
                style="background: #8B5CF6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>

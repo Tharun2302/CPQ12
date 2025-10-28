@@ -1,25 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText, Loader2 } from 'lucide-react';
+import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL } from '../config/api';
 
-// Get backend URL from environment variables
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-
-interface ManagerApprovalDashboardProps {
-  managerEmail?: string;
+interface LegalTeamApprovalDashboardProps {
+  ceoEmail?: string;
 }
 
-const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({ 
-  managerEmail = 'manager@company.com'
+const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({ 
+  ceoEmail = 'ceo@company.com'
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [commentWorkflowId, setCommentWorkflowId] = useState<string | null>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [documentPreview, setDocumentPreview] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-  const [showCommentModal, setShowCommentModal] = useState(false);
-  const [commentText, setCommentText] = useState('');
-  const [commentWorkflowId, setCommentWorkflowId] = useState<string | null>(null);
   const [modalOpenedFromTab, setModalOpenedFromTab] = useState<string>('queue');
   const [hasTakenAction, setHasTakenAction] = useState(false);
   const [denyAfterComment, setDenyAfterComment] = useState(false);
@@ -28,7 +26,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const [isSavingComment, setIsSavingComment] = useState(false);
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
-  console.log('ManagerApprovalDashboard rendered for:', managerEmail);
+  console.log('LegalTeamApprovalDashboard rendered for:', ceoEmail);
   console.log('📊 Available workflows:', workflows.length);
   console.log('📋 Workflows data:', workflows);
 
@@ -62,7 +60,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.workflow) {
-          console.log('📋 Manager viewing workflow from API:', result.workflow);
+          console.log('📋 CEO viewing workflow from API:', result.workflow);
           // Auto-open document preview when coming from Gmail link
           console.log('🔗 Auto-opening document preview from Gmail link for workflow:', workflowId);
           handleViewDocument(result.workflow);
@@ -78,7 +76,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   };
 
   const tabs = [
-    { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => w.status === 'pending' && w.currentStep === 1).length },
+    { id: 'queue', label: 'My Approval Queue', icon: Crown, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 2).length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
 
@@ -144,33 +142,33 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const handleApprove = async (workflowId: string) => {
     if (isApproving) return; // Prevent double-clicks
     
-    console.log('Approving workflow:', workflowId);
+    console.log('Legal Team Approving workflow:', workflowId);
     setIsApproving(true);
     
     try {
       setHasTakenAction(true);
       // Update workflow step
-      await updateWorkflowStep(workflowId, 1, { status: 'approved' });
-      // Optimistically reflect status in the open modal to avoid stale UI
+      await updateWorkflowStep(workflowId, 2, { status: 'approved' });
+      // Optimistically reflect status in modal
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'in_progress',
-        currentStep: 2,
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
+        currentStep: 3,
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Legal Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
-      // Get workflow data to send Legal Team email
+      // Get workflow data to send Client email
       const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
-        // Send email to Legal Team
-        console.log('📧 Sending email to Legal Team after Technical Team approval...');
-        const response = await fetch(`${BACKEND_URL}/api/send-ceo-email`, {
+        // Send email to Client
+        console.log('📧 Sending email to Client after Legal Team approval...');
+        const response = await fetch(`${BACKEND_URL}/api/send-client-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            ceoEmail: workflow.workflowSteps?.find(step => step.role === 'Legal Team')?.email || 'ceo@company.com',
+            clientEmail: workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com',
             workflowData: {
               documentId: workflow.documentId,
               documentType: workflow.documentType,
@@ -183,9 +181,9 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
 
         const result = await response.json();
         if (result.success) {
-          alert('✅ Workflow approved successfully!\n📧 Legal Team has been notified for next approval.');
+          alert('✅ Workflow approved successfully!\n📧 Client has been notified for final approval.');
         } else {
-          alert('✅ Workflow approved but Legal Team email failed.\nPlease notify Legal Team manually.');
+          alert('✅ Workflow approved but Client email failed.\nPlease notify Client manually.');
         }
       } else {
         alert('✅ Workflow approved successfully!');
@@ -204,7 +202,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   const handleDeny = async (workflowId: string) => {
     if (isDenying) return; // Prevent double-clicks
     
-    console.log('Denying workflow:', workflowId);
+    console.log('Legal Team Denying workflow:', workflowId);
     
     // Check if comment is provided
     if (!commentText.trim()) {
@@ -217,7 +215,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     setIsDenying(true);
     try {
       setHasTakenAction(true);
-      await updateWorkflowStep(workflowId, 1, { 
+      await updateWorkflowStep(workflowId, 2, { 
         status: 'denied',
         comments: commentText.trim()
       });
@@ -225,7 +223,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'denied',
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Legal Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
       } : prev);
       alert('❌ Workflow denied successfully!');
       
@@ -243,7 +241,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   };
 
   const handleAddComment = (workflowId: string) => {
-    console.log('Adding comment to workflow:', workflowId);
+    console.log('Legal Team Adding comment to workflow:', workflowId);
     setCommentWorkflowId(workflowId);
     setCommentText('');
     setShowCommentModal(true);
@@ -268,8 +266,8 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
         return;
       }
 
-      console.log('💬 Saving comment for workflow:', commentWorkflowId);
-      updateWorkflowStep(commentWorkflowId, 1, { 
+      console.log('💬 Legal Team Saving comment for workflow:', commentWorkflowId);
+      updateWorkflowStep(commentWorkflowId, 2, { 
         comments: commentText.trim(),
         timestamp: new Date().toISOString()
       });
@@ -277,7 +275,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       setSelectedWorkflow((prev: any) => prev && prev.id === commentWorkflowId ? {
         ...prev,
         workflowSteps: prev.workflowSteps?.map((s: any) =>
-          s.step === 1 && s.role === 'Technical Team'
+          s.step === 2 && s.role === 'Legal Team'
             ? { ...s, comments: commentText.trim(), timestamp: new Date().toISOString() }
             : s
         )
@@ -303,7 +301,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   };
 
   const handleViewDocument = async (workflow: any) => {
-    console.log('👁️ Viewing document for workflow:', workflow);
+    console.log('👁️ Legal Team Viewing document for workflow:', workflow);
     setSelectedWorkflow(workflow);
     setModalOpenedFromTab('queue'); // Track that modal was opened from queue tab
     setShowDocumentModal(true);
@@ -389,10 +387,10 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
 
   const renderTabContent = () => {
 
-    // Filter workflows for technical team-specific view
+    // Filter workflows for Legal Team-specific view
     const filteredWorkflows = workflows.filter(workflow => {
       switch (activeTab) {
-        case 'queue': return workflow.status === 'pending' && workflow.currentStep === 1;
+        case 'queue': return (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
         case 'status': return true;
         default: return true;
       }
@@ -423,8 +421,8 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
@@ -436,10 +434,10 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               {workflows.map((workflow) => {
                 const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
                 const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
-                const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+                const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
                 const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
-
-      return (
+                
+                return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-4 px-4 text-gray-900 font-medium">
                       {workflow.documentId || 'Unknown Document'}
@@ -461,15 +459,15 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        ceoStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                        ceoStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                        legalTeamStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        legalTeamStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
                         'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {ceoStep?.status || 'pending'}
+                        {legalTeamStep?.status || 'pending'}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
-                      {ceoStep?.comments || 'No comments'}
+                      {legalTeamStep?.comments || 'No comments'}
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
@@ -489,10 +487,10 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                       </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
-                <div>
+                      <div>
                         <div>{createdDate.toLocaleDateString('en-GB')}</div>
                         <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
-                </div>
+                      </div>
                     </td>
                     <td className="py-4 px-4">
                       <button
@@ -512,10 +510,11 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       );
     }
 
-    return (
-      <div className="space-y-4">
-        {filteredWorkflows.map((workflow) => {
-          const StatusIcon = getStatusIcon(workflow.status);
+     return (
+       <div className="space-y-4">
+         {filteredWorkflows.map((workflow) => {
+           const StatusIcon = getStatusIcon(workflow.status);
+           const isMyTurn = (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
           
           return (
             <div key={workflow.id} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
@@ -548,32 +547,32 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-2 mb-4">
-                {/* Only show the current step for Technical Team in My Approval Queue */}
-                {workflow.workflowSteps
-                  .filter((step: any) => step.step === 1 && step.role === 'Technical Team')
-                  .map((step: any) => {
-                    const StepIcon = getStatusIcon(step.status);
-                    const isMyStep = step.step === 1 && step.role === 'Technical Team';
-                    return (
-                      <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-blue-50 border border-blue-200' : ''}`}>
-                        <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
-                          <StepIcon className="w-4 h-4" />
-                        </div>
-                        <span className="font-medium">{step.role}</span>
-                        <span className="text-gray-500">{step.email}</span>
-                        {isMyStep && <span className="text-blue-600 font-semibold text-xs">(Your Turn)</span>}
-                        {step.timestamp && (
-                          <span className="text-gray-400 ml-auto">
-                            {new Date(step.timestamp).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
+               <div className="space-y-2 mb-4">
+                 {/* Only show the current step for Legal Team in My Approval Queue */}
+                 {workflow.workflowSteps
+                   .filter((step: any) => step.step === 2 && step.role === 'Legal Team')
+                   .map((step: any) => {
+                     const StepIcon = getStatusIcon(step.status);
+                     const isMyStep = step.step === 2 && step.role === 'Legal Team' && isMyTurn;
+                     return (
+                       <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-purple-50 border border-purple-200' : ''}`}>
+                         <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
+                           <StepIcon className="w-4 h-4" />
+                         </div>
+                         <span className="font-medium">{step.role}</span>
+                         <span className="text-gray-500">{step.email}</span>
+                         {isMyStep && <span className="text-purple-600 font-semibold text-xs">(Your Turn)</span>}
+                         {step.timestamp && (
+                           <span className="text-gray-400 ml-auto">
+                             {new Date(step.timestamp).toLocaleDateString()}
+                           </span>
+                         )}
+                       </div>
+                     );
+                   })}
+               </div>
 
-              {/* Action Buttons for Technical Team - Only View Document */}
+              {/* Action Buttons for Legal Team - Only View Document */}
               <div className="flex gap-3 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => handleViewDocument(workflow)}
@@ -598,13 +597,13 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
           
           <div className="text-center">
             <div className="flex items-center justify-center gap-3 mb-2">
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                <User className="w-6 h-6 text-blue-600" />
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                <Crown className="w-6 h-6 text-purple-600" />
               </div>
-              <h1 className="text-4xl font-bold text-gray-900">Technical Team Approval Portal</h1>
+              <h1 className="text-4xl font-bold text-gray-900">Legal Team Approval Portal</h1>
             </div>
-            <p className="text-xl text-gray-600">Review and approve document workflows</p>
-            <p className="text-sm text-gray-500 mt-1">Logged in as: {managerEmail}</p>
+            <p className="text-xl text-gray-600">Legal review and approval of document workflows</p>
+            <p className="text-sm text-gray-500 mt-1">Logged in as: {ceoEmail}</p>
           </div>
         </div>
       </div>
@@ -622,7 +621,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium text-sm whitespace-nowrap transition-all duration-200 ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-md'
+                      ? 'bg-purple-600 text-white shadow-md'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                 >
@@ -647,8 +646,8 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
           <div className="px-6 py-5 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                {React.createElement(tabs.find(t => t.id === activeTab)?.icon || Clock, { className: "w-4 h-4 text-blue-600" })}
+              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                {React.createElement(tabs.find(t => t.id === activeTab)?.icon || Clock, { className: "w-4 h-4 text-purple-600" })}
               </div>
               <h2 className="text-xl font-semibold text-gray-900">
                 {tabs.find(t => t.id === activeTab)?.label}
@@ -737,15 +736,15 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               </div>
             </div>
 
-            {/* Action Buttons - Only show when opened from "My Approval Queue" tab and it's user's turn */}
+            {/* Action Buttons - Only show when opened from "My Approval Queue" tab */}
             <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
                {modalOpenedFromTab === 'queue' ? (
                  (() => {
-                  // Use latest workflow state from store to avoid stale selectedWorkflow after actions
-                  const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
-                  // Check if it's still the user's turn (Technical Team, Step 1, pending status)
-                  const techStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 1 && step.role === 'Technical Team');
-                  const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 1 && techStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
+                 // Use latest workflow state from store to avoid stale selectedWorkflow after actions
+                 const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
+                 // Check if it's still the user's turn (Legal Team, Step 2, pending status)
+                 const legalStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 2 && step.role === 'Legal Team');
+                 const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 2 && legalStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
                    
                    return isMyTurn ? (
                      <div className="flex gap-3">
@@ -794,7 +793,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                        </button>
                        <button
                          onClick={() => handleAddComment(selectedWorkflow.id)}
-                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                         className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                        >
                          <MessageCircle className="w-4 h-4" />
                          Add Comment
@@ -828,8 +827,8 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <MessageCircle className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">{denyAfterComment ? 'Provide Reason for Denial' : 'Add Comment'}</h2>
@@ -854,7 +853,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
                     placeholder="Enter your comment here..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
                     rows={4}
                   />
                 </div>
@@ -871,7 +870,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
               <button
                 onClick={handleSaveComment}
                 disabled={isSavingComment}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSavingComment ? (
                   <>
@@ -892,4 +891,4 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
   );
 };
 
-export default ManagerApprovalDashboard;
+export default LegalTeamApprovalDashboard;

@@ -13,9 +13,10 @@ import MicrosoftCallback from './pages/MicrosoftCallback';
 import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
-import ManagerApprovalDashboard from './components/ManagerApprovalDashboard';
-import CEOApprovalDashboard from './components/CEOApprovalDashboard';
+import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDashboard';
+import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
+import { BACKEND_URL } from './config/api';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -477,8 +478,7 @@ function App() {
     if (dealData?.dealId) {
       try {
         console.log('🔄 Refreshing deal data for ID:', dealData.dealId);
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const response = await fetch(`${backendUrl}/api/hubspot/deal/${dealData.dealId}`);
+        const response = await fetch(`${BACKEND_URL}/api/hubspot/deal/${dealData.dealId}`);
         
         if (response.ok) {
           const result = await response.json();
@@ -834,8 +834,7 @@ function App() {
 
   const fetchSignatureFormData = async (formId: string) => {
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/signature/form/${formId}`);
+      const response = await fetch(`${BACKEND_URL}/api/signature/form/${formId}`);
       if (response.ok) {
         const data = await response.json();
         setSignatureFormData(data.form);
@@ -881,8 +880,7 @@ function App() {
     const loadQuotes = async () => {
       try {
         // First try to load from database
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const response = await fetch(`${backendUrl}/api/quotes`);
+        const response = await fetch(`${BACKEND_URL}/api/quotes`);
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.quotes) {
@@ -931,8 +929,7 @@ function App() {
     const loadTemplates = async () => {
       try {
         // First try to load from database
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const response = await fetch(`${backendUrl}/api/templates`);
+        const response = await fetch(`${BACKEND_URL}/api/templates`);
         
         if (response.ok) {
           const data = await response.json();
@@ -1360,8 +1357,7 @@ function App() {
 
     // Save quote to database
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/quotes`, {
+      const response = await fetch(`${BACKEND_URL}/api/quotes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1397,7 +1393,7 @@ function App() {
     
     // Delete from database
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/quotes/${quoteId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/quotes/${quoteId}`, {
         method: 'DELETE'
       });
       
@@ -1422,7 +1418,7 @@ function App() {
     
     // Update in database
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/quotes/${quoteId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/quotes/${quoteId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1489,14 +1485,14 @@ function App() {
                 <ApprovalDashboard onBackToDashboard={() => window.location.href = '/dashboard/approval'} />
               </ProtectedRoute>
             } />
-            <Route path="/manager-approval" element={
-              <ManagerApprovalDashboard 
+            <Route path="/technical-approval" element={
+              <TechnicalTeamApprovalDashboard 
                 managerEmail="manager@company.com"
                 onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
             } />
-            <Route path="/ceo-approval" element={
-              <CEOApprovalDashboard 
+            <Route path="/legal-approval" element={
+              <LegalTeamApprovalDashboard 
                 ceoEmail="ceo@company.com"
                 onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />

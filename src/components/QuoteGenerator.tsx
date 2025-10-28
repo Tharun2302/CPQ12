@@ -24,6 +24,7 @@ import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL } from '../config/api';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -719,8 +720,7 @@ Quote ID: ${quoteData.id}
       // Send email directly through backend API
       const dealDeskEmail = 'dealdesk@cloudfuze.com'; // Replace with actual deal desk email
       
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/email/send`, {
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1044,7 +1044,6 @@ This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone:
 Agreement ID: AGR-${Date.now().toString().slice(-8)}
 Template: ${selectedTemplate?.name || 'Default Template'}`;
 
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
       const formData = new FormData();
       const filenameBase = (clientInfo.company || 'Company').replace(/[^a-zA-Z0-9]/g, '_');
       const timestamp = new Date().toISOString().slice(0, 10);
@@ -1064,7 +1063,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       });
 
       // Send email using server-side endpoint with attachment
-      const response = await fetch(`${backendUrl}/api/email/send`, {
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
         body: formData
       });
@@ -1547,7 +1546,7 @@ Total Price: {{total price}}`;
 
       // Send email ONLY to Technical Team first (sequential approval)
       try {
-        const response = await fetch(`${backendUrl}/api/send-manager-email`, {
+        const response = await fetch(`${BACKEND_URL}/api/send-manager-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, Eye, X } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
-
-// Get backend URL from environment variables
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '${BACKEND_URL}';
+import { BACKEND_URL } from '../config/api';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];

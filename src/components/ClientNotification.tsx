@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, X, MessageCircle, FileText, DollarSign, User, Eye, Download } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
-
-// Get backend URL from environment variables
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '${BACKEND_URL}';
+import { BACKEND_URL } from '../config/api';
 
 interface ClientNotificationProps {
 }
