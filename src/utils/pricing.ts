@@ -55,14 +55,6 @@ export const PRICING_TIERS: PricingTier[] = [
 ];
  
 export function calculatePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
-  // Check if the configuration falls within the tier's limits
-  const isUserInRange = config.numberOfUsers >= tier.userLimits.from && config.numberOfUsers <= tier.userLimits.to;
-  const isGBInRange = config.dataSizeGB >= tier.gbLimits.from && config.dataSizeGB <= tier.gbLimits.to;
- 
-  if (!isUserInRange || !isGBInRange) {
-    console.warn(`Configuration outside ${tier.name} tier limits: Users ${config.numberOfUsers} (${tier.userLimits.from}-${tier.userLimits.to}), GB ${config.dataSizeGB} (${tier.gbLimits.from}-${tier.gbLimits.to})`);
-  }
- 
   // Get base instance type cost (without duration multiplier)
   const getInstanceTypeCost = (instanceType: string): number => {
     switch (instanceType) {
@@ -84,6 +76,36 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     const baseCost = getInstanceTypeCost(instanceType);
     return baseCost * duration;
   };
+
+  // OVERAGE AGREEMENT: Only calculate instance cost, no other costs
+  if (config.combination === 'overage-agreement') {
+    const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
+    const totalCost = instanceCost;
+
+    console.log('📊 Overage Agreement Calculation:', {
+      tier: tier.name,
+      instanceCost,
+      totalCost,
+      calculation: `${config.numberOfInstances} instances × ${getInstanceTypeCost(config.instanceType)} (${config.instanceType}) × ${config.duration} months = ${instanceCost}`
+    });
+
+    return {
+      userCost: 0,
+      dataCost: 0,
+      migrationCost: 0,
+      instanceCost,
+      totalCost,
+      tier
+    };
+  }
+
+  // Check if the configuration falls within the tier's limits
+  const isUserInRange = config.numberOfUsers >= tier.userLimits.from && config.numberOfUsers <= tier.userLimits.to;
+  const isGBInRange = config.dataSizeGB >= tier.gbLimits.from && config.dataSizeGB <= tier.gbLimits.to;
+
+  if (!isUserInRange || !isGBInRange) {
+    console.warn(`Configuration outside ${tier.name} tier limits: Users ${config.numberOfUsers} (${tier.userLimits.from}-${tier.userLimits.to}), GB ${config.dataSizeGB} (${tier.gbLimits.from}-${tier.gbLimits.to})`);
+  }
  
   // Implement Messaging logic exactly as in the provided calculator
   if (config.migrationType === 'Messaging') {

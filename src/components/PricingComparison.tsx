@@ -60,12 +60,35 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Filter plans based on migration type
   const filteredCalculations = calculations.filter(calc => {
+    // For overage agreement, show only ONE plan (first available)
+    if (configuration?.combination === 'overage-agreement') {
+      return calc === calculations[0];
+    }
+    
     if (enforceAdvancedOnly) {
       return calc.tier.name === 'Advanced';
     }
     
-    // For Content migration: show all 3 plans (Basic, Standard, Advanced)
+    // For Content migration: hide Basic plan for specific combinations
     if (configuration?.migrationType === 'Content') {
+      const combination = configuration?.combination;
+      const hideBasicPlan = combination === 'dropbox-to-sharepoint' || 
+                            combination === 'dropbox-to-onedrive' ||
+                            combination === 'box-to-box' ||
+                            combination === 'box-to-google-mydrive' ||
+                            combination === 'box-to-google-sharedrive' ||
+                            combination === 'box-to-onedrive' ||
+                            combination === 'google-sharedrive-to-egnyte' ||
+                            combination === 'google-sharedrive-to-google-sharedrive' ||
+                            combination === 'google-sharedrive-to-onedrive' ||
+                            combination === 'google-sharedrive-to-sharepoint';
+      
+      // Hide Basic plan for specific combinations (SharePoint, OneDrive, all Box combinations, and all Google SharedDrive combinations)
+      if (hideBasicPlan && calc.tier.name === 'Basic') {
+        return false;
+      }
+      
+      // Show all 3 plans (Basic, Standard, Advanced) for other Content combinations
       return calc.tier.name === 'Basic' || calc.tier.name === 'Standard' || calc.tier.name === 'Advanced';
     }
     
@@ -116,9 +139,13 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     <div id="pricing-comparison" className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-8 backdrop-blur-sm">
       <div className="text-center mb-10">
         <h2 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-3">
-          Choose Your Perfect Plan
+          {configuration?.combination === 'overage-agreement' ? 'Overage Agreement Plan' : 'Choose Your Perfect Plan'}
         </h2>
-        <p className="text-gray-600 text-lg">Compare our pricing tiers and find the best fit for your project</p>
+        <p className="text-gray-600 text-lg">
+          {configuration?.combination === 'overage-agreement' 
+            ? 'Review the overage agreement pricing details below'
+            : 'Compare our pricing tiers and find the best fit for your project'}
+        </p>
       </div>
       
       <div className={`${containerClass} max-w-6xl mx-auto`}>
@@ -134,9 +161,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             >
 
               <div className="text-center mb-6">
-                <h3 className="text-2xl font-bold mb-3 text-gray-800">
-                  {calc.tier.name}
-                </h3>
+                {/* Hide tier name for overage agreement */}
+                {configuration?.combination !== 'overage-agreement' && (
+                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
+                    {calc.tier.name}
+                  </h3>
+                )}
                 {discountInfo.hasDiscount ? (
                   <div>
                     <div className="text-2xl text-gray-500 line-through mb-1">
@@ -166,27 +196,39 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               </div>
 
               <div className="space-y-4 mb-8">
-                {/* Per-user cost */}
-                <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                  <span className="text-gray-700 font-medium">Per user cost:</span>
-                  <span className="font-bold text-gray-900">
-                    {configuration && configuration.numberOfUsers > 0
-                      ? `${formatCurrency(calc.userCost / configuration.numberOfUsers)}/user`
-                      : 'N/A'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                  <span className="text-gray-700 font-medium">User costs:</span>
-                  <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                  <span className="text-gray-700 font-medium">Data costs:</span>
-                  <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                  <span className="text-gray-700 font-medium">Migration cost:</span>
-                  <span className="font-bold text-gray-900">{formatCurrency(calc.migrationCost)}</span>
-                </div>
+                {/* Per-user cost - Hide for overage agreement */}
+                {configuration?.combination !== 'overage-agreement' && (
+                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                    <span className="text-gray-700 font-medium">Per user cost:</span>
+                    <span className="font-bold text-gray-900">
+                      {configuration && configuration.numberOfUsers > 0
+                        ? `${formatCurrency(calc.userCost / configuration.numberOfUsers)}/user`
+                        : 'N/A'}
+                    </span>
+                  </div>
+                )}
+                {/* User costs - Hide for overage agreement */}
+                {configuration?.combination !== 'overage-agreement' && (
+                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                    <span className="text-gray-700 font-medium">User costs:</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
+                  </div>
+                )}
+                {/* Data costs - Hide for overage agreement */}
+                {configuration?.combination !== 'overage-agreement' && (
+                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                    <span className="text-gray-700 font-medium">Data costs:</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
+                  </div>
+                )}
+                {/* Migration cost - Hide for overage agreement */}
+                {configuration?.combination !== 'overage-agreement' && (
+                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                    <span className="text-gray-700 font-medium">Migration cost:</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(calc.migrationCost)}</span>
+                  </div>
+                )}
+                {/* Instances Cost - ALWAYS SHOWN */}
                 <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                   <span className="text-gray-700 font-medium">Instances Cost:</span>
                   <span className="font-bold text-gray-900">{formatCurrency(calc.instanceCost)}</span>
@@ -200,7 +242,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                 <span className="relative flex items-center justify-center gap-2">
-                  Select {calc.tier.name}
+                  {configuration?.combination === 'overage-agreement' ? 'Select' : `Select ${calc.tier.name}`}
                 </span>
               </button>
             </div>

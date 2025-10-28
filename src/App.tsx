@@ -1035,7 +1035,9 @@ function App() {
       
       // Only reset pricing state if core configuration fields have changed
       // Don't reset for date-only changes
-      const hasCoreConfig = configuration.migrationType && configuration.numberOfUsers > 0;
+      // For overage agreement, numberOfUsers can be 0, so check combination instead
+      const hasCoreConfig = configuration.migrationType && 
+        (configuration.combination === 'overage-agreement' || configuration.numberOfUsers > 0);
       
       if (hasCoreConfig) {
         console.log('🔄 Recalculating pricing for existing configuration');
@@ -1113,6 +1115,33 @@ function App() {
     console.log('🔍 Full config object:', config);
     console.log('🔍 Available templates:', templates.map(t => ({ name: t.name, planType: t.planType, combination: t.combination })));
 
+    // Special handling for OVERAGE AGREEMENT - match by combination and category
+    if (combination === 'overage-agreement') {
+      const overageMatches = templates.filter(t => {
+        const templateCombination = (t?.combination || '').toLowerCase();
+        const templateCategory = (t?.category || '').toLowerCase();
+        const matchesCombination = templateCombination === 'overage-agreement';
+        const matchesCategory = templateCategory === migration;
+        
+        console.log('🎯 Overage Agreement matching:', {
+          templateName: t?.name,
+          templateCombination,
+          templateCategory,
+          targetMigration: migration,
+          matchesCombination,
+          matchesCategory,
+          finalMatch: matchesCombination && matchesCategory
+        });
+        
+        return matchesCombination && matchesCategory;
+      });
+      
+      if (overageMatches.length > 0) {
+        console.log('✅ Found OVERAGE AGREEMENT template:', overageMatches[0].name);
+        return overageMatches[0];
+      }
+    }
+
     // First priority: Match by planType field AND combination (most reliable)
     const planTypeMatches = templates.filter(t => {
       const planType = (t?.planType || '').toLowerCase();
@@ -1152,26 +1181,57 @@ function App() {
       const isDropboxToSharedDrive = name.includes('dropbox') && name.includes('sharedrive');
       const isDropboxToSharePoint = name.includes('dropbox') && name.includes('sharepoint');
       const isDropboxToOneDrive = name.includes('dropbox') && name.includes('onedrive');
+      const isBoxToBox = name.includes('box to box') || (name.includes('box') && name.split(/\s+/).filter(word => word.toLowerCase() === 'box').length >= 2);
+      const isBoxToGoogleMyDrive = name.includes('box') && name.includes('google') && name.includes('mydrive');
+      const isBoxToGoogleSharedDrive = name.includes('box') && name.includes('google') && (name.includes('sharedrive') || name.includes('shared drive'));
+      const isBoxToOneDrive = name.includes('box') && name.includes('onedrive');
+      const isGoogleSharedDriveToEgnyte = (name.includes('google') && name.includes('sharedrive') && name.includes('egnyte')) || 
+                                           (name.includes('google') && name.includes('shared drive') && name.includes('egnyte'));
+      const isGoogleSharedDriveToGoogleSharedDrive = (name.includes('google') && name.includes('sharedrive') && name.split(/\s+to\s+/i).length === 2 && name.split(/\s+to\s+/i).every(part => part.includes('google') && (part.includes('sharedrive') || part.includes('shared drive')))) ||
+                                                       (name.toLowerCase().includes('google shared drive to google shared drive'));
+      const isGoogleSharedDriveToOneDrive = (name.includes('google') && (name.includes('sharedrive') || name.includes('shared drive')) && name.includes('onedrive'));
+      const isGoogleSharedDriveToSharePoint = (name.includes('google') && (name.includes('sharedrive') || name.includes('shared drive')) && name.includes('sharepoint'));
       
       const matchesPlan = name.includes(safeTier);
       
+      // OVERAGE AGREEMENT check
+      const isOverageAgreement = name.includes('overage') && name.includes('agreement');
+      
       // Check if the template matches the selected combination
       const matchesCombination = !combination || 
+        (combination === 'overage-agreement' && isOverageAgreement) ||
         (combination === 'slack-to-teams' && isSlackToTeams) ||
         (combination === 'slack-to-google-chat' && isSlackToGoogleChat) ||
         (combination === 'dropbox-to-mydrive' && isDropboxToMyDrive) ||
         (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive) ||
         (combination === 'dropbox-to-sharepoint' && isDropboxToSharePoint) ||
-        (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive);
+        (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive) ||
+        (combination === 'box-to-box' && isBoxToBox) ||
+        (combination === 'box-to-google-mydrive' && isBoxToGoogleMyDrive) ||
+        (combination === 'box-to-google-sharedrive' && isBoxToGoogleSharedDrive) ||
+        (combination === 'box-to-onedrive' && isBoxToOneDrive) ||
+        (combination === 'google-sharedrive-to-egnyte' && isGoogleSharedDriveToEgnyte) ||
+        (combination === 'google-sharedrive-to-google-sharedrive' && isGoogleSharedDriveToGoogleSharedDrive) ||
+        (combination === 'google-sharedrive-to-onedrive' && isGoogleSharedDriveToOneDrive) ||
+        (combination === 'google-sharedrive-to-sharepoint' && isGoogleSharedDriveToSharePoint);
       
       console.log('🔍 Name-based template matching:', { 
-        templateName: name, 
+        templateName: name,
+        isOverageAgreement,
         isSlackToTeams, 
         isSlackToGoogleChat,
         isDropboxToMyDrive,
         isDropboxToSharedDrive,
         isDropboxToSharePoint,
         isDropboxToOneDrive,
+        isBoxToBox,
+        isBoxToGoogleMyDrive,
+        isBoxToGoogleSharedDrive,
+        isBoxToOneDrive,
+        isGoogleSharedDriveToEgnyte,
+        isGoogleSharedDriveToGoogleSharedDrive,
+        isGoogleSharedDriveToOneDrive,
+        isGoogleSharedDriveToSharePoint,
         matchesPlan, 
         matchesCombination,
         safeTier,
@@ -1179,7 +1239,7 @@ function App() {
         planType: t?.planType 
       });
       
-      return (isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive || isDropboxToSharePoint || isDropboxToOneDrive) && matchesPlan && matchesCombination;
+      return (isOverageAgreement || isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive || isDropboxToSharePoint || isDropboxToOneDrive || isBoxToBox || isBoxToGoogleMyDrive || isBoxToGoogleSharedDrive || isBoxToOneDrive || isGoogleSharedDriveToEgnyte || isGoogleSharedDriveToGoogleSharedDrive || isGoogleSharedDriveToOneDrive || isGoogleSharedDriveToSharePoint) && matchesPlan && matchesCombination;
     });
 
     if (exactMatches.length > 0) {
@@ -1210,6 +1270,7 @@ function App() {
       if (name.includes('slack') && name.includes('google') && name.includes('chat')) score += 8;
       
       // Bonus for matching the selected combination
+      if (combination === 'overage-agreement' && name.includes('overage') && name.includes('agreement')) score += 5;
       if (combination === 'slack-to-teams' && name.includes('slack') && name.includes('teams')) score += 5;
       if (combination === 'slack-to-google-chat' && name.includes('slack') && name.includes('google') && name.includes('chat')) score += 5;
       

@@ -158,6 +158,195 @@ async function seedDefaultTemplates(db) {
       combination: 'dropbox-to-onedrive',
       planType: 'advanced',
       keywords: ['advanced', 'dropbox', 'onedrive', 'content', 'microsoft', 'enterprise']
+    },
+    // BOX TO BOX templates (Standard & Advanced only)
+    {
+      name: 'BOX TO BOX Standard',
+      description: 'Standard template for Box to Box migration - suitable for medium to large projects',
+      fileName: 'box-to-box-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-box',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO BOX Advanced',
+      description: 'Advanced template for Box to Box migration - suitable for large enterprise projects',
+      fileName: 'box-to-box-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-box',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'content', 'migration', 'enterprise']
+    },
+    // BOX TO GOOGLE MYDRIVE templates (Standard & Advanced only)
+    {
+      name: 'BOX TO GOOGLE MYDRIVE Standard',
+      description: 'Standard template for Box to Google MyDrive migration - suitable for medium to large projects',
+      fileName: 'box-to-google-mydrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-google-mydrive',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'google', 'mydrive', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO GOOGLE MYDRIVE Advanced',
+      description: 'Advanced template for Box to Google MyDrive migration - suitable for large enterprise projects',
+      fileName: 'box-to-google-mydrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-google-mydrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'google', 'mydrive', 'content', 'migration', 'enterprise']
+    },
+    // BOX TO GOOGLE SHARED DRIVE templates (Standard & Advanced only)
+    {
+      name: 'BOX TO GOOGLE SHARED DRIVE Standard',
+      description: 'Standard template for Box to Google Shared Drive migration - suitable for medium to large projects',
+      fileName: 'box-to-google-sharedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-google-sharedrive',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'google', 'sharedrive', 'shared drive', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO GOOGLE SHARED DRIVE Advanced',
+      description: 'Advanced template for Box to Google Shared Drive migration - suitable for large enterprise projects',
+      fileName: 'box-to-google-sharedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-google-sharedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'google', 'sharedrive', 'shared drive', 'content', 'migration', 'enterprise']
+    },
+    // BOX TO ONEDRIVE templates (Standard & Advanced only)
+    {
+      name: 'BOX TO ONEDRIVE Standard',
+      description: 'Standard template for Box to OneDrive migration - suitable for medium to large projects',
+      fileName: 'box-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'onedrive', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO ONEDRIVE Advanced',
+      description: 'Advanced template for Box to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'box-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
+    },
+    // GOOGLE SHARED DRIVE TO EGNYTE templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE SHARED DRIVE TO EGNYTE Standard',
+      description: 'Standard template for Google Shared Drive to Egnyte migration - suitable for medium to large projects',
+      fileName: 'google-sharedrive-to-egnyte-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-egnyte',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'sharedrive', 'egnyte', 'content', 'migration']
+    },
+    {
+      name: 'GOOGLE SHARED DRIVE TO EGNYTE Advanced',
+      description: 'Advanced template for Google Shared Drive to Egnyte migration - suitable for large enterprise projects',
+      fileName: 'google-sharedrive-to-egnyte-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-egnyte',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'sharedrive', 'egnyte', 'content', 'migration', 'enterprise']
+    },
+    // GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE Standard',
+      description: 'Standard template for Google Shared Drive to Google Shared Drive migration - suitable for medium to large projects',
+      fileName: 'google-sharedrive-to-google-sharedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-google-sharedrive',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'sharedrive', 'content', 'migration']
+    },
+    {
+      name: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE Advanced',
+      description: 'Advanced template for Google Shared Drive to Google Shared Drive migration - suitable for large enterprise projects',
+      fileName: 'google-sharedrive-to-google-sharedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-google-sharedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'sharedrive', 'content', 'migration', 'enterprise']
+    },
+    // GOOGLE SHARED DRIVE TO ONEDRIVE templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE SHARED DRIVE TO ONEDRIVE Standard',
+      description: 'Standard template for Google Shared Drive to OneDrive migration - suitable for medium to large projects',
+      fileName: 'google-sharedrive-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'sharedrive', 'onedrive', 'content', 'microsoft', 'migration']
+    },
+    {
+      name: 'GOOGLE SHARED DRIVE TO ONEDRIVE Advanced',
+      description: 'Advanced template for Google Shared Drive to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'google-sharedrive-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'sharedrive', 'onedrive', 'content', 'microsoft', 'migration', 'enterprise']
+    },
+    // GOOGLE SHARED DRIVE TO SHAREPOINT templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE SHARED DRIVE TO SHAREPOINT Standard',
+      description: 'Standard template for Google Shared Drive to SharePoint migration - suitable for medium to large projects',
+      fileName: 'google-sharedrive-to-sharepoint-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-sharepoint',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'sharedrive', 'sharepoint', 'content', 'microsoft', 'migration']
+    },
+    {
+      name: 'GOOGLE SHARED DRIVE TO SHAREPOINT Advanced',
+      description: 'Advanced template for Google Shared Drive to SharePoint migration - suitable for large enterprise projects',
+      fileName: 'google-sharedrive-to-sharepoint-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-sharedrive-to-sharepoint',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'sharedrive', 'sharepoint', 'content', 'microsoft', 'migration', 'enterprise']
+    },
+    // OVERAGE AGREEMENT - Single template for BOTH migration types
+    {
+      name: 'OVERAGE AGREEMENT Messaging',
+      description: 'Overage agreement template for Messaging migration',
+      fileName: 'overage-agreement.docx',
+      isDefault: false,
+      category: 'messaging',
+      combination: 'overage-agreement',
+      planType: 'overage',
+      keywords: ['overage', 'agreement', 'messaging']
+    },
+    {
+      name: 'OVERAGE AGREEMENT Content',
+      description: 'Overage agreement template for Content migration',
+      fileName: 'overage-agreement.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'overage-agreement',
+      planType: 'overage',
+      keywords: ['overage', 'agreement', 'content']
     }
   ];
 
@@ -271,11 +460,14 @@ async function seedDefaultTemplates(db) {
   }
 
   console.log(`🎉 Template seeding completed! Uploaded ${uploadedCount} templates`);
-  console.log(`📊 Total templates: 4 Messaging + 10 Content (14 templates total)`);
+  console.log(`📊 Total templates: 4 Messaging + 16 Content + 2 Overage Agreement (22 templates total)`);
   console.log(`   - Messaging: SLACK TO TEAMS, SLACK TO GOOGLE CHAT (Basic, Advanced)`);
   console.log(`   - Content: DROPBOX TO MYDRIVE, DROPBOX TO SHAREDRIVE (Basic, Standard, Advanced)`);
-  console.log(`   - Content: DROPBOX TO SHAREPOINT (Standard, Advanced only)`);
-  console.log(`   - Content: DROPBOX TO ONEDRIVE (Standard, Advanced only)`);
+  console.log(`   - Content: DROPBOX TO SHAREPOINT, DROPBOX TO ONEDRIVE (Standard, Advanced only)`);
+  console.log(`   - Content: BOX TO BOX, BOX TO GOOGLE MYDRIVE, BOX TO GOOGLE SHARED DRIVE, BOX TO ONEDRIVE (Standard, Advanced only)`);
+  console.log(`   - Content: GOOGLE SHARED DRIVE TO EGNYTE, GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE (Standard, Advanced only)`);
+  console.log(`   - Content: GOOGLE SHARED DRIVE TO ONEDRIVE, GOOGLE SHARED DRIVE TO SHAREPOINT (Standard, Advanced only)`);
+  console.log(`   - Overage: OVERAGE AGREEMENT (Messaging, Content)`);
   return uploadedCount > 0;
 }
 

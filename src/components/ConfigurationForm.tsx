@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
-import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare } from 'lucide-react';
+import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X } from 'lucide-react';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -55,6 +55,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const [discountValue, setDiscountValue] = useState<string>('');
   // Combination selection state
   const [combination, setCombination] = useState<string>('');
+  // Search state for combinations
+  const [combinationSearch, setCombinationSearch] = useState<string>('');
 
   // Extract company name from email domain if company field is "Not Available"
   const extractCompanyFromEmail = (email: string): string => {
@@ -306,10 +308,18 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       // Also save to navigation state to keep Dashboard in sync
       const existingNavState = sessionStorage.getItem('cpq_navigation_state');
       if (existingNavState) {
-        const parsed = JSON.parse(existingNavState);
-        parsed.sessionState.configuration = newConfig;
-        sessionStorage.setItem('cpq_navigation_state', JSON.stringify(parsed));
-        console.log('💾 Also saved to cpq_navigation_state');
+        try {
+          const parsed = JSON.parse(existingNavState);
+          // Ensure sessionState exists
+          if (!parsed.sessionState) {
+            parsed.sessionState = {};
+          }
+          parsed.sessionState.configuration = newConfig;
+          sessionStorage.setItem('cpq_navigation_state', JSON.stringify(parsed));
+          console.log('💾 Also saved to cpq_navigation_state');
+        } catch (navError) {
+          console.warn('💾 Could not save to navigation state:', navError);
+        }
       }
       console.log('💾 === SAVE COMPLETE ===');
     } catch (error) {
@@ -362,7 +372,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       return;
     }
     
-    if (config.numberOfUsers < 1) {
+    // For overage agreement, skip user validation
+    if (config.combination !== 'overage-agreement' && config.numberOfUsers < 1) {
       alert('Please enter the number of users (minimum 1)');
       return;
     }
@@ -377,8 +388,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       return;
     }
     
-    // Data size validation only for Content migration type
-    if (config.migrationType === 'Content' && config.dataSizeGB < 1) {
+    // Data size validation only for Content migration type and NOT for overage agreement
+    if (config.migrationType === 'Content' && config.combination !== 'overage-agreement' && config.dataSizeGB < 1) {
       alert('Please enter data size in GB for Content migration (minimum 1 GB)');
       return;
     }
@@ -403,6 +414,50 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
+      {/* Custom styles for combination dropdown hover effects */}
+      <style>{`
+        .combination-select-dropdown option {
+          padding: 12px 16px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        
+        .combination-select-dropdown option:hover {
+          background: #4b5563 !important;
+          color: white !important;
+          font-weight: 600;
+        }
+        
+        .combination-select-dropdown option:checked {
+          background: #6b7280 !important;
+          color: white !important;
+          font-weight: 700;
+        }
+        
+        .combination-select-dropdown option[value=""] {
+          color: #9ca3af;
+          font-style: italic;
+        }
+        
+        /* Custom scrollbar for the select dropdown */
+        .combination-select-dropdown::-webkit-scrollbar {
+          width: 8px;
+        }
+        
+        .combination-select-dropdown::-webkit-scrollbar-track {
+          background: #f3f4f6;
+          border-radius: 4px;
+        }
+        
+        .combination-select-dropdown::-webkit-scrollbar-thumb {
+          background: #9ca3af;
+          border-radius: 4px;
+        }
+        
+        .combination-select-dropdown::-webkit-scrollbar-thumb:hover {
+          background: #6b7280;
+        }
+      `}</style>
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Contact Information Display - Show when deal data exists */}
         {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
@@ -630,53 +685,166 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </div>
                   Combination
                 </label>
-                {/* Combination must be selected by user */}
-                <select
-                  value={config.combination || ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setCombination(value);
-                    // Persist through unified handler to ensure sessionStorage + nav state are updated
-                    handleChange('combination', value as any);
+                
+                {/* Show selection interface if no combination selected, otherwise show selected combination */}
+                {!config.combination ? (
+                  <>
+                    {/* Search Input for Combinations */}
+                    <div className="relative mb-4">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400">
+                        <Search className="w-5 h-5" />
+                      </div>
+                      <input
+                        type="text"
+                        value={combinationSearch}
+                        onChange={(e) => setCombinationSearch(e.target.value)}
+                        placeholder="Search combinations..."
+                        className="w-full pl-12 pr-12 py-3 border-2 border-purple-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-purple-300 text-base"
+                      />
+                      {combinationSearch && (
+                        <button
+                          onClick={() => setCombinationSearch('')}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                          type="button"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Combination must be selected by user */}
+                    <select
+                      value={config.combination || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setCombination(value);
+                        // Clear search when selection is made
+                        setCombinationSearch('');
+                        // Persist through unified handler to ensure sessionStorage + nav state are updated
+                        handleChange('combination', value as any);
+                        
+                        // Scroll to next section after selection
+                        setTimeout(() => {
+                          const target = document.querySelector('[data-section="project-configuration"]');
+                          if (target) (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 150);
+                      }}
+                      className="w-full px-6 py-4 border-2 border-purple-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-purple-300 text-lg font-medium combination-select-dropdown"
+                      size={10}
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: '#a855f7 #f3e8ff'
+                      }}
+                    >
+                      <option value="">Select Combination</option>
+                      {/* Messaging combinations */}
+                      {config.migrationType === 'Messaging' && (() => {
+                        const messagingCombinations = [
+                          { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
+                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
+                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                        ];
+                        
+                        const filtered = messagingCombinations.filter(combo => 
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
+                        
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
+                      {/* Content combinations */}
+                      {config.migrationType === 'Content' && (() => {
+                        const contentCombinations = [
+                          { value: 'dropbox-to-mydrive', label: 'DROPBOX TO MYDRIVE' },
+                          { value: 'dropbox-to-sharedrive', label: 'DROPBOX TO SHAREDRIVE' },
+                          { value: 'dropbox-to-sharepoint', label: 'DROPBOX TO SHAREPOINT' },
+                          { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE' },
+                          { value: 'box-to-box', label: 'BOX TO BOX' },
+                          { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
+                          { value: 'box-to-google-sharedrive', label: 'BOX TO GOOGLE SHARED DRIVE' },
+                          { value: 'box-to-onedrive', label: 'BOX TO ONEDRIVE' },
+                          { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
+                          { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
+                          { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
+                          { value: 'google-sharedrive-to-sharepoint', label: 'GOOGLE SHARED DRIVE TO SHAREPOINT' },
+                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                        ];
+                        
+                        const filtered = contentCombinations.filter(combo => 
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
+                        
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
+                    </select>
                     
-                    // Scroll to next section after selection
-                    setTimeout(() => {
-                      const target = document.querySelector('[data-section="project-configuration"]');
-                      if (target) (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }, 150);
-                  }}
-                  className="w-full px-6 py-4 border-2 border-purple-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-purple-300 text-lg font-medium"
-                >
-                  <option value="">Select Combination</option>
-                  {/* Messaging combinations */}
-                  {config.migrationType === 'Messaging' && (
-                    <>
-                      <option value="slack-to-teams">SLACK TO TEAMS</option>
-                      <option value="slack-to-google-chat">SLACK TO GOOGLE CHAT</option>
-                    </>
-                  )}
-                  {/* Content combinations */}
-                  {config.migrationType === 'Content' && (
-                    <>
-                      <option value="dropbox-to-mydrive">DROPBOX TO MYDRIVE</option>
-                      <option value="dropbox-to-sharedrive">DROPBOX TO SHAREDRIVE</option>
-                      <option value="dropbox-to-sharepoint">DROPBOX TO SHAREPOINT</option>
-                      <option value="dropbox-to-onedrive">DROPBOX TO ONEDRIVE</option>
-                    </>
-                  )}
-                </select>
-                <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                  <p className="text-sm text-purple-700">
-                    {config.combination ? (
-                      <>
-                        <strong>Selected:</strong> {config.combination.replace(/-/g, ' ').toUpperCase()}
-                        <span className="block mt-1 text-purple-600">Templates for this combination will be auto-selected after you choose a plan.</span>
-                      </>
-                    ) : (
-                      <span>Please select a combination to continue.</span>
+                    {/* Show filtered count */}
+                    {combinationSearch && (
+                      <div className="mt-2 text-sm text-purple-600">
+                        {(() => {
+                          const messagingCombinations = [
+                            { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
+                            { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
+                            { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                          ];
+                          const contentCombinations = [
+                            { value: 'dropbox-to-mydrive', label: 'DROPBOX TO MYDRIVE' },
+                            { value: 'dropbox-to-sharedrive', label: 'DROPBOX TO SHAREDRIVE' },
+                            { value: 'dropbox-to-sharepoint', label: 'DROPBOX TO SHAREPOINT' },
+                            { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE' },
+                            { value: 'box-to-box', label: 'BOX TO BOX' },
+                            { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
+                            { value: 'box-to-google-sharedrive', label: 'BOX TO GOOGLE SHARED DRIVE' },
+                            { value: 'box-to-onedrive', label: 'BOX TO ONEDRIVE' },
+                            { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
+                            { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
+                            { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
+                            { value: 'google-sharedrive-to-sharepoint', label: 'GOOGLE SHARED DRIVE TO SHAREPOINT' },
+                            { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                          ];
+                          const allCombinations = config.migrationType === 'Messaging' ? messagingCombinations : contentCombinations;
+                          const filtered = allCombinations.filter(combo => 
+                            combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                          );
+                          return `Showing ${filtered.length} of ${allCombinations.length} combinations`;
+                        })()}
+                      </div>
                     )}
-                  </p>
-                </div>
+                    
+                    <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                      <p className="text-sm text-purple-700">
+                        <span>Please select a combination to continue.</span>
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  /* Selected combination display - matches Migration Type style */
+                  <>
+                    <div className="relative">
+                      <div className="w-full px-6 py-4 border-2 border-purple-200 rounded-xl bg-white/90 backdrop-blur-sm text-lg font-medium text-gray-900 flex items-center justify-between">
+                        <span>{config.combination.replace(/-/g, ' ').toUpperCase()}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleChange('combination', '' as any);
+                            setCombination('');
+                          }}
+                          className="ml-4 px-3 py-1 bg-purple-100 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors font-medium text-sm"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                      <p className="text-sm text-purple-700">
+                        <span className="block">Templates for this combination will be auto-selected after you choose a plan.</span>
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -690,29 +858,31 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Number of Users */}
-            <div className="group">
-              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <Users className="w-4 h-4 text-white" />
-                </div>
-                Number of Users
-              </label>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={config.numberOfUsers || ''}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  const numValue = value === '' ? 0 : parseInt(value) || 0;
-                  handleChange('numberOfUsers', numValue);
-                }}
-                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                placeholder="Enter number of users"
-                autoComplete="off"
-              />
-            </div>
+            {/* Number of Users - HIDE for overage agreement */}
+            {config.combination !== 'overage-agreement' && (
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Users className="w-4 h-4 text-white" />
+                  </div>
+                  Number of Users
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={config.numberOfUsers || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const numValue = value === '' ? 0 : parseInt(value) || 0;
+                    handleChange('numberOfUsers', numValue);
+                  }}
+                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                  placeholder="Enter number of users"
+                  autoComplete="off"
+                />
+              </div>
+            )}
 
             {/* Instance Type */}
             <div className="group">
@@ -809,8 +979,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             )}
 
-                {/* Data Size - Show for Content, Hide for Messaging */}
-                {config.migrationType === 'Content' && (
+                {/* Data Size - Show for Content, Hide for Messaging and overage agreement */}
+                {config.migrationType === 'Content' && config.combination !== 'overage-agreement' && (
                   <div className="group md:col-span-2">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
@@ -897,8 +1067,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </div>
                 )}
 
-                {/* Messages Field - Show for Messaging, Hide for Content */}
-                {config.migrationType === 'Messaging' && (
+                {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
+                {config.migrationType === 'Messaging' && config.combination !== 'overage-agreement' && (
                   <div className="group">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
