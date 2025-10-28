@@ -16,6 +16,7 @@ import ApprovalDashboard from './components/ApprovalDashboard';
 import ManagerApprovalDashboard from './components/ManagerApprovalDashboard';
 import CEOApprovalDashboard from './components/CEOApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
+import DenySignature from './components/DenySignature';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -1506,6 +1507,7 @@ function App() {
                 onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
             } />
+            <Route path="/deny-signature" element={<DenySignature />} />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
                 <Dashboard

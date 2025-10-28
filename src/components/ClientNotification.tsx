@@ -138,6 +138,118 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         currentStep: 4 // Move to Deal Desk step
       });
       
+      // 🎯 TRIGGER BOLDSIGN: Send document for signature after all approvals are complete
+      try {
+        console.log('📝 All approvals complete! Triggering BoldSign...');
+        console.log('📋 Workflow Document ID:', workflow.documentId);
+        
+        // Get document from MongoDB
+        console.log('🔄 Fetching document from MongoDB...');
+        const docResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+        console.log('📡 Document fetch response status:', docResponse.status, docResponse.statusText);
+        
+        if (!docResponse.ok) {
+          const errorText = await docResponse.text();
+          console.error('❌ Document fetch failed:', errorText);
+          throw new Error(`Failed to fetch document: ${docResponse.status} ${errorText}`);
+        }
+        
+        const docData = await docResponse.json();
+        console.log('📄 Document fetched successfully:', {
+          fileName: docData.fileName,
+          size: docData.fileSize,
+          hasFileData: !!docData.fileData,
+          fileDataType: typeof docData.fileData,
+          fileDataPreview: docData.fileData ? docData.fileData.substring(0, 50) : 'N/A'
+        });
+        
+        if (!docData.fileData) {
+          throw new Error('Document has no file data (PDF content is missing)');
+        }
+        
+        // Convert to base64 if needed
+        let documentBase64 = docData.fileData;
+        
+        // If it's already base64, use it as is
+        if (typeof documentBase64 === 'string' && documentBase64.startsWith('data:')) {
+          // Remove data URI prefix if present
+          documentBase64 = documentBase64.split(',')[1];
+          console.log('📄 Removed data URI prefix from base64');
+        } else if (typeof documentBase64 === 'string' && !documentBase64.startsWith('%PDF')) {
+          // It's already base64, use as is
+          console.log('📄 Using existing base64 data');
+        } else {
+          // Convert binary to base64
+          console.log('📄 Converting binary data to base64...');
+          if (documentBase64 instanceof ArrayBuffer) {
+            const uint8Array = new Uint8Array(documentBase64);
+            documentBase64 = btoa(String.fromCharCode(...uint8Array));
+          } else if (documentBase64.buffer) {
+            const uint8Array = new Uint8Array(documentBase64.buffer);
+            documentBase64 = btoa(String.fromCharCode(...uint8Array));
+          } else {
+            // Try to convert Buffer to base64
+            documentBase64 = Buffer.from(documentBase64).toString('base64');
+          }
+          console.log('📄 Binary data converted to base64');
+        }
+        
+        console.log('📄 Final base64 preview:', documentBase64.substring(0, 50) + '...');
+        
+        // Get Legal Team and Client emails from workflow
+        const legalTeamStep = workflow.workflowSteps?.find((s: any) => s.role === 'Legal Team');
+        const clientStep = workflow.workflowSteps?.find((s: any) => s.role === 'Client');
+        
+        const legalTeamEmail = legalTeamStep?.email || 'legal@company.com';
+        const clientEmail = clientStep?.email || workflow.clientEmail || 'client@company.com';
+        
+        console.log('📧 BoldSign signers:', {
+          legalTeam: legalTeamEmail,
+          client: clientEmail
+        });
+        
+        // Send to BoldSign
+        console.log('🚀 Sending to BoldSign API...');
+        const boldSignResponse = await fetch('http://localhost:3001/api/boldsign/send-document', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            documentBase64: documentBase64,
+            fileName: docData.fileName,
+            legalTeamEmail: legalTeamEmail,
+            clientEmail: clientEmail,
+            documentTitle: `${workflow.documentType} - ${workflow.clientName}`,
+            clientName: workflow.clientName,
+            workflowId: workflow.id
+          })
+        });
+        
+        console.log('📡 BoldSign API response status:', boldSignResponse.status, boldSignResponse.statusText);
+        
+        const boldSignResult = await boldSignResponse.json();
+        console.log('📋 BoldSign API result:', boldSignResult);
+        
+        if (boldSignResult.success) {
+          console.log('✅ Document sent to BoldSign successfully!');
+          console.log('  Document ID:', boldSignResult.data.documentId);
+          console.log('  Signing URLs sent to Legal Team and Client');
+          alert('✅ Request approved successfully!\n\nYour approval has been recorded and the document has been sent to BoldSign for signatures.\n\nThe Legal Team will sign first, followed by the Client.\n\nDeal Desk has also been notified.');
+        } else {
+          console.error('⚠️ BoldSign API returned error:', boldSignResult.message);
+          console.error('  Full error:', boldSignResult.error);
+          // Don't fail the entire approval if BoldSign fails
+          alert(`⚠️ Note: Document approved but BoldSign signature request failed.\n\nError: ${boldSignResult.message}\n\nPlease check BoldSign API key in .env file and restart the server.`);
+        }
+      } catch (boldSignError: any) {
+        console.error('❌ Error triggering BoldSign:', boldSignError);
+        console.error('❌ Error message:', boldSignError.message);
+        console.error('❌ Error stack:', boldSignError.stack);
+        // Don't fail the entire approval if BoldSign fails
+        alert(`⚠️ Note: Document approved but automatic signature request failed.\n\nError: ${boldSignError.message}\n\nPlease send for signature manually.`);
+      }
+      
       // Send email to Deal Desk after client approval
       try {
         console.log('📧 Sending email to Deal Desk after client approval...');
@@ -178,7 +290,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         console.error('❌ Error sending Deal Desk email:', emailError);
       }
       
-      alert('✅ Request approved successfully!\n\nYour approval has been recorded and Deal Desk has been notified. The workflow is now complete.');
+      alert('✅ Request approved successfully!\n\nYour approval has been recorded and the document has been sent to BoldSign for signatures.\n\nThe Legal Team will sign first, followed by the Client.\n\nDeal Desk has also been notified.');
       
       // Reset form and close document preview
       setComment('');

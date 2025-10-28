@@ -224,6 +224,9 @@ async function mergeQuoteWithPlaceholders(templateFile, quoteData, quoteNumber) 
           color: rgb(0, 0, 0),
         });
         
+        // DISABLED: Pre-filling signature data (for BoldSign integration)
+        // Signature fields are now left blank for BoldSign to handle via form fields
+        /*
         // Draw user signature data on the underlined spaces
         // User signature (above the "By:" line)
         page3.drawText(quoteData.signatureData.eSignature || 'User Signature', {
@@ -257,6 +260,26 @@ async function mergeQuoteWithPlaceholders(templateFile, quoteData, quoteNumber) 
           x: 50,
           y: leftLineY - 60,
           size: 12,
+          font: helveticaFont,
+          color: rgb(0, 0, 0),
+        });
+        */
+        
+        // Add static text for Legal Team (CloudFuze side - left)
+        // Static Name: Adi Nandyala
+        page3.drawText('Adi Nandyala', {
+          x: 120,
+          y: leftLineY - 10,
+          size: 10,
+          font: helveticaFont,
+          color: rgb(0, 0, 0),
+        });
+        
+        // Static Title: DOO
+        page3.drawText('DOO', {
+          x: 120,
+          y: leftLineY - 35,
+          size: 10,
           font: helveticaFont,
           color: rgb(0, 0, 0),
         });
@@ -344,6 +367,9 @@ async function mergeQuoteWithPlaceholders(templateFile, quoteData, quoteNumber) 
           color: rgb(0, 0, 0),
         });
         
+        // DISABLED: Pre-filling client signature data (for BoldSign integration)
+        // Client signature fields are now left blank for BoldSign to handle via form fields
+        /*
         // Draw client signature data on the underlined spaces
         // Client signature (above the "By:" line)
         page3.drawText(quoteData.clientSignatureData.eSignature || 'Client Signature', {
@@ -380,6 +406,7 @@ async function mergeQuoteWithPlaceholders(templateFile, quoteData, quoteNumber) 
           font: helveticaFont,
           color: rgb(0, 0, 0),
         });
+        */
       }
     }
     

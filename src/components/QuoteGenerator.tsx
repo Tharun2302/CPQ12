@@ -1492,8 +1492,13 @@ Total Price: {{total price}}`;
     }
 
     // Validate email addresses
-    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role3) {
-      alert('Please fill in all three role email addresses.');
+    if (!approvalEmails.role1) {
+      alert('Please fill in the Technical Team email address.');
+      return;
+    }
+    
+    if (!approvalEmails.role2 || !approvalEmails.role3) {
+      alert('Please fill in Legal Team and Client email addresses for BoldSign integration.');
       return;
     }
 
@@ -1527,19 +1532,19 @@ Total Price: {{total price}}`;
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       console.log('✅ PDF saved to MongoDB for workflow:', documentId);
 
-      // Create the approval workflow
+      // Create the approval workflow - Only Technical Team approval required, then BoldSign integration
       const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        totalSteps: 4,
+        totalSteps: 1,
         workflowSteps: [
-          { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
-          { step: 2, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
-          { step: 3, role: 'Client', email: approvalEmails.role3, status: 'pending' as const },
-          { step: 4, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
-        ]
+          { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const }
+        ],
+        // Store Legal Team and Client emails for BoldSign integration
+        legalTeamEmail: approvalEmails.role2,
+        clientEmail: approvalEmails.role3
       };
 
       const newWorkflow = await createWorkflow(workflowData);

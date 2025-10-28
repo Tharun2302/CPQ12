@@ -115,24 +115,12 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       documentType: formData.documentType,
         clientName: 'John Smith', // Default client name
         amount: 0, // Default amount
-        totalSteps: 3,
+        totalSteps: 1,
       workflowSteps: [
           {
             step: 1,
             role: 'Technical Team',
             email: formData.role1Email,
-            status: 'pending'
-          },
-          {
-            step: 2,
-            role: 'Legal Team',
-            email: formData.role2Email,
-            status: 'pending'
-          },
-          {
-            step: 3,
-            role: 'Client',
-            email: formData.role3Email,
             status: 'pending'
           }
         ]

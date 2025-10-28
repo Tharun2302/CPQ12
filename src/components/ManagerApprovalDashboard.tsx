@@ -151,38 +151,48 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       // Optimistically reflect status in the open modal to avoid stale UI
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
-        status: 'in_progress',
-        currentStep: 2,
+        status: 'approved',
+        currentStep: 1,
         workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
-      // Get workflow data to send Legal Team email
+      // Get workflow data to trigger BoldSign integration
       const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
-        // Send email to Legal Team
-        console.log('📧 Sending email to Legal Team after Technical Team approval...');
-        const response = await fetch('http://localhost:3001/api/send-ceo-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            ceoEmail: workflow.workflowSteps?.find(step => step.role === 'Legal Team')?.email || 'ceo@company.com',
-            workflowData: {
+        // 🎯 TRIGGER BOLDSIGN: Send document for signature to Legal Team and Client
+        console.log('🎯 Triggering BoldSign integration after Technical Team approval...');
+        try {
+          const boldSignResponse = await fetch('http://localhost:3001/api/trigger-boldsign', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
               documentId: workflow.documentId,
-              documentType: workflow.documentType,
+              workflowId: workflow.id,
               clientName: workflow.clientName,
-              amount: workflow.amount,
-              workflowId: workflow.id
-            }
-          })
-        });
+              legalTeamEmail: workflow.legalTeamEmail || 'legal@company.com',
+              clientEmail: workflow.clientEmail || 'client@company.com'
+            })
+          });
 
-        const result = await response.json();
-        if (result.success) {
-          alert('✅ Workflow approved successfully!\n📧 Legal Team has been notified for next approval.');
-        } else {
-          alert('✅ Workflow approved but Legal Team email failed.\nPlease notify Legal Team manually.');
+          const boldSignResult = await boldSignResponse.json();
+          console.log('📋 BoldSign API Response:', boldSignResult);
+          
+          if (boldSignResult.success) {
+            alert('✅ Workflow approved successfully!\n🎯 Document sent to BoldSign for Legal Team and Client signatures.');
+          } else {
+            const errorDetails = boldSignResult.message || 'Unknown error';
+            const boldSignError = boldSignResult.boldSignError ? JSON.stringify(boldSignResult.boldSignError, null, 2) : '';
+            console.error('❌ BoldSign API Error:', errorDetails);
+            console.error('❌ BoldSign Error Details:', boldSignError);
+            
+            // Show detailed error to help with debugging
+            alert(`✅ Workflow approved but BoldSign integration failed.\n\n❌ Error: ${errorDetails}\n\n${boldSignError ? `BoldSign API Response:\n${boldSignError}\n\n` : ''}Please check:\n• BoldSign API key in .env file\n• Server console for detailed error logs`);
+          }
+        } catch (boldSignError) {
+          console.error('❌ BoldSign integration error:', boldSignError);
+          alert(`✅ Workflow approved but BoldSign integration failed.\n\n❌ Error: ${boldSignError instanceof Error ? boldSignError.message : 'Network error'}\n\nPlease check:\n• Server is running\n• BoldSign configuration in .env`);
         }
       } else {
         alert('✅ Workflow approved successfully!');

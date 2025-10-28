@@ -141,7 +141,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   const handleApprove = async (workflowId: string) => {
     if (isApproving) return; // Prevent double-clicks
     
-    console.log('Legal Team Approving workflow:', workflowId);
+    console.log('Deal Desk Approving workflow:', workflowId);
     setIsApproving(true);
     
     try {
@@ -151,38 +151,48 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       // Optimistically reflect status in modal
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
-        status: 'in_progress',
-        currentStep: 3,
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Legal Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
+        status: 'approved',
+        currentStep: 2,
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Deal Desk' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
-      // Get workflow data to send Client email
+      // Get workflow data to trigger BoldSign integration
       const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
-        // Send email to Client
-        console.log('📧 Sending email to Client after Legal Team approval...');
-        const response = await fetch('http://localhost:3001/api/send-client-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            clientEmail: workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com',
-            workflowData: {
+        // 🎯 TRIGGER BOLDSIGN: Send document for signature after Deal Desk approval
+        console.log('🎯 Triggering BoldSign integration after Deal Desk approval...');
+        try {
+          const boldSignResponse = await fetch('http://localhost:3001/api/trigger-boldsign', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
               documentId: workflow.documentId,
-              documentType: workflow.documentType,
+              workflowId: workflow.id,
               clientName: workflow.clientName,
-              amount: workflow.amount,
-              workflowId: workflow.id
-            }
-          })
-        });
+              legalTeamEmail: workflow.legalTeamEmail || 'legal@cloudfuze.com', // Added missing field
+              clientEmail: workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com'
+            })
+          });
 
-        const result = await response.json();
-        if (result.success) {
-          alert('✅ Workflow approved successfully!\n📧 Client has been notified for final approval.');
-        } else {
-          alert('✅ Workflow approved but Client email failed.\nPlease notify Client manually.');
+          const boldSignResult = await boldSignResponse.json();
+          console.log('📋 BoldSign API Response:', boldSignResult);
+          
+          if (boldSignResult.success) {
+            alert('✅ Workflow approved successfully!\n🎯 Document sent to BoldSign for signature.');
+          } else {
+            const errorDetails = boldSignResult.message || 'Unknown error';
+            const boldSignError = boldSignResult.boldSignError ? JSON.stringify(boldSignResult.boldSignError, null, 2) : '';
+            console.error('❌ BoldSign API Error:', errorDetails);
+            console.error('❌ BoldSign Error Details:', boldSignError);
+            
+            // Show detailed error to help with debugging
+            alert(`✅ Workflow approved but BoldSign integration failed.\n\n❌ Error: ${errorDetails}\n\n${boldSignError ? `BoldSign API Response:\n${boldSignError}\n\n` : ''}Please check:\n• BoldSign API key in .env file\n• Server console for detailed error logs`);
+          }
+        } catch (boldSignError) {
+          console.error('❌ BoldSign integration error:', boldSignError);
+          alert(`✅ Workflow approved but BoldSign integration failed.\n\n❌ Error: ${boldSignError instanceof Error ? boldSignError.message : 'Network error'}\n\nPlease check:\n• Server is running\n• BoldSign configuration in .env`);
         }
       } else {
         alert('✅ Workflow approved successfully!');

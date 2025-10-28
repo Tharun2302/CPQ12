@@ -2349,6 +2349,11 @@ const replacePlaceholdersInExistingPage = async (
         await fallbackCompanyNameReplacement(page, values, pageWidth, pageHeight, helveticaBold);
       }
       
+      // DISABLED: Pre-filling signature data (for BoldSign integration)
+      // Signature fields are now left blank for BoldSign to handle via form fields
+      // This ensures Legal Team and Client can sign electronically without pre-filled data
+      
+      /*
       // Add signature data to the left side (For CloudFuze, Inc.) if available
       if (quote.signatureData) {
         const signatureData = quote.signatureData;
@@ -2512,6 +2517,29 @@ const replacePlaceholdersInExistingPage = async (
           color: rgb(0, 0, 0),
         });
       }
+      */
+      
+      // Add static text for Legal Team (CloudFuze side - left)
+      const leftColumnStartX = 120; // Position after labels
+      const leftColumnStartY = pageHeight - 200;
+      
+      // Static Name: Adi Nandyala
+      page.drawText('Adi Nandyala', {
+        x: leftColumnStartX + 2,
+        y: leftColumnStartY - 18, // Position on the "Name:" underline
+        size: 10,
+        font: helveticaFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      // Static Title: DOO
+      page.drawText('DOO', {
+        x: leftColumnStartX + 2,
+        y: leftColumnStartY - 43, // Position on the "Title:" underline
+        size: 10,
+        font: helveticaFont,
+        color: rgb(0, 0, 0),
+      });
     }
     
     return; // Exit early for non-first pages

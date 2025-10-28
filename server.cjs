@@ -263,10 +263,29 @@ function generateCEOEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
-               style="background: #8B5CF6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
-              Review & Approve
-            </a>
+            <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+              <tr>
+                <td style="padding: 10px;">
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                     style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                    ✅ Review & Approve
+                  </a>
+                </td>
+                <td style="padding: 10px;">
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                     style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                    ❌ Deny Request
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </div>
+          
+          <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
+            <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Action Required</p>
+            <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
+              Please review the document and either approve or deny. If you deny, you can provide comments explaining your decision.
+            </p>
           </div>
           
           <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
@@ -311,16 +330,28 @@ function generateClientEmailHTML(workflowData) {
           <p>Our team will review your document and get back to you soon.</p>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
-               style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
-              Review & Approve Document
-            </a>
+            <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+              <tr>
+                <td style="padding: 10px;">
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                     style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                    ✅ Review & Approve
+                  </a>
+                </td>
+                <td style="padding: 10px;">
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                     style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                    ❌ Deny Request
+                  </a>
+                </td>
+              </tr>
+            </table>
           </div>
           
           <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
             <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Action Required</p>
             <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
-              Please review the document details and approve or deny this request. Your decision is required to complete the approval process.
+              Please review the document details and approve or deny this request. Your decision is required to complete the approval process. If you deny, you must provide a reason.
             </p>
           </div>
         </div>
@@ -1541,13 +1572,25 @@ app.get('/api/documents/:id', async (req, res) => {
 
     console.log('✅ Document found, size:', fileBuffer.length, 'bytes');
 
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${document.fileName || id}.pdf"`,
-      'Content-Length': fileBuffer.length
-    });
+    // Convert to base64 for JSON response
+    const base64Data = fileBuffer.toString('base64');
+    
+    console.log('📄 Converting to base64 for BoldSign...');
+    console.log('📄 Base64 preview:', base64Data.substring(0, 50) + '...');
 
-    res.send(fileBuffer);
+    res.json({
+      success: true,
+      id: document.id,
+      fileName: document.fileName,
+      fileSize: document.fileSize,
+      fileData: base64Data,
+      clientName: document.clientName,
+      clientEmail: document.clientEmail,
+      company: document.company,
+      templateName: document.templateName,
+      generatedDate: document.generatedDate,
+      metadata: document.metadata
+    });
 
   } catch (error) {
     console.error('❌ Error fetching document:', error);
@@ -3511,6 +3554,971 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// =====================================================
+// BOLDSIGN INTEGRATION ENDPOINTS
+// =====================================================
+
+/**
+ * Send document to BoldSign for signature
+ * This endpoint is called after all approval stages are completed
+ */
+app.post('/api/boldsign/send-document', async (req, res) => {
+  try {
+    const { 
+      documentBase64, 
+      fileName, 
+      legalTeamEmail, 
+      clientEmail, 
+      documentTitle,
+      clientName 
+    } = req.body;
+
+    console.log('📤 BoldSign: Sending document for signature...');
+    console.log('  Document:', fileName);
+    console.log('  Legal Team Email:', legalTeamEmail);
+    console.log('  Client Email:', clientEmail);
+
+    // Validate required fields
+    if (!documentBase64 || !fileName || !legalTeamEmail || !clientEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+
+    // Get BoldSign API key from environment
+    const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY;
+    if (!BOLDSIGN_API_KEY || BOLDSIGN_API_KEY === 'your-boldsign-api-key-here') {
+      console.error('❌ BoldSign API key not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key not configured. Please add BOLDSIGN_API_KEY to your .env file'
+      });
+    }
+
+    // Prepare form fields for both signers
+    // Legal Team signs first (signerOrder: 1), Client signs second (signerOrder: 2)
+    const legalTeamFields = [
+      {
+        id: 'legal_signature',
+        name: 'By',
+        fieldType: 'Signature',
+        pageNumber: 3,
+        // Move down to align signature box on the "By:" underline
+        bounds: { x: 120, y: 270, width: 180, height: 30 },
+        isRequired: true,
+        value: '', // Explicitly set empty value
+        placeholder: '' // Explicitly set empty placeholder
+      },
+      {
+        id: 'legal_name',
+        name: 'Name',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        // Move down to sit on the underline
+        bounds: { x: 120, y: 320, width: 180, height: 25 },
+        isRequired: true,
+        value: '',
+        placeholder: '' // Explicitly set empty placeholder
+      },
+      {
+        id: 'legal_title',
+        name: 'Title',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        // Move down to sit on the underline
+        bounds: { x: 120, y: 370, width: 180, height: 25 },
+        isRequired: true,
+        value: '',
+        placeholder: '' // Explicitly set empty placeholder
+      },
+      {
+        id: 'legal_date',
+        name: 'Date',
+        fieldType: 'DateSigned',
+        pageNumber: 3,
+        // Move up slightly to sit above the underline like other fields
+        bounds: { x: 120, y: 410, width: 180, height: 25 },
+        isRequired: true,
+        value: '', // Explicitly set empty value
+        placeholder: 'DD/MM/YYYY', // Add helpful placeholder for date format
+        dateFormat: 'DD/MM/YYYY' // Specify date format for calendar picker
+      }
+    ];
+
+    const clientFields = [
+      {
+        id: 'client_signature',
+        name: 'By',
+        fieldType: 'Signature',
+        pageNumber: 3,
+        // Move much further right to avoid overlapping with "By:" label
+        bounds: { x: 480, y: 270, width: 180, height: 30 },
+        isRequired: true,
+        value: '', // Explicitly set empty value
+        placeholder: '' // Explicitly set empty placeholder
+      },
+      {
+        id: 'client_name',
+        name: 'Name',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        // Move much further right to avoid overlapping with "Name:" label
+        bounds: { x: 480, y: 320, width: 180, height: 25 },
+        isRequired: true,
+        value: '',
+        placeholder: '' // Explicitly set empty placeholder
+      },
+      {
+        id: 'client_title',
+        name: 'Title',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        // Move much further right to avoid overlapping with "Title:" label
+        bounds: { x: 480, y: 370, width: 180, height: 25 },
+        isRequired: true,
+        value: '',
+        placeholder: '' // Explicitly set empty placeholder
+      },
+      {
+        id: 'client_date',
+        name: 'Date',
+        fieldType: 'DateSigned',
+        pageNumber: 3,
+        // Move much further right to avoid overlapping with "Date:" label
+        bounds: { x: 480, y: 410, width: 180, height: 25 },
+        isRequired: true,
+        value: '', // Explicitly set empty value
+        placeholder: 'DD/MM/YYYY', // Add helpful placeholder for date format
+        dateFormat: 'DD/MM/YYYY' // Specify date format for calendar picker
+      }
+    ];
+
+    // Helper to map our internal field model to BoldSign's expected schema
+    const mapToBoldSignFields = (fields) =>
+      fields.map(f => {
+        const mappedField = {
+          FieldType: f.fieldType,
+          Name: f.name,
+          PageNumber: f.pageNumber,
+          IsRequired: f.isRequired,
+          Bounds: {
+            X: f.bounds.x,
+            Y: f.bounds.y,
+            Width: f.bounds.width,
+            Height: f.bounds.height
+          }
+        };
+        
+        // Only add Value and Placeholder if they exist and are not empty
+        if (f.value !== undefined && f.value !== '') {
+          mappedField.Value = f.value;
+        }
+        if (f.placeholder !== undefined && f.placeholder !== '') {
+          mappedField.Placeholder = f.placeholder;
+        }
+        
+        return mappedField;
+      });
+
+    // Validate base64 data
+    console.log('📄 Validating base64 data...');
+    console.log('  Base64 length:', documentBase64.length);
+    console.log('  Base64 preview:', documentBase64.substring(0, 50));
+    
+    // Remove any whitespace or newlines from base64
+    const cleanBase64 = documentBase64.replace(/\s/g, '');
+    console.log('  Cleaned base64 length:', cleanBase64.length);
+
+    // Prepare BoldSign request with correct casing as per API schema
+    const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3001';
+    const boldSignRequest = {
+      Title: documentTitle || `Agreement - ${clientName}`,
+      Message: `Please review and sign this agreement. Legal Team will sign first, followed by the Client.\n\nIf you have concerns or need to decline this signature request, please visit: ${APP_BASE_URL}/deny-signature to provide your reason.`,
+      EnableSigningOrder: true,
+      Files: [
+        {
+          FileName: fileName,
+          ContentType: 'application/pdf',
+          Base64: `data:application/pdf;base64,${cleanBase64}`
+        }
+      ],
+      Signers: [
+        {
+          Name: 'Legal Team',
+          EmailAddress: legalTeamEmail,
+          SignerOrder: 1,
+          FormFields: mapToBoldSignFields(legalTeamFields)
+        },
+        {
+          Name: clientName || 'Client',
+          EmailAddress: clientEmail,
+          SignerOrder: 2,
+          FormFields: mapToBoldSignFields(clientFields)
+        }
+      ]
+    };
+
+    console.log('📋 BoldSign request prepared:', {
+      Title: boldSignRequest.Title,
+      Signers: boldSignRequest.Signers.map(s => ({ email: s.EmailAddress, order: s.SignerOrder })),
+      Files: boldSignRequest.Files.map(f => ({ fileName: f.FileName, contentType: f.ContentType, base64Length: f.Base64.length })),
+      EnableSigningOrder: boldSignRequest.EnableSigningOrder
+    });
+    
+    // Log form fields for debugging
+    console.log('📋 Legal Team Form Fields:', mapToBoldSignFields(legalTeamFields));
+    console.log('📋 Client Form Fields:', mapToBoldSignFields(clientFields));
+
+    // Store workflow ID for deny functionality
+    const workflowId = req.body.workflowId || '';
+    
+    // Send to BoldSign API
+    const response = await axios.post(
+      'https://api.boldsign.com/v1/document/send',
+      boldSignRequest,
+      {
+        headers: {
+          'X-API-KEY': BOLDSIGN_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ BoldSign: Document sent successfully');
+    console.log('  Document ID:', response.data.documentId);
+    
+    // Store BoldSign document ID in workflow for tracking
+    if (workflowId && response.data.documentId) {
+      try {
+        await db.collection('approval_workflows').updateOne(
+          { id: workflowId },
+          {
+            $set: {
+              boldSignDocumentId: response.data.documentId,
+              boldSignSentAt: new Date().toISOString()
+            }
+          }
+        );
+        console.log('✅ BoldSign document ID stored in workflow');
+      } catch (err) {
+        console.error('⚠️ Could not store BoldSign document ID in workflow:', err.message);
+      }
+    }
+
+    // Send custom emails with Deny button to both Legal Team and Client
+    try {
+      const isEmailConfigured = process.env.SENDGRID_API_KEY && 
+                               process.env.SENDGRID_API_KEY !== 'your-sendgrid-api-key-here';
+      
+      if (isEmailConfigured && workflowId) {
+        sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+        
+        // Get workflow details for email
+        const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+        
+        if (workflow) {
+          const denyUrl = `${APP_BASE_URL}/deny-signature?workflow=${workflowId}&document=${response.data.documentId}`;
+          
+          // Email to Legal Team (first signer)
+          const legalTeamMsg = {
+            to: legalTeamEmail,
+            from: process.env.SENDGRID_FROM_EMAIL || 'noreply@cloudfuze.com',
+            subject: `Action Required: Sign Agreement - ${clientName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background-color: #2563eb; padding: 30px; text-align: center;">
+                  <h1 style="color: white; margin: 0;">Signature Request</h1>
+                </div>
+                
+                <div style="padding: 30px; background-color: #f9fafb;">
+                  <h2 style="color: #1f2937;">Hi Legal Team,</h2>
+                  
+                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
+                    CloudFuze has requested you to review and sign the document:
+                  </p>
+                  
+                  <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="color: #1f2937; margin-top: 0;">Document Details:</h3>
+                    <ul style="color: #4b5563; line-height: 1.8;">
+                      <li><strong>Document:</strong> ${documentTitle || 'Agreement'}</li>
+                      <li><strong>Client:</strong> ${clientName}</li>
+                      <li><strong>Your Role:</strong> Legal Team (First Signer)</li>
+                    </ul>
+                  </div>
+                  
+                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
+                    You will also receive a separate email from BoldSign with the signing link.
+                  </p>
+                  
+                  <div style="text-align: center; margin: 30px 0;">
+                    <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                      <tr>
+                        <td style="padding: 10px;">
+                          <a href="${response.data.signers?.find(s => s.signerEmail === legalTeamEmail)?.signUrl || '#'}" 
+                             style="background-color: #2563eb; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                            📝 Review and Sign
+                          </a>
+                        </td>
+                        <td style="padding: 10px;">
+                          <a href="${denyUrl}&email=${encodeURIComponent(legalTeamEmail)}&name=Legal%20Team" 
+                             style="background-color: #dc2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                            ❌ Decline with Reason
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+                  
+                  <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0;">
+                    <p style="margin: 0; color: #92400e;">
+                      <strong>⚠️ Have concerns?</strong> Click the "Decline with Reason" button to explain your doubts. 
+                      All participants will be notified.
+                    </p>
+                  </div>
+                  
+                  <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                    This is an automated message. Please do not reply to this email.
+                  </p>
+                </div>
+              </div>
+            `
+          };
+          
+          // Email to Client (second signer)
+          const clientMsg = {
+            to: clientEmail,
+            from: process.env.SENDGRID_FROM_EMAIL || 'noreply@cloudfuze.com',
+            subject: `Action Required: Sign Agreement - ${clientName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background-color: #2563eb; padding: 30px; text-align: center;">
+                  <h1 style="color: white; margin: 0;">Signature Request</h1>
+                </div>
+                
+                <div style="padding: 30px; background-color: #f9fafb;">
+                  <h2 style="color: #1f2937;">Hi ${clientName},</h2>
+                  
+                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
+                    CloudFuze has requested you to review and sign the document:
+                  </p>
+                  
+                  <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="color: #1f2937; margin-top: 0;">Document Details:</h3>
+                    <ul style="color: #4b5563; line-height: 1.8;">
+                      <li><strong>Document:</strong> ${documentTitle || 'Agreement'}</li>
+                      <li><strong>Client:</strong> ${clientName}</li>
+                      <li><strong>Your Role:</strong> Client (Second Signer)</li>
+                      <li><strong>Note:</strong> You'll receive signing link after Legal Team signs</li>
+                    </ul>
+                  </div>
+                  
+                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
+                    You will receive a separate email from BoldSign with the signing link once the Legal Team has signed.
+                  </p>
+                  
+                  <div style="text-align: center; margin: 30px 0;">
+                    <a href="${denyUrl}&email=${encodeURIComponent(clientEmail)}&name=${encodeURIComponent(clientName)}" 
+                       style="background-color: #dc2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                      ❌ Decline with Reason
+                    </a>
+                  </div>
+                  
+                  <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0;">
+                    <p style="margin: 0; color: #92400e;">
+                      <strong>⚠️ Have concerns?</strong> Click the "Decline with Reason" button to explain your doubts. 
+                      All participants will be notified and the signing process will be stopped.
+                    </p>
+                  </div>
+                  
+                  <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                    This is an automated message. Please do not reply to this email.
+                  </p>
+                </div>
+              </div>
+            `
+          };
+          
+          // Send both emails
+          await Promise.all([
+            sgMail.send(legalTeamMsg),
+            sgMail.send(clientMsg)
+          ]);
+          
+          console.log('✅ Custom signature request emails sent with Deny button');
+        }
+      }
+    } catch (emailError) {
+      console.error('⚠️ Could not send custom signature emails:', emailError.message);
+      // Continue even if custom emails fail - BoldSign emails will still be sent
+    }
+
+    res.json({
+      success: true,
+      message: 'Document sent to BoldSign successfully',
+      data: {
+        documentId: response.data.documentId,
+        signers: response.data.signers
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ BoldSign Error Details:');
+    console.error('  Status:', error.response?.status);
+    console.error('  Status Text:', error.response?.statusText);
+    console.error('  Response Data:', JSON.stringify(error.response?.data, null, 2));
+    console.error('  Request URL:', error.config?.url);
+    console.error('  Request Method:', error.config?.method);
+    
+    // Handle specific BoldSign API errors
+    if (error.response?.data) {
+      const errorMessage = error.response.data.message || error.response.data.error || 'BoldSign API error';
+      console.error('❌ BoldSign API Error Message:', errorMessage);
+      
+      return res.status(error.response.status || 500).json({
+        success: false,
+        message: `BoldSign API error: ${errorMessage}`,
+        error: error.response.data,
+        status: error.response.status
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send document to BoldSign',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Deny BoldSign signature request with reason
+ */
+app.post('/api/boldsign/deny-signature', async (req, res) => {
+  try {
+    const { workflowId, signerEmail, signerName, reason, documentId } = req.body;
+
+    if (!workflowId || !signerEmail || !reason) {
+      return res.status(400).json({
+        success: false,
+        message: 'workflowId, signerEmail, and reason are required'
+      });
+    }
+
+    console.log('❌ Signature denied by:', signerEmail);
+    console.log('  Workflow ID:', workflowId);
+    console.log('  Reason:', reason);
+
+    // Find the workflow
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workflow not found'
+      });
+    }
+
+    // Determine which signer denied (Legal Team or Client)
+    const legalTeamStep = workflow.workflowSteps?.find(s => s.role === 'Legal Team');
+    const clientStep = workflow.workflowSteps?.find(s => s.role === 'Client');
+    
+    let deniedBy = 'Unknown';
+    let deniedStep = null;
+
+    if (legalTeamStep && legalTeamStep.email === signerEmail) {
+      deniedBy = 'Legal Team';
+      deniedStep = legalTeamStep.step;
+    } else if (clientStep && clientStep.email === signerEmail) {
+      deniedBy = 'Client';
+      deniedStep = clientStep.step;
+    }
+
+    // Update workflow status to denied
+    await db.collection('approval_workflows').updateOne(
+      { id: workflowId },
+      {
+        $set: {
+          status: 'signature_denied',
+          deniedBy: deniedBy,
+          deniedAt: new Date().toISOString(),
+          denialReason: reason,
+          updatedAt: new Date().toISOString()
+        }
+      }
+    );
+
+    // Update the specific workflow step
+    if (deniedStep) {
+      await db.collection('approval_workflows').updateOne(
+        { id: workflowId, 'workflowSteps.step': deniedStep },
+        {
+          $set: {
+            'workflowSteps.$.status': 'signature_denied',
+            'workflowSteps.$.comments': `Signature denied: ${reason}`,
+            'workflowSteps.$.timestamp': new Date().toISOString()
+          }
+        }
+      );
+    }
+
+    // Cancel the BoldSign document if documentId is provided
+    if (documentId) {
+      try {
+        const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY;
+        if (BOLDSIGN_API_KEY && BOLDSIGN_API_KEY !== 'your-boldsign-api-key-here') {
+          await axios.delete(
+            `https://api.boldsign.com/v1/document/revoke/${documentId}`,
+            {
+              headers: {
+                'X-API-KEY': BOLDSIGN_API_KEY
+              }
+            }
+          );
+          console.log('✅ BoldSign document revoked:', documentId);
+        }
+      } catch (boldSignError) {
+        console.error('⚠️ Could not revoke BoldSign document:', boldSignError.message);
+        // Continue even if BoldSign revocation fails
+      }
+    }
+
+    // Send notification emails to relevant parties
+    try {
+      const isEmailConfigured = process.env.SENDGRID_API_KEY && 
+                               process.env.SENDGRID_API_KEY !== 'your-sendgrid-api-key-here';
+      
+      if (isEmailConfigured) {
+        sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+        // Notify all workflow participants about the denial
+        const notificationEmails = [
+          workflow.workflowSteps?.find(s => s.role === 'Technical Team')?.email,
+          workflow.workflowSteps?.find(s => s.role === 'Legal Team')?.email,
+          workflow.workflowSteps?.find(s => s.role === 'Client')?.email,
+          workflow.workflowSteps?.find(s => s.role === 'Deal Desk')?.email
+        ].filter(Boolean);
+
+        const emailPromises = notificationEmails.map(email => {
+          const msg = {
+            to: email,
+            from: process.env.SENDGRID_FROM_EMAIL || 'noreply@cloudfuze.com',
+            subject: `Signature Denied: ${workflow.documentType} - ${workflow.clientName}`,
+            html: `
+              <h2>Signature Request Denied</h2>
+              <p><strong>${deniedBy}</strong> has declined to sign the document.</p>
+              
+              <h3>Document Details:</h3>
+              <ul>
+                <li><strong>Document:</strong> ${workflow.documentType}</li>
+                <li><strong>Client:</strong> ${workflow.clientName}</li>
+                <li><strong>Denied By:</strong> ${deniedBy} (${signerEmail})</li>
+                <li><strong>Date:</strong> ${new Date().toLocaleString()}</li>
+              </ul>
+              
+              <h3>Reason for Denial:</h3>
+              <p style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545;">
+                ${reason}
+              </p>
+              
+              <p>The workflow has been stopped and marked as <strong>Signature Denied</strong>.</p>
+              <p>Please review the reason and take appropriate action.</p>
+            `
+          };
+          return sgMail.send(msg);
+        });
+
+        await Promise.all(emailPromises);
+        console.log('✅ Denial notification emails sent');
+      }
+    } catch (emailError) {
+      console.error('⚠️ Could not send denial notification emails:', emailError.message);
+      // Continue even if email fails
+    }
+
+    res.json({
+      success: true,
+      message: 'Signature denied successfully',
+      deniedBy: deniedBy,
+      reason: reason
+    });
+
+  } catch (error) {
+    console.error('❌ Error denying signature:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to deny signature',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Check BoldSign document status
+ */
+app.get('/api/boldsign/document-status/:documentId', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+
+    const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY;
+    if (!BOLDSIGN_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key not configured'
+      });
+    }
+
+    const response = await axios.get(
+      `https://api.boldsign.com/v1/document/properties?documentId=${documentId}`,
+      {
+        headers: {
+          'X-API-KEY': BOLDSIGN_API_KEY
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      data: response.data
+    });
+
+  } catch (error) {
+    console.error('❌ Error checking BoldSign status:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check document status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Trigger BoldSign integration after workflow approval
+ * This endpoint fetches document from MongoDB and sends to BoldSign
+ */
+app.post('/api/trigger-boldsign', async (req, res) => {
+  try {
+    const { 
+      documentId, 
+      workflowId, 
+      clientName,
+      legalTeamEmail,
+      clientEmail
+    } = req.body;
+
+    console.log('🎯 Triggering BoldSign integration...');
+    console.log('  Document ID:', documentId);
+    console.log('  Workflow ID:', workflowId);
+    console.log('  Legal Team Email:', legalTeamEmail);
+    console.log('  Client Email:', clientEmail);
+
+    // Validate required fields
+    if (!documentId || !legalTeamEmail || !clientEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: documentId, legalTeamEmail, clientEmail'
+      });
+    }
+
+    // Get BoldSign API key from environment
+    const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY;
+    if (!BOLDSIGN_API_KEY || BOLDSIGN_API_KEY === 'your-boldsign-api-key-here') {
+      console.error('❌ BoldSign API key not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key not configured. Please add BOLDSIGN_API_KEY to your .env file'
+      });
+    }
+
+    // Fetch document from MongoDB
+    console.log('📄 Fetching document from MongoDB...');
+    const documentsCollection = db.collection('documents');
+    const document = await documentsCollection.findOne({ id: documentId });
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+
+    console.log('✅ Document found:', document.fileName);
+
+    // Prepare form fields for both signers
+    const legalTeamFields = [
+      {
+        id: 'legal_signature',
+        name: 'By',
+        fieldType: 'Signature',
+        pageNumber: 3,
+        x: 120,
+        y: 275,
+        width: 180,
+        height: 30
+      },
+      {
+        id: 'legal_name',
+        name: 'Name',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        x: 120,
+        y: 320,
+        width: 180,
+        height: 25
+      },
+      {
+        id: 'legal_title',
+        name: 'Title',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        x: 120,
+        y: 360,
+        width: 180,
+        height: 25
+      },
+      {
+        id: 'legal_date',
+        name: 'Date',
+        fieldType: 'DateSigned',
+        pageNumber: 3,
+        x: 120,
+        y: 410,
+        width: 180,
+        height: 25
+      }
+    ];
+
+    const clientFields = [
+      {
+        id: 'client_signature',
+        name: 'By',
+        fieldType: 'Signature',
+        pageNumber: 3,
+        x: 480,
+        y: 275,
+        width: 180,
+        height: 30
+      },
+      {
+        id: 'client_name',
+        name: 'Name',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        x: 480,
+        y: 320,
+        width: 180,
+        height: 25
+      },
+      {
+        id: 'client_title',
+        name: 'Title',
+        fieldType: 'TextBox',
+        pageNumber: 3,
+        x: 480,
+        y: 360,
+        width: 180,
+        height: 25
+      },
+      {
+        id: 'client_date',
+        name: 'Date',
+        fieldType: 'DateSigned',
+        pageNumber: 3,
+        x: 480,
+        y: 410,
+        width: 180,
+        height: 25
+      }
+    ];
+
+    // Helper function to map form fields to BoldSign format
+    const mapToBoldSignFields = (fields) => {
+      return fields.map(field => ({
+        FieldId: field.id,
+        FieldType: field.fieldType,
+        PageNumber: field.pageNumber,
+        Bounds: {
+          X: field.x,
+          Y: field.y,
+          Width: field.width,
+          Height: field.height
+        },
+        IsRequired: true
+      }));
+    };
+
+    // Clean the base64 data (remove data URL prefix if present)
+    let cleanBase64;
+    
+    console.log('🔍 Document fileData type:', typeof document.fileData);
+    console.log('🔍 Document fileData is Buffer?', Buffer.isBuffer(document.fileData));
+    console.log('🔍 Document fileData constructor:', document.fileData?.constructor?.name);
+    
+    // Handle Buffer, BSON Binary, and string formats
+    if (Buffer.isBuffer(document.fileData)) {
+      // Convert Buffer to base64 string
+      cleanBase64 = document.fileData.toString('base64');
+      console.log('📄 Converted Buffer to base64, length:', cleanBase64.length);
+    } else if (document.fileData && document.fileData.buffer && Buffer.isBuffer(document.fileData.buffer)) {
+      // Handle BSON Binary type (has a buffer property)
+      cleanBase64 = document.fileData.buffer.toString('base64');
+      console.log('📄 Converted BSON Binary to base64, length:', cleanBase64.length);
+    } else if (typeof document.fileData === 'string') {
+      cleanBase64 = document.fileData;
+      console.log('📄 Using string fileData, length:', cleanBase64.length);
+    } else if (document.fileData && typeof document.fileData.toString === 'function') {
+      // Try converting to string if it has a toString method
+      cleanBase64 = document.fileData.toString('base64');
+      console.log('📄 Converted using toString method, length:', cleanBase64.length);
+    } else {
+      console.error('❌ Document fileData is in unexpected format');
+      console.error('   Type:', typeof document.fileData);
+      console.error('   Constructor:', document.fileData?.constructor?.name);
+      console.error('   Has buffer property:', !!document.fileData?.buffer);
+      return res.status(500).json({
+        success: false,
+        message: 'Document fileData is not in the expected format',
+        debug: {
+          type: typeof document.fileData,
+          constructor: document.fileData?.constructor?.name,
+          hasBuffer: !!document.fileData?.buffer
+        }
+      });
+    }
+    
+    if (cleanBase64.startsWith('data:application/pdf;base64,')) {
+      cleanBase64 = cleanBase64.replace('data:application/pdf;base64,', '');
+    }
+
+    console.log('  Cleaned base64 length:', cleanBase64.length);
+
+    // Prepare BoldSign request
+    const boldSignRequest = {
+      Title: `Agreement - ${clientName}`,
+      Message: `CloudFuze has requested you to review and sign this agreement. Legal Team will sign first, followed by the Client.`,
+      EnableSigningOrder: true,
+      BrandId: null, // Use default brand settings from BoldSign account
+      Files: [
+        {
+          FileName: document.fileName,
+          ContentType: 'application/pdf',
+          Base64: `data:application/pdf;base64,${cleanBase64}`
+        }
+      ],
+      Signers: [
+        {
+          Name: 'Legal Team',
+          EmailAddress: legalTeamEmail,
+          SignerOrder: 1,
+          FormFields: mapToBoldSignFields(legalTeamFields)
+        },
+        {
+          Name: clientName || 'Client',
+          EmailAddress: clientEmail,
+          SignerOrder: 2,
+          FormFields: mapToBoldSignFields(clientFields)
+        }
+      ]
+    };
+
+    console.log('📋 BoldSign request prepared:', {
+      Title: boldSignRequest.Title,
+      Signers: boldSignRequest.Signers.map(s => ({ email: s.EmailAddress, order: s.SignerOrder })),
+      Files: boldSignRequest.Files.map(f => ({ fileName: f.FileName, contentType: f.ContentType, base64Length: f.Base64.length })),
+      EnableSigningOrder: boldSignRequest.EnableSigningOrder
+    });
+
+    // Send to BoldSign API
+    const response = await axios.post(
+      'https://api.boldsign.com/v1/document/send',
+      boldSignRequest,
+      {
+        headers: {
+          'X-API-KEY': BOLDSIGN_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ BoldSign: Document sent successfully');
+    console.log('  Document ID:', response.data.documentId);
+
+    res.json({
+      success: true,
+      message: 'Document sent to BoldSign successfully',
+      data: {
+        documentId: response.data.documentId,
+        signers: [
+          {
+            signerEmail: legalTeamEmail,
+            signUrl: response.data.signers?.[0]?.signUrl || 'Generated by BoldSign',
+            signerId: response.data.signers?.[0]?.signerId || 'legal-signer'
+          },
+          {
+            signerEmail: clientEmail,
+            signUrl: response.data.signers?.[1]?.signUrl || 'Generated by BoldSign',
+            signerId: response.data.signers?.[1]?.signerId || 'client-signer'
+          }
+        ]
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error triggering BoldSign integration:', error);
+    console.error('❌ Error response data:', error.response?.data);
+    console.error('❌ Error status:', error.response?.status);
+    console.error('❌ Error headers:', error.response?.headers);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to trigger BoldSign integration',
+      error: error.message,
+      boldSignError: error.response?.data,
+      statusCode: error.response?.status
+    });
+  }
+});
+
+/**
+ * Webhook endpoint for BoldSign events (optional)
+ * Use this to track when signatures are completed
+ */
+app.post('/api/boldsign/webhook', async (req, res) => {
+  try {
+    const event = req.body;
+    
+    console.log('📨 BoldSign Webhook Event:', event.eventType);
+    console.log('  Document ID:', event.documentId);
+    console.log('  Status:', event.status);
+
+    // Handle different event types
+    switch (event.eventType) {
+      case 'DocumentSigned':
+        console.log('✅ Document signed by:', event.signerEmail);
+        // You can update your database or send notifications here
+        break;
+      
+      case 'DocumentCompleted':
+        console.log('🎉 Document completed - all signatures collected');
+        // Notify relevant parties that the document is fully signed
+        break;
+      
+      case 'DocumentDeclined':
+        console.log('❌ Document declined by:', event.signerEmail);
+        break;
+      
+      default:
+        console.log('ℹ️ Other event type:', event.eventType);
+    }
+
+    // Acknowledge the webhook
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error('❌ Error processing BoldSign webhook:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

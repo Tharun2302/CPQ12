@@ -639,12 +639,12 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                <div className="mb-4">
                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                    <span>Progress</span>
-                   <span>{Math.round(((workflow.currentStep || 1) / 3) * 100)}%</span>
+                   <span>{Math.round(((workflow.currentStep || 1) / 1) * 100)}%</span>
                  </div>
                  <div className="w-full bg-gray-200 rounded-full h-2">
                    <div 
                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                     style={{ width: `${((workflow.currentStep || 1) / 3) * 100}%` }}
+                     style={{ width: `${((workflow.currentStep || 1) / 1) * 100}%` }}
                    ></div>
                  </div>
                </div>
