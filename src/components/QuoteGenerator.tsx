@@ -383,11 +383,13 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Approval workflow state
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const defaultTechEmail = (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'anushreddydasari@gmail.com';
+  const defaultLegalEmail = (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'anushreddydasari@gmail.com';
+  const defaultDealDeskEmail = (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || 'anushreddydasari@gmail.com';
   const [approvalEmails, setApprovalEmails] = useState({
-    role1: '',
-    role2: '',
-    role3: '',
-    role4: ''
+    role1: defaultTechEmail,
+    role2: defaultLegalEmail,
+    role4: defaultDealDeskEmail
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
 
@@ -1491,8 +1493,8 @@ Total Price: {{total price}}`;
     }
 
     // Validate email addresses
-    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role3) {
-      alert('Please fill in all three role email addresses.');
+    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role4) {
+      alert('Please enter Technical, Legal, and Deal Desk email addresses.');
       return;
     }
 
@@ -1532,12 +1534,11 @@ Total Price: {{total price}}`;
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        totalSteps: 4,
+        totalSteps: 3,
         workflowSteps: [
           { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
           { step: 2, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
-          { step: 3, role: 'Client', email: approvalEmails.role3, status: 'pending' as const },
-          { step: 4, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
+          { step: 3, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
         ]
       };
 
@@ -1567,7 +1568,7 @@ Total Price: {{total price}}`;
         if (result.success) {
           alert('✅ Approval workflow started successfully!\n📧 Technical Team has been notified. The workflow will continue sequentially when each role approves.');
           setShowApprovalModal(false);
-          setApprovalEmails({ role1: '', role2: '', role3: '', role4: '' });
+          setApprovalEmails({ role1: defaultTechEmail, role2: defaultLegalEmail, role4: defaultDealDeskEmail });
         } else {
           alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
         }
@@ -4503,12 +4504,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
-                        onClick={() => setShowApprovalModal(true)}
+                        onClick={handleStartApprovalWorkflow}
+                        disabled={isStartingWorkflow}
                         className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
                         title="Start Approval Workflow"
                       >
                         <Workflow className="w-3 h-3 inline mr-1" />
-                        Start Workflow
+                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Approval Workflow'}
                       </button>
                       <button
                         onClick={handleEmailAgreement}
@@ -4813,7 +4815,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </div>
               
               <p className="text-sm text-gray-600 mb-4">
-                Enter email addresses for the four approval roles. Technical Team, Legal Team, and Client can approve or deny. Deal Desk will be notified after all approvals.
+                Enter email addresses for the three approval roles. Technical Team and Legal Team can approve or deny. Deal Desk will be notified after approvals.
               </p>
               
               <div className="space-y-4">
@@ -4843,18 +4845,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   />
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Client Email
-                  </label>
-                  <input
-                    type="email"
-                    value={approvalEmails.role3}
-                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role3: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="client@company.com"
-                  />
-                </div>
+                
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -4891,7 +4882,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   ) : (
                     <>
                       <Workflow className="w-4 h-4" />
-                      Start Workflow
+                      Start Approval Workflow
                     </>
                   )}
                 </button>

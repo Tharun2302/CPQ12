@@ -157,18 +157,18 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
         workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Legal Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
-      // Get workflow data to send Client email
+      // Get workflow data to send Deal Desk email
       const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
-        // Send email to Client
-        console.log('📧 Sending email to Client after Legal Team approval...');
-        const response = await fetch(`${BACKEND_URL}/api/send-client-email`, {
+        // Send email to Deal Desk (next step)
+        console.log('📧 Sending email to Deal Desk after Legal Team approval...');
+        const response = await fetch(`${BACKEND_URL}/api/send-deal-desk-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            clientEmail: workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com',
+            dealDeskEmail: workflow.workflowSteps?.find(step => step.role === 'Deal Desk')?.email || (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || 'dealdesk@company.com',
             workflowData: {
               documentId: workflow.documentId,
               documentType: workflow.documentType,
@@ -181,9 +181,19 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
 
         const result = await response.json();
         if (result.success) {
-          alert('✅ Workflow approved successfully!\n📧 Client has been notified for final approval.');
+          // Finalize workflow: mark step 3 as approved and note notification
+          try {
+            await updateWorkflowStep(workflowId, 3, { status: 'approved', comments: 'Notified' });
+          } catch (e) {
+            // best-effort; do not block UI
+          }
+          alert('✅ Workflow approved successfully!\n📧 Deal Desk has been notified.');
         } else {
-          alert('✅ Workflow approved but Client email failed.\nPlease notify Client manually.');
+          try {
+            // Even if email fails, approvals are complete; mark workflow as approved
+            await updateWorkflowStep(workflowId, 3, { status: 'approved', comments: 'Notification failed' });
+          } catch (e) {}
+          alert('✅ Workflow approved but Deal Desk email failed.\nPlease notify Deal Desk manually.');
         }
       } else {
         alert('✅ Workflow approved successfully!');
@@ -423,8 +433,6 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
@@ -434,8 +442,8 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
               {workflows.map((workflow) => {
                 const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
                 const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
-                const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
-                const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+              const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+              const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
                 
                 return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -469,21 +477,14 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                     <td className="py-4 px-4 text-gray-600 text-sm">
                       {legalTeamStep?.comments || 'No comments'}
                     </td>
+                    
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        clientStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                        clientStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
+                        (dealDeskStep?.comments || '').toLowerCase().includes('notified')
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {clientStep?.status || 'pending'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-600 text-sm">
-                      {clientStep?.comments || 'No comments'}
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        Notified
+                        {(dealDeskStep?.comments || '').toLowerCase().includes('notified') ? 'Notified' : 'Pending'}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">

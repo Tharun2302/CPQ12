@@ -423,8 +423,6 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">CEO Comments</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
@@ -433,9 +431,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
             <tbody>
               {workflows.map((workflow) => {
                 const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
-                const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
-                const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
-                const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+               const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
+               const ceoStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+               const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
 
       return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -469,21 +467,14 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                     <td className="py-4 px-4 text-gray-600 text-sm">
                       {ceoStep?.comments || 'No comments'}
                     </td>
+                    
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        clientStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
-                        clientStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
+                        (dealDeskStep?.comments || '').toLowerCase().includes('notified')
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {clientStep?.status || 'pending'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-600 text-sm">
-                      {clientStep?.comments || 'No comments'}
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        Notified
+                        {(dealDeskStep?.comments || '').toLowerCase().includes('notified') ? 'Notified' : 'Pending'}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-gray-600 text-sm">
