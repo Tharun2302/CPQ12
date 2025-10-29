@@ -383,9 +383,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Approval workflow state
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
-  const defaultTechEmail = (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'anushreddydasari@gmail.com';
-  const defaultLegalEmail = (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'anushreddydasari@gmail.com';
-  const defaultDealDeskEmail = (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || 'anushreddydasari@gmail.com';
+  // Use centralized hardcoded defaults
+  const defaultTechEmail = 'anushreddydasari@gmail.com';
+  const defaultLegalEmail = 'raya.durai@cloudfuze.com';
+  const defaultDealDeskEmail = 'anushreddydasari@gmail.com';
   const [approvalEmails, setApprovalEmails] = useState({
     role1: defaultTechEmail,
     role2: defaultLegalEmail,
