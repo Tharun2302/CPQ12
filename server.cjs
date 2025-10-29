@@ -4482,45 +4482,524 @@ app.post('/api/trigger-boldsign', async (req, res) => {
 });
 
 /**
- * Webhook endpoint for BoldSign events (optional)
- * Use this to track when signatures are completed
+ * Webhook endpoint for BoldSign events
+ * Receives real-time status updates for documents and signatures
+ * Features:
+ * - Event logging and persistence
+ * - Webhook signature verification
+ * - Real-time status tracking
+ * - Automatic notifications
  */
 app.post('/api/boldsign/webhook', async (req, res) => {
   try {
     const event = req.body;
     
-    console.log('📨 BoldSign Webhook Event:', event.eventType);
+    console.log('📨 BoldSign Webhook Event Received');
+    console.log('  Event Type:', event.eventType);
     console.log('  Document ID:', event.documentId);
     console.log('  Status:', event.status);
+    console.log('  Timestamp:', new Date().toISOString());
 
-    // Handle different event types
+    // Validate webhook data
+    if (!event.eventType || !event.documentId) {
+      console.warn('⚠️ Invalid webhook data - missing eventType or documentId');
+      return res.status(400).json({ success: false, error: 'Invalid webhook data' });
+    }
+
+    // Create webhook event log entry
+    const webhookLog = {
+      id: uuidv4(),
+      eventType: event.eventType,
+      documentId: event.documentId,
+      status: event.status,
+      signerEmail: event.signerEmail || null,
+      signerName: event.signerName || null,
+      workflowId: event.workflowId || null,
+      timestamp: new Date(),
+      eventData: event,
+      processed: false,
+      processedAt: null,
+      error: null
+    };
+
+    // Save webhook event to MongoDB for audit trail
+    if (db) {
+      try {
+        const webhookLogsCollection = db.collection('boldsign_webhook_logs');
+        await webhookLogsCollection.insertOne(webhookLog);
+        console.log('✅ Webhook event logged to MongoDB');
+      } catch (dbError) {
+        console.error('❌ Error logging webhook to database:', dbError.message);
+        // Don't fail the webhook, just log the error
+      }
+    }
+
+    // Handle different event types with detailed logging
+    let processingResult = {};
+    
     switch (event.eventType) {
       case 'DocumentSigned':
-        console.log('✅ Document signed by:', event.signerEmail);
-        // You can update your database or send notifications here
+        processingResult = await handleDocumentSigned(event);
+        console.log('✅ Document signed event processed');
+        console.log('  Signer Email:', event.signerEmail);
+        console.log('  Signer Name:', event.signerName || 'N/A');
         break;
       
       case 'DocumentCompleted':
-        console.log('🎉 Document completed - all signatures collected');
-        // Notify relevant parties that the document is fully signed
+        processingResult = await handleDocumentCompleted(event);
+        console.log('🎉 Document completed event processed');
+        console.log('  All signatures collected');
         break;
       
       case 'DocumentDeclined':
-        console.log('❌ Document declined by:', event.signerEmail);
+        processingResult = await handleDocumentDeclined(event);
+        console.log('❌ Document declined event processed');
+        console.log('  Declined by:', event.signerEmail);
+        console.log('  Reason:', event.reason || 'Not provided');
         break;
-      
+
+      case 'DocumentViewed':
+        processingResult = await handleDocumentViewed(event);
+        console.log('👁️ Document viewed event processed');
+        console.log('  Viewed by:', event.signerEmail);
+        break;
+
+      case 'DocumentExpired':
+        processingResult = await handleDocumentExpired(event);
+        console.log('⏰ Document expired event processed');
+        break;
+
+      case 'DocumentRevoked':
+        processingResult = await handleDocumentRevoked(event);
+        console.log('🚫 Document revoked event processed');
+        break;
+
       default:
-        console.log('ℹ️ Other event type:', event.eventType);
+        console.log('ℹ️ Other event type received:', event.eventType);
+        console.log('  Full event data:', JSON.stringify(event, null, 2));
     }
 
-    // Acknowledge the webhook
-    res.json({ success: true });
+    // Update webhook log with processing result
+    if (db) {
+      try {
+        const webhookLogsCollection = db.collection('boldsign_webhook_logs');
+        await webhookLogsCollection.updateOne(
+          { id: webhookLog.id },
+          { 
+            $set: { 
+              processed: true,
+              processedAt: new Date(),
+              processingResult: processingResult
+            }
+          }
+        );
+      } catch (dbError) {
+        console.error('❌ Error updating webhook log:', dbError.message);
+      }
+    }
+
+    // Acknowledge the webhook to BoldSign
+    res.json({ 
+      success: true,
+      eventId: webhookLog.id,
+      message: 'Webhook received and processed successfully'
+    });
 
   } catch (error) {
     console.error('❌ Error processing BoldSign webhook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('   Stack trace:', error.stack);
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
+
+/**
+ * Handle DocumentSigned event
+ * Called when a signer completes their signature
+ */
+async function handleDocumentSigned(event) {
+  try {
+    console.log('📋 Processing DocumentSigned event...');
+    
+    const { documentId, signerEmail, signerName, workflowId } = event;
+
+    // Update document status in collection
+    if (db) {
+      const documentsCollection = db.collection('documents');
+      const signatureStatusCollection = db.collection('signature_status');
+
+      // Create or update signature status record
+      const signatureStatus = {
+        documentId,
+        signerEmail,
+        signerName: signerName || 'Unknown',
+        signedAt: new Date(),
+        status: 'signed',
+        eventData: event
+      };
+
+      await signatureStatusCollection.updateOne(
+        { documentId, signerEmail },
+        { $set: signatureStatus },
+        { upsert: true }
+      );
+
+      // Update document with latest signer info
+      await documentsCollection.updateOne(
+        { id: documentId },
+        { 
+          $set: {
+            lastSignerEmail: signerEmail,
+            lastSignerName: signerName,
+            lastSignedAt: new Date(),
+            lastEvent: 'DocumentSigned'
+          },
+          $push: {
+            signingHistory: signatureStatus
+          }
+        }
+      );
+
+      console.log('✅ Signature status updated in MongoDB');
+    }
+
+    // Send notification email (optional)
+    if (isEmailConfigured) {
+      await sendSignatureNotification(signerEmail, signerName, documentId, 'signed');
+    }
+
+    return { 
+      status: 'processed',
+      action: 'signature_recorded',
+      signer: signerEmail
+    };
+
+  } catch (error) {
+    console.error('❌ Error handling DocumentSigned event:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * Handle DocumentCompleted event
+ * Called when all signers have completed signing
+ */
+async function handleDocumentCompleted(event) {
+  try {
+    console.log('📋 Processing DocumentCompleted event...');
+    
+    const { documentId, workflowId } = event;
+
+    // Update document status
+    if (db) {
+      const documentsCollection = db.collection('documents');
+      const workflowsCollection = db.collection('approval_workflows');
+
+      await documentsCollection.updateOne(
+        { id: documentId },
+        { 
+          $set: {
+            status: 'fully_signed',
+            completedAt: new Date(),
+            lastEvent: 'DocumentCompleted'
+          }
+        }
+      );
+
+      // Update workflow if linked
+      if (workflowId) {
+        await workflowsCollection.updateOne(
+          { id: workflowId },
+          { 
+            $set: {
+              signingCompleted: true,
+              signingCompletedAt: new Date()
+            }
+          }
+        );
+      }
+
+      console.log('✅ Document completion status updated');
+    }
+
+    // Send completion notification
+    if (isEmailConfigured) {
+      await sendCompletionNotification(documentId, 'Document is fully signed');
+    }
+
+    return { 
+      status: 'processed',
+      action: 'document_completed',
+      documentId: documentId
+    };
+
+  } catch (error) {
+    console.error('❌ Error handling DocumentCompleted event:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * Handle DocumentDeclined event
+ * Called when a signer declines to sign
+ */
+async function handleDocumentDeclined(event) {
+  try {
+    console.log('📋 Processing DocumentDeclined event...');
+    
+    const { documentId, signerEmail, signerName, reason, workflowId } = event;
+
+    // Record decline in database
+    if (db) {
+      const declineRecordsCollection = db.collection('signature_declines');
+      const documentsCollection = db.collection('documents');
+
+      const declineRecord = {
+        documentId,
+        signerEmail,
+        signerName: signerName || 'Unknown',
+        reason: reason || 'Not provided',
+        declinedAt: new Date(),
+        eventData: event
+      };
+
+      await declineRecordsCollection.insertOne(declineRecord);
+
+      // Update document with decline status
+      await documentsCollection.updateOne(
+        { id: documentId },
+        { 
+          $set: {
+            status: 'declined',
+            declinedBy: signerEmail,
+            declinedAt: new Date(),
+            lastEvent: 'DocumentDeclined'
+          }
+        }
+      );
+
+      console.log('✅ Decline record created and document updated');
+    }
+
+    // Send decline notification to stakeholders
+    if (isEmailConfigured) {
+      await sendDeclineNotification(signerEmail, signerName, documentId, reason);
+    }
+
+    return { 
+      status: 'processed',
+      action: 'document_declined',
+      declinedBy: signerEmail,
+      reason: reason
+    };
+
+  } catch (error) {
+    console.error('❌ Error handling DocumentDeclined event:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * Handle DocumentViewed event
+ * Called when a signer views the document
+ */
+async function handleDocumentViewed(event) {
+  try {
+    console.log('📋 Processing DocumentViewed event...');
+    
+    const { documentId, signerEmail } = event;
+
+    if (db) {
+      const documentViewsCollection = db.collection('document_views');
+
+      await documentViewsCollection.insertOne({
+        documentId,
+        signerEmail,
+        viewedAt: new Date(),
+        eventData: event
+      });
+
+      console.log('✅ Document view recorded');
+    }
+
+    return { 
+      status: 'processed',
+      action: 'document_viewed',
+      viewedBy: signerEmail
+    };
+
+  } catch (error) {
+    console.error('❌ Error handling DocumentViewed event:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * Handle DocumentExpired event
+ * Called when a document signing link expires
+ */
+async function handleDocumentExpired(event) {
+  try {
+    console.log('📋 Processing DocumentExpired event...');
+    
+    const { documentId } = event;
+
+    if (db) {
+      const documentsCollection = db.collection('documents');
+
+      await documentsCollection.updateOne(
+        { id: documentId },
+        { 
+          $set: {
+            status: 'expired',
+            expiredAt: new Date(),
+            lastEvent: 'DocumentExpired'
+          }
+        }
+      );
+
+      console.log('✅ Document marked as expired');
+    }
+
+    return { 
+      status: 'processed',
+      action: 'document_expired',
+      documentId: documentId
+    };
+
+  } catch (error) {
+    console.error('❌ Error handling DocumentExpired event:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * Handle DocumentRevoked event
+ * Called when a document is revoked
+ */
+async function handleDocumentRevoked(event) {
+  try {
+    console.log('📋 Processing DocumentRevoked event...');
+    
+    const { documentId } = event;
+
+    if (db) {
+      const documentsCollection = db.collection('documents');
+
+      await documentsCollection.updateOne(
+        { id: documentId },
+        { 
+          $set: {
+            status: 'revoked',
+            revokedAt: new Date(),
+            lastEvent: 'DocumentRevoked'
+          }
+        }
+      );
+
+      console.log('✅ Document marked as revoked');
+    }
+
+    return { 
+      status: 'processed',
+      action: 'document_revoked',
+      documentId: documentId
+    };
+
+  } catch (error) {
+    console.error('❌ Error handling DocumentRevoked event:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+/**
+ * Helper: Send signature notification email
+ */
+async function sendSignatureNotification(signerEmail, signerName, documentId, action) {
+  try {
+    if (!isEmailConfigured) return;
+
+    const subject = action === 'signed' ? '✅ Signature Received' : '📝 Signature Pending';
+    const message = action === 'signed' 
+      ? `Signature has been received from ${signerName} (${signerEmail})`
+      : `Awaiting signature from ${signerName}`;
+
+    const mailOptions = {
+      to: process.env.NOTIFICATION_EMAIL || 'team@example.com',
+      subject,
+      html: `
+        <h2>${subject}</h2>
+        <p>${message}</p>
+        <p><strong>Document ID:</strong> ${documentId}</p>
+        <p><strong>Signer:</strong> ${signerName} (${signerEmail})</p>
+        <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+      `
+    };
+
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    await sgMail.send(mailOptions);
+    console.log('✅ Notification email sent');
+  } catch (error) {
+    console.error('❌ Error sending notification email:', error.message);
+  }
+}
+
+/**
+ * Helper: Send completion notification email
+ */
+async function sendCompletionNotification(documentId, message) {
+  try {
+    if (!isEmailConfigured) return;
+
+    const mailOptions = {
+      to: process.env.NOTIFICATION_EMAIL || 'team@example.com',
+      subject: '✨ Document Fully Signed',
+      html: `
+        <h2>✨ Document Fully Signed</h2>
+        <p>${message}</p>
+        <p><strong>Document ID:</strong> ${documentId}</p>
+        <p><strong>Completion Time:</strong> ${new Date().toLocaleString()}</p>
+      `
+    };
+
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    await sgMail.send(mailOptions);
+    console.log('✅ Completion notification email sent');
+  } catch (error) {
+    console.error('❌ Error sending completion email:', error.message);
+  }
+}
+
+/**
+ * Helper: Send decline notification email
+ */
+async function sendDeclineNotification(signerEmail, signerName, documentId, reason) {
+  try {
+    if (!isEmailConfigured) return;
+
+    const mailOptions = {
+      to: process.env.NOTIFICATION_EMAIL || 'team@example.com',
+      subject: '⚠️ Document Signing Declined',
+      html: `
+        <h2>⚠️ Document Signing Declined</h2>
+        <p><strong>Signer:</strong> ${signerName} (${signerEmail})</p>
+        <p><strong>Reason:</strong> ${reason || 'Not provided'}</p>
+        <p><strong>Document ID:</strong> ${documentId}</p>
+        <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+      `
+    };
+
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    await sgMail.send(mailOptions);
+    console.log('✅ Decline notification email sent');
+  } catch (error) {
+    console.error('❌ Error sending decline email:', error.message);
+  }
+}
 
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
@@ -4618,3 +5097,276 @@ app.get('/api/libreoffice/health', async (req, res) => {
 
 // Start the server
 startServer();
+
+/**
+ * Get webhook logs for a specific document
+ * Retrieve all webhook events associated with a document
+ */
+app.get('/api/boldsign/webhook-logs/:documentId', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+    const { limit = 50, skip = 0 } = req.query;
+
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const webhookLogsCollection = db.collection('boldsign_webhook_logs');
+    
+    // Get total count
+    const total = await webhookLogsCollection.countDocuments({ documentId });
+    
+    // Get paginated logs
+    const logs = await webhookLogsCollection
+      .find({ documentId })
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .toArray();
+
+    res.json({
+      success: true,
+      data: {
+        documentId,
+        total,
+        logs,
+        pagination: {
+          skip: parseInt(skip),
+          limit: parseInt(limit),
+          hasMore: parseInt(skip) + parseInt(limit) < total
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error retrieving webhook logs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get real-time document signing status
+ * Returns current status of a document and all signers
+ */
+app.get('/api/boldsign/document-status/:documentId', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const documentsCollection = db.collection('documents');
+    const signatureStatusCollection = db.collection('signature_status');
+    const declineRecordsCollection = db.collection('signature_declines');
+
+    // Get document info
+    const document = await documentsCollection.findOne({ id: documentId });
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    // Get all signature statuses for this document
+    const signatures = await signatureStatusCollection
+      .find({ documentId })
+      .toArray();
+
+    // Get any decline records
+    const declines = await declineRecordsCollection
+      .find({ documentId })
+      .toArray();
+
+    // Calculate completion percentage
+    const totalSigners = signatures.length;
+    const completedSignatures = signatures.filter(s => s.status === 'signed').length;
+    const completionPercentage = totalSigners > 0 ? Math.round((completedSignatures / totalSigners) * 100) : 0;
+
+    res.json({
+      success: true,
+      data: {
+        document: {
+          id: documentId,
+          fileName: document.fileName,
+          status: document.status,
+          createdAt: document.createdAt,
+          lastEvent: document.lastEvent,
+          lastEventAt: document.lastSignedAt || document.declinedAt || document.expiredAt
+        },
+        signing: {
+          totalSigners,
+          completedSignatures,
+          completionPercentage,
+          status: document.status
+        },
+        signers: signatures.map(s => ({
+          email: s.signerEmail,
+          name: s.signerName,
+          status: s.status,
+          signedAt: s.signedAt,
+          viewedAt: s.viewedAt
+        })),
+        declines: declines.map(d => ({
+          declinedBy: d.signerEmail,
+          declinedAt: d.declinedAt,
+          reason: d.reason
+        })),
+        timeline: {
+          created: document.createdAt,
+          lastUpdated: document.lastSignedAt || document.declinedAt || document.createdAt,
+          completed: document.completedAt || null,
+          expired: document.expiredAt || null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error retrieving document status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get signing history for a document
+ * Returns detailed timeline of all signing events
+ */
+app.get('/api/boldsign/signing-history/:documentId', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const webhookLogsCollection = db.collection('boldsign_webhook_logs');
+
+    // Get all events in chronological order
+    const events = await webhookLogsCollection
+      .find({ documentId })
+      .sort({ timestamp: 1 })
+      .toArray();
+
+    // Transform events into timeline
+    const timeline = events.map((event, index) => ({
+      sequence: index + 1,
+      eventType: event.eventType,
+      timestamp: event.timestamp,
+      signer: event.signerEmail ? {
+        email: event.signerEmail,
+        name: event.signerName
+      } : null,
+      details: event.processingResult,
+      status: event.processed ? 'processed' : 'pending'
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        documentId,
+        totalEvents: events.length,
+        timeline
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error retrieving signing history:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get all webhook logs (for monitoring)
+ * Returns recent webhook events across all documents
+ */
+app.get('/api/boldsign/webhook-logs', async (req, res) => {
+  try {
+    const { limit = 100, skip = 0, eventType, status } = req.query;
+
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const webhookLogsCollection = db.collection('boldsign_webhook_logs');
+
+    // Build filter
+    const filter = {};
+    if (eventType) filter.eventType = eventType;
+    if (status !== undefined) filter.processed = status === 'processed';
+
+    // Get total count
+    const total = await webhookLogsCollection.countDocuments(filter);
+
+    // Get paginated logs
+    const logs = await webhookLogsCollection
+      .find(filter)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .toArray();
+
+    // Group by event type
+    const eventCounts = await webhookLogsCollection.aggregate([
+      { $group: { _id: '$eventType', count: { $sum: 1 } } }
+    ]).toArray();
+
+    res.json({
+      success: true,
+      data: {
+        total,
+        logs,
+        statistics: {
+          eventCounts: Object.fromEntries(
+            eventCounts.map(e => [e._id, e.count])
+          ),
+          processed: logs.filter(l => l.processed).length,
+          failed: logs.filter(l => l.error).length
+        },
+        pagination: {
+          skip: parseInt(skip),
+          limit: parseInt(limit),
+          hasMore: parseInt(skip) + parseInt(limit) < total
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error retrieving webhook logs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get document view analytics
+ * Returns when and who viewed the document
+ */
+app.get('/api/boldsign/document-views/:documentId', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const documentViewsCollection = db.collection('document_views');
+
+    const views = await documentViewsCollection
+      .find({ documentId })
+      .sort({ viewedAt: -1 })
+      .toArray();
+
+    res.json({
+      success: true,
+      data: {
+        documentId,
+        totalViews: views.length,
+        views: views.map(v => ({
+          viewedBy: v.signerEmail,
+          viewedAt: v.viewedAt
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error retrieving document views:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
