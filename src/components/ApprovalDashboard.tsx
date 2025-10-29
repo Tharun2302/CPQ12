@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { RefreshCw, Clock, BarChart3, X, FileCheck, CheckCircle, AlertCircle, Trash2, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+<<<<<<< HEAD
+=======
+import { BACKEND_URL } from '../config/api';
+>>>>>>> origin/main
 
 interface ApprovalDashboardProps {
 }
@@ -69,6 +73,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
         const role2Step = w.workflowSteps?.find(step => step.role === 'Legal Team');
         return role2Step?.status === 'pending';
       });
+<<<<<<< HEAD
     } else if (roleFilter === 'role3_approved') {
       filtered = filtered.filter(w => {
         const role3Step = w.workflowSteps?.find(step => step.role === 'Client');
@@ -84,6 +89,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
         const role3Step = w.workflowSteps?.find(step => step.role === 'Client');
         return role3Step?.status === 'pending';
       });
+=======
+>>>>>>> origin/main
     }
 
     return filtered;
@@ -127,7 +134,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
       setDocumentPreview(null);
       
       try {
+<<<<<<< HEAD
         const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+=======
+        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+>>>>>>> origin/main
         const result = await response.json();
         
         if (result.success && result.dataUrl) {
@@ -213,16 +224,23 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      <option value="role1_denied">Technical Team Denied</option>
                      <option value="role1_pending">Technical Team Pending</option>
                    </optgroup>
+<<<<<<< HEAD
                    <optgroup label="Legal Team">
+=======
+                  <optgroup label="Legal Team">
+>>>>>>> origin/main
                      <option value="role2_approved">Legal Team Approved</option>
                      <option value="role2_denied">Legal Team Denied</option>
                      <option value="role2_pending">Legal Team Pending</option>
                    </optgroup>
+<<<<<<< HEAD
                    <optgroup label="Client">
                      <option value="role3_approved">Client Approved</option>
                      <option value="role3_denied">Client Denied</option>
                      <option value="role3_pending">Client Pending</option>
                    </optgroup>
+=======
+>>>>>>> origin/main
                  </select>
                </div>
                
@@ -256,9 +274,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      </span>
                    )}
                    {roleFilter !== 'all' && (
+<<<<<<< HEAD
                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full font-medium">
                        Role: {roleFilter.replace('role1_', 'Technical Team ').replace('role2_', 'Legal Team ').replace('role3_', 'Client ').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                      </span>
+=======
+                    <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full font-medium">
+                      Role: {roleFilter.replace('role1_', 'Technical Team ').replace('role2_', 'Legal Team ').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </span>
+>>>>>>> origin/main
                    )}
                  </div>
                )}
@@ -274,9 +298,14 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Technical Team Status</th>
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Technical Team Comments</th>
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Legal Team Status</th>
+<<<<<<< HEAD
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Legal Team Comments</th>
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Client Status</th>
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Client Comments</th>
+=======
+                <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Legal Team Comments</th>
+                <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Deal Desk Status</th>
+>>>>>>> origin/main
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Created</th>
                  <th className="text-left py-4 px-6 font-bold text-gray-800 text-sm uppercase tracking-wide">Actions</th>
                </tr>
@@ -286,7 +315,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
                  const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
                  const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+<<<<<<< HEAD
                  const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+=======
+                 const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
+>>>>>>> origin/main
                  
                  return (
                    <tr key={workflow.id} className="border-b border-gray-100 hover:bg-blue-50 transition-colors duration-200">
@@ -320,6 +353,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        {legalTeamStep?.comments || 'No comments'}
                      </td>
+<<<<<<< HEAD
                      <td className="py-4 px-6">
                        <span className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold ${
                          clientStep?.status === 'approved' ? 'bg-green-100 text-green-800 border border-green-200' :
@@ -332,6 +366,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        {clientStep?.comments || 'No comments'}
                      </td>
+=======
+                    <td className="py-4 px-6">
+                      <span className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold ${
+                        (dealDeskStep?.comments || '').toLowerCase().includes('notified')
+                          ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                          : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                      }`}>
+                        {(dealDeskStep?.comments || '').toLowerCase().includes('notified') ? 'Notified' : 'Pending'}
+                      </span>
+                    </td>
+>>>>>>> origin/main
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        <div>
                          <div>{createdDate.toLocaleDateString('en-GB')}</div>
@@ -383,6 +428,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                <tr className="border-b border-gray-200 bg-gray-50">
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
+<<<<<<< HEAD
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Decision</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Decision</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Decision</th>
@@ -390,6 +436,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
+=======
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Decision</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Decision</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Deal Desk Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
+>>>>>>> origin/main
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Completed</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Action</th>
                </tr>
@@ -397,9 +450,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
              <tbody>
                {completedWorkflows.map((workflow) => {
                  const completedDate = workflow.updatedAt ? new Date(workflow.updatedAt) : new Date();
+<<<<<<< HEAD
                  const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
                  const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
                  const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+=======
+                const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
+                const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+                const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
+>>>>>>> origin/main
                  
                  
                  return (
@@ -428,6 +487,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          {legalTeamStep?.status || 'pending'}
                        </span>
                      </td>
+<<<<<<< HEAD
                      <td className="py-4 px-6">
                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
                          clientStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
@@ -442,6 +502,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          Notified
                        </span>
                      </td>
+=======
+                    <td className="py-4 px-6">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                        (dealDeskStep?.comments || '').toLowerCase().includes('notified')
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {(dealDeskStep?.comments || '').toLowerCase().includes('notified') ? 'Notified' : 'Pending'}
+                      </span>
+                    </td>
+>>>>>>> origin/main
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        {technicalTeamStep?.comments ? (
                          <span className="inline-flex px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
@@ -460,6 +531,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'No comments'
                        )}
                      </td>
+<<<<<<< HEAD
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        {clientStep?.comments && clientStep.comments !== 'Approved by client' ? (
                          <span className="inline-flex px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs">
@@ -469,6 +541,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          'No comments'
                        )}
                      </td>
+=======
+                    
+>>>>>>> origin/main
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        <div>
                          <div>{completedDate.toLocaleDateString('en-GB')}</div>
@@ -523,7 +598,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
          <div className="overflow-x-auto">
            <table className="w-full border-collapse">
              <thead>
+<<<<<<< HEAD
                <tr className="border-b border-gray-200">
+=======
+              <tr className="border-b border-gray-200">
+>>>>>>> origin/main
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Type</th>
@@ -531,8 +610,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Status</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Comments</th>
+<<<<<<< HEAD
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Status</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Client Comments</th>
+=======
+>>>>>>> origin/main
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Created</th>
                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                </tr>
@@ -540,9 +622,14 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
              <tbody>
                {filteredWorkflows.map((workflow) => {
                  const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
+<<<<<<< HEAD
                  const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
                  const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
                  const clientStep = workflow.workflowSteps?.find(step => step.role === 'Client');
+=======
+                const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
+                const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+>>>>>>> origin/main
                  
                  return (
                    <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -571,6 +658,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        {legalTeamStep?.comments || 'No comments'}
                      </td>
+<<<<<<< HEAD
                      <td className="py-4 px-6">
                        <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                          {clientStep?.status || 'pending'}
@@ -579,6 +667,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        {clientStep?.comments || 'No comments'}
                      </td>
+=======
+                    
+>>>>>>> origin/main
                      <td className="py-4 px-6 text-gray-600 text-sm">
                        <div>
                          <div>{createdDate.toLocaleDateString('en-GB')}</div>
@@ -639,12 +730,20 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                <div className="mb-4">
                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                    <span>Progress</span>
+<<<<<<< HEAD
                    <span>{Math.round(((workflow.currentStep || 1) / 1) * 100)}%</span>
+=======
+                   <span>{Math.round(((workflow.currentStep || 1) / 3) * 100)}%</span>
+>>>>>>> origin/main
                  </div>
                  <div className="w-full bg-gray-200 rounded-full h-2">
                    <div 
                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+<<<<<<< HEAD
                      style={{ width: `${((workflow.currentStep || 1) / 1) * 100}%` }}
+=======
+                     style={{ width: `${((workflow.currentStep || 1) / 3) * 100}%` }}
+>>>>>>> origin/main
                    ></div>
                  </div>
                </div>

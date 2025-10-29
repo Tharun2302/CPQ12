@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, Eye, X } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
+<<<<<<< HEAD
+=======
+import { BACKEND_URL } from '../config/api';
+>>>>>>> origin/main
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -18,8 +22,12 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     documentType: 'PDF Agreement',
     documentId: '',
     role1Email: 'anushreddydasari@gmail.com',
+<<<<<<< HEAD
     role2Email: 'anushreddydasari@gmail.com',
     role3Email: 'anushreddydasari@gmail.com'
+=======
+    role2Email: 'raya.durai@cloudfuze.com'
+>>>>>>> origin/main
   });
 
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
@@ -52,7 +60,11 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const loadAvailableDocuments = async () => {
     setIsLoadingDocuments(true);
     try {
+<<<<<<< HEAD
       const response = await fetch('http://localhost:3001/api/documents');
+=======
+      const response = await fetch('${BACKEND_URL}/api/documents');
+>>>>>>> origin/main
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.documents) {
@@ -83,7 +95,11 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     setPdfPreviewData(null);
 
     try {
+<<<<<<< HEAD
       const response = await fetch(`http://localhost:3001/api/documents/${document.id}/preview`);
+=======
+      const response = await fetch(`${BACKEND_URL}/api/documents/${document.id}/preview`);
+>>>>>>> origin/main
       if (response.ok) {
       const result = await response.json();
       if (result.success && result.dataUrl) {
@@ -115,13 +131,26 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       documentType: formData.documentType,
         clientName: 'John Smith', // Default client name
         amount: 0, // Default amount
+<<<<<<< HEAD
         totalSteps: 1,
+=======
+        totalSteps: 2,
+>>>>>>> origin/main
       workflowSteps: [
           {
             step: 1,
             role: 'Technical Team',
             email: formData.role1Email,
             status: 'pending'
+<<<<<<< HEAD
+=======
+          },
+          {
+            step: 2,
+            role: 'Legal Team',
+            email: formData.role2Email,
+            status: 'pending'
+>>>>>>> origin/main
           }
         ]
       });
@@ -132,7 +161,11 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
 
   const tabs = [
     { id: 'dashboard', label: 'Admin Dashboard', icon: BarChart3 },
+<<<<<<< HEAD
     { id: 'start', label: 'Start Workflow', icon: FileCheck }
+=======
+    { id: 'start', label: 'Start Approval Workflow', icon: FileCheck }
+>>>>>>> origin/main
   ];
 
   return (
@@ -245,6 +278,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
               </div>
             </div>
 
+<<<<<<< HEAD
                   {/* Client Email */}
             <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2">
@@ -261,6 +295,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 />
               </div>
             </div>
+=======
+                  
+>>>>>>> origin/main
 
                 </div>
             </div>

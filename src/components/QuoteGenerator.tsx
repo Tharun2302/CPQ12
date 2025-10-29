@@ -19,11 +19,19 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+<<<<<<< HEAD
 import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
+=======
+import { convertDocxToPdfLight } from '../utils/docxToPdfLight';
+>>>>>>> origin/main
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+<<<<<<< HEAD
+=======
+import { BACKEND_URL } from '../config/api';
+>>>>>>> origin/main
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -382,11 +390,22 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Approval workflow state
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
+<<<<<<< HEAD
   const [approvalEmails, setApprovalEmails] = useState({
     role1: '',
     role2: '',
     role3: '',
     role4: ''
+=======
+  // Use centralized hardcoded defaults
+  const defaultTechEmail = 'anushreddydasari@gmail.com';
+  const defaultLegalEmail = 'raya.durai@cloudfuze.com';
+  const defaultDealDeskEmail = 'anushreddydasari@gmail.com';
+  const [approvalEmails, setApprovalEmails] = useState({
+    role1: defaultTechEmail,
+    role2: defaultLegalEmail,
+    role4: defaultDealDeskEmail
+>>>>>>> origin/main
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
 
@@ -719,8 +738,7 @@ Quote ID: ${quoteData.id}
       // Send email directly through backend API
       const dealDeskEmail = 'dealdesk@cloudfuze.com'; // Replace with actual deal desk email
       
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/email/send`, {
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1044,7 +1062,6 @@ This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone:
 Agreement ID: AGR-${Date.now().toString().slice(-8)}
 Template: ${selectedTemplate?.name || 'Default Template'}`;
 
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
       const formData = new FormData();
       const filenameBase = (clientInfo.company || 'Company').replace(/[^a-zA-Z0-9]/g, '_');
       const timestamp = new Date().toISOString().slice(0, 10);
@@ -1064,7 +1081,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       });
 
       // Send email using server-side endpoint with attachment
-      const response = await fetch(`${backendUrl}/api/email/send`, {
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
         body: formData
       });
@@ -1492,6 +1509,7 @@ Total Price: {{total price}}`;
     }
 
     // Validate email addresses
+<<<<<<< HEAD
     if (!approvalEmails.role1) {
       alert('Please fill in the Technical Team email address.');
       return;
@@ -1499,6 +1517,10 @@ Total Price: {{total price}}`;
     
     if (!approvalEmails.role2 || !approvalEmails.role3) {
       alert('Please fill in Legal Team and Client email addresses for BoldSign integration.');
+=======
+    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role4) {
+      alert('Please enter Technical, Legal, and Deal Desk email addresses.');
+>>>>>>> origin/main
       return;
     }
 
@@ -1532,12 +1554,17 @@ Total Price: {{total price}}`;
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       console.log('✅ PDF saved to MongoDB for workflow:', documentId);
 
+<<<<<<< HEAD
       // Create the approval workflow - Only Technical Team approval required, then BoldSign integration
+=======
+      // Create the approval workflow
+>>>>>>> origin/main
       const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
+<<<<<<< HEAD
         totalSteps: 1,
         workflowSteps: [
           { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const }
@@ -1545,6 +1572,14 @@ Total Price: {{total price}}`;
         // Store Legal Team and Client emails for BoldSign integration
         legalTeamEmail: approvalEmails.role2,
         clientEmail: approvalEmails.role3
+=======
+        totalSteps: 3,
+        workflowSteps: [
+          { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
+          { step: 2, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
+          { step: 3, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
+        ]
+>>>>>>> origin/main
       };
 
       const newWorkflow = await createWorkflow(workflowData);
@@ -1552,7 +1587,11 @@ Total Price: {{total price}}`;
 
       // Send email ONLY to Technical Team first (sequential approval)
       try {
+<<<<<<< HEAD
         const response = await fetch('http://localhost:3001/api/send-manager-email', {
+=======
+        const response = await fetch(`${BACKEND_URL}/api/send-manager-email`, {
+>>>>>>> origin/main
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1573,7 +1612,11 @@ Total Price: {{total price}}`;
         if (result.success) {
           alert('✅ Approval workflow started successfully!\n📧 Technical Team has been notified. The workflow will continue sequentially when each role approves.');
           setShowApprovalModal(false);
+<<<<<<< HEAD
           setApprovalEmails({ role1: '', role2: '', role3: '', role4: '' });
+=======
+          setApprovalEmails({ role1: defaultTechEmail, role2: defaultLegalEmail, role4: defaultDealDeskEmail });
+>>>>>>> origin/main
         } else {
           alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
         }
@@ -4509,12 +4552,21 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
+<<<<<<< HEAD
                         onClick={() => setShowApprovalModal(true)}
+=======
+                        onClick={handleStartApprovalWorkflow}
+                        disabled={isStartingWorkflow}
+>>>>>>> origin/main
                         className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
                         title="Start Approval Workflow"
                       >
                         <Workflow className="w-3 h-3 inline mr-1" />
+<<<<<<< HEAD
                         Start Workflow
+=======
+                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Approval Workflow'}
+>>>>>>> origin/main
                       </button>
                       <button
                         onClick={handleEmailAgreement}
@@ -4819,7 +4871,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </div>
               
               <p className="text-sm text-gray-600 mb-4">
+<<<<<<< HEAD
                 Enter email addresses for the four approval roles. Technical Team, Legal Team, and Client can approve or deny. Deal Desk will be notified after all approvals.
+=======
+                Enter email addresses for the three approval roles. Technical Team and Legal Team can approve or deny. Deal Desk will be notified after approvals.
+>>>>>>> origin/main
               </p>
               
               <div className="space-y-4">
@@ -4849,6 +4905,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   />
                 </div>
                 
+<<<<<<< HEAD
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Client Email
@@ -4861,6 +4918,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     placeholder="client@company.com"
                   />
                 </div>
+=======
+                
+>>>>>>> origin/main
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -4897,7 +4957,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   ) : (
                     <>
                       <Workflow className="w-4 h-4" />
+<<<<<<< HEAD
                       Start Workflow
+=======
+                      Start Approval Workflow
+>>>>>>> origin/main
                     </>
                   )}
                 </button>

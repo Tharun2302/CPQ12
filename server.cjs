@@ -216,7 +216,11 @@ function generateManagerEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
+<<<<<<< HEAD
             <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+=======
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/technical-approval?workflow=${workflowData.workflowId}" 
+>>>>>>> origin/main
                style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -263,6 +267,7 @@ function generateCEOEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
+<<<<<<< HEAD
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
@@ -286,6 +291,12 @@ function generateCEOEmailHTML(workflowData) {
             <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
               Please review the document and either approve or deny. If you deny, you can provide comments explaining your decision.
             </p>
+=======
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/legal-approval?workflow=${workflowData.workflowId}" 
+               style="background: #8B5CF6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+>>>>>>> origin/main
           </div>
           
           <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
@@ -330,6 +341,7 @@ function generateClientEmailHTML(workflowData) {
           <p>Our team will review your document and get back to you soon.</p>
           
           <div style="text-align: center; margin: 30px 0;">
+<<<<<<< HEAD
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
@@ -346,12 +358,22 @@ function generateClientEmailHTML(workflowData) {
                 </td>
               </tr>
             </table>
+=======
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+               style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve Document
+            </a>
+>>>>>>> origin/main
           </div>
           
           <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
             <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Action Required</p>
             <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
+<<<<<<< HEAD
               Please review the document details and approve or deny this request. Your decision is required to complete the approval process. If you deny, you must provide a reason.
+=======
+              Please review the document details and approve or deny this request. Your decision is required to complete the approval process.
+>>>>>>> origin/main
             </p>
           </div>
         </div>
@@ -398,7 +420,10 @@ function generateDealDeskEmailHTML(workflowData) {
             <ul style="margin: 0; padding-left: 20px;">
               <li>✅ Technical Team - Approved</li>
               <li>✅ Legal Team - Approved</li>
+<<<<<<< HEAD
               <li>✅ Client - Approved</li>
+=======
+>>>>>>> origin/main
             </ul>
           </div>
           
@@ -1572,6 +1597,7 @@ app.get('/api/documents/:id', async (req, res) => {
 
     console.log('✅ Document found, size:', fileBuffer.length, 'bytes');
 
+<<<<<<< HEAD
     // Convert to base64 for JSON response
     const base64Data = fileBuffer.toString('base64');
     
@@ -1592,6 +1618,16 @@ app.get('/api/documents/:id', async (req, res) => {
       metadata: document.metadata
     });
 
+=======
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${document.fileName || id}.pdf"`,
+      'Content-Length': fileBuffer.length
+    });
+
+    res.send(fileBuffer);
+
+>>>>>>> origin/main
   } catch (error) {
     console.error('❌ Error fetching document:', error);
     res.status(500).json({
@@ -2488,9 +2524,16 @@ app.post('/api/send-manager-email', async (req, res) => {
     }
 
     const { managerEmail, workflowData } = req.body;
+<<<<<<< HEAD
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
     console.log('Manager:', managerEmail);
+=======
+    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'manager@company.com';
+    
+    console.log('📧 Sending email to Manager only (sequential approval)...');
+    console.log('Manager:', resolvedManagerEmail);
+>>>>>>> origin/main
     console.log('Workflow Data:', workflowData);
 
     // Fetch document attachment
@@ -2531,7 +2574,11 @@ app.post('/api/send-manager-email', async (req, res) => {
 
     // Send email to Manager only with attachment
     const managerResult = await sendEmail(
+<<<<<<< HEAD
       managerEmail,
+=======
+      resolvedManagerEmail,
+>>>>>>> origin/main
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateManagerEmailHTML(workflowData),
       attachments
@@ -2567,9 +2614,16 @@ app.post('/api/send-ceo-email', async (req, res) => {
     }
 
     const { ceoEmail, workflowData } = req.body;
+<<<<<<< HEAD
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');
     console.log('CEO:', ceoEmail);
+=======
+    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'legal@company.com';
+    
+    console.log('📧 Sending email to CEO (after Technical Team approval)...');
+    console.log('CEO:', resolvedCeoEmail);
+>>>>>>> origin/main
     console.log('Workflow Data:', workflowData);
 
     // Fetch document attachment
@@ -2610,7 +2664,11 @@ app.post('/api/send-ceo-email', async (req, res) => {
 
     // Send email to CEO only with attachment
     const ceoResult = await sendEmail(
+<<<<<<< HEAD
       ceoEmail,
+=======
+      resolvedCeoEmail,
+>>>>>>> origin/main
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateCEOEmailHTML(workflowData),
       attachments
@@ -2725,9 +2783,16 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     }
 
     const { dealDeskEmail, workflowData } = req.body;
+<<<<<<< HEAD
     
     console.log('📧 Sending notification email to Deal Desk (after client approval)...');
     console.log('Deal Desk:', dealDeskEmail);
+=======
+    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'dealdesk@company.com';
+    
+    console.log('📧 Sending notification email to Deal Desk (after client approval)...');
+    console.log('Deal Desk:', resolvedDealDeskEmail);
+>>>>>>> origin/main
     console.log('Workflow Data:', workflowData);
 
     // Fetch document attachment
@@ -2768,7 +2833,11 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
 
     // Send notification email to Deal Desk
     const dealDeskResult = await sendEmail(
+<<<<<<< HEAD
       dealDeskEmail,
+=======
+      resolvedDealDeskEmail,
+>>>>>>> origin/main
       `Approval Workflow Completed: ${workflowData.documentId}`,
       generateDealDeskEmailHTML(workflowData),
       attachments
@@ -3557,6 +3626,7 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // =====================================================
 // BOLDSIGN INTEGRATION ENDPOINTS
 // =====================================================
@@ -5001,6 +5071,8 @@ async function sendDeclineNotification(signerEmail, signerName, documentId, reas
   }
 }
 
+=======
+>>>>>>> origin/main
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));

@@ -68,3 +68,16 @@ JWT_SECRET=your-super-secret-jwt-key-change-in-production
 # ===========================================
 # Set to 'production' when deploying
 NODE_ENV=development
+
+# ===========================================
+# APPROVAL WORKFLOW DEFAULT RECIPIENTS
+# ===========================================
+# Frontend defaults (Vite requires VITE_ prefix)
+VITE_APPROVAL_TECH_EMAIL=
+VITE_APPROVAL_LEGAL_EMAIL=
+VITE_APPROVAL_DEALDESK_EMAIL=
+
+# Backend defaults (fallbacks if frontend doesn't provide addresses)
+TECHNICAL_TEAM_EMAIL=
+LEGAL_TEAM_EMAIL=
+DEAL_DESK_EMAIL=

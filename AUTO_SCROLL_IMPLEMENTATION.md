@@ -6,7 +6,11 @@ When users click the "Calculate Pricing" button, the page automatically scrolls 
 
 ---
 
+<<<<<<< HEAD
 ## 🔧 **Implementation Details**``
+=======
+## 🔧 **Implementation Details**
+>>>>>>> origin/main
 
 ### **1. Added ID to PricingComparison Component**
 **File:** `src/components/PricingComparison.tsx`
