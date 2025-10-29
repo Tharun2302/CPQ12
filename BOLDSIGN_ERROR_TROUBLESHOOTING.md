@@ -139,7 +139,7 @@ Now that I've added better error logging, try approving a workflow again and che
 3. **Configure .env File**
    ```env
    # BoldSign Configuration
-   BOLDSIGN_API_KEY=sk_REDACTED
+  
    BOLDSIGN_API_URL=https://api.boldsign.com
    ```
 
