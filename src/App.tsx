@@ -69,13 +69,23 @@ function App() {
             name: parsedTemplate.name,
             hasFile: !!parsedTemplate.file,
             hasFileData: !!parsedTemplate.fileData,
+            hasFileDataURL: !!parsedTemplate.fileDataURL,
             fileName: parsedTemplate.fileName
           });
           
-          // Convert data URLs back to File objects
+          // Convert data URLs back to File objects (support both old and new format)
+          let file = null;
+          if (parsedTemplate.fileDataURL) {
+            // New format: fileDataURL
+            file = dataURLtoFile(parsedTemplate.fileDataURL, parsedTemplate.fileName || 'template.docx');
+          } else if (parsedTemplate.fileData) {
+            // Old format: fileData
+            file = dataURLtoFile(parsedTemplate.fileData, parsedTemplate.fileName || 'template.docx');
+          }
+          
           const templateWithFiles = {
             ...parsedTemplate,
-            file: parsedTemplate.fileData ? dataURLtoFile(parsedTemplate.fileData, parsedTemplate.fileName) : null,
+            file,
             wordFile: parsedTemplate.wordFileData ? dataURLtoFile(parsedTemplate.wordFileData, parsedTemplate.wordFileName) : null,
             uploadDate: parsedTemplate.uploadDate ? new Date(parsedTemplate.uploadDate) : new Date()
           };
@@ -88,7 +98,7 @@ function App() {
         }
       }
     };
-    
+
     loadSelectedTemplate();
   }, []);
 
@@ -175,6 +185,14 @@ function App() {
 
   // Sync selected template with loaded templates
   useEffect(() => {
+    console.log('🔄 Template sync effect triggered:', {
+      hasSelectedTemplate: !!selectedTemplate,
+      selectedTemplateId: selectedTemplate?.id,
+      selectedTemplateName: selectedTemplate?.name,
+      selectedTemplateHasFile: !!selectedTemplate?.file,
+      templatesCount: templates.length
+    });
+    
     if (selectedTemplate && templates.length > 0) {
       // Check if the selected template still exists in the loaded templates
       const templateExists = templates.find(t => t.id === selectedTemplate.id);
@@ -182,23 +200,51 @@ function App() {
         console.log('⚠️ Selected template no longer exists, clearing selection');
         setSelectedTemplate(null);
       } else {
-        // Check if the selected template has a file, if not, use the one from templates array
-        const templateToUse = selectedTemplate.file ? selectedTemplate : templateExists;
-        
-        console.log('🔍 Syncing selected template with loaded template:', {
-          id: templateToUse.id,
-          name: templateToUse.name,
-          hasFile: !!templateToUse.file,
-          fileType: templateToUse.file?.type,
-          fileName: templateToUse.file?.name,
-          usingFallback: !selectedTemplate.file
+        console.log('🔍 Found matching template in loaded templates:', {
+          id: templateExists.id,
+          name: templateExists.name,
+          hasFile: !!templateExists.file,
+          fileType: templateExists.file?.type,
+          fileName: templateExists.file?.name,
+          fileSize: templateExists.file?.size
         });
         
-        setSelectedTemplate(templateToUse);
-        console.log('✅ Synced selected template with loaded templates:', templateToUse.name);
+        // Always use the template from the loaded templates array to ensure fresh file data
+        // Only update if the file data is different to avoid infinite loops
+        const needsUpdate = !selectedTemplate.file || 
+                           !templateExists.file ||
+                           selectedTemplate.file.size !== templateExists.file.size ||
+                           selectedTemplate.file.name !== templateExists.file.name;
+        
+        console.log('🔍 Update needed:', needsUpdate, {
+          currentFile: selectedTemplate.file ? {
+            size: selectedTemplate.file.size,
+            name: selectedTemplate.file.name
+          } : null,
+          loadedFile: templateExists.file ? {
+            size: templateExists.file.size,
+            name: templateExists.file.name
+          } : null
+        });
+        
+        if (needsUpdate) {
+          console.log('🔍 Syncing selected template with loaded template:', {
+            id: templateExists.id,
+            name: templateExists.name,
+            hasFile: !!templateExists.file,
+            fileType: templateExists.file?.type,
+            fileName: templateExists.file?.name,
+            fileSize: templateExists.file?.size
+          });
+          
+          setSelectedTemplate(templateExists);
+          console.log('✅ Synced selected template with loaded templates:', templateExists.name);
+        } else {
+          console.log('✅ No update needed, template is already in sync');
+        }
       }
     }
-  }, [templates, selectedTemplate]);
+  }, [templates]); // Remove selectedTemplate from dependencies to prevent infinite loop
 
   // Helper function to convert File to data URL
   const fileToDataURL = (file: File): Promise<string> => {
@@ -946,9 +992,22 @@ function App() {
                   const mimeType = template.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
                   const dataURL = `data:${mimeType};base64,${template.fileData}`;
                   file = dataURLtoFile(dataURL, template.fileName || 'template.docx');
+                  console.log('✅ Converted template file:', {
+                    id: template.id,
+                    name: template.name,
+                    fileName: template.fileName,
+                    fileSize: file?.size,
+                    fileType: file?.type
+                  });
                 } catch (error) {
-                  console.error('Error converting fileData to File:', error);
+                  console.error('❌ Error converting fileData to File:', error);
                 }
+              } else {
+                console.warn('⚠️ Template has no fileData:', {
+                  id: template.id,
+                  name: template.name,
+                  hasFileData: !!template.fileData
+                });
               }
               
               return {
@@ -1454,7 +1513,7 @@ function App() {
   };
 
   // Handle template selection from TemplateManager
-  const handleTemplateSelect = (template: any) => {
+  const handleTemplateSelect = async (template: any) => {
     console.log('🎯 Template selected:', template?.name || 'None');
     console.log('🔍 Template details:', {
       id: template?.id,
@@ -1463,7 +1522,33 @@ function App() {
       fileType: template?.file?.type,
       fileName: template?.file?.name
     });
+    
+    // Set the selected template in state
     setSelectedTemplate(template);
+    
+    // Save to localStorage for persistence
+    if (template) {
+      try {
+        // Convert file to data URL for storage
+        let fileDataURL = null;
+        if (template.file) {
+          fileDataURL = await fileToDataURL(template.file);
+        }
+        
+        const templateForStorage = {
+          ...template,
+          fileDataURL, // Store the data URL instead of the File object
+          file: null // Don't store the File object in localStorage
+        };
+        
+        localStorage.setItem('cpq_selected_template', JSON.stringify(templateForStorage));
+        console.log('✅ Selected template saved to localStorage');
+      } catch (error) {
+        console.error('❌ Error saving selected template to localStorage:', error);
+      }
+    } else {
+      localStorage.removeItem('cpq_selected_template');
+    }
   };
 
    return (

@@ -55,13 +55,15 @@ interface TemplateManagerProps {
   selectedTemplate?: Template | null;
   onTemplatesUpdate?: () => void;
   currentQuoteData?: any; // Current quote data for template processing
+  templates?: Template[]; // Pre-loaded templates from parent component
 }
 
 const TemplateManager: React.FC<TemplateManagerProps> = ({ 
   onTemplateSelect, 
   selectedTemplate,
   onTemplatesUpdate,
-  currentQuoteData
+  currentQuoteData,
+  templates: propTemplates
 }) => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -150,9 +152,24 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     }
   ];
 
-  // Load templates from database on component mount
+  // Load templates from props or database on component mount
   useEffect(() => {
     const loadTemplates = async () => {
+      // Use prop templates if available
+      if (propTemplates && propTemplates.length > 0) {
+        console.log('📋 TemplateManager: Using pre-loaded templates from parent:', propTemplates.length);
+        setTemplates(propTemplates);
+        setIsLoading(false);
+        return;
+      }
+
+      // Skip loading if templates are already loaded
+      if (templates.length > 0) {
+        console.log('📋 TemplateManager: Templates already loaded, skipping database fetch');
+        setIsLoading(false);
+        return;
+      }
+
       console.log('🔄 TemplateManager: Loading templates from database...');
       try {
         // Try to load from database first
@@ -229,7 +246,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     };
 
     loadTemplates();
-  }, []);
+  }, [propTemplates, templates.length]); // Add propTemplates dependency
 
   // Save templates to localStorage whenever templates change
   useEffect(() => {

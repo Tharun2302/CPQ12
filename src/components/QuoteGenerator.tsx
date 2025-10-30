@@ -19,19 +19,14 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
-import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
 function formatDateMMDDYYYY(dateString: string): string {
-  console.log('🔍 formatDateMMDDYYYY called with:', dateString, 'type:', typeof dateString);
-  
   if (!dateString || dateString === 'N/A' || dateString === 'undefined' || dateString === 'null') {
-    console.log('  Returning N/A - empty or invalid dateString');
     return 'N/A';
   }
   
@@ -50,21 +45,14 @@ function formatDateMMDDYYYY(dateString: string): string {
       date = new Date(dateString);
     }
     
-    console.log('  Parsed date object:', date);
-    console.log('  Date is valid:', !isNaN(date.getTime()));
-    console.log('  Date toString:', date.toString());
-    
     if (isNaN(date.getTime())) {
-      console.log('  Invalid date, returning N/A');
       return 'N/A';
     }
     
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const day = date.getDate().toString().padStart(2, '0');
     const year = date.getFullYear();
-    const result = `${month}/${day}/${year}`;
-    console.log('  Formatted result:', result);
-    return result;
+    return `${month}/${day}/${year}`;
   } catch (error) {
     console.error('Error formatting date:', dateString, error);
     return 'N/A';
@@ -143,7 +131,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 }) => {
   // Reduced logging for performance
   if (!calculation) {
-    console.log('🔍 QuoteGenerator render - calculation is null/undefined');
+    // Calculation is null/undefined - using fallback
   }
   
   // Create a fallback calculation if none exists
@@ -169,8 +157,6 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Safety check - if calculation is undefined, show warning but continue
   if (!calculation) {
     console.warn('⚠️ QuoteGenerator: calculation is undefined, using fallback');
-    console.warn('⚠️ QuoteGenerator: calculation value:', calculation);
-    console.warn('⚠️ QuoteGenerator: configuration value:', configuration);
   }
   const [clientInfo, setClientInfo] = useState<ClientInfo>({
     clientName: '',
@@ -229,14 +215,13 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         const savedNav = sessionStorage.getItem('cpq_navigation_state');
         
         if (savedConfig) {
-          const parsedConfig = JSON.parse(savedConfig);
-          console.log('✅ QuoteGenerator: Loaded configuration from sessionStorage:', parsedConfig);
+          // Configuration loaded from session storage
         }
         
         if (savedNav) {
           const parsedNav = JSON.parse(savedNav);
           if (parsedNav.sessionState?.selectedTier) {
-            console.log('✅ QuoteGenerator: Found selectedTier in navigation state:', parsedNav.sessionState.selectedTier);
+            // Found selectedTier in navigation state
           }
         }
       } catch (error) {
@@ -260,19 +245,16 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           effectiveDate: parsed.effectiveDate || ''
         }));
       }
-    } catch {}
+    } catch {
+      // Ignore storage errors
+    }
   }, []);
 
   const [showPreview, setShowPreview] = useState(false);
   
   // Add debugging to track discount changes
   useEffect(() => {
-    console.log('🔍 Discount changed in QuoteGenerator:', {
-      clientInfoDiscount: clientInfo.discount,
-      discountPercent: clientInfo.discount ?? 0,
-      totalCost: calculation?.totalCost ?? safeCalculation.totalCost,
-      showPreview
-    });
+    // Discount changed in QuoteGenerator
   }, [clientInfo.discount, showPreview]);
   const [showContactSelector, setShowContactSelector] = useState(false);
   const [quoteId, setQuoteId] = useState<string>('');
@@ -336,7 +318,11 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     const newClientInfo = { ...clientInfo, ...processedUpdates };
     setClientInfo(newClientInfo);
     // Persist to localStorage so the Quote session remains sticky
-    try { localStorage.setItem('cpq_quote_client_info', JSON.stringify(newClientInfo)); } catch {}
+    try { 
+      localStorage.setItem('cpq_quote_client_info', JSON.stringify(newClientInfo)); 
+    } catch {
+      // Ignore storage errors
+    }
     
     // Only notify parent when user makes actual changes (not during auto-fill)
     if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.effectiveDate || updates.discount !== undefined)) {
@@ -460,7 +446,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         throw new Error('Document blob is empty or invalid');
       }
       
-      console.log('📄 Rendering DOCX preview, blob size:', blob.size, 'bytes, type:', blob.type);
+      // Rendering DOCX preview
       
       // Check if blob has valid ZIP signature
       const arrayBuffer = await blob.arrayBuffer();
@@ -498,7 +484,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         debug: false
       } as any);
       setPreviewUrl(null);
-      console.log('✅ DOCX rendered with docx-preview');
+      // DOCX rendered with docx-preview
     } catch (err) {
       console.warn('⚠️ docx-preview failed, falling back to HTML conversion via mammoth.', err);
       try {
@@ -516,7 +502,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         const url = URL.createObjectURL(htmlBlob);
         setPreviewUrl(url);
         setShowInlinePreview(true);
-        console.log('✅ DOCX converted to HTML with mammoth');
+        // DOCX converted to HTML with mammoth
       } catch (fallbackErr) {
         console.error('❌ HTML fallback also failed:', fallbackErr);
         // Show error message to user
@@ -535,12 +521,12 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 
   // Auto-populate client info from configure session (HIGHEST PRIORITY)
   useEffect(() => {
-    console.log('🔍 QuoteGenerator: configureContactInfo changed:', configureContactInfo);
+    // configureContactInfo changed
     if (configureContactInfo) {
-      console.log('✅ HIGHEST PRIORITY: Auto-filling client info from configure session:', configureContactInfo);
+      // Auto-filling client info from configure session
       setClientInfo(configureContactInfo);
     } else {
-      console.log('⚠️ No configureContactInfo available, will use HubSpot or default');
+      // No configureContactInfo available, will use HubSpot or default
     }
   }, [configureContactInfo]);
 
@@ -548,8 +534,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   useEffect(() => {
     if (hubspotState?.selectedContact && !configureContactInfo) {
       const contact = hubspotState.selectedContact;
-      console.log('🔍 Auto-filling client info from HubSpot contact:', contact);
-      console.log('📄 Contact properties:', contact.properties);
+      // Auto-filling client info from HubSpot contact
       
       // Extract company name from email domain if company field is not available
       const extractCompanyFromEmail = (email: string): string => {
@@ -573,8 +558,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         company: contact.properties.company || extractCompanyFromEmail(contact.properties.email || '')
       };
       
-      console.log('✅ New client info to set:', newClientInfo);
-      console.log('🏢 Company source:', contact.properties.company ? 'HubSpot company field' : 'Email domain extraction');
+      // New client info to set
       setClientInfo(newClientInfo);
     }
   }, [hubspotState?.selectedContact, configureContactInfo]);
@@ -594,7 +578,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Auto-populate client info from deal data (only if no configure contact info)
   useEffect(() => {
     if (dealData && !hubspotState?.selectedContact && !configureContactInfo) {
-      console.log('🔍 Auto-filling client info from deal data:', dealData);
+      // Auto-filling client info from deal data
       
       const newClientInfo = {
         clientName: dealData.contactName || dealData.dealName || '',
@@ -602,10 +586,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         company: dealData.companyByContact || dealData.company || dealData.dealName.split(' ')[0] + ' Inc.'
       };
       
-      console.log('✅ New client info from deal data:', newClientInfo);
+      // New client info from deal data
       setClientInfo(newClientInfo);
     } else if (configureContactInfo) {
-      console.log('⏭️ Skipping deal data auto-fill - configureContactInfo has priority');
+      // Skipping deal data auto-fill - configureContactInfo has priority
     }
   }, [dealData, hubspotState?.selectedContact, configureContactInfo]);
 
@@ -671,7 +655,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         dealData: dealData
       };
       
-      console.log('📤 Sending quote to Deal Desk:', quoteData);
+      // Sending quote to Deal Desk
       // Prepare email content
       const emailSubject = `New Quote Request - ${clientInfo.company} - ${clientInfo.clientName}`;
       const emailBody = `
@@ -797,10 +781,10 @@ Quote ID: ${quoteData.id}
         const dataSizeGB = configuration?.dataSizeGB ?? 0;
         
         // Debug: Log data size for email function
-        console.log('🔍 EMAIL FUNCTION - DATA SIZE DEBUG:');
-        console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
-        console.log('  Final dataSizeGB value:', dataSizeGB);
-        console.log('  dataCost value:', dataCost);
+
+
+
+
         
         // Calculate discount for this function scope
         const localDiscountPercent = clientInfo.discount ?? 0;
@@ -867,12 +851,7 @@ Quote ID: ${quoteData.id}
             const safeDataSize = dataSizeGB ?? 0;
             const safeDataCost = dataCost ?? 0;
             const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
-            console.log('🔍 PER_DATA_COST CALCULATION (handleEmailAgreement):', {
-              dataSizeGB: safeDataSize,
-              dataCost: safeDataCost,
-              perDataCost: perDataCost,
-              formatted: formatCurrency(perDataCost)
-            });
+            // PER_DATA_COST CALCULATION (handleEmailAgreement)
             return formatCurrency(perDataCost);
           })(),
           
@@ -1054,12 +1033,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       formData.append('message', message);
       formData.append('attachment', agreementBlob, attachmentName);
 
-      console.log('📧 Sending email via server with attachment:', {
-        to,
-        subject,
-        attachmentName,
-        attachmentSize: agreementBlob.size
-      });
+      // Sending email via server with attachment
 
       // Send email using server-side endpoint with attachment
       const response = await fetch(`${BACKEND_URL}/api/email/send`, {
@@ -1070,9 +1044,9 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       const result = await response.json();
 
       if (result.success) {
-        console.log('📧 Email send response:', result);
-        console.log('📧 SendGrid Status Code:', result.statusCode);
-        console.log('📧 Message ID:', result.messageId);
+
+
+
         
         // Show more detailed success message
         const messageId = result.messageId ? `\nMessage ID: ${result.messageId}` : '';
@@ -1101,7 +1075,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    console.log('🔍 handleSubmit - dealData:', dealData);
+
     
     // Validate discount is not more than 10%
     if (clientInfo.discount && clientInfo.discount > 10) {
@@ -1139,7 +1113,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         discount: clientInfo.discount // Add discount to quote data
       };
       
-      console.log('📝 Sending quote data:', quoteData);
+
       onGenerateQuote(quoteData);
       
       // Automatically open quote preview instead of showing success message
@@ -1196,12 +1170,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         const safeDataSize = quote.configuration.dataSizeGB ?? 0;
         const safeDataCost = safeCalculation.dataCost ?? 0;
         const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
-        console.log('🔍 PER_DATA_COST CALCULATION (generatePlaceholderPreview):', {
-          dataSizeGB: safeDataSize,
-          dataCost: safeDataCost,
-          perDataCost: perDataCost,
-          formatted: formatCurrency(perDataCost)
-        });
+        // PER_DATA_COST CALCULATION (generatePlaceholderPreview)
         return formatCurrency(perDataCost);
       })(),
       '{{total price}}': formatCurrency(safeCalculation.totalCost),
@@ -1312,7 +1281,7 @@ Total Price: {{total price}}`;
       
       // Save PDF to MongoDB database
       try {
-        console.log('💾 Saving PDF to MongoDB from PDF button...');
+
         const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
         const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
         
@@ -1335,7 +1304,7 @@ Total Price: {{total price}}`;
         };
         
         await documentServiceMongoDB.saveDocument(savedDoc);
-        console.log('✅ PDF saved to MongoDB successfully from PDF button');
+
         
         // Show success notification
         const notification = document.createElement('div');
@@ -1528,7 +1497,7 @@ Total Price: {{total price}}`;
       };
       
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
-      console.log('✅ PDF saved to MongoDB for workflow:', documentId);
+
 
       // Create the approval workflow - Only Technical Team approval required, then BoldSign integration
       const workflowData = {
@@ -1546,7 +1515,7 @@ Total Price: {{total price}}`;
       };
 
       const newWorkflow = await createWorkflow(workflowData);
-      console.log('✅ Approval workflow created:', newWorkflow);
+
 
       // Send email ONLY to Technical Team first (sequential approval)
       try {
@@ -1599,9 +1568,9 @@ Total Price: {{total price}}`;
           await renderDocxPreview(processedAgreement);
           return;
         }
-        console.log('✅ Converting DOCX to HTML for preview');
-        console.log('📄 Document type:', processedAgreement.type);
-        console.log('📄 Document size:', processedAgreement.size, 'bytes');
+
+
+
         
         // Convert DOCX to HTML using mammoth with exact formatting preservation
         const mammoth = await import('mammoth');
@@ -1640,9 +1609,9 @@ Total Price: {{total price}}`;
           })
         } as any);
         
-        console.log('✅ DOCX converted to HTML with exact formatting');
-        console.log('📄 HTML length:', result.value.length);
-        console.log('📄 Warnings:', result.messages);
+
+
+
         
         // Create HTML document with exact DOCX styling preserved
         const htmlContent = `
@@ -1832,7 +1801,7 @@ Total Price: {{total price}}`;
         setPreviewUrl(actualPreviewUrl);
         setShowInlinePreview(true);
         
-        console.log('✅ HTML preview URL created:', actualPreviewUrl);
+
         
         return; // Exit early to use HTML preview
         
@@ -2006,7 +1975,7 @@ Total Price: {{total price}}`;
 
   const handleDownloadPDF = async () => {
     try {
-      console.log('🔄 Starting PDF generation...');
+
       
       // Find the quote preview element
       const quotePreviewElement = document.querySelector('[data-quote-preview]');
@@ -2086,7 +2055,7 @@ Total Price: {{total price}}`;
         calculation?.totalCost
       );
       
-      console.log('✅ PDF generated, downloaded, and saved to database successfully');
+
       
     } catch (error) {
       console.error('❌ Error generating PDF:', error);
@@ -2108,14 +2077,14 @@ Total Price: {{total price}}`;
 
     setIsGeneratingAgreement(true);
     try {
-      console.log('🔄 Generating Agreement... [TIMESTAMP:', new Date().toISOString(), ']');
-      console.log('🔍 calculation prop:', calculation);
-      console.log('🔍 safeCalculation:', safeCalculation);
+
+
+
       
       // Use safe calculation with additional safety checks
       const currentCalculation = calculation || safeCalculation;
-      console.log('🔍 currentCalculation:', currentCalculation);
-      console.log('🔍 currentCalculation.totalCost:', currentCalculation.totalCost);
+
+
       
       // Additional safety check
       if (!currentCalculation || typeof currentCalculation.totalCost === 'undefined') {
@@ -2133,11 +2102,14 @@ Total Price: {{total price}}`;
       
       // Check if a template is selected
       if (!selectedTemplate) {
-        console.log('❌ No template selected');
+
         alert('Please select a template first in the Template session before generating an agreement.');
         return;
       }
 
+      // Selected template details
+
+      // Check if template has a file
       console.log('🔍 Selected template details:', {
         id: selectedTemplate.id,
         name: selectedTemplate.name,
@@ -2145,64 +2117,63 @@ Total Price: {{total price}}`;
         fileType: selectedTemplate.file?.type,
         fileName: selectedTemplate.file?.name,
         fileSize: selectedTemplate.file?.size,
-        lastModified: selectedTemplate.file?.lastModified
+        hasFileData: !!selectedTemplate.fileData,
+        hasFileDataURL: !!selectedTemplate.fileDataURL,
+        allKeys: Object.keys(selectedTemplate)
       });
-
-      // Check if template has a file
+      
+      // If file is missing, try to hydrate it from the backend before failing
       if (!selectedTemplate.file) {
-        console.error('❌ Selected template missing file:', selectedTemplate);
-        console.log('🔍 Template details:', {
-          id: selectedTemplate.id,
-          name: selectedTemplate.name,
-          hasFileData: !!selectedTemplate.fileData,
-          hasFile: !!selectedTemplate.file,
-          fileType: selectedTemplate.fileType,
-          fileName: selectedTemplate.fileName
-        });
-        
+        try {
+          console.log('📄 No file on selected template. Attempting to fetch from backend...');
+          const { templateService } = await import('../utils/templateService');
+          const hydratedFile = await templateService.getTemplateFile(selectedTemplate.id);
+          if (hydratedFile) {
+            (selectedTemplate as any).file = hydratedFile;
+            console.log('✅ Hydrated template file from backend:', {
+              fileName: hydratedFile.name,
+              fileSize: hydratedFile.size,
+              fileType: hydratedFile.type
+            });
+          }
+        } catch (e) {
+          console.error('❌ Failed to hydrate template file from backend:', e);
+        }
+      }
+
+      if (!selectedTemplate.file) {
+        console.error('❌ Selected template missing file after hydration attempt:', selectedTemplate);
         // Try to provide more helpful error message
-        if (selectedTemplate.fileData) {
+        if ((selectedTemplate as any).fileData || (selectedTemplate as any).fileDataURL) {
           alert('Template file is being processed. Please wait a moment and try again, or go to the Template session to re-select your template.');
         } else {
-        alert('Selected template does not have a valid file. Please go to the Template session and re-select your template.');
+          alert('Selected template does not have a valid file. Please go to the Template session and re-select your template.');
         }
         return;
       }
 
-      console.log('📄 Processing template:', selectedTemplate.name);
-      console.log('📊 Template file type:', selectedTemplate.file.type);
-      console.log('📊 Calculation object:', calculation);
-      console.log('📊 SafeCalculation object:', safeCalculation);
-      console.log('📊 Configuration object:', configuration);
-      console.log('👤 Client Info object:', clientInfo);
-      console.log('🏢 Company name from clientInfo:', clientInfo.company);
+
+
+
+
+
+
+
       
       // Debug: Check if calculation has actual values
       if (calculation) {
-        console.log('✅ Using actual calculation object');
-        console.log('💰 Calculation values:', {
-          userCost: calculation.userCost,
-          dataCost: calculation.dataCost,
-          migrationCost: calculation.migrationCost,
-          instanceCost: calculation.instanceCost,
-          totalCost: calculation.totalCost
-        });
+
+        // Calculation values
       } else {
-        console.log('⚠️ Using fallback calculation object');
-        console.log('💰 Fallback values:', {
-          userCost: safeCalculation.userCost,
-          dataCost: safeCalculation.dataCost,
-          migrationCost: safeCalculation.migrationCost,
-          instanceCost: safeCalculation.instanceCost,
-          totalCost: safeCalculation.totalCost
-        });
+
+        // Fallback values
       }
       
       // CRITICAL: Ensure we have valid calculation data
       const finalCalculation = calculation || safeCalculation;
-      console.log('🔍 FINAL CALCULATION BEING USED:', finalCalculation);
-      console.log('🔍 FINAL CALCULATION TYPE:', typeof finalCalculation);
-      console.log('🔍 FINAL CALCULATION KEYS:', Object.keys(finalCalculation));
+
+
+
       
       // CRITICAL: Ensure we have valid configuration data
       const fallbackConfiguration = {
@@ -2214,11 +2185,11 @@ Total Price: {{total price}}`;
         dataSizeGB: 0
       };
       const finalConfiguration = configuration || fallbackConfiguration;
-      console.log('🔍 FINAL CONFIGURATION BEING USED:', finalConfiguration);
-      console.log('🔍 FINAL CONFIGURATION TYPE:', typeof finalConfiguration);
-      console.log('🔍 FINAL CONFIGURATION KEYS:', Object.keys(finalConfiguration));
-      console.log('🔍 FINAL CONFIGURATION startDate:', finalConfiguration.startDate);
-      console.log('🔍 FINAL CONFIGURATION endDate:', finalConfiguration.endDate);
+
+
+
+
+
 
       // Create quote data for template processing
       const quoteData = {
@@ -2261,60 +2232,47 @@ Total Price: {{total price}}`;
         status: 'draft'
       };
       
-      console.log('📋 Final quoteData for template processing:', {
-        company: quoteData.company,
-        clientName: quoteData.clientName,
-        clientEmail: quoteData.clientEmail,
-        'company type': typeof quoteData.company,
-        'company length': quoteData.company?.length
-      });
+      // Final quoteData for template processing
 
       let processedDocument: Blob | null = null;
 
       // Process based on template file type - DOCX is now the primary method
       if (selectedTemplate.file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        console.log('🔄 Processing DOCX template (Primary Method)...');
+
         
         // Import DOCX template processor
         const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
         
         // Debug: Log the quote data being passed
-        console.log('🔍 Quote data being passed to DOCX processor:', {
-          company: quoteData.company,
-          clientName: quoteData.clientName,
-          clientEmail: quoteData.clientEmail,
-          configuration: quoteData.configuration,
-          calculation: quoteData.calculation,
-          selectedPlan: quoteData.selectedPlan
-        });
+        // Quote data being passed to DOCX processor
         
         // CRITICAL: Deep dive into quote data structure
-        console.log('🔍 COMPLETE QUOTE DATA STRUCTURE:');
-        console.log('  Full quoteData object:', JSON.stringify(quoteData, null, 2));
-        console.log('  quoteData.company:', quoteData.company);
-        console.log('  quoteData.clientName:', quoteData.clientName);
-        console.log('  quoteData.clientEmail:', quoteData.clientEmail);
-        console.log('  quoteData.configuration:', JSON.stringify(quoteData.configuration, null, 2));
-        console.log('  quoteData.calculation:', JSON.stringify(quoteData.calculation, null, 2));
-        console.log('  quoteData.selectedPlan:', JSON.stringify(quoteData.selectedPlan, null, 2));
+
+
+
+
+
+
+
+
         
         // CRITICAL: Extract data directly from the quote with proper validation
-        console.log('🔍 EXTRACTING DATA FROM QUOTE:');
-        console.log('  quoteData object:', quoteData);
-        console.log('  quoteData.company:', quoteData.company);
-        console.log('  quoteData.configuration:', quoteData.configuration);
-        console.log('  quoteData.calculation:', quoteData.calculation);
-        console.log('  clientInfo object:', clientInfo);
+
+
+
+
+
+
         
         // Extract values with multiple fallback sources
-        console.log('🔍 DEBUGGING COMPANY NAME SOURCES:');
-        console.log('  quoteData.company:', quoteData.company);
-        console.log('  clientInfo.company:', clientInfo.company);
-        console.log('  dealData:', dealData);
-        console.log('  configureContactInfo:', configureContactInfo);
+
+
+
+
+
         
         const companyName = configureContactInfo?.company || quoteData.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Demo Company Inc.';
-        console.log('  Final companyName:', companyName);
+
         
         // CRITICAL: Additional fallback if company name is still undefined or empty
         let finalCompanyName = companyName;
@@ -2322,7 +2280,7 @@ Total Price: {{total price}}`;
           console.warn('⚠️ Company name is still undefined/empty, using fallback');
           finalCompanyName = 'Demo Company Inc.';
         }
-        console.log('  Final finalCompanyName:', finalCompanyName);
+
         const userCount = quoteData.configuration?.numberOfUsers || 1;
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
@@ -2333,16 +2291,16 @@ Total Price: {{total price}}`;
         const clientEmail = quoteData.clientEmail || clientInfo.clientEmail || 'demo@example.com';
         
         // CRITICAL: Debug extracted values
-        console.log('🔍 EXTRACTED VALUES DEBUG:');
-        console.log('  companyName:', companyName);
-        console.log('  userCount:', userCount);
-        console.log('  userCost:', userCost);
-        console.log('  migrationCost:', migrationCost);
-        console.log('  totalCost:', totalCost);
-        console.log('  duration:', duration);
-        console.log('  migrationType:', migrationType);
-        console.log('  clientName:', clientName);
-        console.log('  clientEmail:', clientEmail);
+
+
+
+
+
+
+
+
+
+
         
         // CRITICAL: Check if any values are undefined or null
         const extractedValues = {
@@ -2353,43 +2311,43 @@ Total Price: {{total price}}`;
           if (value === undefined || value === null || value === '') {
             console.error(`❌ CRITICAL: ${key} is undefined/null/empty:`, value);
           } else {
-            console.log(`✅ ${key}:`, value);
+
           }
         });
         
         // CRITICAL: Test formatCurrency function
-        console.log('🔍 FORMAT CURRENCY TEST:');
-        console.log('  formatCurrency(0):', formatCurrency(0));
-        console.log('  formatCurrency(100):', formatCurrency(100));
-        console.log('  formatCurrency(15000):', formatCurrency(15000));
-        console.log('  formatCurrency(userCost):', formatCurrency(userCost));
-        console.log('  formatCurrency(migrationCost):', formatCurrency(migrationCost));
-        console.log('  formatCurrency(totalCost):', formatCurrency(totalCost));
+
+
+
+
+
+
+
         
-        console.log('🔍 EXTRACTED VALUES:');
-        console.log('  companyName:', companyName, '(type:', typeof companyName, ')');
-        console.log('  userCount:', userCount, '(type:', typeof userCount, ')');
-        console.log('  userCost:', userCost, '(type:', typeof userCost, ')');
-        console.log('  migrationCost:', migrationCost, '(type:', typeof migrationCost, ')');
-        console.log('  totalCost:', totalCost, '(type:', typeof totalCost, ')');
-        console.log('  duration:', duration, '(type:', typeof duration, ')');
-        console.log('  migrationType:', migrationType, '(type:', typeof migrationType, ')');
-        console.log('  clientName:', clientName, '(type:', typeof clientName, ')');
-        console.log('  clientEmail:', clientEmail, '(type:', typeof clientEmail, ')');
+
+
+
+
+
+
+
+
+
+
         
         // CRITICAL: Validate that we have actual values, not undefined
         if (!companyName || companyName === 'undefined') {
           console.error('❌ CRITICAL: Company name is undefined!');
-          console.log('  quoteData.company:', quoteData.company);
-          console.log('  clientInfo.company:', clientInfo.company);
+
+
         }
         if (!userCount || userCount === 0) {
           console.error('❌ CRITICAL: User count is undefined!');
-          console.log('  quoteData.configuration.numberOfUsers:', quoteData.configuration?.numberOfUsers);
+
         }
         if (totalCost === undefined || totalCost === null) {
           console.error('❌ CRITICAL: Total cost is undefined!');
-          console.log('  quoteData.calculation.totalCost:', quoteData.calculation?.totalCost);
+
         }
         
         // CRITICAL: Create comprehensive template data with ALL tokens for your template
@@ -2402,32 +2360,32 @@ Total Price: {{total price}}`;
         const dataSizeGB = quoteData.configuration?.dataSizeGB ?? configuration?.dataSizeGB ?? 0;
         
         // Debug: Log critical data extraction
-        console.log('🔍 DATA SIZE DEBUG:');
-        console.log('  quoteData.configuration?.dataSizeGB:', quoteData.configuration?.dataSizeGB);
-        console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
-        console.log('  finalConfiguration?.dataSizeGB:', finalConfiguration?.dataSizeGB);
-        console.log('  Final dataSizeGB value:', dataSizeGB);
-        console.log('  typeof dataSizeGB:', typeof dataSizeGB);
-        console.log('  dataSizeGB === undefined:', dataSizeGB === undefined);
-        console.log('  dataSizeGB === null:', dataSizeGB === null);
-        console.log('  dataCost value:', dataCost);
-        console.log('  typeof dataCost:', typeof dataCost);
-        console.log('  Per data cost calculation:', (dataCost || 0) / (dataSizeGB || 1));
+
+
+
+
+
+
+
+
+
+
+
         
         // CRITICAL: Check all configuration sources
-        console.log('🔍 CONFIGURATION SOURCES:');
-        console.log('  configuration prop:', configuration);
-        console.log('  finalConfiguration:', finalConfiguration);
-        console.log('  quoteData.configuration:', quoteData.configuration);
+
+
+
+
         
         // Debug: Log the date values being used
-        console.log('🔍 Template Data Debug:');
-        console.log('  configuration?.startDate:', configuration?.startDate);
-        console.log('  configuration?.endDate:', configuration?.endDate);
-        console.log('  clientInfo.effectiveDate:', clientInfo.effectiveDate);
-        console.log('  configuration?.duration:', configuration?.duration);
-        console.log('  Full configuration object:', configuration);
-        console.log('  Full clientInfo object:', clientInfo);
+
+
+
+
+
+
+
         
         const templateData: Record<string, string> = {
           // Core company and client information
@@ -2469,18 +2427,18 @@ Total Price: {{total price}}`;
           // Use configuration.startDate (Project Start Date) for Start_date
           '{{Start_date}}': (() => {
             const startDate = configuration?.startDate;
-            console.log('🔍 Start_date calculation:');
-            console.log('  configuration?.startDate (Project Start Date):', configuration?.startDate);
-            console.log('  clientInfo.effectiveDate (Effective Date):', clientInfo.effectiveDate);
-            console.log('  selected startDate:', startDate);
+
+
+
+
             
             if (!startDate) {
-              console.log('  No start date found, returning N/A');
+
               return 'N/A';
             }
             
             const formatted = formatDateMMDDYYYY(startDate);
-            console.log('  formatted result:', formatted);
+
             return formatted;
           })(),
           '{{start_date}}': (() => {
@@ -2503,7 +2461,7 @@ Total Price: {{total price}}`;
           // End date - calculate from Project Start Date + duration
           '{{End_date}}': (() => {
             if (configuration?.endDate) {
-              console.log('🔍 End_date using provided endDate:', configuration.endDate);
+
               return formatDateMMDDYYYY(configuration.endDate);
             }
             
@@ -2511,31 +2469,31 @@ Total Price: {{total price}}`;
             const startDate = configuration?.startDate;
             const duration = configuration?.duration;
             
-            console.log('🔍 End_date calculation:');
-            console.log('  Project Start Date:', startDate);
-            console.log('  Duration (months):', duration);
+
+
+
             
             if (!startDate) {
-              console.log('  No start date found, returning N/A');
+
               return 'N/A';
             }
             
             if (!duration || duration <= 0) {
-              console.log('  No valid duration found, returning N/A');
+
             return 'N/A';
             }
             
             try {
               const startDateObj = new Date(startDate);
               if (isNaN(startDateObj.getTime())) {
-                console.log('  Invalid start date, returning N/A');
+
                 return 'N/A';
               }
               
               const endDate = new Date(startDateObj);
               endDate.setMonth(endDate.getMonth() + duration);
               
-              console.log('  Calculated End Date:', endDate.toISOString().split('T')[0]);
+
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             } catch (error) {
               console.error('Error calculating end date:', error);
@@ -2625,12 +2583,7 @@ Total Price: {{total price}}`;
             const safeDataSize = dataSizeGB ?? 0;
             const safeDataCost = dataCost ?? 0;
             const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
-            console.log('🔍 PER_DATA_COST CALCULATION (handleGenerateAgreement):', {
-              dataSizeGB: safeDataSize,
-              dataCost: safeDataCost,
-              perDataCost: perDataCost,
-              formatted: formatCurrency(perDataCost)
-            });
+            // PER_DATA_COST CALCULATION (handleGenerateAgreement)
             return formatCurrency(perDataCost);
           })(),
           
@@ -2710,75 +2663,75 @@ Total Price: {{total price}}`;
           '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
         };
         
-        console.log('🔍 TEMPLATE DATA CREATED:');
-        console.log('  Template data keys:', Object.keys(templateData));
-        console.log('  Template data values:', Object.values(templateData));
+
+
+
         
         // DEBUG: Check configuration object structure
-        console.log('🔍 CONFIGURATION DEBUG:');
-        console.log('  configuration object:', configuration);
-        console.log('  configuration.startDate:', configuration?.startDate);
-        console.log('  configuration.endDate:', configuration?.endDate);
-        console.log('  configuration keys:', configuration ? Object.keys(configuration) : 'configuration is null/undefined');
+
+
+
+
+
         
         // CRITICAL: Debug each template data entry
-        console.log('🔍 TEMPLATE DATA DETAILED DEBUG:');
+
         Object.entries(templateData).forEach(([key, value]) => {
           if (value === undefined || value === null || value === '') {
             console.error(`❌ CRITICAL: Template data ${key} is undefined/null/empty:`, value);
           } else {
-            console.log(`✅ Template data ${key}:`, value);
+
           }
         });
         
         // Specific debugging for date tokens
-        console.log('🔍 DATE TOKENS DEBUG:');
-        console.log('  {{Start_date}}:', templateData['{{Start_date}}']);
-        console.log('  {{End_date}}:', templateData['{{End_date}}']);
-        console.log('  {{start_date}}:', templateData['{{start_date}}']);
-        console.log('  {{end_date}}:', templateData['{{end_date}}']);
-        console.log('  {{startdate}}:', templateData['{{startdate}}']);
-        console.log('  {{enddate}}:', templateData['{{enddate}}']);
+
+
+
+
+
+
+
         
-        console.log('📋 Template data for DOCX processing:', templateData);
+
         
         // Debug: Check each token value individually
-        console.log('🔍 Individual token values:');
-        console.log('  Company Name:', templateData['{{Company Name}}']);
-        console.log('  users_count:', templateData['{{users_count}}']);
-        console.log('  users.cost:', templateData['{{users.cost}}']); // FIXED: Check dot notation
-        console.log('  users_cost:', templateData['{{users_cost}}']); // Check underscore version
-        console.log('  Duration of months:', templateData['{{Duration of months}}']);
-        console.log('  total price:', templateData['{{total price}}']);
-        console.log('  price_migration:', templateData['{{price_migration}}']);
+
+
+
+         // FIXED: Check dot notation
+         // Check underscore version
+
+
+
         
         // ⭐ SPECIFIC DEBUG FOR USER'S TEMPLATE TOKENS
-        console.log('🎯 USER TEMPLATE SPECIFIC TOKENS:');
-        console.log('  {{users_cost}}:', templateData['{{users_cost}}']);
-        console.log('  {{instance_cost}}:', templateData['{{instance_cost}}']);
-        console.log('  {{Duration_of_months}}:', templateData['{{Duration_of_months}}']);
-        console.log('  {{per_user_cost}}:', templateData['{{per_user_cost}}']);
-        console.log('  Source values for debugging:');
-        console.log('    userCost value:', userCost);
-        console.log('    instanceCost value:', instanceCost);
-        console.log('    duration value:', duration);
-        console.log('    formatCurrency(userCost):', formatCurrency(userCost || 0));
-        console.log('    formatCurrency(instanceCost):', formatCurrency(instanceCost));
-        console.log('    duration.toString():', (duration || 1).toString());
+
+
+
+
+
+
+
+
+
+
+
+
         
         // ⭐ GLOBAL DEBUG: Store template data for console debugging
         (window as any).lastTemplateData = templateData;
-        console.log('🌍 Template data stored in window.lastTemplateData for debugging');
+
         
         // Debug: Check the source data
-        console.log('🔍 Source data debugging:');
-        console.log('  quoteData.company:', quoteData.company);
-        console.log('  quoteData.configuration.numberOfUsers:', quoteData.configuration.numberOfUsers);
-        console.log('  quoteData.calculation.userCost:', quoteData.calculation.userCost);
-        console.log('  quoteData.calculation.migrationCost:', quoteData.calculation.migrationCost);
-        console.log('  quoteData.calculation.totalCost:', quoteData.calculation.totalCost);
-        console.log('  formatCurrency(0):', formatCurrency(0));
-        console.log('  formatCurrency(300):', formatCurrency(300));
+
+
+
+
+
+
+
+
         
         // CRITICAL: Final validation - ensure NO undefined values
         const undefinedTokens = Object.entries(templateData).filter(([, value]) => 
@@ -2790,7 +2743,7 @@ Total Price: {{total price}}`;
           
           // Fix any remaining undefined values
           undefinedTokens.forEach(([key, value]) => {
-            console.log(`🔧 Fixing undefined token: ${key} = ${value}`);
+
             if (key.toLowerCase().includes('company')) {
               templateData[key] = 'Demo Company Inc.';
             } else if (key.toLowerCase().includes('user') && key.toLowerCase().includes('count')) {
@@ -2812,9 +2765,9 @@ Total Price: {{total price}}`;
             }
           });
           
-          console.log('🔧 Fixed undefined tokens:', undefinedTokens.map(([key]) => key));
+
         } else {
-          console.log('✅ All tokens have valid values');
+
         }
         
         // CRITICAL: Final check - ensure key tokens are not undefined
@@ -2825,11 +2778,11 @@ Total Price: {{total price}}`;
         
         if (criticalIssues.length > 0) {
           console.error('❌ CRITICAL: Key tokens still have issues:', criticalIssues);
-          console.log('🔧 Current values:', criticalIssues.map(token => `${token}: ${templateData[token]}`));
+
           
           // CRITICAL: Force fix any remaining undefined values
           criticalIssues.forEach(token => {
-            console.log(`🔧 FORCE FIXING: ${token}`);
+
             if (token === '{{Company Name}}' || token === '{{ Company Name }}' || token === '{{Company_Name}}' || token === '{{ Company_Name }}') {
               templateData[token] = finalCompanyName || 'Your Company';
             } else if (token === '{{users_count}}') {
@@ -2847,41 +2800,41 @@ Total Price: {{total price}}`;
             } else if (token === '{{Date}}') {
               templateData[token] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
             }
-            console.log(`🔧 FIXED: ${token} = ${templateData[token]}`);
+
           });
         } else {
-          console.log('✅ All critical tokens have valid values');
+
         }
         
         // CRITICAL: Show the exact values being sent for the key tokens
-        console.log('🎯 FINAL TOKEN VALUES BEING SENT:');
-        console.log('  Company Name:', templateData['{{Company Name}}']);
-        console.log('  Company Name (spaces):', templateData['{{ Company Name }}']);
-        console.log('  Company_Name:', templateData['{{Company_Name}}']);
-        console.log('  Company_Name (spaces):', templateData['{{ Company_Name }}']);
-        console.log('  users_count:', templateData['{{users_count}}']);
-        console.log('  users_cost:', templateData['{{users_cost}}']);
-        console.log('  Duration of months:', templateData['{{Duration of months}}']);
-        console.log('  Duration_of_months:', templateData['{{Duration_of_months}}']);
-        console.log('  total price:', templateData['{{total price}}']);
-        console.log('  total_price:', templateData['{{total_price}}']);
-        console.log('  price_migration:', templateData['{{price_migration}}']);
-        console.log('  company name:', templateData['{{company name}}']);
+
+
+
+
+
+
+
+
+
+
+
+
+
         
         // Debug: Show the exact data being sent to DOCX processor
-        console.log('🚀 SENDING TO DOCX PROCESSOR:');
-        console.log('  Template file:', selectedTemplate.file.name);
-        console.log('  Template file type:', selectedTemplate.file.type);
-        console.log('  Template data keys:', Object.keys(templateData));
-        console.log('  Template data values:', Object.values(templateData));
+
+
+
+
+
         
         // Debug: Check if the data looks correct
-        console.log('🔍 DATA VALIDATION:');
-        console.log('  Company name valid?', !!templateData['{{Company Name}}']);
-        console.log('  Users count valid?', !!templateData['{{users_count}}']);
-        console.log('  Users cost valid?', !!templateData['{{users_cost}}']);
-        console.log('  Duration valid?', !!templateData['{{Duration of months}}']);
-        console.log('  Total price valid?', !!templateData['{{total price}}']);
+
+
+
+
+
+
         
         // Ensure discount label token always exists (even when empty)
         if (templateData['{{discount_label}}'] === undefined) {
@@ -2889,21 +2842,21 @@ Total Price: {{total price}}`;
         }
 
         // DIAGNOSTIC: Run comprehensive template analysis
-        console.log('🔍 Running comprehensive template diagnostic...');
+
         const { TemplateDiagnostic } = await import('../utils/templateDiagnostic');
         const diagnostic = await TemplateDiagnostic.diagnoseTemplate(
           selectedTemplate.file,
           templateData
         );
         
-        console.log('📊 DIAGNOSTIC RESULTS:');
-        console.log('  Template tokens found:', diagnostic.templateTokens);
-        console.log('  Data tokens provided:', diagnostic.dataTokens);
-        console.log('  Missing tokens:', diagnostic.missingTokens);
-        console.log('  Mismatched tokens:', diagnostic.mismatchedTokens);
-        console.log('  File info:', diagnostic.fileInfo);
-        console.log('  Document structure:', diagnostic.documentStructure);
-        console.log('  Recommendations:', diagnostic.recommendations);
+
+
+
+
+
+
+
+
         
         // Treat discount tokens as optional (we intentionally allow them to be empty/not present)
         const optionalTokens = ['discount_label', 'discount_amount', 'show_discount', 'hide_discount', 'if_discount'];
@@ -2911,12 +2864,7 @@ Total Price: {{total price}}`;
         const filteredMismatched = diagnostic.mismatchedTokens.filter(t => !optionalTokens.includes(t));
 
         // Pre-check and log whether discount will show
-        console.log('🧮 Discount pre-check before generate:', {
-          discountPercent,
-          shouldApplyDiscount,
-          discount_label: templateData['{{discount_label}}'],
-          discount_amount: templateData['{{discount_amount}}']
-        });
+        // Discount pre-check before generate
 
         // Show diagnostic results to user (only for non-optional tokens)
         if (filteredMissing.length > 0 || filteredMismatched.length > 0) {
@@ -2945,31 +2893,31 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           // Stop only when non-optional tokens have issues
           throw new Error('Template diagnostic found issues. Please fix the token mismatches before proceeding.');
         } else {
-          console.log('✅ Template diagnostic passed - all tokens match correctly!');
+
         }
 
         // Process DOCX template
-        console.log('🚀 FINAL TEMPLATE DATA BEING SENT TO DOCX PROCESSOR:');
-        console.log('  Template file:', selectedTemplate.file.name);
-        console.log('  Template data keys:', Object.keys(templateData));
-        console.log('  Template data values:', Object.values(templateData));
+
+
+
+
         
         // Critical tokens validation already performed earlier in the code
         
         // CRITICAL: Log the exact templateData being sent to DOCX processor
-        console.log('🎯 SENDING TO DOCX PROCESSOR:');
-        console.log('  templateData keys:', Object.keys(templateData));
-        console.log('  templateData.{{Company Name}}:', templateData['{{Company Name}}']);
-        console.log('  templateData.{{ Company Name }}:', templateData['{{ Company Name }}']);
-        console.log('  templateData.{{Company_Name}}:', templateData['{{Company_Name}}']);
-        console.log('  templateData.{{ Company_Name }}:', templateData['{{ Company_Name }}']);
-        console.log('  templateData.{{company name}}:', templateData['{{company name}}']);
-        console.log('  templateData.{{company_name}}:', templateData['{{company_name}}']);
-        console.log('  templateData.{{users_count}}:', templateData['{{users_count}}']);
-        console.log('  templateData.{{users_cost}}:', templateData['{{users_cost}}']);
-        console.log('  templateData.{{Duration_of_months}}:', templateData['{{Duration_of_months}}']);
-        console.log('  templateData.{{instance_cost}}:', templateData['{{instance_cost}}']);
-        console.log('  templateData.{{per_user_cost}}:', templateData['{{per_user_cost}}']);
+
+
+
+
+
+
+
+
+
+
+
+
+
         
         const result = await DocxTemplateProcessor.processDocxTemplate(
           selectedTemplate.file,
@@ -2979,32 +2927,25 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         if (result.success && result.processedDocx) {
           processedDocument = result.processedDocx;
           
-            console.log('✅ DOCX template processed successfully');
-            console.log('📊 Processing time:', result.processingTime + 'ms');
-            console.log('📊 Tokens replaced:', result.tokensReplaced || 0);
-          console.log('📄 Processed DOCX size:', result.processedDocx.size, 'bytes');
-          console.log('📄 Processed DOCX type:', result.processedDocx.type);
+
+
+
+
+
         } else {
           console.error('❌ DOCX processing failed:', result.error);
           throw new Error(result.error || 'Failed to process DOCX template');
         }
 
       } else if (selectedTemplate.file.type === 'application/pdf') {
-        console.log('🔄 Processing PDF template (Fallback Method)...');
-        console.log('⚠️ Note: PDF processing is less reliable. Consider using DOCX templates for better results.');
+
+
         
         // Import PDF orchestrator
         const { pdfOrchestrator } = await import('../utils/pdfOrchestratorIntegration');
         
         // Debug: Log the quote data being passed
-        console.log('🔍 Quote data being passed to PDF orchestrator:', {
-          company: quoteData.company,
-          clientName: quoteData.clientName,
-          clientEmail: quoteData.clientEmail,
-          configuration: quoteData.configuration,
-          calculation: quoteData.calculation,
-          selectedPlan: quoteData.selectedPlan
-        });
+        // Quote data being passed to PDF orchestrator
         
         // Process PDF template with quote data
         const result = await pdfOrchestrator.buildMergedPDFFromFile(
@@ -3015,10 +2956,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         if (result.success && result.mergedPDF) {
           processedDocument = result.mergedPDF;
           
-            console.log('✅ PDF template processed successfully');
-            console.log('📊 Processing completed');
-          console.log('📄 Merged PDF size:', result.mergedPDF.size, 'bytes');
-          console.log('📄 Merged PDF type:', result.mergedPDF.type);
+
+
+
+
         } else {
           console.error('❌ PDF processing failed:', result.error);
           throw new Error(result.error || 'Failed to process PDF template');
@@ -3030,9 +2971,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
       // Show preview of the processed agreement
       if (processedDocument) {
-        console.log('✅ Agreement processed successfully');
-        console.log('📄 Processed document size:', processedDocument.size, 'bytes');
-        console.log('📄 Processed document type:', processedDocument.type);
+
+
+
         
         // Store the processed document for preview and download
         setProcessedAgreement(processedDocument);
@@ -3049,7 +2990,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             console.warn('docx-preview render failed in initial flow, trying mammoth HTML fallback.', err);
           }
           try {
-            console.log('🔄 Converting DOCX to HTML for preview with exact formatting...');
+
             const mammoth = await import('mammoth');
             
             const arrayBuffer = await processedDocument.arrayBuffer();
@@ -3086,9 +3027,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               })
             } as any);
             
-            console.log('✅ DOCX converted to HTML with exact formatting');
-            console.log('📄 HTML length:', result.value.length);
-            console.log('📄 Warnings:', result.messages);
+
+
+
             
             // Create HTML document with exact DOCX styling preserved
             const htmlContent = `
@@ -3277,7 +3218,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             
             setPreviewUrl(previewUrl);
             setShowInlinePreview(true); // Show the HTML preview by default
-            console.log('🔗 HTML preview URL created:', previewUrl);
+
             
           } catch (error) {
             console.error('❌ Error converting DOCX to HTML:', error);
@@ -3295,7 +3236,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         
         // Save PDF to MongoDB database
         try {
-          console.log('💾 Saving PDF to MongoDB...');
+
           const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
           const base64Data = await documentServiceMongoDB.blobToBase64(processedDocument);
           
@@ -3323,7 +3264,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           };
           
           await documentServiceMongoDB.saveDocument(savedDoc);
-          console.log('✅ PDF saved to MongoDB successfully');
+
           
           // Show success notification
           const notification = document.createElement('div');
@@ -3380,7 +3321,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
       // If a custom template is selected, use it for PDF generation
       if (selectedTemplate && selectedTemplate.file) {
-        console.log('Using custom template:', selectedTemplate.name);
+
         
         try {
         // Generate quote number
@@ -3394,7 +3335,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           
           if (isSowTemplate) {
             // Use placeholder replacement for SOW templates
-            console.log('📄 Detected SOW template, using placeholder replacement...');
+
             const { mergeQuoteWithPlaceholders } = await import('../utils/pdfMerger');
             const { quoteBlob, newTemplateBlob } = await mergeQuoteWithPlaceholders(selectedTemplate.file, quote, quoteNumber);
             
@@ -3420,14 +3361,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             document.body.removeChild(templateLink);
             URL.revokeObjectURL(templateUrl);
             
-            console.log('✅ Quote generated with SOW template and new template created successfully');
+
             
             // Show success message
             alert(`✅ Quote generated successfully!\n\n📄 Quote PDF: ${quoteFileName}\n📄 New Template: ${templateFileName}\n\nBoth files have been downloaded. The new template contains your current data and can be used for future quotes.`);
             
           } else {
             // Use regular template merge for other templates
-            console.log('📄 Using regular template merge...');
+
             const { mergeQuoteIntoTemplate } = await import('../utils/pdfMerger');
             mergedPdfBlob = await mergeQuoteIntoTemplate(selectedTemplate.file, quote, quoteNumber);
             
@@ -3442,7 +3383,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('✅ Quote generated with custom template successfully');
+
             
             // Show success message
             alert(`Quote PDF "${fileName}" has been generated using custom template "${selectedTemplate.name}" and downloaded successfully!`);
@@ -3459,7 +3400,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         }
       } else {
         // Use default template (existing logic)
-        console.log('Using default template');
+
         
         // Call the onGenerateQuote callback
         if (onGenerateQuote) {
@@ -3695,7 +3636,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
                     const quoteNumber = `CPQ-001`;
                     
-                    console.log('🔄 Starting placeholder replacement for template:', selectedTemplate.name);
+
                     
                     // Check if template has placeholders
                     const { detectPlaceholders } = await import('../utils/pdfMerger');
@@ -3732,7 +3673,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     document.body.removeChild(templateLink);
                     URL.revokeObjectURL(templateUrl);
                     
-                    console.log('✅ Placeholder replacement and new template creation completed successfully');
+
                     alert(`✅ Process completed successfully!\n\n📄 Quote PDF: ${quoteFileName}\n📄 New Template: ${templateFileName}\n\nBoth files have been downloaded. The new template contains your current data and can be used for future quotes.`);
                     
                   } catch (error) {
@@ -3763,14 +3704,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
   const QuotePreview = ({ dealData }: { dealData?: any }) => {
     // Debug the discount values in QuotePreview
-    console.log('🔍 QuotePreview render with discount values:', {
-      clientInfoDiscount: clientInfo.discount,
-      discountPercent,
-      shouldApplyDiscount,
-      discountAmount,
-      finalTotalAfterDiscount,
-      totalCost
-    });
+    // QuotePreview render with discount values
     
     return (
     <div data-quote-preview className="bg-gradient-to-br from-white via-slate-50/30 to-blue-50/20 p-10 border-2 border-blue-100 rounded-2xl shadow-2xl max-w-5xl mx-auto backdrop-blur-sm">
@@ -4150,7 +4084,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 min={new Date().toISOString().split('T')[0]}
                 onChange={(e) => {
                   const newStartDate = e.target.value;
-                  console.log('📅 Project Start Date changed:', newStartDate);
+
                   
                   if (onConfigurationChange) {
                     // Update the configuration with the new start date
@@ -4159,7 +4093,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       startDate: newStartDate
                     };
                     onConfigurationChange(updatedConfig);
-                    console.log('✅ Configuration updated with new start date:', newStartDate);
+
                   } else {
                     console.warn('⚠️ No onConfigurationChange callback provided');
                   }
@@ -4193,7 +4127,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   const today = new Date();
                   const todayStr = today.toISOString().split('T')[0];
                   
-                  console.log('Effective Date validation:', { selectedDate, todayStr });
+
                   
                   // Compare as strings (YYYY-MM-DD format)
                   if (selectedDate >= todayStr) {
