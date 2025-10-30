@@ -25,9 +25,17 @@ MONGODB_URI=mongodb://localhost:27017
 DB_NAME=cpq_database
 
 # ===========================================
-# EMAIL CONFIGURATION (Optional)
+# EMAIL CONFIGURATION (Required for Workflow Emails)
 # ===========================================
-# For sending emails (Gmail example)
+# SendGrid API Key - Get from https://sendgrid.com
+# This is REQUIRED for:
+# - Sending approval workflow emails
+# - Custom signature request emails with DENY button
+# - Signature denial notifications
+SENDGRID_API_KEY=your-sendgrid-api-key-here
+SENDGRID_FROM_EMAIL=noreply@yourdomain.com
+
+# Alternative: Gmail SMTP (not currently used)
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_USER=your-email@gmail.com
@@ -38,6 +46,13 @@ EMAIL_PASS=your-app-password
 # ===========================================
 # For HubSpot CRM integration
 HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
+
+# ===========================================
+# BOLDSIGN INTEGRATION
+# ===========================================
+# BoldSign API Key - Get from https://app.boldsign.com/settings/api
+BOLDSIGN_API_KEY=your-boldsign-api-key-here
+BOLDSIGN_API_URL=https://api.boldsign.com
 
 # ===========================================
 # SERVER CONFIGURATION

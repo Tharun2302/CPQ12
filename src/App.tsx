@@ -13,10 +13,10 @@ import MicrosoftCallback from './pages/MicrosoftCallback';
 import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
-import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDashboard';
-import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
+import ManagerApprovalDashboard from './components/ManagerApprovalDashboard';
+import CEOApprovalDashboard from './components/CEOApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
-import { BACKEND_URL } from './config/api';
+import DenySignature from './components/DenySignature';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -1485,14 +1485,14 @@ function App() {
                 <ApprovalDashboard onBackToDashboard={() => window.location.href = '/dashboard/approval'} />
               </ProtectedRoute>
             } />
-            <Route path="/technical-approval" element={
-              <TechnicalTeamApprovalDashboard 
+            <Route path="/manager-approval" element={
+              <ManagerApprovalDashboard 
                 managerEmail="manager@company.com"
                 onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
             } />
-            <Route path="/legal-approval" element={
-              <LegalTeamApprovalDashboard 
+            <Route path="/ceo-approval" element={
+              <CEOApprovalDashboard 
                 ceoEmail="ceo@company.com"
                 onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
@@ -1502,6 +1502,7 @@ function App() {
                 onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
             } />
+            <Route path="/deny-signature" element={<DenySignature />} />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
                 <Dashboard

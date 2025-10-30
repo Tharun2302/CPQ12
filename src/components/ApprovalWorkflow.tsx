@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, Eye, X } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
-import { BACKEND_URL } from '../config/api';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -19,7 +18,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     documentType: 'PDF Agreement',
     documentId: '',
     role1Email: 'anushreddydasari@gmail.com',
-    role2Email: 'raya.durai@cloudfuze.com'
+    role2Email: 'anushreddydasari@gmail.com',
+    role3Email: 'anushreddydasari@gmail.com'
   });
 
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
@@ -52,7 +52,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const loadAvailableDocuments = async () => {
     setIsLoadingDocuments(true);
     try {
-      const response = await fetch('${BACKEND_URL}/api/documents');
+      const response = await fetch('http://localhost:3001/api/documents');
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.documents) {
@@ -83,7 +83,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     setPdfPreviewData(null);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/documents/${document.id}/preview`);
+      const response = await fetch(`http://localhost:3001/api/documents/${document.id}/preview`);
       if (response.ok) {
       const result = await response.json();
       if (result.success && result.dataUrl) {
@@ -115,18 +115,12 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       documentType: formData.documentType,
         clientName: 'John Smith', // Default client name
         amount: 0, // Default amount
-        totalSteps: 2,
+        totalSteps: 1,
       workflowSteps: [
           {
             step: 1,
             role: 'Technical Team',
             email: formData.role1Email,
-            status: 'pending'
-          },
-          {
-            step: 2,
-            role: 'Legal Team',
-            email: formData.role2Email,
             status: 'pending'
           }
         ]
@@ -138,7 +132,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
 
   const tabs = [
     { id: 'dashboard', label: 'Admin Dashboard', icon: BarChart3 },
-    { id: 'start', label: 'Start Approval Workflow', icon: FileCheck }
+    { id: 'start', label: 'Start Workflow', icon: FileCheck }
   ];
 
   return (
@@ -251,7 +245,22 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
               </div>
             </div>
 
-                  
+                  {/* Client Email */}
+            <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">
+                      Client Email
+              </label>
+              <div className="relative">
+                      <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="email"
+                        value={formData.role3Email}
+                        onChange={(e) => setFormData(prev => ({ ...prev, role3Email: e.target.value }))}
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
+                        placeholder="client@company.com"
+                />
+              </div>
+            </div>
 
                 </div>
             </div>

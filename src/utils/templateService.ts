@@ -142,26 +142,51 @@ class TemplateService {
 
   // Convert DOCX blob to PDF via backend
   async convertDocxToPdf(file: Blob): Promise<Blob> {
+    console.log('🔄 TemplateService: Starting DOCX to PDF conversion...');
+    console.log('🌐 TemplateService baseUrl:', this.baseUrl);
+    console.log('📄 File size:', file.size, 'bytes');
+    
     const form = new FormData();
     form.append('file', file, 'agreement.docx');
-    const response = await fetch(`${this.baseUrl}/convert/docx-to-pdf`, {
-      method: 'POST',
-      body: form
-    });
-    if (!response.ok) {
-      const msg = await response.text().catch(() => 'Conversion failed');
-      throw new Error(msg || 'Conversion failed');
-    }
+    const url = `${this.baseUrl}/convert/docx-to-pdf`;
+    console.log('🔗 TemplateService: Fetching from URL:', url);
     
-    // Check if response is HTML (fallback mode)
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('text/html')) {
-      // Server returned HTML, convert it to PDF on client side
-      const html = await response.text();
-      return await this.convertHtmlToPdf(html);
-    }
+    let response: Response;
     
-    return await response.blob();
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        body: form
+      });
+      
+      console.log('📡 TemplateService: Response status:', response.status);
+      console.log('📡 TemplateService: Response ok:', response.ok);
+      
+      if (!response.ok) {
+        const msg = await response.text().catch(() => 'Conversion failed');
+        console.error('❌ TemplateService: Conversion failed:', msg);
+        throw new Error(msg || 'Conversion failed');
+      }
+      
+      // Check if response is HTML (fallback mode)
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        // Server returned HTML, convert it to PDF on client side
+        const html = await response.text();
+        return await this.convertHtmlToPdf(html);
+      }
+      
+      return await response.blob();
+      
+    } catch (error) {
+      console.error('❌ TemplateService: Fetch error:', error);
+      console.error('❌ TemplateService: Error details:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack
+      });
+      throw error;
+    }
   }
 
   // Convert HTML to PDF using jsPDF
