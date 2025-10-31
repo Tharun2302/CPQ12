@@ -64,6 +64,35 @@ PORT=3001
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 
 # ===========================================
+# BACKEND & FRONTEND URLs (Required)
+# ===========================================
+# Backend server URL - update for production deployment
+VITE_BACKEND_URL=http://localhost:3001
+
+# Frontend URL - update for production deployment
+VITE_FRONTEND_URL=http://localhost:5173
+
+# Base URL for application (used in email links)
+BASE_URL=http://localhost:5173
+APP_BASE_URL=http://localhost:3001
+
+# ===========================================
+# BOLDSIGN INTEGRATION
+# ===========================================
+# BoldSign API Key - Get from https://app.boldsign.com/settings/api
+BOLDSIGN_API_KEY=your-boldsign-api-key-here
+# BoldSign API URL (optional, defaults to https://api.boldsign.com)
+VITE_BOLDSIGN_API_URL=https://api.boldsign.com
+
+# ===========================================
+# HUBSPOT INTEGRATION (Optional)
+# ===========================================
+# For HubSpot CRM integration
+HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
+# HubSpot API URL (optional, defaults to https://api.hubapi.com)
+VITE_HUBSPOT_API_URL=https://api.hubapi.com
+
+# ===========================================
 # DEVELOPMENT vs PRODUCTION
 # ===========================================
 # Set to 'production' when deploying

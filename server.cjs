@@ -31,9 +31,9 @@ const PORT = process.env.PORT || 3001;
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({
   origin: [
-    'http://localhost:5173', 
-    'http://localhost:3000', 
-    'http://localhost:3001',
+    'http://159.89.175.168:5173', 
+    'http://159.89.175.168:3000', 
+    'http://159.89.175.168:3001',
     'https://zenop.ai',
     'https://www.zenop.ai',
     'http://159.89.175.168:3001'
@@ -46,9 +46,9 @@ app.use(cors({
 // Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
 app.use((req, res, next) => {
   const allowedOrigins = new Set([
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:3001',
+    'http://159.89.175.168:5173',
+    'http://159.89.175.168:3000',
+    'http://159.89.175.168:3001',
     'https://zenop.ai',
     'https://www.zenop.ai',
     'http://159.89.175.168:3001',
@@ -178,7 +178,7 @@ const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
-const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
+const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://159.89.175.168:3002';
 
 // Email configuration
 if (process.env.SENDGRID_API_KEY) {
@@ -216,7 +216,7 @@ function generateManagerEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+            <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
                style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -266,13 +266,13 @@ function generateCEOEmailHTML(workflowData) {
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
                      style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ✅ Review & Approve
                   </a>
                 </td>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
                      style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ❌ Deny Request
                   </a>
@@ -333,13 +333,13 @@ function generateClientEmailHTML(workflowData) {
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/client-notification?workflow=${workflowData.workflowId}" 
                      style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ✅ Review & Approve
                   </a>
                 </td>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/client-notification?workflow=${workflowData.workflowId}" 
                      style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ❌ Deny Request
                   </a>
@@ -612,7 +612,7 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
     }
 
     // Determine best download URL based on where the file exists
-    const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+    const baseAppUrl = (process.env.APP_BASE_URL || 'http://159.89.175.168:3001').replace(/\/$/, '');
     let resolvedDownloadUrl = null;
 
     try {
@@ -3734,7 +3734,7 @@ app.post('/api/boldsign/send-document', async (req, res) => {
     console.log('  Cleaned base64 length:', cleanBase64.length);
 
     // Prepare BoldSign request with correct casing as per API schema
-    const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3001';
+    const APP_BASE_URL = process.env.APP_BASE_URL || 'http://159.89.175.168:3001';
     const boldSignRequest = {
       Title: documentTitle || `Agreement - ${clientName}`,
       Message: `Please review and sign this agreement. Legal Team will sign first, followed by the Client.\n\nIf you have concerns or need to decline this signature request, please visit: ${APP_BASE_URL}/deny-signature to provide your reason.`,

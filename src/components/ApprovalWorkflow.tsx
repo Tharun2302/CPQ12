@@ -52,7 +52,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const loadAvailableDocuments = async () => {
     setIsLoadingDocuments(true);
     try {
-      const response = await fetch('http://localhost:3001/api/documents');
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const response = await fetch(`${backendUrl}/api/documents`);
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.documents) {
@@ -83,7 +84,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     setPdfPreviewData(null);
 
     try {
-      const response = await fetch(`http://localhost:3001/api/documents/${document.id}/preview`);
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const response = await fetch(`${backendUrl}/api/documents/${document.id}/preview`);
       if (response.ok) {
       const result = await response.json();
       if (result.success && result.dataUrl) {

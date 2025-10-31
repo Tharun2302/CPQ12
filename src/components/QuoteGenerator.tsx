@@ -1519,7 +1519,8 @@ Total Price: {{total price}}`;
 
       // Send email ONLY to Technical Team first (sequential approval)
       try {
-        const response = await fetch('http://localhost:3001/api/send-manager-email', {
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const response = await fetch(`${backendUrl}/api/send-manager-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

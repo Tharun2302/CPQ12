@@ -59,7 +59,8 @@ class BoldSignService {
   constructor() {
     // API key will be loaded from server environment
     this.apiKey = '';
-    this.apiUrl = 'https://api.boldsign.com';
+    // BoldSign API URL from environment variable, with fallback to default
+    this.apiUrl = import.meta.env.VITE_BOLDSIGN_API_URL || 'https://api.boldsign.com';
   }
 
   /**

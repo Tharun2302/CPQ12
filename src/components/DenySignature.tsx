@@ -44,7 +44,8 @@ const DenySignature: React.FC<DenySignatureProps> = () => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3001/api/boldsign/deny-signature', {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const response = await fetch(`${backendUrl}/api/boldsign/deny-signature`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

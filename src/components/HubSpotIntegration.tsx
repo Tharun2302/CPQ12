@@ -669,7 +669,8 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
 
       // Fallback to demo mode
       console.log('🔄 Using demo mode for contact creation...');
-      response = await simulateApiCall('https://api.hubapi.com/crm/v3/objects/contacts', 'POST', contactData);
+      const hubspotApiUrl = import.meta.env.VITE_HUBSPOT_API_URL || 'https://api.hubapi.com';
+      response = await simulateApiCall(`${hubspotApiUrl}/crm/v3/objects/contacts`, 'POST', contactData);
 
       if (response.ok) {
         const contact = await response.json();
@@ -766,7 +767,8 @@ const HubSpotIntegration: React.FC<HubSpotIntegrationProps> = ({
 
       // Fallback to demo mode
       console.log('🔄 Using demo mode for deal creation...');
-      response = await simulateApiCall('https://api.hubapi.com/crm/v3/objects/deals', 'POST', dealData);
+      const hubspotApiUrl = import.meta.env.VITE_HUBSPOT_API_URL || 'https://api.hubapi.com';
+      response = await simulateApiCall(`${hubspotApiUrl}/crm/v3/objects/deals`, 'POST', dealData);
 
       if (response.ok) {
         const deal = await response.json();

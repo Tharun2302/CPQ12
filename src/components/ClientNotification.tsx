@@ -59,7 +59,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       setLoadingWorkflow(true);
       console.log('📄 Fetching specific workflow from API:', workflowId);
-      const response = await fetch(`http://localhost:3001/api/approval-workflows/${workflowId}`);
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/approval-workflows/${workflowId}`);
       
       console.log('📄 API Response status:', response.status);
       console.log('📄 API Response ok:', response.ok);
@@ -145,7 +145,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         
         // Get document from MongoDB
         console.log('🔄 Fetching document from MongoDB...');
-        const docResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+        const docResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/documents/${workflow.documentId}`);
         console.log('📡 Document fetch response status:', docResponse.status, docResponse.statusText);
         
         if (!docResponse.ok) {
@@ -210,7 +210,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         
         // Send to BoldSign
         console.log('🚀 Sending to BoldSign API...');
-        const boldSignResponse = await fetch('http://localhost:3001/api/boldsign/send-document', {
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const boldSignResponse = await fetch(`${backendUrl}/api/boldsign/send-document`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -258,8 +259,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         
         const dealDeskEmail = workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email || 'dealdesk@company.com';
         console.log('📧 Using Deal Desk email:', dealDeskEmail);
-        
-        const response = await fetch('http://localhost:3001/api/send-deal-desk-email', {
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const response = await fetch(`${backendUrl}/api/send-deal-desk-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -358,7 +359,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       
       // Try preview API first
       try {
-        const previewResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        const previewResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/documents/${workflow.documentId}/preview`);
         if (previewResponse.ok) {
           const result = await previewResponse.json();
           if (result.success && result.dataUrl) {
@@ -373,7 +374,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       }
       
       // Fallback: Fetch document directly
-      const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/documents/${workflow.documentId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch document');
       }
@@ -401,7 +402,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       console.log('📥 Downloading document:', workflow.documentId);
       
-      const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/documents/${workflow.documentId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch document');
       }

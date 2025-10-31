@@ -127,7 +127,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
       setDocumentPreview(null);
       
       try {
-        const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const response = await fetch(`${backendUrl}/api/documents/${workflow.documentId}/preview`);
         const result = await response.json();
         
         if (result.success && result.dataUrl) {
