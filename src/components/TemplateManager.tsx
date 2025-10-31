@@ -167,77 +167,101 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         return; // Skip database loading!
       }
 
-      // Only load from database if no external templates provided
-      console.log('🔄 TemplateManager: No cache available, loading from database...');
+      // Give App.tsx a moment to load from localStorage cache (only on initial mount)
+      // After that, load from database if templates aren't available
+      if (externalTemplates === undefined) {
+        console.log('⏳ TemplateManager: Waiting briefly for App.tsx cache...');
+        await new Promise(resolve => setTimeout(resolve, 150));
+        // Check one more time - if App.tsx loaded, useEffect will re-run due to dependency
+        // But for now, continue to load from DB to ensure templates show up
+      }
+
+      // Try localStorage cache v2 first (same format App.tsx uses) - FAST PATH!
+      let templatesLoadedFromCache = false;
+      try {
+        const cacheStart = performance.now();
+        const cachedRaw = localStorage.getItem('cpq_templates_cache_v2');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          if (cached?.timestamp && Array.isArray(cached?.templates) && cached.templates.length > 0) {
+            const parseTime = performance.now() - cacheStart;
+            console.log(`⚡ TemplateManager: Found templates in localStorage cache: ${cached.templates.length} (${parseTime.toFixed(2)}ms)`);
+            
+            // Recreate loadFile functions (same as App.tsx does)
+            const createLoadFile = (templateId: string, fileName: string, fileType: string) => {
+              return async () => {
+                try {
+                  const fr = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/templates/${templateId}/file`);
+                  if (!fr.ok) return null;
+                  const blob = await fr.blob();
+                  return new File([blob], fileName || 'template.docx', {
+                    type: fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  });
+                } catch (err) {
+                  console.error('❌ Error fetching template file:', err);
+                  return null;
+                }
+              };
+            };
+            
+            const restoredTemplates = cached.templates.map((t: any) => ({
+              ...t,
+              uploadDate: t.uploadDate ? new Date(t.uploadDate) : new Date(t.createdAt || Date.now()),
+              content: null,
+              file: null,
+              loadFile: createLoadFile(t.id, t.fileName, t.fileType)
+            }));
+            
+            const restoreTime = performance.now() - cacheStart;
+            console.log(`✅ TemplateManager: Templates restored from localStorage: ${restoredTemplates.length} (${restoreTime.toFixed(2)}ms)`);
+            setTemplates(restoredTemplates);
+            templatesLoadedFromCache = true;
+            setIsLoading(false);
+            return; // Success! No need to hit API
+          }
+        }
+      } catch (cacheError) {
+        console.warn('⚠️ TemplateManager: Failed to load from localStorage cache:', cacheError);
+      }
+
+      // Load from database if no cache available
+      console.log('🔄 TemplateManager: Loading templates from database...');
+      const loadStartTime = performance.now();
       try {
         // Try to load from database first
         const dbTemplates = await templateService.getTemplates();
-        console.log('📋 TemplateManager: Found templates in database:', dbTemplates.length);
+        const loadTime = performance.now() - loadStartTime;
+        console.log(`📋 TemplateManager: Found templates in database: ${dbTemplates.length} (${loadTime.toFixed(2)}ms)`);
         
         if (dbTemplates.length > 0) {
           // Convert database templates to frontend format
+          const convertStartTime = performance.now();
           const frontendTemplates = await templateService.convertToFrontendTemplates(dbTemplates);
-          console.log('✅ TemplateManager: Templates loaded from database:', frontendTemplates.length);
+          const convertTime = performance.now() - convertStartTime;
+          console.log(`✅ TemplateManager: Templates loaded from database: ${frontendTemplates.length} (convert: ${convertTime.toFixed(2)}ms, total: ${(performance.now() - loadStartTime).toFixed(2)}ms)`);
           setTemplates(frontendTemplates);
         } else {
-          // Fallback to localStorage if no database templates
-          console.log('📋 TemplateManager: No database templates, checking localStorage...');
-          const savedTemplates = localStorage.getItem('cpq_templates');
-          if (savedTemplates) {
-            try {
-              const parsedTemplates = JSON.parse(savedTemplates);
-              console.log('📋 TemplateManager: Found saved templates in localStorage:', parsedTemplates.length);
-              
-              // Convert base64 strings back to File objects with validation
-              const templatesWithFiles = parsedTemplates.map((template: any) => {
-                // Validate template has required data
-                if (!template.id || !template.name) {
-                  console.warn('⚠️ Invalid template data found:', template);
-                  return null;
-                }
-                
-                const file = template.fileData ? dataURLtoFile(template.fileData, template.fileName) : null;
-                const wordFile = template.wordFileData ? dataURLtoFile(template.wordFileData, template.wordFileName) : null;
-                
-                return {
-                  ...template,
-                  file,
-                  wordFile,
-                  uploadDate: template.uploadDate ? new Date(template.uploadDate) : new Date(),
-                  content: template.content || null
-                };
-              }).filter((template: any) => template !== null); // Remove invalid templates
-              
-              console.log('✅ TemplateManager: Templates loaded from localStorage:', templatesWithFiles.length);
-              setTemplates(templatesWithFiles);
-            } catch (error) {
-              console.error('❌ TemplateManager: Error loading templates from localStorage:', error);
-            }
-          } else {
-            console.log('📋 TemplateManager: No templates found in localStorage either');
-          }
+          // No templates in database
+          console.log('📋 TemplateManager: No templates found in database');
+          setTemplates([]);
         }
-      } catch (error) {
-        console.error('❌ TemplateManager: Error loading templates from database:', error);
-        // Fallback to localStorage on database error
-        console.log('📋 TemplateManager: Falling back to localStorage...');
-        const savedTemplates = localStorage.getItem('cpq_templates');
-        if (savedTemplates) {
-          try {
-            const parsedTemplates = JSON.parse(savedTemplates);
-            const templatesWithFiles = parsedTemplates.map((template: any) => ({
-              ...template,
-              file: template.fileData ? dataURLtoFile(template.fileData, template.fileName) : null,
-              wordFile: template.wordFileData ? dataURLtoFile(template.wordFileData, template.wordFileName) : null,
-              uploadDate: new Date(template.uploadDate),
-              content: template.content || null
-            }));
-            
-            setTemplates(templatesWithFiles);
-            console.log('✅ TemplateManager: Templates loaded from localStorage fallback:', templatesWithFiles.length);
-          } catch (localError) {
-            console.error('❌ TemplateManager: Error loading templates from localStorage fallback:', localError);
-          }
+      } catch (error: any) {
+        const errorTime = performance.now() - loadStartTime;
+        console.error(`❌ TemplateManager: Error loading templates from database (${errorTime.toFixed(2)}ms):`, error);
+        
+        // Show user-friendly error message
+        if (error.message && error.message.includes('timeout')) {
+          console.error('⏱️ Request timed out - using cached templates if available');
+        } else if (error.message && error.message.includes('Failed to fetch')) {
+          console.error('🌐 Network error - check if server is running');
+        }
+        
+        // If API fails and we didn't load from cache, set empty array
+        if (!templatesLoadedFromCache) {
+          console.log('📋 TemplateManager: No templates available (cache or database failed)');
+          setTemplates([]);
+        } else {
+          console.log('✅ TemplateManager: Templates already loaded from cache, ignoring API error');
         }
       }
       setIsLoading(false);
@@ -247,7 +271,14 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
   }, [externalTemplates]); // Re-run when external templates change
 
   // Save templates to localStorage whenever templates change
+  // BUT: Don't save if templates come from App.tsx (externalTemplates) - App.tsx handles that
+  // AND: Don't dispatch event on every save - only on actual updates
   useEffect(() => {
+    // Skip saving if templates are from external source (App.tsx)
+    if (externalTemplates && templates === externalTemplates) {
+      return; // App.tsx handles caching, don't interfere
+    }
+    
     const saveTemplates = async () => {
       try {
         if (templates.length > 0) {
@@ -311,9 +342,9 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
           localStorage.removeItem('cpq_templates');
         }
         
-        // Dispatch custom event to notify other components about template updates
-        console.log('📢 Dispatching templatesUpdated event...');
-        window.dispatchEvent(new CustomEvent('templatesUpdated'));
+        // DON'T dispatch templatesUpdated on every save - it causes infinite loop!
+        // Only dispatch when templates are actually updated (upload/delete/edit)
+        // App.tsx will reload templates on mount, no need to trigger reload here
         
       } catch (error) {
         console.error('Error saving templates:', error);
@@ -562,6 +593,10 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         onTemplateSelect(template);
       }
 
+      // Dispatch event to notify App.tsx about template update (ONLY on actual upload)
+      console.log('📢 Dispatching templatesUpdated event (template uploaded)...');
+      window.dispatchEvent(new CustomEvent('templatesUpdated'));
+
       // Also save to localStorage as backup
       try {
         const templatesForStorage = await Promise.all(updatedTemplates.map(async (t) => ({
@@ -605,6 +640,10 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
           onTemplateSelect(null as any);
         }
         
+        // Dispatch event to notify App.tsx about template update (ONLY on actual delete)
+        console.log('📢 Dispatching templatesUpdated event (template deleted)...');
+        window.dispatchEvent(new CustomEvent('templatesUpdated'));
+        
         console.log('✅ Template deleted successfully from database');
         setUploadSuccess('Template deleted successfully!');
         setTimeout(() => setUploadSuccess(null), 3000);
@@ -629,6 +668,10 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         ...t,
         isDefault: t.id === templateId
       })));
+      
+      // Dispatch event to notify App.tsx about template update
+      console.log('📢 Dispatching templatesUpdated event (default template changed)...');
+      window.dispatchEvent(new CustomEvent('templatesUpdated'));
       
       console.log('✅ Default template updated in database');
       setUploadSuccess('Default template updated successfully!');

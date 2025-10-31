@@ -908,16 +908,63 @@ function App() {
         return;
       }
 
-      // 2) localStorage cache (v2)
+      // 2) localStorage cache (v2) - restore with loadFile functions
       try {
+        const cacheStart = performance.now();
         const cachedRaw = localStorage.getItem('cpq_templates_cache_v2');
         if (!force && cachedRaw) {
-          const cached = JSON.parse(cachedRaw);
+          // OPTIMIZATION: For large data, parse asynchronously to avoid blocking
+          let cached;
+          try {
+            cached = JSON.parse(cachedRaw);
+          } catch (parseError) {
+            console.warn('⚠️ Failed to parse localStorage cache:', parseError);
+            throw parseError;
+          }
+          
+          const parseTime = performance.now() - cacheStart;
+          
           if (cached?.timestamp && Array.isArray(cached?.templates) && now - cached.timestamp < TEMPLATES_CACHE_TTL_MS) {
-            console.log('⚡ Templates served from localStorage cache:', cached.templates.length);
-            setTemplates(cached.templates);
-            templatesCacheRef.current = { templates: cached.templates, timestamp: cached.timestamp };
+            console.log(`⚡ Templates found in localStorage cache: ${cached.templates.length} (read: ${parseTime.toFixed(2)}ms)`);
+            
+            // OPTIMIZATION: Use closure to avoid creating new functions for each template
+            // Create a single loadFile factory function (more memory efficient)
+            const createLoadFile = (templateId: string, fileName: string, fileType: string) => {
+              return async () => {
+                try {
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`);
+                  if (!fr.ok) return null;
+                  const blob = await fr.blob();
+                  return new File([blob], fileName || 'template.docx', {
+                    type: fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  });
+                } catch (err) {
+                  console.error('❌ Error fetching template file:', err);
+                  return null;
+                }
+              };
+            };
+            
+            // OPTIMIZATION: Batch restore efficiently
+            const restoreStart = performance.now();
+            const restoredTemplates = cached.templates.map((t: any) => ({
+              ...t,
+              uploadDate: t.uploadDate ? new Date(t.uploadDate) : new Date(t.createdAt || Date.now()),
+              content: null,
+              file: null,
+              loadFile: createLoadFile(t.id, t.fileName, t.fileType)
+            }));
+            
+            const restoreTime = performance.now() - restoreStart;
+            const totalTime = performance.now() - cacheStart;
+            
+            // Update state immediately for fast UI response
+            setTemplates(restoredTemplates);
+            templatesCacheRef.current = { templates: restoredTemplates, timestamp: cached.timestamp };
+            console.log(`✅ Templates restored from localStorage: ${restoredTemplates.length} templates (restore: ${restoreTime.toFixed(2)}ms, total: ${totalTime.toFixed(2)}ms)`);
             return;
+          } else if (cached?.timestamp) {
+            console.log(`⚠️ localStorage cache expired (age: ${Math.round((now - cached.timestamp) / 1000)}s), will refetch`);
           }
         }
       } catch (e) {
@@ -973,15 +1020,40 @@ function App() {
         console.warn('⚠️ Error fetching templates from API:', error);
       }
 
-      // 4) Final fallback - any cached data even if stale
+      // 4) Final fallback - any cached data even if stale (with loadFile restoration)
       try {
         const cachedRaw = localStorage.getItem('cpq_templates_cache_v2');
         if (cachedRaw) {
           const cached = JSON.parse(cachedRaw);
           if (Array.isArray(cached?.templates)) {
-            setTemplates(cached.templates);
-            templatesCacheRef.current = { templates: cached.templates, timestamp: cached.timestamp || now };
-            console.log('✅ Loaded templates from localStorage fallback:', cached.templates.length);
+            // OPTIMIZATION: Use closure to avoid creating new functions for each template
+            const createLoadFile = (templateId: string, fileName: string, fileType: string) => {
+              return async () => {
+                try {
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`);
+                  if (!fr.ok) return null;
+                  const blob = await fr.blob();
+                  return new File([blob], fileName || 'template.docx', {
+                    type: fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  });
+                } catch (err) {
+                  console.error('❌ Error fetching template file:', err);
+                  return null;
+                }
+              };
+            };
+            
+            // Recreate loadFile functions for lazy loading
+            const restoredTemplates = cached.templates.map((t: any) => ({
+              ...t,
+              uploadDate: t.uploadDate ? new Date(t.uploadDate) : new Date(t.createdAt || Date.now()),
+              content: null,
+              file: null,
+              loadFile: createLoadFile(t.id, t.fileName, t.fileType)
+            }));
+            setTemplates(restoredTemplates);
+            templatesCacheRef.current = { templates: restoredTemplates, timestamp: cached.timestamp || now };
+            console.log('✅ Loaded templates from localStorage fallback with lazy loaders:', restoredTemplates.length);
             return;
           }
         }

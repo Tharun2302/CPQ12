@@ -74,23 +74,40 @@ class TemplateService {
   async getTemplates(): Promise<DatabaseTemplate[]> {
     try {
       console.log('📄 Fetching templates from database...');
+      const startTime = performance.now();
 
-      const response = await fetch(`${this.baseUrl}/templates`);
-      
-      if (!response.ok) {
-        // Check if it's a server error (HTML response)
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('text/html')) {
-          throw new Error('Server is not responding correctly. Please check if the server is running.');
-        }
+      // Add timeout to prevent hanging (10 seconds max)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const response = await fetch(`${this.baseUrl}/templates`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
         
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch templates');
-      }
+        if (!response.ok) {
+          // Check if it's a server error (HTML response)
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('text/html')) {
+            throw new Error('Server is not responding correctly. Please check if the server is running.');
+          }
+          
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to fetch templates');
+        }
 
-      const result: TemplatesResponse = await response.json();
-      console.log(`✅ Fetched ${result.templates.length} templates from database`);
-      return result.templates;
+        const result: TemplatesResponse = await response.json();
+        const loadTime = performance.now() - startTime;
+        console.log(`✅ Fetched ${result.templates.length} templates from database (${loadTime.toFixed(2)}ms)`);
+        return result.templates;
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Request timed out after 10 seconds. Server may be slow or unresponsive.');
+        }
+        throw fetchError;
+      }
 
     } catch (error) {
       console.error('❌ Error fetching templates:', error);
