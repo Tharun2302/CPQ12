@@ -162,7 +162,10 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
     setIsLoadingPreview(false);
   };
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> parent of d6786bd (Merge branch 'temp-fix')
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'text-yellow-600 bg-yellow-100';
@@ -383,6 +386,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
+<<<<<<< HEAD
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
                         <button
@@ -394,6 +398,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                         </button>
                       </div>
                     </td>
+=======
+                     <td className="py-4 px-4">
+                       <button
+                         onClick={() => handleViewWorkflow(workflow)}
+                         className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
+                       >
+                         <Eye className="w-3 h-3" />
+                         View
+                       </button>
+                     </td>
+>>>>>>> parent of d6786bd (Merge branch 'temp-fix')
                    </tr>
                  );
                })}
@@ -550,6 +565,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          <div className="text-xs text-gray-500">{completedDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
+<<<<<<< HEAD
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
                         <button
@@ -561,6 +577,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                         </button>
                       </div>
                     </td>
+=======
+                     <td className="py-4 px-4">
+                       <button
+                         onClick={() => handleViewWorkflow(workflow)}
+                         className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
+                       >
+                         <Eye className="w-3 h-3" />
+                         View
+                       </button>
+                     </td>
+>>>>>>> parent of d6786bd (Merge branch 'temp-fix')
                    </tr>
                  );
                })}
@@ -676,6 +703,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                          <div className="text-xs text-gray-500">{createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                        </div>
                      </td>
+<<<<<<< HEAD
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-2">
                         <button
@@ -687,6 +715,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                         </button>
                       </div>
                     </td>
+=======
+                     <td className="py-4 px-4">
+                       <button
+                         onClick={() => handleViewWorkflow(workflow)}
+                         className="inline-flex items-center gap-1 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg transition-colors"
+                       >
+                         <Eye className="w-3 h-3" />
+                         View
+                       </button>
+                     </td>
+>>>>>>> parent of d6786bd (Merge branch 'temp-fix')
                    </tr>
                  );
                })}

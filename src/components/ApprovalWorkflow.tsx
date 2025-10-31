@@ -37,7 +37,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [pdfPreviewData, setPdfPreviewData] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
-  // Optional: show quotes list (not used for eSign document download)
+  // Load available documents from quotes
   useEffect(() => {
     if (quotes && quotes.length > 0) {
       setAvailableDocuments(quotes.map(quote => ({
@@ -52,12 +52,23 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     }
   }, [quotes]);
 
+<<<<<<< HEAD
   // Auto-load documents on mount, but silently skip if backend is unavailable
   useEffect(() => {
     loadAvailableDocuments();
   }, []);
 
   const loadAvailableDocuments = async () => {
+=======
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleLoadDocuments = async () => {
+>>>>>>> parent of d6786bd (Merge branch 'temp-fix')
     setIsLoadingDocuments(true);
     try {
 <<<<<<< HEAD
@@ -125,8 +136,20 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       return;
     }
 
+<<<<<<< HEAD
     try {
       await createWorkflow({
+=======
+    if (!formData.managerEmail || !formData.ceoEmail || !formData.clientEmail) {
+      alert('Please fill in all email addresses');
+      return;
+    }
+
+    // Find the selected document to get client name and amount
+    const selectedDocument = availableDocuments.find(doc => doc.id === formData.documentId);
+    
+    const workflowData = {
+>>>>>>> parent of d6786bd (Merge branch 'temp-fix')
       documentId: formData.documentId,
       documentType: formData.documentType,
         clientName: 'John Smith', // Default client name
