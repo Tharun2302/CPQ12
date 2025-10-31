@@ -57,6 +57,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const [combination, setCombination] = useState<string>('');
   // Search state for combinations
   const [combinationSearch, setCombinationSearch] = useState<string>('');
+  
+  // Contact information validation state
+  const [contactValidationErrors, setContactValidationErrors] = useState({
+    clientName: false,
+    clientEmail: false,
+    company: false
+  });
 
   // Extract company name from email domain if company field is "Not Available"
   const extractCompanyFromEmail = (email: string): string => {
@@ -224,7 +231,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         companyName2: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)
       };
       console.log('✅ ConfigurationForm: Syncing deal data contact info to parent:', parentContactInfo);
-      onContactInfoChange(parentContactInfo);
+      if (onContactInfoChange) {
+        onContactInfoChange(parentContactInfo);
+      }
     }
   }, [dealData]); // Removed onContactInfoChange from dependencies
 
@@ -321,7 +330,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           console.warn('💾 Could not save to navigation state:', navError);
         }
       }
-      console.log('💾 === SAVE COMPLETE ===');
     } catch (error) {
       console.error('💾 Error saving to sessionStorage:', error);
     }
@@ -360,6 +368,48 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // CRITICAL: Validate contact information first (case-insensitive "Not Available" check)
+    const isNotAvailable = (value: string) => {
+      if (!value || value.trim() === '') return true;
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'not available' || normalized === 'n/a' || normalized === 'na';
+    };
+    
+    const hasContactName = contactInfo.clientName && !isNotAvailable(contactInfo.clientName);
+    const hasContactEmail = contactInfo.clientEmail && !isNotAvailable(contactInfo.clientEmail);
+    const hasCompanyName = contactInfo.company && !isNotAvailable(contactInfo.company);
+    
+    if (!hasContactName || !hasContactEmail || !hasCompanyName) {
+      // Set validation errors to show red borders
+      setContactValidationErrors({
+        clientName: !hasContactName,
+        clientEmail: !hasContactEmail,
+        company: !hasCompanyName
+      });
+      
+      // Show alert with specific missing fields
+      const missingFields = [];
+      if (!hasContactName) missingFields.push('Contact Name');
+      if (!hasContactEmail) missingFields.push('Contact Email');
+      if (!hasCompanyName) missingFields.push('Company Name');
+      
+      alert(`⚠️ Contact Information Required!\n\nPlease fill in the following fields:\n\n- ${missingFields.join('\n- ')}\n\n"Not available" is not a valid entry.\n\nScrolling to Contact Information section...`);
+      
+      // Scroll to top to show contact information section
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      
+      // Also focus on the first invalid field after scroll
+      setTimeout(() => {
+        const firstInvalidField = document.querySelector('input[type="text"][value*="Not"], input[type="email"][value*="Not"]') as HTMLInputElement;
+        if (firstInvalidField) {
+          firstInvalidField.focus();
+          firstInvalidField.select();
+        }
+      }, 500);
+      
+      return;
+    }
     
     // Validation
     if (!config.migrationType) {
@@ -476,10 +526,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               {/* Contact Name */}
               <div className="bg-white rounded-lg p-4 border border-emerald-100">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Contact Name
+                  Contact Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
+                  required
                   value={contactInfo.clientName || dealData?.contactName || ''}
                   onChange={(e) => {
                     const newContactInfo = {
@@ -488,6 +539,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     };
                     setContactInfo(newContactInfo);
                     
+                    // Clear validation error when user types
+                    setContactValidationErrors(prev => ({ ...prev, clientName: false }));
+                    
                     // Save to both localStorage and sessionStorage for consistency
                     try {
                       localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
@@ -510,18 +564,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       });
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-sm font-medium"
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    const normalized = value.toLowerCase();
+                    if (!value || normalized === 'not available' || normalized === 'n/a' || normalized === 'na') {
+                      setContactValidationErrors(prev => ({ ...prev, clientName: true }));
+                    }
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
+                    contactValidationErrors.clientName
+                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                      : 'border-gray-200 focus:ring-emerald-500 focus:border-emerald-500'
+                  }`}
                   placeholder="Enter contact name"
                 />
+                {contactValidationErrors.clientName && (
+                  <p className="text-xs text-red-600 mt-1 font-semibold flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                    Contact Name is required
+                  </p>
+                )}
               </div>
               
               {/* Contact Email */}
               <div className="bg-white rounded-lg p-4 border border-emerald-100">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Contact Email
+                  Contact Email <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="email"
+                  required
                   value={contactInfo.clientEmail || dealData?.contactEmail || ''}
                   onChange={(e) => {
                     const newContactInfo = {
@@ -530,6 +602,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     };
                     setContactInfo(newContactInfo);
                     
+                    // Clear validation error when user types
+                    setContactValidationErrors(prev => ({ ...prev, clientEmail: false }));
+                    
                     // Save to both localStorage and sessionStorage for consistency
                     try {
                       localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
@@ -552,18 +627,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       });
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-sm font-medium"
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    const normalized = value.toLowerCase();
+                    if (!value || normalized === 'not available' || normalized === 'n/a' || normalized === 'na') {
+                      setContactValidationErrors(prev => ({ ...prev, clientEmail: true }));
+                    }
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
+                    contactValidationErrors.clientEmail
+                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                      : 'border-gray-200 focus:ring-emerald-500 focus:border-emerald-500'
+                  }`}
                   placeholder="Enter contact email"
                 />
+                {contactValidationErrors.clientEmail && (
+                  <p className="text-xs text-red-600 mt-1 font-semibold flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                    Contact Email is required
+                  </p>
+                )}
               </div>
               
               {/* Company Name */}
               <div className="bg-white rounded-lg p-4 border border-emerald-100">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
-                  Company Name
+                  Company Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
+                  required
                   value={contactInfo.company || contactInfo.companyName2 || dealData?.companyByContact || dealData?.company || ''}
                   onChange={(e) => {
                     const newContactInfo = {
@@ -573,6 +666,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     };
                     setContactInfo(newContactInfo);
                     
+                    // Clear validation error when user types
+                    setContactValidationErrors(prev => ({ ...prev, company: false }));
+                    
                     // Save to both localStorage and sessionStorage for consistency
                     try {
                       localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo));
@@ -595,9 +691,26 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       });
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-sm font-medium"
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    const normalized = value.toLowerCase();
+                    if (!value || normalized === 'not available' || normalized === 'n/a' || normalized === 'na') {
+                      setContactValidationErrors(prev => ({ ...prev, company: true }));
+                    }
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
+                    contactValidationErrors.company
+                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                      : 'border-gray-200 focus:ring-emerald-500 focus:border-emerald-500'
+                  }`}
                   placeholder="Enter company name"
                 />
+                {contactValidationErrors.company && (
+                  <p className="text-xs text-red-600 mt-1 font-semibold flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                    Company Name is required
+                  </p>
+                )}
               </div>
             </div>
             

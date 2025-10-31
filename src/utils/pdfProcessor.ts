@@ -369,7 +369,7 @@ export async function savePDFToDatabase(
     };
     
     // Send to backend
-    const response = await fetch('http://localhost:3001/api/documents', {
+    const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/documents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

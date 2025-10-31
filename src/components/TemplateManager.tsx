@@ -55,15 +55,22 @@ interface TemplateManagerProps {
   selectedTemplate?: Template | null;
   onTemplatesUpdate?: () => void;
   currentQuoteData?: any; // Current quote data for template processing
+  templates?: Template[]; // Templates from App.tsx cache
+  setTemplates?: (templates: Template[]) => void; // Update templates in App.tsx
 }
 
 const TemplateManager: React.FC<TemplateManagerProps> = ({ 
   onTemplateSelect, 
   selectedTemplate,
   onTemplatesUpdate,
-  currentQuoteData
+  currentQuoteData,
+  templates: externalTemplates,
+  setTemplates: setExternalTemplates
 }) => {
-  const [templates, setTemplates] = useState<Template[]>([]);
+  // Use external templates from App.tsx if available, otherwise use local state
+  const [localTemplates, setLocalTemplates] = useState<Template[]>([]);
+  const templates = externalTemplates || localTemplates;
+  const setTemplates = setExternalTemplates || setLocalTemplates;
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -150,10 +157,18 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     }
   ];
 
-  // Load templates from database on component mount
+  // Load templates - use external cache if available, otherwise load from database
   useEffect(() => {
     const loadTemplates = async () => {
-      console.log('🔄 TemplateManager: Loading templates from database...');
+      // OPTIMIZATION: If templates are provided from App.tsx cache, use them!
+      if (externalTemplates && externalTemplates.length > 0) {
+        console.log('⚡ TemplateManager: Using cached templates from App.tsx:', externalTemplates.length);
+        setIsLoading(false);
+        return; // Skip database loading!
+      }
+
+      // Only load from database if no external templates provided
+      console.log('🔄 TemplateManager: No cache available, loading from database...');
       try {
         // Try to load from database first
         const dbTemplates = await templateService.getTemplates();
@@ -229,7 +244,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     };
 
     loadTemplates();
-  }, []);
+  }, [externalTemplates]); // Re-run when external templates change
 
   // Save templates to localStorage whenever templates change
   useEffect(() => {

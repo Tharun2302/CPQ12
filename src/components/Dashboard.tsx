@@ -504,6 +504,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             selectedTemplate={selectedTemplate}
             onTemplatesUpdate={handleTemplatesUpdate}
             currentQuoteData={getCurrentQuoteData()}
+            templates={templates}
+            setTemplates={setTemplates}
           />
         );
 

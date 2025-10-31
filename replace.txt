@@ -1,0 +1,1 @@
+regex:SG\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+=>REDACTED_SENDGRID_KEY

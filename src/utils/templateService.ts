@@ -299,23 +299,31 @@ class TemplateService {
     }
   }
 
-  // Convert database template to frontend template format
+  // Convert database template to frontend template format (WITH LAZY FILE LOADING)
   async convertToFrontendTemplate(dbTemplate: DatabaseTemplate): Promise<any> {
     try {
-      // Fetch the actual file
-      const file = await this.getTemplateFile(dbTemplate.id);
-      
+      // OPTIMIZATION: Don't fetch the file immediately - create a lazy loader
       return {
         id: dbTemplate.id,
         name: dbTemplate.name,
         description: dbTemplate.description,
-        file: file,
+        file: null, // File not loaded yet - will load on demand
         fileName: dbTemplate.fileName,
         fileType: dbTemplate.fileType,
         fileSize: dbTemplate.fileSize,
         isDefault: dbTemplate.isDefault,
         uploadDate: new Date(dbTemplate.createdAt),
-        content: null // Will be extracted when needed
+        content: null, // Will be extracted when needed
+        // Lazy file loader - fetch file only when needed
+        loadFile: async () => {
+          try {
+            console.log('📥 Lazy loading template file:', dbTemplate.name);
+            return await this.getTemplateFile(dbTemplate.id);
+          } catch (error) {
+            console.error('❌ Error lazy loading template file:', error);
+            return null;
+          }
+        }
       };
     } catch (error) {
       console.error('❌ Error converting template:', error);
@@ -323,12 +331,15 @@ class TemplateService {
     }
   }
 
-  // Convert multiple database templates to frontend format
+  // Convert multiple database templates to frontend format (WITH LAZY FILE LOADING)
   async convertToFrontendTemplates(dbTemplates: DatabaseTemplate[]): Promise<any[]> {
     try {
+      // OPTIMIZATION: Don't download all files - create lazy loaders for each
+      console.log('⚡ Creating lazy loaders for', dbTemplates.length, 'templates (no files downloaded yet)');
       const templates = await Promise.all(
         dbTemplates.map(template => this.convertToFrontendTemplate(template))
       );
+      console.log('✅ Lazy loaders created - templates ready (files will load on-demand)');
       return templates;
     } catch (error) {
       console.error('❌ Error converting templates:', error);

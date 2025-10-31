@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, X, MessageCircle, FileText, DollarSign, User, Eye, Download } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL } from '../config/api';
 
 interface ClientNotificationProps {
 }
@@ -59,7 +60,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       setLoadingWorkflow(true);
       console.log('📄 Fetching specific workflow from API:', workflowId);
-      const response = await fetch(`http://localhost:3001/api/approval-workflows/${workflowId}`);
+      const response = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
       
       console.log('📄 API Response status:', response.status);
       console.log('📄 API Response ok:', response.ok);
@@ -147,7 +148,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         const dealDeskEmail = workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email || 'dealdesk@company.com';
         console.log('📧 Using Deal Desk email:', dealDeskEmail);
         
-        const response = await fetch('http://localhost:3001/api/send-deal-desk-email', {
+        const response = await fetch(`${BACKEND_URL}/api/send-deal-desk-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -246,7 +247,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       
       // Try preview API first
       try {
-        const previewResponse = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}/preview`);
+        const previewResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         if (previewResponse.ok) {
           const result = await previewResponse.json();
           if (result.success && result.dataUrl) {
@@ -261,7 +262,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       }
       
       // Fallback: Fetch document directly
-      const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+      const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch document');
       }
@@ -289,7 +290,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       console.log('📥 Downloading document:', workflow.documentId);
       
-      const response = await fetch(`http://localhost:3001/api/documents/${workflow.documentId}`);
+      const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch document');
       }

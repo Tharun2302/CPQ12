@@ -12,6 +12,7 @@ async function seedDefaultTemplates(db) {
   }
 
   console.log('🌱 Starting template seeding process...');
+  console.log('⚡ Performance mode: Metadata-only seeding for speed');
 
   // Define default templates structure (Messaging + Content)
   const defaultTemplates = [

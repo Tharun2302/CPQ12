@@ -123,8 +123,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     };
   };
 
-  const isSingle = filteredCalculations.length === 1;
-
   // Determine the appropriate container class based on the number of filtered plans
   let containerClass = '';
   if (filteredCalculations.length === 1) {
@@ -135,15 +133,31 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     containerClass = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8';
   }
 
+  // Debug logging for overage agreement
+  if (configuration?.combination === 'overage-agreement') {
+    console.log('📋 OVERAGE AGREEMENT Display:', {
+      combination: configuration.combination,
+      filteredPlansCount: filteredCalculations.length,
+      plans: filteredCalculations.map(c => ({
+        name: c.tier.name,
+        userCost: c.userCost,
+        dataCost: c.dataCost,
+        migrationCost: c.migrationCost,
+        instanceCost: c.instanceCost,
+        totalCost: c.totalCost
+      }))
+    });
+  }
+
   return (
     <div id="pricing-comparison" className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-8 backdrop-blur-sm">
       <div className="text-center mb-10">
         <h2 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-3">
-          {configuration?.combination === 'overage-agreement' ? 'Overage Agreement Plan' : 'Choose Your Perfect Plan'}
+          {configuration?.combination === 'overage-agreement' ? 'Overage Agreement Pricing' : 'Choose Your Perfect Plan'}
         </h2>
         <p className="text-gray-600 text-lg">
           {configuration?.combination === 'overage-agreement' 
-            ? 'Review the overage agreement pricing details below'
+            ? 'Instance costs only - no user or data costs apply'
             : 'Compare our pricing tiers and find the best fit for your project'}
         </p>
       </div>
@@ -161,8 +175,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             >
 
               <div className="text-center mb-6">
-                {/* Hide tier name for overage agreement */}
-                {configuration?.combination !== 'overage-agreement' && (
+                {/* Special heading for overage agreement */}
+                {configuration?.combination === 'overage-agreement' ? (
+                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
+                    Overage Agreement
+                  </h3>
+                ) : (
                   <h3 className="text-2xl font-bold mb-3 text-gray-800">
                     {calc.tier.name}
                   </h3>
@@ -196,53 +214,78 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               </div>
 
               <div className="space-y-4 mb-8">
-                {/* Per-user cost - Hide for overage agreement */}
-                {configuration?.combination !== 'overage-agreement' && (
-                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                    <span className="text-gray-700 font-medium">Per user cost:</span>
-                    <span className="font-bold text-gray-900">
-                      {configuration && configuration.numberOfUsers > 0
-                        ? `${formatCurrency(calc.userCost / configuration.numberOfUsers)}/user`
-                        : 'N/A'}
-                    </span>
-                  </div>
+                {/* For OVERAGE AGREEMENT: Show special message + instance cost only */}
+                {configuration?.combination === 'overage-agreement' ? (
+                  <>
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                      <p className="text-sm text-purple-800 font-medium text-center">
+                        💡 Overage Agreement includes only instance/server costs
+                      </p>
+                    </div>
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Instance Type:</span>
+                      <span className="font-bold text-gray-900">{configuration?.instanceType}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Number of Instances:</span>
+                      <span className="font-bold text-gray-900">{configuration?.numberOfInstances}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Duration (Months):</span>
+                      <span className="font-bold text-gray-900">{configuration?.duration}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm bg-purple-50 border border-purple-200 rounded-lg p-4">
+                      <span className="text-gray-900 font-bold">Total Instance Cost:</span>
+                      <span className="font-bold text-2xl text-purple-700">{formatCurrency(calc.instanceCost)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Per-user cost */}
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Per user cost:</span>
+                      <span className="font-bold text-gray-900">
+                        {configuration && configuration.numberOfUsers > 0
+                          ? `${formatCurrency(calc.userCost / configuration.numberOfUsers)}/user`
+                          : 'N/A'}
+                      </span>
+                    </div>
+                    {/* User costs */}
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">User costs:</span>
+                      <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
+                    </div>
+                    {/* Data costs */}
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Data costs:</span>
+                      <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
+                    </div>
+                    {/* Migration cost */}
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Migration cost:</span>
+                      <span className="font-bold text-gray-900">{formatCurrency(calc.migrationCost)}</span>
+                    </div>
+                    {/* Instances Cost */}
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">Instances Cost:</span>
+                      <span className="font-bold text-gray-900">{formatCurrency(calc.instanceCost)}</span>
+                    </div>
+                  </>
                 )}
-                {/* User costs - Hide for overage agreement */}
-                {configuration?.combination !== 'overage-agreement' && (
-                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                    <span className="text-gray-700 font-medium">User costs:</span>
-                    <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
-                  </div>
-                )}
-                {/* Data costs - Hide for overage agreement */}
-                {configuration?.combination !== 'overage-agreement' && (
-                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                    <span className="text-gray-700 font-medium">Data costs:</span>
-                    <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
-                  </div>
-                )}
-                {/* Migration cost - Hide for overage agreement */}
-                {configuration?.combination !== 'overage-agreement' && (
-                  <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                    <span className="text-gray-700 font-medium">Migration cost:</span>
-                    <span className="font-bold text-gray-900">{formatCurrency(calc.migrationCost)}</span>
-                  </div>
-                )}
-                {/* Instances Cost - ALWAYS SHOWN */}
-                <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                  <span className="text-gray-700 font-medium">Instances Cost:</span>
-                  <span className="font-bold text-gray-900">{formatCurrency(calc.instanceCost)}</span>
-                </div>
               </div>
 
 
               <button
                 onClick={() => onSelectTier(calc)}
-                className="w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
+                className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group ${
+                  configuration?.combination === 'overage-agreement'
+                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                } text-white`}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                 <span className="relative flex items-center justify-center gap-2">
-                  {configuration?.combination === 'overage-agreement' ? 'Select' : `Select ${calc.tier.name}`}
+                  {configuration?.combination === 'overage-agreement' ? 'Select Overage Agreement' : `Select ${calc.tier.name}`}
                 </span>
               </button>
             </div>

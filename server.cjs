@@ -216,7 +216,7 @@ function generateManagerEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/technical-approval?workflow=${workflowData.workflowId}" 
                style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -263,7 +263,7 @@ function generateCEOEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/legal-approval?workflow=${workflowData.workflowId}" 
                style="background: #8B5CF6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -367,7 +367,6 @@ function generateDealDeskEmailHTML(workflowData) {
             <ul style="margin: 0; padding-left: 20px;">
               <li>✅ Technical Team - Approved</li>
               <li>✅ Legal Team - Approved</li>
-              <li>✅ Client - Approved</li>
             </ul>
           </div>
           
@@ -2445,9 +2444,10 @@ app.post('/api/send-manager-email', async (req, res) => {
     }
 
     const { managerEmail, workflowData } = req.body;
+    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'manager@company.com';
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
-    console.log('Manager:', managerEmail);
+    console.log('Manager:', resolvedManagerEmail);
     console.log('Workflow Data:', workflowData);
 
     // Fetch document attachment
@@ -2488,7 +2488,7 @@ app.post('/api/send-manager-email', async (req, res) => {
 
     // Send email to Manager only with attachment
     const managerResult = await sendEmail(
-      managerEmail,
+      resolvedManagerEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateManagerEmailHTML(workflowData),
       attachments
@@ -2499,7 +2499,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     res.json({
       success: managerResult.success,
       message: 'Manager email sent successfully',
-      result: { role: 'Manager', email: managerEmail, success: managerResult.success },
+      result: { role: 'Manager', email: resolvedManagerEmail, success: managerResult.success },
       workflowData: workflowData,
       attachmentCount: attachments.length
     });
@@ -2524,9 +2524,10 @@ app.post('/api/send-ceo-email', async (req, res) => {
     }
 
     const { ceoEmail, workflowData } = req.body;
+    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'legal@company.com';
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');
-    console.log('CEO:', ceoEmail);
+    console.log('CEO:', resolvedCeoEmail);
     console.log('Workflow Data:', workflowData);
 
     // Fetch document attachment
@@ -2567,7 +2568,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
 
     // Send email to CEO only with attachment
     const ceoResult = await sendEmail(
-      ceoEmail,
+      resolvedCeoEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateCEOEmailHTML(workflowData),
       attachments
@@ -2578,7 +2579,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     res.json({
       success: ceoResult.success,
       message: 'CEO email sent successfully',
-      result: { role: 'CEO', email: ceoEmail, success: ceoResult.success },
+      result: { role: 'CEO', email: resolvedCeoEmail, success: ceoResult.success },
       workflowData: workflowData,
       attachmentCount: attachments.length
     });
@@ -2682,9 +2683,10 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     }
 
     const { dealDeskEmail, workflowData } = req.body;
+    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'dealdesk@company.com';
     
     console.log('📧 Sending notification email to Deal Desk (after client approval)...');
-    console.log('Deal Desk:', dealDeskEmail);
+    console.log('Deal Desk:', resolvedDealDeskEmail);
     console.log('Workflow Data:', workflowData);
 
     // Fetch document attachment
@@ -2725,7 +2727,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
 
     // Send notification email to Deal Desk
     const dealDeskResult = await sendEmail(
-      dealDeskEmail,
+      resolvedDealDeskEmail,
       `Approval Workflow Completed: ${workflowData.documentId}`,
       generateDealDeskEmailHTML(workflowData),
       attachments
@@ -2736,7 +2738,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     res.json({
       success: dealDeskResult.success,
       message: 'Deal Desk notification email sent successfully',
-      result: { role: 'Deal Desk', email: dealDeskEmail, success: dealDeskResult.success },
+      result: { role: 'Deal Desk', email: resolvedDealDeskEmail, success: dealDeskResult.success },
       workflowData: workflowData,
       attachmentCount: attachments.length
     });

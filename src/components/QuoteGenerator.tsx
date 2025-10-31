@@ -19,11 +19,12 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { convertDocxToPdfLight, downloadBlob } from '../utils/docxToPdfLight';
+import { convertDocxToPdfLight } from '../utils/docxToPdfLight';
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL } from '../config/api';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -278,6 +279,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [quoteId, setQuoteId] = useState<string>('');
   const [isSendingToDealDesk, setIsSendingToDealDesk] = useState(false);
   const [isEmailingAgreement, setIsEmailingAgreement] = useState(false);
+  const [dateValidationErrors, setDateValidationErrors] = useState({
+    projectStartDate: false,
+    effectiveDate: false
+  });
   
   // Calculate discount logic - source discount primarily from Configure session (localStorage)
   const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
@@ -382,11 +387,13 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Approval workflow state
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const defaultTechEmail = (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'anushreddydasari@gmail.com';
+  const defaultLegalEmail = (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'anushreddydasari@gmail.com';
+  const defaultDealDeskEmail = (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || 'anushreddydasari@gmail.com';
   const [approvalEmails, setApprovalEmails] = useState({
-    role1: '',
-    role2: '',
-    role3: '',
-    role4: ''
+    role1: defaultTechEmail,
+    role2: defaultLegalEmail,
+    role4: defaultDealDeskEmail
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
 
@@ -719,8 +726,7 @@ Quote ID: ${quoteData.id}
       // Send email directly through backend API
       const dealDeskEmail = 'dealdesk@cloudfuze.com'; // Replace with actual deal desk email
       
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/email/send`, {
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1044,7 +1050,6 @@ This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone:
 Agreement ID: AGR-${Date.now().toString().slice(-8)}
 Template: ${selectedTemplate?.name || 'Default Template'}`;
 
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
       const formData = new FormData();
       const filenameBase = (clientInfo.company || 'Company').replace(/[^a-zA-Z0-9]/g, '_');
       const timestamp = new Date().toISOString().slice(0, 10);
@@ -1064,7 +1069,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       });
 
       // Send email using server-side endpoint with attachment
-      const response = await fetch(`${backendUrl}/api/email/send`, {
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
         body: formData
       });
@@ -1492,8 +1497,8 @@ Total Price: {{total price}}`;
     }
 
     // Validate email addresses
-    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role3) {
-      alert('Please fill in all three role email addresses.');
+    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role4) {
+      alert('Please enter Technical, Legal, and Deal Desk email addresses.');
       return;
     }
 
@@ -1533,12 +1538,11 @@ Total Price: {{total price}}`;
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        totalSteps: 4,
+        totalSteps: 3,
         workflowSteps: [
           { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
           { step: 2, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
-          { step: 3, role: 'Client', email: approvalEmails.role3, status: 'pending' as const },
-          { step: 4, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
+          { step: 3, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
         ]
       };
 
@@ -1547,7 +1551,7 @@ Total Price: {{total price}}`;
 
       // Send email ONLY to Technical Team first (sequential approval)
       try {
-        const response = await fetch('http://localhost:3001/api/send-manager-email', {
+        const response = await fetch(`${BACKEND_URL}/api/send-manager-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1568,7 +1572,7 @@ Total Price: {{total price}}`;
         if (result.success) {
           alert('✅ Approval workflow started successfully!\n📧 Technical Team has been notified. The workflow will continue sequentially when each role approves.');
           setShowApprovalModal(false);
-          setApprovalEmails({ role1: '', role2: '', role3: '', role4: '' });
+          setApprovalEmails({ role1: defaultTechEmail, role2: defaultLegalEmail, role4: defaultDealDeskEmail });
         } else {
           alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
         }
@@ -2097,9 +2101,23 @@ Total Price: {{total price}}`;
       return;
     }
 
-    // Validate effective date is provided
-    if (!clientInfo.effectiveDate || clientInfo.effectiveDate.trim() === '') {
-      alert('Please Give Effective Date');
+    // Validate both date fields are provided
+    const hasProjectStartDate = configuration?.startDate && configuration.startDate.trim() !== '';
+    const hasEffectiveDate = clientInfo.effectiveDate && clientInfo.effectiveDate.trim() !== '';
+    
+    if (!hasProjectStartDate || !hasEffectiveDate) {
+      // Set validation errors to show red borders
+      setDateValidationErrors({
+        projectStartDate: !hasProjectStartDate,
+        effectiveDate: !hasEffectiveDate
+      });
+      
+      // Show alert with specific missing fields
+      const missingFields = [];
+      if (!hasProjectStartDate) missingFields.push('Project Start Date');
+      if (!hasEffectiveDate) missingFields.push('Effective Date');
+      
+      alert(`Please fill in the following required fields:\n- ${missingFields.join('\n- ')}`);
       return;
     }
 
@@ -4140,14 +4158,19 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <Calendar className="w-4 h-4 text-white" />
                 </div>
                 Project Start Date
+                <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
+                required
                 value={configuration?.startDate || ''}
                 min={new Date().toISOString().split('T')[0]}
                 onChange={(e) => {
                   const newStartDate = e.target.value;
                   console.log('📅 Project Start Date changed:', newStartDate);
+                  
+                  // Clear validation error when user selects a date
+                  setDateValidationErrors(prev => ({ ...prev, projectStartDate: false }));
                   
                   if (onConfigurationChange) {
                     // Update the configuration with the new start date
@@ -4161,11 +4184,29 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     console.warn('⚠️ No onConfigurationChange callback provided');
                   }
                 }}
-                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                onBlur={(e) => {
+                  // Validate on blur
+                  if (!e.target.value || e.target.value.trim() === '') {
+                    setDateValidationErrors(prev => ({ ...prev, projectStartDate: true }));
+                  }
+                }}
+                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium ${
+                  dateValidationErrors.projectStartDate
+                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 hover:border-blue-300'
+                }`}
                 placeholder="Select start date"
                 autoComplete="off"
               />
-              <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
+              {dateValidationErrors.projectStartDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Project Start Date is required
+                </p>
+              )}
+              {!dateValidationErrors.projectStartDate && (
+                <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
+              )}
             </div>
 
             {/* Effective Date */}
@@ -4175,13 +4216,19 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <Calendar className="w-4 h-4 text-white" />
                 </div>
                 Effective Date
+                <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
+                required
                 value={clientInfo.effectiveDate || ''}
                 min={new Date().toISOString().split('T')[0]}
                 onChange={(e) => {
                   const selectedDate = e.target.value;
+                  
+                  // Clear validation error when user selects a date
+                  setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
+                  
                   if (!selectedDate) {
                     updateClientInfo({ effectiveDate: '' });
                     return;
@@ -4204,6 +4251,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 }}
                 onBlur={(e) => {
                   const selectedDate = e.target.value;
+                  
+                  // Validate on blur - check if empty
+                  if (!selectedDate || selectedDate.trim() === '') {
+                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: true }));
+                    return;
+                  }
+                  
                   if (selectedDate) {
                     const today = new Date();
                     const todayStr = today.toISOString().split('T')[0];
@@ -4215,7 +4269,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     }
                   }
                 }}
-                className="w-full px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-xl font-medium"
+                className={`w-full px-6 py-5 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-xl font-medium ${
+                  dateValidationErrors.effectiveDate
+                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 hover:border-blue-300'
+                }`}
                 style={{ 
                   fontSize: '18px',
                   height: '60px',
@@ -4223,7 +4281,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   paddingBottom: '18px'
                 }}
               />
-              <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
+              {dateValidationErrors.effectiveDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Effective Date is required
+                </p>
+              )}
+              {!dateValidationErrors.effectiveDate && (
+                <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
+              )}
             </div>
 
             <button
@@ -4504,12 +4570,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
-                        onClick={() => setShowApprovalModal(true)}
+                        onClick={handleStartApprovalWorkflow}
+                        disabled={isStartingWorkflow}
                         className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
                         title="Start Approval Workflow"
                       >
                         <Workflow className="w-3 h-3 inline mr-1" />
-                        Start Workflow
+                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Approval Workflow'}
                       </button>
                       <button
                         onClick={handleEmailAgreement}
@@ -4814,7 +4881,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </div>
               
               <p className="text-sm text-gray-600 mb-4">
-                Enter email addresses for the four approval roles. Technical Team, Legal Team, and Client can approve or deny. Deal Desk will be notified after all approvals.
+                Enter email addresses for the three approval roles. Technical Team and Legal Team can approve or deny. Deal Desk will be notified after approvals.
               </p>
               
               <div className="space-y-4">
@@ -4844,18 +4911,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   />
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Client Email
-                  </label>
-                  <input
-                    type="email"
-                    value={approvalEmails.role3}
-                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role3: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="client@company.com"
-                  />
-                </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -4892,7 +4947,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   ) : (
                     <>
                       <Workflow className="w-4 h-4" />
-                      Start Workflow
+                      Start Approval Workflow
                     </>
                   )}
                 </button>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import Dashboard from './components/Dashboard';
@@ -13,9 +13,10 @@ import MicrosoftCallback from './pages/MicrosoftCallback';
 import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
-import ManagerApprovalDashboard from './components/ManagerApprovalDashboard';
-import CEOApprovalDashboard from './components/CEOApprovalDashboard';
+import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDashboard';
+import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
+import { BACKEND_URL } from './config/api';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -23,6 +24,10 @@ function App() {
   const [selectedTier, setSelectedTier] = useState<PricingCalculation | null>(null);
   const [showPricing, setShowPricing] = useState(false);
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(PRICING_TIERS);
+
+  // Templates cache (memory + TTL to avoid repeated DB fetches)
+  const templatesCacheRef = useRef<{ templates: any[]; timestamp: number } | null>(null);
+  const TEMPLATES_CACHE_TTL_MS: number = Number((import.meta as any).env?.VITE_TEMPLATES_CACHE_TTL_MS || 15 * 60 * 1000);
 
   
   // HubSpot state management - ALWAYS CONNECTED by default
@@ -122,59 +127,27 @@ function App() {
     }
   };
 
-  // Load templates from localStorage on app start
-  useEffect(() => {
-    const loadTemplates = () => {
-      const savedTemplates = localStorage.getItem('cpq_templates');
-      if (savedTemplates) {
-        try {
-          const parsedTemplates = JSON.parse(savedTemplates);
-          // Convert base64 strings back to File objects with validation
-          const templatesWithFiles = parsedTemplates.map((template: any) => {
-            const file = template.fileData ? dataURLtoFile(template.fileData, template.fileName) : null;
-            const wordFile = template.wordFileData ? dataURLtoFile(template.wordFileData, template.wordFileName) : null;
-            
-            // Validate template has required data
-            if (!template.id || !template.name) {
-              console.warn('⚠️ Invalid template data:', template);
-              return null;
-            }
-            
-            return {
-              ...template,
-              file,
-              wordFile,
-              uploadDate: template.uploadDate ? new Date(template.uploadDate) : new Date(),
-              content: template.content || null
-            };
-          }).filter((template: any) => template !== null); // Remove invalid templates
-          
-          setTemplates(templatesWithFiles);
-          console.log('✅ Loaded templates from localStorage:', templatesWithFiles.length, 'templates');
-        } catch (error) {
-          console.error('❌ Error loading templates from localStorage:', error);
-        }
-      }
-    };
-
-    loadTemplates();
-
-    // Listen for template updates from TemplateManager
-    const handleTemplatesUpdated = () => {
-      console.log('🔄 Templates updated event received, reloading...');
-      loadTemplates();
-    };
-
-    window.addEventListener('templatesUpdated', handleTemplatesUpdated);
-    
-    return () => {
-      window.removeEventListener('templatesUpdated', handleTemplatesUpdated);
-    };
-  }, []);
+  // Removed duplicated localStorage-only loader to prevent double reloads per navigation
 
   // Sync selected template with loaded templates
+  // CRITICAL: Clear template if combination doesn't match to prevent wrong template persistence
   useEffect(() => {
     if (selectedTemplate && templates.length > 0) {
+      // CRITICAL CHECK: Verify template combination matches current configuration
+      const currentCombination = (configuration?.combination || '').toLowerCase();
+      const templateCombination = (selectedTemplate?.combination || '').toLowerCase();
+      
+      if (currentCombination && templateCombination && templateCombination !== currentCombination) {
+        console.log('🔄 Combination mismatch detected - clearing old template:', {
+          currentCombination,
+          templateCombination,
+          oldTemplateName: selectedTemplate.name,
+          action: 'Clearing template to allow auto-selection'
+        });
+        setSelectedTemplate(null);
+        return; // Exit early to allow fresh auto-selection
+      }
+      
       // Check if the selected template still exists in the loaded templates
       const templateExists = templates.find(t => t.id === selectedTemplate.id);
       if (!templateExists) {
@@ -197,7 +170,7 @@ function App() {
         console.log('✅ Synced selected template with loaded templates:', templateToUse.name);
       }
     }
-  }, [templates, selectedTemplate]);
+  }, [templates, selectedTemplate, configuration?.combination]);
 
   // Helper function to convert File to data URL
   const fileToDataURL = (file: File): Promise<string> => {
@@ -477,8 +450,7 @@ function App() {
     if (dealData?.dealId) {
       try {
         console.log('🔄 Refreshing deal data for ID:', dealData.dealId);
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const response = await fetch(`${backendUrl}/api/hubspot/deal/${dealData.dealId}`);
+        const response = await fetch(`${BACKEND_URL}/api/hubspot/deal/${dealData.dealId}`);
         
         if (response.ok) {
           const result = await response.json();
@@ -834,8 +806,7 @@ function App() {
 
   const fetchSignatureFormData = async (formId: string) => {
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/signature/form/${formId}`);
+      const response = await fetch(`${BACKEND_URL}/api/signature/form/${formId}`);
       if (response.ok) {
         const data = await response.json();
         setSignatureFormData(data.form);
@@ -881,8 +852,7 @@ function App() {
     const loadQuotes = async () => {
       try {
         // First try to load from database
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const response = await fetch(`${backendUrl}/api/quotes`);
+        const response = await fetch(`${BACKEND_URL}/api/quotes`);
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.quotes) {
@@ -926,89 +896,158 @@ function App() {
     loadQuotes();
   }, []);
 
-  // Load templates from database and localStorage on component mount
+  // Load templates with cache-first strategy and lazy file loading
   useEffect(() => {
-    const loadTemplates = async () => {
+    const loadTemplates = async (force: boolean = false) => {
+      const now = Date.now();
+
+      // 1) Memory cache
+      if (!force && templatesCacheRef.current && now - templatesCacheRef.current.timestamp < TEMPLATES_CACHE_TTL_MS) {
+        console.log('⚡ Templates served from memory cache:', templatesCacheRef.current.templates.length);
+        setTemplates(templatesCacheRef.current.templates);
+        return;
+      }
+
+      // 2) localStorage cache (v2)
       try {
-        // First try to load from database
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        const response = await fetch(`${backendUrl}/api/templates`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.templates && data.templates.length > 0) {
-            console.log('📋 Templates loaded from database:', data.templates.length);
-            
-            // Convert database templates to frontend format with File objects
-            const templatesWithFiles = data.templates.map((template: any) => {
-              // Convert base64 fileData to File object
-              let file = null;
-              if (template.fileData) {
-                try {
-                  // Convert raw base64 to data URL format
-                  const mimeType = template.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-                  const dataURL = `data:${mimeType};base64,${template.fileData}`;
-                  file = dataURLtoFile(dataURL, template.fileName || 'template.docx');
-                } catch (error) {
-                  console.error('Error converting fileData to File:', error);
-                }
-              }
-              
-              return {
-                ...template,
-                file,
-                uploadDate: new Date(template.createdAt || template.uploadDate || Date.now()),
-                content: null
-              };
-            });
-            
-            setTemplates(templatesWithFiles);
-            console.log('✅ Database templates converted to frontend format:', templatesWithFiles.length);
+        const cachedRaw = localStorage.getItem('cpq_templates_cache_v2');
+        if (!force && cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          if (cached?.timestamp && Array.isArray(cached?.templates) && now - cached.timestamp < TEMPLATES_CACHE_TTL_MS) {
+            console.log('⚡ Templates served from localStorage cache:', cached.templates.length);
+            setTemplates(cached.templates);
+            templatesCacheRef.current = { templates: cached.templates, timestamp: cached.timestamp };
             return;
           }
         }
-      } catch (error) {
-        console.log('⚠️ Database templates not available, falling back to localStorage:', error);
+      } catch (e) {
+        console.warn('⚠️ Failed reading templates cache, will refetch:', e);
       }
 
-      // Fallback to localStorage if database fails
+      // 3) Fetch metadata from API and build lazy loaders
       try {
-        const savedTemplates = localStorage.getItem('cpq_templates');
-        if (savedTemplates) {
-          const parsedTemplates = JSON.parse(savedTemplates);
-          // Convert base64 strings back to File objects
-          const templatesWithFiles = parsedTemplates.map((template: any) => ({
-            ...template,
-            file: template.fileData ? dataURLtoFile(template.fileData, template.fileName) : null,
-            wordFile: template.wordFileData ? dataURLtoFile(template.wordFileData, template.wordFileName) : null,
-            uploadDate: new Date(template.uploadDate)
-          }));
-          setTemplates(templatesWithFiles);
-          console.log('📋 Templates loaded from localStorage:', templatesWithFiles.length);
+        const response = await fetch(`${BACKEND_URL}/api/templates`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.success && Array.isArray(data.templates)) {
+            const mapped = data.templates.map((t: any) => ({
+              id: t.id,
+              name: t.name,
+              description: t.description,
+              combination: t.combination,
+              category: t.category,
+              planType: t.planType,
+              isDefault: t.isDefault,
+              fileName: t.fileName,
+              fileType: t.fileType,
+              uploadDate: new Date(t.createdAt || t.uploadDate || Date.now()),
+              content: null,
+              file: null,
+              // Fetch Word file only when needed
+              loadFile: async () => {
+                try {
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${t.id}/file`);
+                  if (!fr.ok) return null;
+                  const blob = await fr.blob();
+                  return new File([blob], t.fileName || 'template.docx', {
+                    type: t.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  });
+                } catch (err) {
+                  console.error('❌ Error fetching template file:', err);
+                  return null;
+                }
+              }
+            }));
+
+            setTemplates(mapped);
+            templatesCacheRef.current = { templates: mapped, timestamp: now };
+            // Save a sanitized version (no functions/files) to localStorage
+            const sanitized = mapped.map(({ loadFile, file, ...rest }: any) => rest);
+            localStorage.setItem('cpq_templates_cache_v2', JSON.stringify({ timestamp: now, templates: sanitized }));
+            console.log('✅ Templates loaded from API and cached:', mapped.length);
+            return;
+          }
         }
+        console.warn('⚠️ API did not return templates, will attempt cache fallback');
       } catch (error) {
-        console.error('Error loading templates:', error);
-        setTemplates([]);
+        console.warn('⚠️ Error fetching templates from API:', error);
       }
+
+      // 4) Final fallback - any cached data even if stale
+      try {
+        const cachedRaw = localStorage.getItem('cpq_templates_cache_v2');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          if (Array.isArray(cached?.templates)) {
+            setTemplates(cached.templates);
+            templatesCacheRef.current = { templates: cached.templates, timestamp: cached.timestamp || now };
+            console.log('✅ Loaded templates from localStorage fallback:', cached.templates.length);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Failed localStorage fallback:', e);
+      }
+
+      setTemplates([]);
     };
 
+    // Initial load
     loadTemplates();
 
-    // Listen for template updates from TemplateManager
+    // Listen for template updates and bust caches
     const handleTemplateUpdate = () => {
-      console.log('🔄 Template update detected, reloading templates...');
-      loadTemplates();
+      console.log('🔄 Template update detected, clearing caches and reloading...');
+      templatesCacheRef.current = null;
+      localStorage.removeItem('cpq_templates_cache_v2');
+      loadTemplates(true);
     };
 
-    // Add event listener for template updates
     window.addEventListener('templatesUpdated', handleTemplateUpdate);
-
-    // Cleanup event listener
     return () => {
       window.removeEventListener('templatesUpdated', handleTemplateUpdate);
     };
   }, []);
 
+  // CRITICAL FIX: Auto-retry template selection when templates load (fixes race condition)
+  useEffect(() => {
+    if (templates.length > 0 && selectedTier && !selectedTemplate) {
+      console.log('🔄 Templates loaded - retrying auto-selection for current tier:', {
+        tier: selectedTier.tier.name,
+        combination: configuration?.combination,
+        templatesAvailable: templates.length
+      });
+      
+      const auto = autoSelectTemplateForPlan(selectedTier.tier.name, configuration);
+      if (auto) {
+        console.log('✅ Auto-retry successful - selected template:', auto.name);
+        
+        // Load file if needed
+        const loadAndSetTemplate = async () => {
+          if (!auto.file && (auto as any)?.loadFile) {
+            try {
+              const file = await (auto as any).loadFile();
+              if (file) {
+                setSelectedTemplate({ ...auto, file });
+                console.log('✅ Template file loaded on auto-retry:', auto.name);
+              } else {
+                setSelectedTemplate(auto);
+              }
+            } catch (err) {
+              console.error('❌ Error loading file on auto-retry:', err);
+              setSelectedTemplate(auto);
+            }
+          } else {
+            setSelectedTemplate(auto);
+          }
+        };
+        
+        loadAndSetTemplate();
+      } else {
+        console.warn('⚠️ Auto-retry failed - no matching template found');
+      }
+    }
+  }, [templates.length]); // Trigger when templates array changes from empty to populated
 
   // Save company information to localStorage whenever it changes
   useEffect(() => {
@@ -1035,9 +1074,11 @@ function App() {
       
       // Only reset pricing state if core configuration fields have changed
       // Don't reset for date-only changes
-      // For overage agreement, numberOfUsers can be 0, so check combination instead
-      const hasCoreConfig = configuration.migrationType && 
-        (configuration.combination === 'overage-agreement' || configuration.numberOfUsers > 0);
+      // CRITICAL FIX: Allow overage agreement even with 0 users
+      const hasCoreConfig = configuration.migrationType && (
+        configuration.numberOfUsers > 0 || 
+        configuration.combination === 'overage-agreement'
+      );
       
       if (hasCoreConfig) {
         console.log('🔄 Recalculating pricing for existing configuration');
@@ -1113,10 +1154,11 @@ function App() {
 
     console.log('🔍 Auto-selecting template for:', { tierName: safeTier, migration, combination, availableTemplates: templates.length });
     console.log('🔍 Full config object:', config);
-    console.log('🔍 Available templates:', templates.map(t => ({ name: t.name, planType: t.planType, combination: t.combination })));
+    console.log('🔍 Available templates:', templates.map(t => ({ name: t.name, planType: t.planType, combination: t.combination, category: t.category })));
 
-    // Special handling for OVERAGE AGREEMENT - match by combination and category
+    // PRIORITY 0: Special handling for OVERAGE AGREEMENT (must check BEFORE planType matching)
     if (combination === 'overage-agreement') {
+      console.log('🎯 OVERAGE AGREEMENT detected - using special matching logic');
       const overageMatches = templates.filter(t => {
         const templateCombination = (t?.combination || '').toLowerCase();
         const templateCategory = (t?.category || '').toLowerCase();
@@ -1139,6 +1181,9 @@ function App() {
       if (overageMatches.length > 0) {
         console.log('✅ Found OVERAGE AGREEMENT template:', overageMatches[0].name);
         return overageMatches[0];
+      } else {
+        console.log('❌ No OVERAGE AGREEMENT template found for migration type:', migration);
+        return null;
       }
     }
 
@@ -1147,7 +1192,8 @@ function App() {
       const planType = (t?.planType || '').toLowerCase();
       const templateCombination = (t?.combination || '').toLowerCase();
       const matchesPlanType = planType === safeTier;
-      const matchesCombination = !combination || templateCombination === combination;
+      // CRITICAL FIX: Require exact combination match - no fallback to avoid wrong template selection
+      const matchesCombination = templateCombination === combination;
       
       console.log('🎯 Plan type matching:', { 
         templateName: t?.name, 
@@ -1181,57 +1227,35 @@ function App() {
       const isDropboxToSharedDrive = name.includes('dropbox') && name.includes('sharedrive');
       const isDropboxToSharePoint = name.includes('dropbox') && name.includes('sharepoint');
       const isDropboxToOneDrive = name.includes('dropbox') && name.includes('onedrive');
-      const isBoxToBox = name.includes('box to box') || (name.includes('box') && name.split(/\s+/).filter(word => word.toLowerCase() === 'box').length >= 2);
-      const isBoxToGoogleMyDrive = name.includes('box') && name.includes('google') && name.includes('mydrive');
-      const isBoxToGoogleSharedDrive = name.includes('box') && name.includes('google') && (name.includes('sharedrive') || name.includes('shared drive'));
-      const isBoxToOneDrive = name.includes('box') && name.includes('onedrive');
-      const isGoogleSharedDriveToEgnyte = (name.includes('google') && name.includes('sharedrive') && name.includes('egnyte')) || 
-                                           (name.includes('google') && name.includes('shared drive') && name.includes('egnyte'));
-      const isGoogleSharedDriveToGoogleSharedDrive = (name.includes('google') && name.includes('sharedrive') && name.split(/\s+to\s+/i).length === 2 && name.split(/\s+to\s+/i).every(part => part.includes('google') && (part.includes('sharedrive') || part.includes('shared drive')))) ||
-                                                       (name.toLowerCase().includes('google shared drive to google shared drive'));
-      const isGoogleSharedDriveToOneDrive = (name.includes('google') && (name.includes('sharedrive') || name.includes('shared drive')) && name.includes('onedrive'));
-      const isGoogleSharedDriveToSharePoint = (name.includes('google') && (name.includes('sharedrive') || name.includes('shared drive')) && name.includes('sharepoint'));
       
       const matchesPlan = name.includes(safeTier);
       
-      // OVERAGE AGREEMENT check
-      const isOverageAgreement = name.includes('overage') && name.includes('agreement');
-      
-      // Check if the template matches the selected combination
-      const matchesCombination = !combination || 
-        (combination === 'overage-agreement' && isOverageAgreement) ||
+      // Check if the template matches the selected combination - STRICT MATCHING ONLY
+      const matchesCombination = 
         (combination === 'slack-to-teams' && isSlackToTeams) ||
         (combination === 'slack-to-google-chat' && isSlackToGoogleChat) ||
         (combination === 'dropbox-to-mydrive' && isDropboxToMyDrive) ||
         (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive) ||
         (combination === 'dropbox-to-sharepoint' && isDropboxToSharePoint) ||
         (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive) ||
-        (combination === 'box-to-box' && isBoxToBox) ||
-        (combination === 'box-to-google-mydrive' && isBoxToGoogleMyDrive) ||
-        (combination === 'box-to-google-sharedrive' && isBoxToGoogleSharedDrive) ||
-        (combination === 'box-to-onedrive' && isBoxToOneDrive) ||
-        (combination === 'google-sharedrive-to-egnyte' && isGoogleSharedDriveToEgnyte) ||
-        (combination === 'google-sharedrive-to-google-sharedrive' && isGoogleSharedDriveToGoogleSharedDrive) ||
-        (combination === 'google-sharedrive-to-onedrive' && isGoogleSharedDriveToOneDrive) ||
-        (combination === 'google-sharedrive-to-sharepoint' && isGoogleSharedDriveToSharePoint);
+        (combination === 'box-to-box' && name.includes('box') && name.includes('box')) ||
+        (combination === 'box-to-google-mydrive' && name.includes('box') && name.includes('google') && name.includes('mydrive')) ||
+        (combination === 'box-to-google-sharedrive' && name.includes('box') && name.includes('google') && name.includes('sharedrive')) ||
+        (combination === 'box-to-onedrive' && name.includes('box') && name.includes('onedrive') && !name.includes('dropbox')) ||
+        (combination === 'google-sharedrive-to-egnyte' && name.includes('google') && name.includes('sharedrive') && name.includes('egnyte')) ||
+        (combination === 'google-sharedrive-to-google-sharedrive' && name.includes('google') && name.includes('sharedrive') && name.includes('google') && name.includes('sharedrive')) ||
+        (combination === 'google-sharedrive-to-onedrive' && name.includes('google') && name.includes('sharedrive') && name.includes('onedrive')) ||
+        (combination === 'google-sharedrive-to-sharepoint' && name.includes('google') && name.includes('sharedrive') && name.includes('sharepoint')) ||
+        (combination === 'overage-agreement' && name.includes('overage') && name.includes('agreement'));
       
       console.log('🔍 Name-based template matching:', { 
-        templateName: name,
-        isOverageAgreement,
+        templateName: name, 
         isSlackToTeams, 
         isSlackToGoogleChat,
         isDropboxToMyDrive,
         isDropboxToSharedDrive,
         isDropboxToSharePoint,
         isDropboxToOneDrive,
-        isBoxToBox,
-        isBoxToGoogleMyDrive,
-        isBoxToGoogleSharedDrive,
-        isBoxToOneDrive,
-        isGoogleSharedDriveToEgnyte,
-        isGoogleSharedDriveToGoogleSharedDrive,
-        isGoogleSharedDriveToOneDrive,
-        isGoogleSharedDriveToSharePoint,
         matchesPlan, 
         matchesCombination,
         safeTier,
@@ -1239,7 +1263,7 @@ function App() {
         planType: t?.planType 
       });
       
-      return (isOverageAgreement || isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive || isDropboxToSharePoint || isDropboxToOneDrive || isBoxToBox || isBoxToGoogleMyDrive || isBoxToGoogleSharedDrive || isBoxToOneDrive || isGoogleSharedDriveToEgnyte || isGoogleSharedDriveToGoogleSharedDrive || isGoogleSharedDriveToOneDrive || isGoogleSharedDriveToSharePoint) && matchesPlan && matchesCombination;
+      return (isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive || isDropboxToSharePoint || isDropboxToOneDrive) && matchesPlan && matchesCombination;
     });
 
     if (exactMatches.length > 0) {
@@ -1251,7 +1275,26 @@ function App() {
     const scoreTemplate = (t: any): number => {
       const name = (t?.name || '').toLowerCase();
       const desc = (t?.description || '').toLowerCase();
+      const templateCombination = (t?.combination || '').toLowerCase();
+      const templateCategory = (t?.category || '').toLowerCase();
       let score = 0;
+      
+      // CRITICAL: Exact combination match from database field (HIGHEST PRIORITY - 100 points)
+      if (templateCombination === combination) {
+        score += 100;
+        console.log('🎯 EXACT combination match in database:', { template: t.name, combination: templateCombination });
+      } else if (combination) {
+        // If combination doesn't match, heavily penalize to avoid wrong selection
+        score -= 50;
+        console.log('❌ Combination mismatch - penalizing:', { template: t.name, expected: combination, got: templateCombination });
+      }
+      
+      // Category match (must match migration type)
+      if (migration && templateCategory === migration) {
+        score += 20;
+      } else if (migration) {
+        score -= 30; // Penalize wrong category
+      }
       
       // Use planType field if available (most reliable)
       if (t?.planType && t.planType.toLowerCase() === safeTier) {
@@ -1261,24 +1304,8 @@ function App() {
       
       // Exact plan type match gets high priority
       if (safeTier === 'basic' && name.includes('basic')) score += 10;
+      if (safeTier === 'standard' && name.includes('standard')) score += 10;
       if (safeTier === 'advanced' && name.includes('advanced')) score += 10;
-      
-      // SLACK TO TEAMS combination gets high priority
-      if (name.includes('slack') && name.includes('teams')) score += 8;
-      
-      // SLACK TO GOOGLE CHAT combination gets high priority
-      if (name.includes('slack') && name.includes('google') && name.includes('chat')) score += 8;
-      
-      // Bonus for matching the selected combination
-      if (combination === 'overage-agreement' && name.includes('overage') && name.includes('agreement')) score += 5;
-      if (combination === 'slack-to-teams' && name.includes('slack') && name.includes('teams')) score += 5;
-      if (combination === 'slack-to-google-chat' && name.includes('slack') && name.includes('google') && name.includes('chat')) score += 5;
-      
-      // Migration type match
-      if (migration && (name.includes(migration) || desc.includes(migration))) score += 5;
-      
-      // General tier keywords
-      if (safeTier && (name.includes(safeTier) || desc.includes(safeTier))) score += 3;
       
       // Prefer DOCX templates
       const fileType = t?.wordFile?.type || t?.file?.type || '';
@@ -1311,7 +1338,7 @@ function App() {
     return best;
   };
 
-  const handleSelectTier = (calculation: PricingCalculation) => {
+  const handleSelectTier = async (calculation: PricingCalculation) => {
     setSelectedTier(calculation);
 
     // Attempt to auto-select a template matching the chosen plan
@@ -1331,8 +1358,25 @@ function App() {
           fileName: auto.file?.name,
           fileSize: auto.file?.size
         });
-        
-        setSelectedTemplate(auto);
+        // Lazy load file if not already present
+        if (!auto.file && (auto as any)?.loadFile) {
+          try {
+            console.log('📥 Loading template file on-demand:', auto.name);
+            const file = await (auto as any).loadFile();
+            if (file) {
+              setSelectedTemplate({ ...auto, file });
+              console.log('✅ Template file loaded on-demand:', auto.name, 'Size:', file.size, 'bytes');
+            } else {
+              setSelectedTemplate(auto);
+              console.log('⚠️ Template selected without file data (will fetch later if needed):', auto.name);
+            }
+          } catch (fileErr) {
+            console.error('❌ Error loading template file on-demand:', fileErr);
+            setSelectedTemplate(auto);
+          }
+        } else {
+          setSelectedTemplate(auto);
+        }
         console.log('✅ Auto-selected template for plan:', {
           plan: calculation?.tier?.name,
           template: { id: auto.id, name: auto.name, hasFile: !!auto.file }
@@ -1421,8 +1465,7 @@ function App() {
 
     // Save quote to database
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/quotes`, {
+      const response = await fetch(`${BACKEND_URL}/api/quotes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1458,7 +1501,7 @@ function App() {
     
     // Delete from database
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/quotes/${quoteId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/quotes/${quoteId}`, {
         method: 'DELETE'
       });
       
@@ -1483,7 +1526,7 @@ function App() {
     
     // Update in database
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/quotes/${quoteId}`, {
+      const response = await fetch(`${BACKEND_URL}/api/quotes/${quoteId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1519,7 +1562,7 @@ function App() {
   };
 
   // Handle template selection from TemplateManager
-  const handleTemplateSelect = (template: any) => {
+  const handleTemplateSelect = async (template: any) => {
     console.log('🎯 Template selected:', template?.name || 'None');
     console.log('🔍 Template details:', {
       id: template?.id,
@@ -1528,6 +1571,38 @@ function App() {
       fileType: template?.file?.type,
       fileName: template?.file?.name
     });
+
+    // If no file present, try lazy-loading it now
+    if (!template?.file) {
+      try {
+        const load = (template as any)?.loadFile
+          ? (template as any).loadFile
+          : async () => {
+              try {
+                const fr = await fetch(`${BACKEND_URL}/api/templates/${template.id}/file`);
+                if (!fr.ok) return null;
+                const blob = await fr.blob();
+                return new File([blob], template.fileName || 'template.docx', {
+                  type: template.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                });
+              } catch (err) {
+                console.error('❌ Error fetching template file:', err);
+                return null;
+              }
+            };
+
+        console.log('📥 Loading template file on selection (lazy)...');
+        const file = await load();
+        if (file) {
+          setSelectedTemplate({ ...template, file });
+          console.log('✅ Template file loaded for selection:', template.name, 'Size:', file.size, 'bytes');
+          return;
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not lazy-load template file, proceeding with metadata only:', error);
+      }
+    }
+
     setSelectedTemplate(template);
   };
 
@@ -1547,25 +1622,21 @@ function App() {
             <Route path="/dashboard" element={<Navigate to="/dashboard/deal" replace />} />
             <Route path="/approval-tracking" element={
               <ProtectedRoute>
-                <ApprovalDashboard onBackToDashboard={() => window.location.href = '/dashboard/approval'} />
+                <ApprovalDashboard />
               </ProtectedRoute>
             } />
-            <Route path="/manager-approval" element={
-              <ManagerApprovalDashboard 
+            <Route path="/technical-approval" element={
+              <TechnicalTeamApprovalDashboard 
                 managerEmail="manager@company.com"
-                onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
             } />
-            <Route path="/ceo-approval" element={
-              <CEOApprovalDashboard 
+            <Route path="/legal-approval" element={
+              <LegalTeamApprovalDashboard 
                 ceoEmail="ceo@company.com"
-                onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
               />
             } />
             <Route path="/client-notification" element={
-              <ClientNotification 
-                onBackToDashboard={() => window.location.href = '/dashboard/approval'} 
-              />
+              <ClientNotification />
             } />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
