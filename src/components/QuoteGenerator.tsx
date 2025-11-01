@@ -4962,7 +4962,31 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 =======
                       Start Approval Workflow
 >>>>>>> origin/main
-                    </>
+and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 2 files changed, 197 deletions(-)
+ delete mode 100644 src/utils/docxToPdfExact.ts
+ delete mode 100644 src/utils/docxToPdfLight.ts
+Enumerating objects: 7, done.
+Counting objects: 100% (7/7), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (4/4), done.
+Writing objects: 100% (4/4), 478 bytes | 159.00 KiB/s, done.
+Total 4 (delta 3), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (3/3), completed with 3 local objects.
+To https://github.com/Tharun2302/CPQ12.git
+   a57653a..b43ae31  gainagainesign -> gainagainesign
+PS C:\Users\AbhilashaK\Desktop\gain\CPQ12>                     </>
                   )}
                 </button>
               </div>

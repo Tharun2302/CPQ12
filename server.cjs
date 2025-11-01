@@ -28,7 +28,6 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-<<<<<<< HEAD
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({
   origin: [
@@ -69,10 +68,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-=======
-// Middleware
-app.use(cors());
->>>>>>> parent of d6786bd (Merge branch 'temp-fix')
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -3393,6 +3388,414 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
   }
 });
 
+// ============================================
+// BOLDSIGN INTEGRATION ENDPOINTS
+// ============================================
+
+// Get BoldSign API key from environment
+const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY;
+const BOLDSIGN_API_URL = process.env.BOLDSIGN_API_URL || process.env.BOLDSIGN_BASE_URL || 'https://api.boldsign.com';
+
+// Helper function to create form fields for page 3
+function createPage3FormFields(signerId, isLeftSide = true) {
+  const xOffset = isLeftSide ? 120 : 320;
+  return [
+    {
+      id: `signature_${signerId}`,
+      name: 'By',
+      fieldType: 'Signature',
+      pageNumber: 3,
+      bounds: { x: xOffset, y: 270, width: 180, height: 30 },
+      isRequired: true,
+      signerId,
+      value: '',
+      placeholder: ''
+    },
+    {
+      id: `name_${signerId}`,
+      name: 'Name',
+      fieldType: 'TextBox',
+      pageNumber: 3,
+      bounds: { x: xOffset, y: 320, width: 180, height: 25 },
+      isRequired: true,
+      placeholder: '',
+      value: '',
+      signerId
+    },
+    {
+      id: `title_${signerId}`,
+      name: 'Title',
+      fieldType: 'TextBox',
+      pageNumber: 3,
+      bounds: { x: xOffset, y: 370, width: 180, height: 25 },
+      isRequired: true,
+      placeholder: '',
+      value: '',
+      signerId
+    },
+    {
+      id: `date_${signerId}`,
+      name: 'Date',
+      fieldType: 'DateSigned',
+      pageNumber: 3,
+      bounds: { x: xOffset, y: 410, width: 180, height: 25 },
+      isRequired: true,
+      signerId,
+      value: '',
+      placeholder: 'DD/MM/YYYY',
+      dateFormat: 'DD/MM/YYYY'
+    }
+  ];
+}
+
+// Send document to BoldSign API
+app.post('/api/boldsign/send-document', async (req, res) => {
+  try {
+    // Check if API key is configured
+    if (!BOLDSIGN_API_KEY || BOLDSIGN_API_KEY === 'your-boldsign-api-key-here') {
+      console.error('❌ BoldSign API key not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key not configured. Please add BOLDSIGN_API_KEY to your .env file',
+        error: 'BoldSign API key not configured'
+      });
+    }
+
+    const { documentBase64, fileName, legalTeamEmail, clientEmail, documentTitle, clientName } = req.body;
+
+    if (!documentBase64 || !fileName || !legalTeamEmail || !clientEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: documentBase64, fileName, legalTeamEmail, clientEmail',
+        error: 'Missing required fields'
+      });
+    }
+
+    console.log('🎯 Triggering BoldSign integration...');
+    console.log('📄 Document:', fileName);
+    console.log('📧 Legal Team:', legalTeamEmail);
+    console.log('📧 Client:', clientEmail);
+
+    // Generate signer IDs
+    const legalTeamSignerId = `signer_${Date.now()}_1`;
+    const clientSignerId = `signer_${Date.now()}_2`;
+
+    // Create form fields for both signers (Legal Team on left, Client on right)
+    const legalTeamFields = createPage3FormFields(legalTeamSignerId, true);
+    const clientFields = createPage3FormFields(clientSignerId, false);
+
+    // Prepare BoldSign request
+    const boldSignRequest = {
+      title: documentTitle || `${fileName} - Signature Request`,
+      message: `Please review and sign the document: ${documentTitle || fileName}`,
+      files: [
+        {
+          fileData: documentBase64,
+          fileName: fileName
+        }
+      ],
+      signers: [
+        {
+          name: 'Legal Team',
+          emailAddress: legalTeamEmail,
+          signerOrder: 1,
+          signerRole: 'Legal Team',
+          formFields: legalTeamFields
+        },
+        {
+          name: clientName || 'Client',
+          emailAddress: clientEmail,
+          signerOrder: 2,
+          signerRole: 'Client',
+          formFields: clientFields
+        }
+      ],
+      enableSigningOrder: true,
+      hideDocumentId: false,
+      autoReminders: true,
+      reminderDays: 3
+    };
+
+    console.log('🚀 Sending request to BoldSign API...');
+    
+    // Send to BoldSign API
+    const boldSignResponse = await axios.post(
+      `${BOLDSIGN_API_URL}/v1/document/send`,
+      boldSignRequest,
+      {
+        headers: {
+          'X-API-KEY': BOLDSIGN_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ BoldSign: Document sent successfully');
+    console.log('  Document ID:', boldSignResponse.data?.documentId);
+
+    // Return success response
+    res.json({
+      success: true,
+      message: 'Document sent to BoldSign successfully',
+      data: {
+        documentId: boldSignResponse.data?.documentId,
+        signers: boldSignResponse.data?.signers || [
+          {
+            signerEmail: legalTeamEmail,
+            signUrl: boldSignResponse.data?.signers?.[0]?.signUrl || '',
+            signerId: legalTeamSignerId
+          },
+          {
+            signerEmail: clientEmail,
+            signUrl: boldSignResponse.data?.signers?.[1]?.signUrl || '',
+            signerId: clientSignerId
+          }
+        ]
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error triggering BoldSign integration:', error.message);
+    console.error('❌ Error details:', error.response?.data || error.message);
+    
+    let errorMessage = 'Failed to send document to BoldSign';
+    let boldSignError = null;
+
+    if (error.response) {
+      // BoldSign API returned an error
+      boldSignError = error.response.data;
+      errorMessage = error.response.data?.message || error.response.data?.error || errorMessage;
+      console.error('❌ BoldSign API Error Response:', JSON.stringify(error.response.data, null, 2));
+    } else if (error.request) {
+      // Request was made but no response received
+      errorMessage = 'Could not connect to BoldSign API. Please check your network connection.';
+    } else {
+      // Error in request setup
+      errorMessage = error.message || errorMessage;
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: errorMessage,
+      error: errorMessage,
+      boldSignError: boldSignError
+    });
+  }
+});
+
+// Trigger BoldSign integration (fetches document from MongoDB first)
+app.post('/api/trigger-boldsign', async (req, res) => {
+  try {
+    // Check if API key is configured
+    if (!BOLDSIGN_API_KEY || BOLDSIGN_API_KEY === 'your-boldsign-api-key-here') {
+      console.error('❌ BoldSign API key not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key not configured. Please add BOLDSIGN_API_KEY to your .env file',
+        error: 'BoldSign API key not configured'
+      });
+    }
+
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        message: 'Database not available',
+        error: 'Database not available'
+      });
+    }
+
+    const { documentId, workflowId, clientName, legalTeamEmail, clientEmail } = req.body;
+
+    if (!documentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required field: documentId',
+        error: 'Missing documentId'
+      });
+    }
+
+    console.log('🎯 Triggering BoldSign integration...');
+    console.log('📄 Fetching document from MongoDB...');
+
+    // Fetch document from MongoDB
+    const document = await db.collection('documents').findOne({ id: documentId });
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found in MongoDB',
+        error: 'Document not found'
+      });
+    }
+
+    console.log('✅ Document found:', document.fileName);
+
+    // Convert document buffer to base64
+    const documentBase64 = document.fileData.toString('base64');
+
+    // Generate signer IDs
+    const legalTeamSignerId = `signer_${Date.now()}_1`;
+    const clientSignerId = `signer_${Date.now()}_2`;
+
+    // Create form fields for both signers
+    const legalTeamFields = createPage3FormFields(legalTeamSignerId, true);
+    const clientFields = createPage3FormFields(clientSignerId, false);
+
+    // Prepare BoldSign request
+    const boldSignRequest = {
+      title: `${document.fileName || 'Document'} - Signature Request`,
+      message: `Please review and sign the document: ${document.fileName}`,
+      files: [
+        {
+          fileData: documentBase64,
+          fileName: document.fileName || 'document.pdf'
+        }
+      ],
+      signers: [
+        {
+          name: 'Legal Team',
+          emailAddress: legalTeamEmail || 'legal@company.com',
+          signerOrder: 1,
+          signerRole: 'Legal Team',
+          formFields: legalTeamFields
+        },
+        {
+          name: clientName || 'Client',
+          emailAddress: clientEmail || 'client@company.com',
+          signerOrder: 2,
+          signerRole: 'Client',
+          formFields: clientFields
+        }
+      ],
+      enableSigningOrder: true,
+      hideDocumentId: false,
+      autoReminders: true,
+      reminderDays: 3
+    };
+
+    console.log('🚀 Sending request to BoldSign API...');
+    
+    // Send to BoldSign API
+    const boldSignResponse = await axios.post(
+      `${BOLDSIGN_API_URL}/v1/document/send`,
+      boldSignRequest,
+      {
+        headers: {
+          'X-API-KEY': BOLDSIGN_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ BoldSign: Document sent successfully');
+    console.log('  Document ID:', boldSignResponse.data?.documentId);
+
+    // Update workflow with BoldSign document ID if workflowId provided
+    if (workflowId && db) {
+      try {
+        await db.collection('approval_workflows').updateOne(
+          { id: workflowId },
+          { 
+            $set: { 
+              boldSignDocumentId: boldSignResponse.data?.documentId,
+              boldSignStatus: 'sent',
+              updatedAt: new Date().toISOString()
+            }
+          }
+        );
+        console.log('✅ Updated workflow with BoldSign document ID');
+      } catch (updateError) {
+        console.error('⚠️ Failed to update workflow with BoldSign ID:', updateError.message);
+      }
+    }
+
+    // Return success response
+    res.json({
+      success: true,
+      message: 'Document sent to BoldSign successfully',
+      data: {
+        documentId: boldSignResponse.data?.documentId,
+        signers: boldSignResponse.data?.signers || [
+          {
+            signerEmail: legalTeamEmail || 'legal@company.com',
+            signUrl: boldSignResponse.data?.signers?.[0]?.signUrl || '',
+            signerId: legalTeamSignerId
+          },
+          {
+            signerEmail: clientEmail || 'client@company.com',
+            signUrl: boldSignResponse.data?.signers?.[1]?.signUrl || '',
+            signerId: clientSignerId
+          }
+        ]
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error triggering BoldSign integration:', error.message);
+    console.error('❌ Error details:', error.response?.data || error.message);
+    
+    let errorMessage = 'Failed to send document to BoldSign';
+    let boldSignError = null;
+
+    if (error.response) {
+      // BoldSign API returned an error
+      boldSignError = error.response.data;
+      errorMessage = error.response.data?.message || error.response.data?.error || errorMessage;
+      console.error('❌ BoldSign API Error Response:', JSON.stringify(error.response.data, null, 2));
+    } else if (error.request) {
+      // Request was made but no response received
+      errorMessage = 'Could not connect to BoldSign API. Please check your network connection.';
+    } else {
+      // Error in request setup
+      errorMessage = error.message || errorMessage;
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: errorMessage,
+      error: errorMessage,
+      boldSignError: boldSignError
+    });
+  }
+});
+
+// Check BoldSign document status
+app.get('/api/boldsign/document-status/:documentId', async (req, res) => {
+  try {
+    if (!BOLDSIGN_API_KEY || BOLDSIGN_API_KEY === 'your-boldsign-api-key-here') {
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key not configured',
+        error: 'BoldSign API key not configured'
+      });
+    }
+
+    const { documentId } = req.params;
+
+    const response = await axios.get(
+      `${BOLDSIGN_API_URL}/v1/document/${documentId}`,
+      {
+        headers: {
+          'X-API-KEY': BOLDSIGN_API_KEY
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      data: response.data
+    });
+
+  } catch (error) {
+    console.error('❌ Error checking BoldSign document status:', error.message);
+    res.status(500).json({
+      success: false,
+      message: error.response?.data?.message || 'Failed to check document status',
+      error: error.message
+    });
+  }
+});
+
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
@@ -3414,6 +3817,10 @@ async function startServer() {
       console.log(`📊 Database available: ${databaseAvailable}`);
       console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
       console.log(`🔗 HubSpot API key: ${HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'}`);
+      console.log(`✍️  BoldSign API key: ${BOLDSIGN_API_KEY && BOLDSIGN_API_KEY !== 'your-boldsign-api-key-here' ? 'Configured' : 'NOT CONFIGURED'}`);
+      if (!BOLDSIGN_API_KEY || BOLDSIGN_API_KEY === 'your-boldsign-api-key-here') {
+        console.log(`   ⚠️  WARNING: BoldSign integration will fail without BOLDSIGN_API_KEY in .env file`);
+      }
       console.log(`🌐 Available endpoints:`);
       console.log(`   - GET  /`);
       console.log(`   - GET  /api/health`);
@@ -3442,6 +3849,9 @@ async function startServer() {
       console.log(`   - GET  /api/templates/:id/file`);
       console.log(`   - PUT  /api/templates/:id`);
       console.log(`   - DELETE /api/templates/:id`);
+      console.log(`   - POST /api/boldsign/send-document`);
+      console.log(`   - POST /api/trigger-boldsign`);
+      console.log(`   - GET  /api/boldsign/document-status/:documentId`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
