@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   Upload, 
   FileText, 
-  Trash2, 
   Eye, 
   Download, 
   Plus, 
@@ -42,12 +41,16 @@ interface Template {
   id: string;
   name: string;
   description: string;
-  file: File; // Original PDF file
+  file: File | null; // Original PDF file (can be null if lazy-loaded)
   wordFile?: File; // Converted Word file
   size: string;
   uploadDate: Date;
   isDefault: boolean;
   content?: string; // Extracted template content
+  loadFile?: () => Promise<File | null>; // Lazy file loader from backend
+  fileName?: string; // Backend filename
+  fileType?: string; // Backend file type
+  fileSize?: number; // Backend file size
 }
 
 interface TemplateManagerProps {
@@ -87,6 +90,9 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
   const [iframeLoadError, setIframeLoadError] = useState(false);
   const [iframeLoading, setIframeLoading] = useState(false);
   const [processedTemplates, setProcessedTemplates] = useState<{[key: string]: File}>({});
+  const [convertedPdfCache, setConvertedPdfCache] = useState<{[key: string]: File}>({});  // Cache for DOCX→PDF conversions
+  const [isPreConvertingTemplates, setIsPreConvertingTemplates] = useState(false);  // Background conversion status
+  const [fileCache, setFileCache] = useState<{[key: string]: File}>({});  // Cache for loaded template files - INSTANT ACCESS! ⚡
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     description: '',
@@ -361,6 +367,80 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     saveTemplates();
   }, [templates]);
 
+  // Pre-convert all DOCX templates to PDF in background for INSTANT previews
+  useEffect(() => {
+    const preConvertTemplates = async () => {
+      if (templates.length === 0 || isPreConvertingTemplates) return;
+      
+      console.log('⚡ Starting background pre-conversion of templates for instant previews...');
+      setIsPreConvertingTemplates(true);
+      
+      let convertedCount = 0;
+      
+      for (const template of templates) {
+        try {
+          // Skip if already cached
+          if (convertedPdfCache[template.id]) {
+            continue;
+          }
+          
+          // Fetch template file if not loaded
+          let templateFile = template.file;
+          if (!templateFile && template.loadFile) {
+            console.log(`📥 Pre-loading ${template.name}...`);
+            templateFile = await template.loadFile();
+            
+            // Cache the loaded file for instant access! ⚡
+            if (templateFile) {
+              setFileCache(prev => ({
+                ...prev,
+                [template.id]: templateFile
+              }));
+              console.log(`💾 Cached file for ${template.name}`);
+            }
+          }
+          
+          if (!templateFile) continue;
+          
+          // Check if it's a DOCX file that needs conversion
+          if (templateFile.type.includes('wordprocessingml') || templateFile.name.endsWith('.docx')) {
+            console.log(`🔄 Pre-converting ${template.name}...`);
+            
+            try {
+              const pdfBlob = await templateService.convertDocxToPdf(templateFile);
+              const pdfFile = new File([pdfBlob], template.name + '.pdf', { type: 'application/pdf' });
+              
+              // Cache the converted PDF
+              setConvertedPdfCache(prev => ({
+                ...prev,
+                [template.id]: pdfFile
+              }));
+              
+              convertedCount++;
+              console.log(`✅ ${template.name} ready (${convertedCount})`);
+              
+            } catch (convError) {
+              console.warn(`⚠️ Pre-conversion failed for ${template.name}`);
+            }
+          }
+          
+        } catch (error) {
+          console.warn(`⚠️ Error pre-loading ${template.name}`);
+        }
+      }
+      
+      setIsPreConvertingTemplates(false);
+      if (convertedCount > 0) {
+        console.log(`🎉 ${convertedCount} templates pre-converted! All previews will be INSTANT! ⚡`);
+      }
+    };
+    
+    // Start pre-conversion immediately for INSTANT previews! ⚡
+    const timeoutId = setTimeout(preConvertTemplates, 0);
+    
+    return () => clearTimeout(timeoutId);
+  }, [templates.length]); // Run when templates load
+
   // Helper function to convert File to base64 data URL
   const fileToDataURL = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -624,37 +704,8 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     }
   };
 
-  const handleDeleteTemplate = async (templateId: string) => {
-    if (window.confirm('Are you sure you want to delete this template?')) {
-      try {
-        console.log('🗑️ Deleting template from database:', templateId);
-        
-        // Delete from database
-        await templateService.deleteTemplate(templateId);
-        
-        // Remove from state
-        setTemplates(prev => prev.filter(t => t.id !== templateId));
-        
-        // If deleted template was selected, clear selection
-        if (selectedTemplate?.id === templateId && onTemplateSelect) {
-          onTemplateSelect(null as any);
-        }
-        
-        // Dispatch event to notify App.tsx about template update (ONLY on actual delete)
-        console.log('📢 Dispatching templatesUpdated event (template deleted)...');
-        window.dispatchEvent(new CustomEvent('templatesUpdated'));
-        
-        console.log('✅ Template deleted successfully from database');
-        setUploadSuccess('Template deleted successfully!');
-        setTimeout(() => setUploadSuccess(null), 3000);
-        
-      } catch (error) {
-        console.error('❌ Error deleting template:', error);
-        setUploadError(`Failed to delete template: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        setTimeout(() => setUploadError(null), 5000);
-      }
-    }
-  };
+  // handleDeleteTemplate function removed - templates should not be deleted from UI
+  // to preserve database integrity and prevent accidental deletion of seeded templates
 
   const handleSetDefault = async (templateId: string) => {
     try {
@@ -1309,52 +1360,151 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
 
 
   // Simple preview function to show original template content
-  const handleSimplePreview = (template: Template) => {
+  const handleSimplePreview = async (template: Template) => {
     try {
       console.log('🔍 Simple preview of original template:', template.name);
       console.log('🔍 Template file details:', {
         hasFile: !!template.file,
+        hasLoadFile: !!template.loadFile,
         fileType: template.file?.type,
         fileName: template.file?.name,
         fileSize: template.file?.size
       });
       
-      // Check if template has a valid file, if not try to find it in templates array
-      let templateToUse = template;
-      if (!template.file) {
-        console.log('⚠️ Template file missing, looking for template in templates array...');
-        const templateFromArray = templates.find(t => t.id === template.id);
-        if (templateFromArray && templateFromArray.file) {
-          templateToUse = templateFromArray;
-          console.log('✅ Found template with file in templates array');
-        } else {
-          console.error('❌ Template does not have a valid file for preview');
-          alert('Template file is not available for preview. Please re-upload the template.');
-        return;
-      }
-      }
-      
-      // Create URL for original template
-      const originalUrl = URL.createObjectURL(templateToUse.file);
-      console.log('✅ Created object URL for template preview:', originalUrl);
-      console.log('🔍 File type for preview:', templateToUse.file.type);
-      
-      // Set preview data and show modal (only original template)
-        setPreviewData({
-        template: templateToUse,
-          originalUrl,
-        processedUrl: originalUrl, // Use same URL for now
-        sampleQuote: null
-        });
+      // Show loading immediately
       setIframeLoading(true);
       setIframeLoadError(false);
-        setShowPreviewModal(true);
+      setShowPreviewModal(true);
+      
+      let templateFile = template.file;
+      
+      // CHECK CACHE FIRST for instant access! ⚡
+      if (!templateFile && fileCache[template.id]) {
+        console.log('⚡ Using cached file - INSTANT!');
+        templateFile = fileCache[template.id];
+      }
+      
+      // If file is not loaded yet and not in cache, fetch it from backend database
+      if (!templateFile && template.loadFile) {
+        console.log('📥 File not loaded, fetching from backend database...');
+        try {
+          templateFile = await template.loadFile();
+          console.log('✅ File fetched from backend:', {
+            fileName: templateFile?.name,
+            fileSize: templateFile?.size,
+            fileType: templateFile?.type
+          });
+          
+          // Cache it for next time! ⚡
+          if (templateFile) {
+            setFileCache(prev => ({
+              ...prev,
+              [template.id]: templateFile
+            }));
+            console.log(`💾 Cached file for instant future access`);
+          }
+        } catch (error) {
+          console.error('❌ Error loading file from backend:', error);
+        }
+      }
+      
+      // If still no file, try to find in templates array
+      if (!templateFile) {
+        console.log('⚠️ Template file still missing, looking for template in templates array...');
+        const templateFromArray = templates.find(t => t.id === template.id);
+        if (templateFromArray && templateFromArray.file) {
+          templateFile = templateFromArray.file;
+          console.log('✅ Found template with file in templates array');
+        } else if (templateFromArray && templateFromArray.loadFile) {
+          console.log('📥 Trying to load file from template in array...');
+          try {
+            templateFile = await templateFromArray.loadFile();
+            console.log('✅ File loaded from array template');
+          } catch (error) {
+            console.error('❌ Error loading file from array template:', error);
+          }
+        }
+      }
+      
+      // Final check
+      if (!templateFile) {
+        console.error('❌ Template file could not be loaded from backend');
+        setIframeLoading(false);
+        setIframeLoadError(true);
+        alert('Template file is not available for preview. The file may not exist in the database.');
+        return;
+      }
+      
+      console.log('🔍 File type for preview:', templateFile.type);
+      
+      // Check if it's a Word document (.docx) - needs conversion to PDF for preview
+      if (templateFile.type.includes('wordprocessingml') || templateFile.name.endsWith('.docx')) {
+        console.log('🔄 Word document detected, checking cache...');
         
-      console.log('✅ Simple template preview generated successfully');
+        // Check if we already have a converted PDF cached for this template
+        let pdfFile = convertedPdfCache[template.id];
+        
+        if (pdfFile) {
+          console.log('⚡ Using cached PDF - INSTANT preview!', pdfFile.size, 'bytes');
+        } else {
+          console.log('🔄 Not in cache, converting DOCX to PDF...');
+          
+          try {
+            // Convert DOCX to PDF using backend service
+            const pdfBlob = await templateService.convertDocxToPdf(templateFile);
+            console.log('✅ DOCX converted to PDF:', pdfBlob.size, 'bytes');
+            
+            // Create PDF file from blob
+            pdfFile = new File([pdfBlob], template.name + '.pdf', { type: 'application/pdf' });
+            
+            // Cache the converted PDF for instant future previews
+            setConvertedPdfCache(prev => ({
+              ...prev,
+              [template.id]: pdfFile
+            }));
+            console.log('💾 PDF cached for template:', template.id);
+            
+          } catch (conversionError) {
+            console.error('❌ Error converting DOCX to PDF:', conversionError);
+            setIframeLoading(false);
+            setIframeLoadError(true);
+            alert('Failed to convert template to PDF for preview. Please try again.');
+            return;
+          }
+        }
+        
+        // Create URL and show preview
+        const pdfUrl = URL.createObjectURL(pdfFile);
+        
+        setPreviewData({
+          template: { ...template, file: pdfFile },
+          originalUrl: pdfUrl,
+          processedUrl: pdfUrl,
+          sampleQuote: null
+        });
+        
+        console.log('✅ PDF preview ready from backend file');
+        
+      } else {
+        // For PDF files, use directly
+        console.log('📄 PDF file detected, using directly for preview');
+        const originalUrl = URL.createObjectURL(templateFile);
+        
+        setPreviewData({
+          template: { ...template, file: templateFile },
+          originalUrl,
+          processedUrl: originalUrl,
+          sampleQuote: null
+        });
+      }
+      
+      console.log('✅ Original template preview from backend loaded successfully');
       
     } catch (error) {
       console.error('❌ Error in simple preview:', error);
-      alert('Failed to preview template. Please try again or re-upload the template.');
+      setIframeLoading(false);
+      setIframeLoadError(true);
+      alert('Failed to preview template from backend. Please try again.');
     }
   };
 
@@ -1381,6 +1531,12 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
           alert('Template file is not available for download. Please re-upload the template.');
           return;
         }
+      }
+      
+      if (!templateToUse.file) {
+        console.error('❌ Template file is null');
+        alert('Template file could not be loaded.');
+        return;
       }
       
       const url = URL.createObjectURL(templateToUse.file);
@@ -1424,6 +1580,12 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     console.log('🔄 Converting existing template to Word:', template.name);
     
     try {
+      if (!template.file) {
+        console.error('❌ Template file is null');
+        alert('Template file could not be loaded.');
+        return;
+      }
+      
       let wordFile: File;
       
       // Check file type and handle accordingly
@@ -1863,12 +2025,7 @@ The client will receive an email with the processed template and a link to compl
                     </span>
                   )}
                 </div>
-                <button
-                  onClick={() => handleDeleteTemplate(template.id)}
-                  className="text-red-500 hover:text-red-700 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {/* Delete button removed - templates should not be deleted from UI to preserve database integrity */}
               </div>
 
               {/* Template Description */}
@@ -2132,8 +2289,8 @@ The client will receive an email with the processed template and a link to compl
 
       {/* Template Preview Modal */}
       {showPreviewModal && previewData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-8xl w-full mx-4 max-h-[95vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 w-full h-full max-w-[98vw] max-h-[98vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">Template Preview</h2>
@@ -2165,16 +2322,16 @@ The client will receive an email with the processed template and a link to compl
 
             {/* Original Template Display - Show original template */}
             {!previewData.sampleQuote && (
-              <div className="w-full">
+              <div className="w-full flex-1 flex flex-col overflow-hidden">
               <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
                     <Eye className="w-4 h-4 text-blue-600" />
                 </div>
                   Original Template
               </h3>
-              <div className="border-2 border-blue-200 rounded-xl overflow-hidden">
+              <div className="border-2 border-blue-200 rounded-xl overflow-hidden flex-1 flex flex-col">
                   {iframeLoadError ? (
-                    <div className="w-full h-[600px] bg-gray-100 flex items-center justify-center">
+                    <div className="w-full h-full min-h-[700px] bg-gray-100 flex items-center justify-center">
                       <div className="text-center p-8">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                           <AlertCircle className="w-8 h-8 text-red-600" />
@@ -2197,7 +2354,7 @@ The client will receive an email with the processed template and a link to compl
                       </div>
                     </div>
                   ) : (
-                <div className="w-full h-[600px] border-2 border-blue-200 rounded-xl overflow-hidden relative">
+                <div className="w-full flex-1 min-h-[700px] border-2 border-blue-200 rounded-xl overflow-hidden relative">
                   {iframeLoading && (
                     <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10">
                       <div className="text-center">
@@ -2239,7 +2396,7 @@ The client will receive an email with the processed template and a link to compl
 
             {/* Processed Template Display - Show only the processed template */}
             {previewData.sampleQuote && (
-              <div className="w-full">
+              <div className="w-full flex-1 flex flex-col overflow-hidden">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
                     <span className="text-green-600 font-bold text-sm">✓</span>
@@ -2248,9 +2405,9 @@ The client will receive an email with the processed template and a link to compl
                     ? 'Template with Your Quote Data (After Processing)' 
                     : 'Template with Sample Data (After Processing)'}
                 </h3>
-                <div className="border-2 border-green-200 rounded-xl overflow-hidden">
+                <div className="border-2 border-green-200 rounded-xl overflow-hidden flex-1 flex flex-col">
                   {iframeLoadError ? (
-                    <div className="w-full h-[600px] bg-gray-100 flex items-center justify-center">
+                    <div className="w-full h-full min-h-[700px] bg-gray-100 flex items-center justify-center">
                       <div className="text-center p-8">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                           <AlertCircle className="w-8 h-8 text-red-600" />
@@ -2275,7 +2432,7 @@ The client will receive an email with the processed template and a link to compl
                   ) : (
                   <iframe
                     src={previewData.processedUrl}
-                    className="w-full h-[600px]"
+                    className="w-full h-full flex-1 min-h-[700px]"
                     title="Processed Template"
                       onError={(e) => {
                         console.error('❌ Iframe failed to load:', e);

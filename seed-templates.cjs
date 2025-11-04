@@ -160,6 +160,48 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'dropbox', 'onedrive', 'content', 'microsoft', 'enterprise']
     },
+    // DROPBOX TO GOOGLE templates (Standard & Advanced only)
+    {
+      name: 'DROPBOX TO GOOGLE Standard',
+      description: 'Standard template for Dropbox to Google migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-google-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-google',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'google', 'content', 'migration']
+    },
+    {
+      name: 'DROPBOX TO GOOGLE Advanced',
+      description: 'Advanced template for Dropbox to Google migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-google-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-google',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'google', 'content', 'migration', 'enterprise']
+    },
+    // DROPBOX TO MICROSOFT templates (Standard & Advanced only)
+    {
+      name: 'DROPBOX TO MICROSOFT Standard',
+      description: 'Standard template for Dropbox to Microsoft migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-microsoft-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-microsoft',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'DROPBOX TO MICROSOFT Advanced',
+      description: 'Advanced template for Dropbox to Microsoft migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-microsoft-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-microsoft',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'microsoft', 'content', 'migration', 'enterprise']
+    },
     // BOX TO BOX templates (Standard & Advanced only)
     {
       name: 'BOX TO BOX Standard',
@@ -243,6 +285,48 @@ async function seedDefaultTemplates(db) {
       combination: 'box-to-onedrive',
       planType: 'advanced',
       keywords: ['advanced', 'box', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
+    },
+    // BOX TO MICROSOFT templates (Standard & Advanced only)
+    {
+      name: 'BOX TO MICROSOFT Standard',
+      description: 'Standard template for Box to Microsoft migration - suitable for medium to large projects',
+      fileName: 'box-to-microsoft-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-microsoft',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO MICROSOFT Advanced',
+      description: 'Advanced template for Box to Microsoft migration - suitable for large enterprise projects',
+      fileName: 'box-to-microsoft-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-microsoft',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'microsoft', 'content', 'migration', 'enterprise']
+    },
+    // BOX TO GOOGLE templates (Standard & Advanced only)
+    {
+      name: 'BOX TO GOOGLE Standard',
+      description: 'Standard template for Box to Google migration - suitable for medium to large projects',
+      fileName: 'box-to-google-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-google',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'google', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO GOOGLE Advanced',
+      description: 'Advanced template for Box to Google migration - suitable for large enterprise projects',
+      fileName: 'box-to-google-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-google',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'google', 'content', 'migration', 'enterprise']
     },
     // GOOGLE SHARED DRIVE TO EGNYTE templates (Standard & Advanced only)
     {
@@ -461,11 +545,11 @@ async function seedDefaultTemplates(db) {
   }
 
   console.log(`🎉 Template seeding completed! Uploaded ${uploadedCount} templates`);
-  console.log(`📊 Total templates: 4 Messaging + 16 Content + 2 Overage Agreement (22 templates total)`);
+  console.log(`📊 Total templates: 4 Messaging + 24 Content + 2 Overage Agreement (30 templates total)`);
   console.log(`   - Messaging: SLACK TO TEAMS, SLACK TO GOOGLE CHAT (Basic, Advanced)`);
   console.log(`   - Content: DROPBOX TO MYDRIVE, DROPBOX TO SHAREDRIVE (Basic, Standard, Advanced)`);
-  console.log(`   - Content: DROPBOX TO SHAREPOINT, DROPBOX TO ONEDRIVE (Standard, Advanced only)`);
-  console.log(`   - Content: BOX TO BOX, BOX TO GOOGLE MYDRIVE, BOX TO GOOGLE SHARED DRIVE, BOX TO ONEDRIVE (Standard, Advanced only)`);
+  console.log(`   - Content: DROPBOX TO SHAREPOINT, DROPBOX TO ONEDRIVE, DROPBOX TO GOOGLE, DROPBOX TO MICROSOFT (Standard, Advanced only)`);
+  console.log(`   - Content: BOX TO BOX, BOX TO GOOGLE MYDRIVE, BOX TO GOOGLE SHARED DRIVE, BOX TO ONEDRIVE, BOX TO MICROSOFT, BOX TO GOOGLE (Standard, Advanced only)`);
   console.log(`   - Content: GOOGLE SHARED DRIVE TO EGNYTE, GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE (Standard, Advanced only)`);
   console.log(`   - Content: GOOGLE SHARED DRIVE TO ONEDRIVE, GOOGLE SHARED DRIVE TO SHAREPOINT (Standard, Advanced only)`);
   console.log(`   - Overage: OVERAGE AGREEMENT (Messaging, Content)`);

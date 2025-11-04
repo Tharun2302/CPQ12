@@ -74,10 +74,14 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       const combination = configuration?.combination;
       const hideBasicPlan = combination === 'dropbox-to-sharepoint' || 
                             combination === 'dropbox-to-onedrive' ||
+                            combination === 'dropbox-to-google' ||
+                            combination === 'dropbox-to-microsoft' ||
                             combination === 'box-to-box' ||
                             combination === 'box-to-google-mydrive' ||
                             combination === 'box-to-google-sharedrive' ||
                             combination === 'box-to-onedrive' ||
+                            combination === 'box-to-microsoft' ||
+                            combination === 'box-to-google' ||
                             combination === 'google-sharedrive-to-egnyte' ||
                             combination === 'google-sharedrive-to-google-sharedrive' ||
                             combination === 'google-sharedrive-to-onedrive' ||

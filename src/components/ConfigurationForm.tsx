@@ -869,14 +869,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       {/* Content combinations */}
                       {config.migrationType === 'Content' && (() => {
                         const contentCombinations = [
-                          { value: 'dropbox-to-mydrive', label: 'DROPBOX TO MYDRIVE' },
-                          { value: 'dropbox-to-sharedrive', label: 'DROPBOX TO SHAREDRIVE' },
-                          { value: 'dropbox-to-sharepoint', label: 'DROPBOX TO SHAREPOINT' },
-                          { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE' },
+                          { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE' },
+                          { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT' },
                           { value: 'box-to-box', label: 'BOX TO BOX' },
-                          { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
-                          { value: 'box-to-google-sharedrive', label: 'BOX TO GOOGLE SHARED DRIVE' },
-                          { value: 'box-to-onedrive', label: 'BOX TO ONEDRIVE' },
+                          { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT' },
+                          { value: 'box-to-google', label: 'BOX TO GOOGLE' },
                           { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
                           { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
                           { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
@@ -904,14 +901,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                           ];
                           const contentCombinations = [
-                            { value: 'dropbox-to-mydrive', label: 'DROPBOX TO MYDRIVE' },
-                            { value: 'dropbox-to-sharedrive', label: 'DROPBOX TO SHAREDRIVE' },
-                            { value: 'dropbox-to-sharepoint', label: 'DROPBOX TO SHAREPOINT' },
-                            { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE' },
+                            { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE' },
+                            { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT' },
                             { value: 'box-to-box', label: 'BOX TO BOX' },
-                            { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
-                            { value: 'box-to-google-sharedrive', label: 'BOX TO GOOGLE SHARED DRIVE' },
-                            { value: 'box-to-onedrive', label: 'BOX TO ONEDRIVE' },
+                            { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT' },
+                            { value: 'box-to-google', label: 'BOX TO GOOGLE' },
                             { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
                             { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
                             { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },

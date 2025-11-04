@@ -1310,10 +1310,14 @@ function App() {
         (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive) ||
         (combination === 'dropbox-to-sharepoint' && isDropboxToSharePoint) ||
         (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive) ||
+        (combination === 'dropbox-to-google' && name.includes('dropbox') && name.includes('google') && !name.includes('mydrive') && !name.includes('sharedrive')) ||
+        (combination === 'dropbox-to-microsoft' && name.includes('dropbox') && name.includes('microsoft')) ||
         (combination === 'box-to-box' && name.includes('box') && name.includes('box')) ||
         (combination === 'box-to-google-mydrive' && name.includes('box') && name.includes('google') && name.includes('mydrive')) ||
         (combination === 'box-to-google-sharedrive' && name.includes('box') && name.includes('google') && name.includes('sharedrive')) ||
         (combination === 'box-to-onedrive' && name.includes('box') && name.includes('onedrive') && !name.includes('dropbox')) ||
+        (combination === 'box-to-microsoft' && name.includes('box') && name.includes('microsoft')) ||
+        (combination === 'box-to-google' && name.includes('box') && name.includes('google') && !name.includes('mydrive') && !name.includes('sharedrive')) ||
         (combination === 'google-sharedrive-to-egnyte' && name.includes('google') && name.includes('sharedrive') && name.includes('egnyte')) ||
         (combination === 'google-sharedrive-to-google-sharedrive' && name.includes('google') && name.includes('sharedrive') && name.includes('google') && name.includes('sharedrive')) ||
         (combination === 'google-sharedrive-to-onedrive' && name.includes('google') && name.includes('sharedrive') && name.includes('onedrive')) ||

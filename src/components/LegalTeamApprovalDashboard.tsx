@@ -168,7 +168,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            dealDeskEmail: workflow.workflowSteps?.find(step => step.role === 'Deal Desk')?.email || 'anushreddydasari@gmail.com',
+            dealDeskEmail: workflow.workflowSteps?.find(step => step.role === 'Deal Desk')?.email || 'saitharunreddy2302@gmail.com',
             workflowData: {
               documentId: workflow.documentId,
               documentType: workflow.documentType,
