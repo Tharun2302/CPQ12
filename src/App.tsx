@@ -17,6 +17,7 @@ import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDa
 import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
 import { BACKEND_URL } from './config/api';
+import { initClarity } from './analytics/clarity';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -24,6 +25,16 @@ function App() {
   const [selectedTier, setSelectedTier] = useState<PricingCalculation | null>(null);
   const [showPricing, setShowPricing] = useState(false);
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(PRICING_TIERS);
+
+  // Initialize Microsoft Clarity (production only)
+  useEffect(() => {
+    try {
+      const clarityId = (import.meta as any)?.env?.VITE_CLARITY_ID as string | undefined;
+      initClarity(clarityId);
+    } catch {
+      // no-op
+    }
+  }, []);
 
   // Templates cache (memory + TTL to avoid repeated DB fetches)
   const templatesCacheRef = useRef<{ templates: any[]; timestamp: number } | null>(null);

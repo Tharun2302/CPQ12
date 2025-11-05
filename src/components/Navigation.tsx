@@ -30,7 +30,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
     // Pricing tab hidden per requirement
     // { id: 'pricing-config', label: 'Pricing', icon: DollarSign, path: '/dashboard/pricing-config' },
     { id: 'quote', label: 'Quote', icon: FileText, path: '/dashboard/quote' },
-    { id: 'quotes', label: 'Documents', icon: FileText, path: '/dashboard/documents' },
+    { id: 'documents', label: 'Documents', icon: FileText, path: '/dashboard/documents' },
     { id: 'templates', label: 'Templates', icon: Upload, path: '/dashboard/templates' },
     { id: 'approval', label: 'Approval', icon: CheckCircle, path: '/dashboard/approval' },
     // Settings tab hidden per requirement
@@ -41,8 +41,11 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
     <nav className="bg-gradient-to-r from-white via-blue-50/50 to-indigo-50/50 shadow-2xl border-b border-blue-100/50 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-center h-16 relative">
-          {/* Logo Section */}
-          <div className="flex items-center gap-3 absolute left-0">
+          {/* Logo Section - Clickable to navigate to Deal page */}
+          <Link 
+            to="/dashboard/deal" 
+            className="flex items-center gap-3 absolute left-0 cursor-pointer hover:opacity-80 transition-opacity duration-200"
+          >
             <div className="relative flex-shrink-0">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
                 <Calculator className="w-6 h-6 text-white" />
@@ -54,7 +57,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
             <h1 className="text-xl font-bold text-gray-900">
               Zenop.ai
             </h1>
-          </div>
+          </Link>
 
           {/* Desktop Navigation - Centered */}
           {isAuthenticated && (

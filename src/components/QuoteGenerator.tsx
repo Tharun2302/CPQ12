@@ -25,6 +25,7 @@ import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { track } from '../analytics/clarity';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -1549,6 +1550,15 @@ Total Price: {{total price}}`;
 
       const newWorkflow = await createWorkflow(workflowData);
       console.log('✅ Approval workflow created:', newWorkflow);
+
+      // Analytics: workflow started
+      try {
+        track('approval.workflow_started', {
+          amount: calculation?.totalCost || 0,
+          steps: 3,
+          documentType: 'PDF Agreement'
+        });
+      } catch {}
 
       // Send email ONLY to Technical Team first (sequential approval)
       try {

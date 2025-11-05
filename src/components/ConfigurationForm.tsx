@@ -40,12 +40,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     combination: ''
   });
 
-  // Contact information state
-  const [contactInfo, setContactInfo] = useState({
-    clientName: '',
-    clientEmail: '',
-    company: '',
-    companyName2: ''
+  // Contact information state - start with undefined so fields can fall back to dealData initially
+  const [contactInfo, setContactInfo] = useState<{
+    clientName?: string;
+    clientEmail?: string;
+    company?: string;
+    companyName2?: string;
+  }>({
+    clientName: undefined,
+    clientEmail: undefined,
+    company: undefined,
+    companyName2: undefined
   });
 
   // Track if this is the initial load vs navigation return
@@ -57,6 +62,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const [combination, setCombination] = useState<string>('');
   // Search state for combinations
   const [combinationSearch, setCombinationSearch] = useState<string>('');
+  // Track if user actually entered values in project configuration fields
+  const [fieldTouched, setFieldTouched] = useState({
+    users: false,
+    instances: false,
+    duration: false,
+    dataSize: false,
+    messages: false
+  });
   
   // Contact information validation state
   const [contactValidationErrors, setContactValidationErrors] = useState({
@@ -93,16 +106,49 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     return 'Not Available';
   };
 
+  // Helper function to get display label for combination value
+  const getCombinationLabel = (combinationValue: string): string => {
+    const combinationLabels: Record<string, string> = {
+      'dropbox-to-microsoft': 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
+      'dropbox-to-google': 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)',
+      'box-to-box': 'BOX TO BOX',
+      'box-to-microsoft': 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
+      'box-to-google': 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)',
+      'google-sharedrive-to-egnyte': 'GOOGLE SHARED DRIVE TO EGNYTE',
+      'google-sharedrive-to-google-sharedrive': 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE',
+      'google-sharedrive-to-onedrive': 'GOOGLE SHARED DRIVE TO ONEDRIVE',
+      'google-sharedrive-to-sharepoint': 'GOOGLE SHARED DRIVE TO SHAREPOINT',
+      'overage-agreement': 'OVERAGE AGREEMENT',
+      'slack-to-teams': 'SLACK TO TEAMS',
+      'slack-to-google-chat': 'SLACK TO GOOGLE CHAT'
+    };
+    
+    return combinationLabels[combinationValue] || combinationValue.replace(/-/g, ' ').toUpperCase();
+  };
+
   // Helper function to limit consecutive spaces to maximum 5
   const limitConsecutiveSpaces = (value: string, maxSpaces: number = 5): string => {
     const pattern = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
     return value.replace(pattern, ' '.repeat(maxSpaces));
   };
 
-  // Helper function to sanitize email (remove emojis and special characters)
+  // Helper function to sanitize email (remove emojis, special characters, and trailing numbers after domain)
   const sanitizeEmail = (value: string): string => {
     // Remove emojis and special characters, keep only valid email characters
-    return value.replace(/[^\w@\.\-]/g, '');
+    let cleaned = value.replace(/[^\w@\.\-]/g, '');
+    // Remove trailing digits after domain extension (e.g., .com3333 -> .com)
+    cleaned = cleaned.replace(/(\.[a-z]{2,})\d+$/gi, '$1');
+    return cleaned;
+  };
+
+  // Helper function to sanitize company name (remove trailing number sequences)
+  const sanitizeCompanyName = (value: string): string => {
+    // Remove emojis first
+    let cleaned = value.replace(/[\u{1F600}-\u{1F64F}|\u{1F300}-\u{1F5FF}|\u{1F680}-\u{1F6FF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu, '');
+    // Remove trailing digits (any trailing digits after dots, spaces, or at end)
+    cleaned = cleaned.replace(/[\.\s]\d+$/g, ''); // Remove digits after dot or space
+    cleaned = cleaned.replace(/\d+$/g, ''); // Remove any remaining trailing digits
+    return cleaned;
   };
 
   // Initialize contact info from deal data
@@ -174,39 +220,59 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
 
     // Priority 1: Use manually edited contact info if it exists (override dealData)
-    if (savedContactInfo && (savedContactInfo.clientName || savedContactInfo.clientEmail || savedContactInfo.company)) {
+    if (savedContactInfo && (savedContactInfo.clientName !== undefined || savedContactInfo.clientEmail !== undefined || savedContactInfo.company !== undefined)) {
       const finalContactInfo = {
-        clientName: savedContactInfo.clientName || '',
-        clientEmail: savedContactInfo.clientEmail || '',
-        company: savedContactInfo.company || '',
-        companyName2: savedContactInfo.companyName2 || savedContactInfo.company || ''
+        clientName: savedContactInfo.clientName,
+        clientEmail: savedContactInfo.clientEmail,
+        company: savedContactInfo.company,
+        companyName2: savedContactInfo.companyName2 ?? savedContactInfo.company
       };
       setContactInfo(finalContactInfo);
       console.log('🔍 ConfigurationForm: Using manually edited contact info from storage:', finalContactInfo);
     }
     // Priority 2: Use deal data if available and no manual edits
     else if (dealData && (dealData.contactName || dealData.contactEmail || dealData.company || dealData.companyByContact)) {
-      const finalContactInfo = {
-        clientName: dealData.contactName || '',
-        clientEmail: dealData.contactEmail || '',
-        company: dealData.companyByContact || dealData.company || '',
-        companyName2: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)
-      };
-      console.log('🔍 ConfigurationForm: Using deal data (no user edits):', finalContactInfo);
+      // Don't set contactInfo state - let it remain undefined so nullish coalescing in value prop works
+      console.log('🔍 ConfigurationForm: Will use deal data via nullish coalescing (no user edits)');
       console.log('🏢 Company extraction applied:', {
         original: dealData.companyByContact,
         email: dealData.contactEmail,
-        extracted: finalContactInfo.companyName2
+        extracted: getEffectiveCompanyName(dealData.companyByContact, dealData.contactEmail)
       });
     }
-    // Otherwise, start with empty values
+    // Otherwise, start with undefined values
     else {
-      console.log('🔍 ConfigurationForm: Starting with empty contact info (no deal data or user edits)');
+      console.log('🔍 ConfigurationForm: Starting with undefined contact info (no deal data or user edits)');
     }
 
     // Mark that we've completed the initial load
     setIsInitialLoad(false);
   }, []); // Run only once on mount
+
+  // Clear validation errors when dealData has valid values
+  useEffect(() => {
+    const isNotAvailable = (value: string | undefined) => {
+      if (!value || value.trim() === '') return true;
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'not available' || normalized === 'n/a' || normalized === 'na';
+    };
+    
+    // Get effective values (from contactInfo or dealData fallback)
+    const effectiveContactName = contactInfo.clientName ?? dealData?.contactName;
+    const effectiveContactEmail = contactInfo.clientEmail ?? dealData?.contactEmail;
+    const effectiveCompanyName = contactInfo.company ?? contactInfo.companyName2 ?? dealData?.companyByContact ?? dealData?.company;
+    
+    // Clear errors if fields have valid values
+    if (effectiveContactName && !isNotAvailable(effectiveContactName)) {
+      setContactValidationErrors(prev => ({ ...prev, clientName: false }));
+    }
+    if (effectiveContactEmail && !isNotAvailable(effectiveContactEmail)) {
+      setContactValidationErrors(prev => ({ ...prev, clientEmail: false }));
+    }
+    if (effectiveCompanyName && !isNotAvailable(effectiveCompanyName)) {
+      setContactValidationErrors(prev => ({ ...prev, company: false }));
+    }
+  }, [dealData, contactInfo.clientName, contactInfo.clientEmail, contactInfo.company, contactInfo.companyName2]);
 
   // Sync contact info to parent whenever dealData or contact info changes
   useEffect(() => {
@@ -370,15 +436,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     e.preventDefault();
     
     // CRITICAL: Validate contact information first (case-insensitive "Not Available" check)
-    const isNotAvailable = (value: string) => {
+    // Check both contactInfo state and dealData fallback values
+    const isNotAvailable = (value: string | undefined) => {
       if (!value || value.trim() === '') return true;
       const normalized = value.trim().toLowerCase();
       return normalized === 'not available' || normalized === 'n/a' || normalized === 'na';
     };
     
-    const hasContactName = contactInfo.clientName && !isNotAvailable(contactInfo.clientName);
-    const hasContactEmail = contactInfo.clientEmail && !isNotAvailable(contactInfo.clientEmail);
-    const hasCompanyName = contactInfo.company && !isNotAvailable(contactInfo.company);
+    // Get effective values (from contactInfo or dealData fallback)
+    const effectiveContactName = contactInfo.clientName ?? dealData?.contactName ?? '';
+    const effectiveContactEmail = contactInfo.clientEmail ?? dealData?.contactEmail ?? '';
+    const effectiveCompanyName = contactInfo.company ?? contactInfo.companyName2 ?? dealData?.companyByContact ?? dealData?.company ?? '';
+    
+    const hasContactName = effectiveContactName && !isNotAvailable(effectiveContactName);
+    const hasContactEmail = effectiveContactEmail && !isNotAvailable(effectiveContactEmail);
+    const hasCompanyName = effectiveCompanyName && !isNotAvailable(effectiveCompanyName);
     
     if (!hasContactName || !hasContactEmail || !hasCompanyName) {
       // Set validation errors to show red borders
@@ -422,26 +494,73 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       return;
     }
     
-    // For overage agreement, skip user validation
-    if (config.combination !== 'overage-agreement' && config.numberOfUsers < 1) {
-      alert('Please enter the number of users (minimum 1)');
-      return;
+    // Require users field to be entered (0 allowed, but check value first, then touch status)
+    if (config.combination !== 'overage-agreement') {
+      // If value exists and is valid, accept it (even if not touched - e.g., loaded from sessionStorage)
+      if (config.numberOfUsers === undefined || config.numberOfUsers === null) {
+        // Value is missing - check if field was touched
+        if (!fieldTouched.users) {
+          alert('Please enter the number of users');
+          return;
+        }
+      }
+      // Check if value is negative
+      if (config.numberOfUsers < 0) {
+        alert('Please enter the number of users (minimum 0)');
+        return;
+      }
     }
     
-    if (config.numberOfInstances < 1) {
-      alert('Please enter the number of instances (minimum 1)');
-      return;
+    // Check instances: if value exists and is valid, accept it; otherwise check touch status
+    if (config.numberOfInstances === undefined || config.numberOfInstances === null || config.numberOfInstances < 1) {
+      if (!fieldTouched.instances) {
+        alert('Please enter the number of instances (minimum 1)');
+        return;
+      }
+      if (config.numberOfInstances < 1) {
+        alert('Please enter the number of instances (minimum 1)');
+        return;
+      }
     }
     
-    if (config.duration < 1) {
-      alert('Please enter project duration (minimum 1 month)');
-      return;
+    // Check duration: if value exists and is valid, accept it; otherwise check touch status
+    if (config.duration === undefined || config.duration === null || config.duration < 1) {
+      if (!fieldTouched.duration) {
+        alert('Please enter project duration in months');
+        return;
+      }
+      if (config.duration < 1) {
+        alert('Please enter project duration (minimum 1 month)');
+        return;
+      }
     }
     
-    // Data size validation only for Content migration type and NOT for overage agreement
-    if (config.migrationType === 'Content' && config.combination !== 'overage-agreement' && config.dataSizeGB < 1) {
-      alert('Please enter data size in GB for Content migration (minimum 1 GB)');
-      return;
+    // Data size is REQUIRED for Content (must be > 0). Prevent pricing if missing/zero.
+    if (config.migrationType === 'Content' && config.combination !== 'overage-agreement') {
+      if (config.dataSizeGB === undefined || config.dataSizeGB === null || config.dataSizeGB <= 0) {
+        if (!fieldTouched.dataSize) {
+          alert('Please enter data size in GB for Content migration');
+          return;
+        }
+        if (config.dataSizeGB <= 0) {
+          alert('Please enter data size in GB for Content migration (minimum 1 GB)');
+          return;
+        }
+      }
+    }
+    
+    // Messages is REQUIRED for Messaging (must be > 0). Prevent pricing if missing/zero.
+    if (config.migrationType === 'Messaging' && config.combination !== 'overage-agreement') {
+      if (config.messages === undefined || config.messages === null || config.messages <= 0) {
+        if (!fieldTouched.messages) {
+          alert('Please enter the number of messages for Messaging migration');
+          return;
+        }
+        if (config.messages <= 0) {
+          alert('Please enter the number of messages (minimum 1)');
+          return;
+        }
+      }
     }
     
     console.log('✅ Form validation passed, submitting configuration');
@@ -531,7 +650,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 <input
                   type="text"
                   required
-                  value={contactInfo.clientName || dealData?.contactName || ''}
+                  value={contactInfo.clientName ?? dealData?.contactName ?? ''}
                   onChange={(e) => {
                     const newContactInfo = {
                       ...contactInfo,
@@ -567,8 +686,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   onBlur={(e) => {
                     const value = e.target.value.trim();
                     const normalized = value.toLowerCase();
+                    // Only show error if field is empty or invalid
                     if (!value || normalized === 'not available' || normalized === 'n/a' || normalized === 'na') {
                       setContactValidationErrors(prev => ({ ...prev, clientName: true }));
+                    } else {
+                      // Clear error if field has valid value
+                      setContactValidationErrors(prev => ({ ...prev, clientName: false }));
                     }
                   }}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
@@ -594,11 +717,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 <input
                   type="email"
                   required
-                  value={contactInfo.clientEmail || dealData?.contactEmail || ''}
+                  value={contactInfo.clientEmail ?? dealData?.contactEmail ?? ''}
                   onChange={(e) => {
+                    // Sanitize email to remove invalid characters
+                    const sanitizedEmail = sanitizeEmail(e.target.value);
                     const newContactInfo = {
                       ...contactInfo,
-                      clientEmail: e.target.value
+                      clientEmail: sanitizedEmail
                     };
                     setContactInfo(newContactInfo);
                     
@@ -630,8 +755,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   onBlur={(e) => {
                     const value = e.target.value.trim();
                     const normalized = value.toLowerCase();
+                    // Only show error if field is empty or invalid
                     if (!value || normalized === 'not available' || normalized === 'n/a' || normalized === 'na') {
                       setContactValidationErrors(prev => ({ ...prev, clientEmail: true }));
+                    } else {
+                      // Clear error if field has valid value
+                      setContactValidationErrors(prev => ({ ...prev, clientEmail: false }));
                     }
                   }}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
@@ -657,12 +786,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 <input
                   type="text"
                   required
-                  value={contactInfo.company || contactInfo.companyName2 || dealData?.companyByContact || dealData?.company || ''}
+                  value={contactInfo.company ?? contactInfo.companyName2 ?? dealData?.companyByContact ?? dealData?.company ?? ''}
                   onChange={(e) => {
+                    // Sanitize company name to remove trailing number sequences
+                    const sanitizedCompany = sanitizeCompanyName(e.target.value);
                     const newContactInfo = {
                       ...contactInfo,
-                      company: e.target.value,
-                      companyName2: e.target.value
+                      company: sanitizedCompany,
+                      companyName2: sanitizedCompany
                     };
                     setContactInfo(newContactInfo);
                     
@@ -694,8 +825,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   onBlur={(e) => {
                     const value = e.target.value.trim();
                     const normalized = value.toLowerCase();
+                    // Only show error if field is empty or invalid
                     if (!value || normalized === 'not available' || normalized === 'n/a' || normalized === 'na') {
                       setContactValidationErrors(prev => ({ ...prev, company: true }));
+                    } else {
+                      // Clear error if field has valid value
+                      setContactValidationErrors(prev => ({ ...prev, company: false }));
                     }
                   }}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
@@ -869,11 +1004,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       {/* Content combinations */}
                       {config.migrationType === 'Content' && (() => {
                         const contentCombinations = [
-                          { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE' },
-                          { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT' },
+                          { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
+                          { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                           { value: 'box-to-box', label: 'BOX TO BOX' },
-                          { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT' },
-                          { value: 'box-to-google', label: 'BOX TO GOOGLE' },
+                          { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                           { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
                           { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
                           { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
@@ -901,11 +1036,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                           ];
                           const contentCombinations = [
-                            { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE' },
-                            { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT' },
+                            { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
+                            { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                             { value: 'box-to-box', label: 'BOX TO BOX' },
-                            { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT' },
-                            { value: 'box-to-google', label: 'BOX TO GOOGLE' },
+                            { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                            { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                             { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
                             { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
                             { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
@@ -932,7 +1067,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <>
                     <div className="relative">
                       <div className="w-full px-6 py-4 border-2 border-purple-200 rounded-xl bg-white/90 backdrop-blur-sm text-lg font-medium text-gray-900 flex items-center justify-between">
-                        <span>{config.combination.replace(/-/g, ' ').toUpperCase()}</span>
+                        <span>{getCombinationLabel(config.combination)}</span>
                         <button
                           type="button"
                           onClick={() => {
@@ -976,13 +1111,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </label>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   step="1"
                   value={config.numberOfUsers || ''}
                   onChange={(e) => {
                     const value = e.target.value;
                     const numValue = value === '' ? 0 : parseInt(value) || 0;
                     handleChange('numberOfUsers', numValue);
+                    setFieldTouched(prev => ({ ...prev, users: true }));
                   }}
                   className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                   placeholder="Enter number of users"
@@ -1021,13 +1157,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </label>
               <input
                 type="number"
-                min="1"
+                min="0"
                 step="1"
                 value={config.numberOfInstances || ''}
                 onChange={(e) => {
                   const value = e.target.value;
                   const numValue = value === '' ? 0 : parseInt(value) || 0;
                   handleChange('numberOfInstances', numValue);
+                  setFieldTouched(prev => ({ ...prev, instances: true }));
                 }}
                 className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                 placeholder="Enter number of instances"
@@ -1052,6 +1189,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   const value = e.target.value;
                   const numValue = value === '' ? 0 : parseInt(value) || 0;
                   handleChange('duration', numValue);
+                  setFieldTouched(prev => ({ ...prev, duration: true }));
                 }}
                 className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                 placeholder="Enter project duration"
@@ -1097,13 +1235,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     </label>
                     <input
                       type="number"
-                      min="1"
+                      min="0"
                       step="1"
                       value={config.dataSizeGB || ''}
                       onChange={(e) => {
                         const value = e.target.value;
                         const numValue = value === '' ? 0 : parseInt(value) || 0;
                         handleChange('dataSizeGB', numValue);
+                        setFieldTouched(prev => ({ ...prev, dataSize: true }));
                       }}
                       className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                       placeholder={`Enter data size in GB for ${config.migrationType} migration`}
@@ -1192,6 +1331,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         const value = e.target.value;
                         const numValue = value === '' ? 0 : parseInt(value) || 0;
                         handleChange('messages', numValue);
+                        setFieldTouched(prev => ({ ...prev, messages: true }));
                       }}
                       className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
                       placeholder="Enter number of messages"

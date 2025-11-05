@@ -37,6 +37,12 @@ function sanitizeContactEmail(value: string): string {
   return value.replace(/[^\w@\.\-]/g, '');
 }
 
+// Helper function to sanitize Template Name input (remove numbers, emojis, and special characters)
+function sanitizeTemplateName(value: string): string {
+  // Remove numbers, emojis, and special characters, keep only letters, spaces, hyphens, apostrophes, and periods
+  return value.replace(/[^a-zA-Z\s\-'\.]/g, '');
+}
+
 interface Template {
   id: string;
   name: string;
@@ -2166,7 +2172,11 @@ The client will receive an email with the processed template and a link to compl
                 <input
                   type="text"
                   value={newTemplate.name}
-                  onChange={(e) => setNewTemplate(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => {
+                    // Sanitize template name to remove numbers and invalid characters
+                    const sanitized = sanitizeTemplateName(e.target.value);
+                    setNewTemplate(prev => ({ ...prev, name: sanitized }));
+                  }}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                   placeholder="Enter template name"
                 />
