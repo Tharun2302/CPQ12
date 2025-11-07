@@ -22,6 +22,7 @@ import html2canvas from 'html2canvas';
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL } from '../config/api';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -369,8 +370,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [approvalEmails, setApprovalEmails] = useState({
-    role1: (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'abhilasha.kandakatla@cloudfuze.com',
-    role2: (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'anush.dasari@cloudfuze.com',
+    role1: (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'raya.durai@cloudfuze.com',
+    role2: (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'sakshi.priya@cloudfuze.com',
     role3: (import.meta.env.VITE_APPROVAL_CLIENT_EMAIL as string) || 'abhilasha.kandakatla@cloudfuze.com',
     role4: (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || ''
   });
@@ -1519,7 +1520,7 @@ Total Price: {{total price}}`;
 
       // Send email ONLY to Technical Team first (sequential approval)
       try {
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const backendUrl = BACKEND_URL;
         const response = await fetch(`${backendUrl}/api/send-manager-email`, {
           method: 'POST',
           headers: {

@@ -18,6 +18,10 @@ services:
       - VITE_MSAL_REDIRECT_URI=https://zenop.ai/auth/microsoft/callback
       - LIBREOFFICE_PATH=/usr/bin/libreoffice
       - JWT_SECRET=cpq-super-secret-jwt-key-2024-production-1735891367
+      # Default recipient emails for approval workflow
+      - TECHNICAL_TEAM_EMAIL=raya.durai@cloudfuze.com
+      - LEGAL_TEAM_EMAIL=sakshi.priya@cloudfuze.com
+      - CLIENT_EMAIL=abhilasha.kandakatla@cloudfuze.com
     volumes:
       - ./temp-files:/temp
     restart: unless-stopped

@@ -30,15 +30,23 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware - Configure CORS to allow frontend requests
+// Build CORS origins from environment variables
+const corsOrigins = [];
+if (process.env.CORS_ORIGINS) {
+  // Support comma-separated list of origins
+  corsOrigins.push(...process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean));
+}
+// Add individual URL environment variables if set
+if (process.env.VITE_FRONTEND_URL) corsOrigins.push(process.env.VITE_FRONTEND_URL);
+if (process.env.BASE_URL) corsOrigins.push(process.env.BASE_URL);
+if (process.env.APP_BASE_URL) corsOrigins.push(process.env.APP_BASE_URL);
+// Default fallbacks for development
+if (corsOrigins.length === 0) {
+  corsOrigins.push('http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001');
+}
+
 app.use(cors({
-  origin: [
-    'http://159.89.175.168:5173', 
-    'http://159.89.175.168:3000', 
-    'http://159.89.175.168:3001',
-    'https://zenop.ai',
-    'https://www.zenop.ai',
-    'http://159.89.175.168:3001'
-  ],
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
@@ -46,15 +54,7 @@ app.use(cors({
 
 // Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
 app.use((req, res, next) => {
-  const allowedOrigins = new Set([
-    'http://159.89.175.168:5173',
-    'http://159.89.175.168:3000',
-    'http://159.89.175.168:3001',
-    'https://zenop.ai',
-    'https://www.zenop.ai',
-    'http://159.89.175.168:3001',
-    process.env.APP_BASE_URL?.replace(/\/$/, '')
-  ].filter(Boolean));
+  const allowedOrigins = new Set(corsOrigins.map(origin => origin.replace(/\/$/, '')));
 
   const origin = req.headers.origin;
   if (origin && allowedOrigins.has(origin)) {
@@ -186,7 +186,7 @@ const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
-const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://159.89.175.168:3002';
+const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
 
 // Email configuration
 if (process.env.SENDGRID_API_KEY) {
@@ -213,9 +213,9 @@ function chooseVerifiedFrom(requestedFrom) {
 // Default recipient emails for approval workflow
 // These values are used to auto-fill missing emails when a workflow is created
 const DEFAULT_RECIPIENTS_BY_ROLE = {
-  'Technical Team': (process.env.TECHNICAL_TEAM_EMAIL || 'abhilasha.kandakatla@cloudfuze.com').trim(),
-  'Legal Team': (process.env.LEGAL_TEAM_EMAIL || 'abhilasha.kandakatla@cloudfuze.com').trim(),
-  'Client': (process.env.CLIENT_EMAIL || 'anush.dasari@cloudfuze.com').trim(),
+  'Technical Team': (process.env.TECHNICAL_TEAM_EMAIL || 'raya.durai@cloudfuze.com').trim(),
+  'Legal Team': (process.env.LEGAL_TEAM_EMAIL || 'sakshi.priya@cloudfuze.com').trim(),
+  'Client': (process.env.CLIENT_EMAIL || 'abhilasha.kandakatla@cloudfuze.com').trim(),
   'Deal Desk': (process.env.DEAL_DESK_EMAIL || '').trim()
 };
 
@@ -315,7 +315,7 @@ function generateManagerEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
                style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -394,13 +394,13 @@ function generateCEOEmailHTML(workflowData) {
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
                      style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ✅ Review & Approve
                   </a>
                 </td>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
                      style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ❌ Deny Request
                   </a>
@@ -461,13 +461,13 @@ function generateClientEmailHTML(workflowData) {
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
                      style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ✅ Review & Approve
                   </a>
                 </td>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
                      style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ❌ Deny Request
                   </a>
@@ -856,7 +856,7 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
     }
 
     // Determine best download URL based on where the file exists
-    const baseAppUrl = (process.env.APP_BASE_URL || 'http://159.89.175.168:3001').replace(/\/$/, '');
+    const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
     let resolvedDownloadUrl = null;
 
     try {
@@ -3966,8 +3966,8 @@ app.post('/api/boldsign/send-document', async (req, res) => {
         // Move down to sit on the underline
         bounds: { x: 120, y: 320, width: 180, height: 25 },
         isRequired: true,
-        value: '',
-        placeholder: '' // Explicitly set empty placeholder
+        value: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // Default CloudFuze signer name
+        placeholder: 'Aadhi Nandyala' // Suggest name for CloudFuze side
       },
       {
         id: 'legal_title',
@@ -4014,8 +4014,8 @@ app.post('/api/boldsign/send-document', async (req, res) => {
         // Move much further right to avoid overlapping with "Name:" label
         bounds: { x: 480, y: 320, width: 180, height: 25 },
         isRequired: true,
-        value: '',
-        placeholder: '' // Explicitly set empty placeholder
+        value: clientName || '', // Use client name from quote
+        placeholder: clientName || '' // Suggest client name from quote
       },
       {
         id: 'client_title',
@@ -4079,7 +4079,7 @@ app.post('/api/boldsign/send-document', async (req, res) => {
     console.log('  Cleaned base64 length:', cleanBase64.length);
 
     // Prepare BoldSign request with correct casing as per API schema
-    const APP_BASE_URL = process.env.APP_BASE_URL || 'http://159.89.175.168:3001';
+    const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3001';
     const boldSignRequest = {
       Title: documentTitle || `Agreement - ${clientName}`,
       Message: `Please review and sign this agreement. Legal Team will sign first, followed by the Client.\n\nIf you have concerns or need to decline this signature request, please visit: ${APP_BASE_URL}/deny-signature to provide your reason.`,
@@ -4093,7 +4093,7 @@ app.post('/api/boldsign/send-document', async (req, res) => {
       ],
       Signers: [
         {
-          Name: 'Legal Team',
+          Name: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // This pre-fills the signature modal's "Your name" field
           EmailAddress: legalTeamEmail,
           SignerOrder: 1,
           FormFields: mapToBoldSignFields(legalTeamFields)
@@ -4611,7 +4611,9 @@ app.post('/api/trigger-boldsign', async (req, res) => {
         x: 120,
         y: 320,
         width: 180,
-        height: 25
+        height: 25,
+        value: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // Default CloudFuze signer name
+        placeholder: 'Aadhi Nandyala' // Suggest name for CloudFuze side
       },
       {
         id: 'legal_title',
@@ -4654,7 +4656,9 @@ app.post('/api/trigger-boldsign', async (req, res) => {
         x: 480,
         y: 320,
         width: 180,
-        height: 25
+        height: 25,
+        value: clientName || '', // Use client name from quote
+        placeholder: clientName || '' // Suggest client name from quote
       },
       {
         id: 'client_title',
@@ -4680,18 +4684,30 @@ app.post('/api/trigger-boldsign', async (req, res) => {
 
     // Helper function to map form fields to BoldSign format
     const mapToBoldSignFields = (fields) => {
-      return fields.map(field => ({
-        FieldId: field.id,
-        FieldType: field.fieldType,
-        PageNumber: field.pageNumber,
-        Bounds: {
-          X: field.x,
-          Y: field.y,
-          Width: field.width,
-          Height: field.height
-        },
-        IsRequired: true
-      }));
+      return fields.map(field => {
+        const mappedField = {
+          FieldId: field.id,
+          FieldType: field.fieldType,
+          PageNumber: field.pageNumber,
+          Bounds: {
+            X: field.x,
+            Y: field.y,
+            Width: field.width,
+            Height: field.height
+          },
+          IsRequired: true
+        };
+        
+        // Add Value and Placeholder if they exist and are not empty
+        if (field.value !== undefined && field.value !== '') {
+          mappedField.Value = field.value;
+        }
+        if (field.placeholder !== undefined && field.placeholder !== '') {
+          mappedField.Placeholder = field.placeholder;
+        }
+        
+        return mappedField;
+      });
     };
 
     // Clean the base64 data (remove data URL prefix if present)
@@ -4754,7 +4770,7 @@ app.post('/api/trigger-boldsign', async (req, res) => {
       ],
       Signers: [
         {
-          Name: 'Legal Team',
+          Name: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // This pre-fills the signature modal's "Your name" field
           EmailAddress: legalTeamEmail,
           SignerOrder: 1,
           FormFields: mapToBoldSignFields(legalTeamFields)
