@@ -32,9 +32,9 @@ const PORT = process.env.PORT || 3001;
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({
   origin: [
-    'http://localhost:5173', 
-    'http://localhost:3000', 
-    'http://localhost:3001',
+    'http://159.89.175.168:5173', 
+    'http://159.89.175.168:3000', 
+    'http://159.89.175.168:3001',
     'https://zenop.ai',
     'https://www.zenop.ai',
     'http://159.89.175.168:3001'
@@ -47,9 +47,9 @@ app.use(cors({
 // Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
 app.use((req, res, next) => {
   const allowedOrigins = new Set([
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:3001',
+    'http://159.89.175.168:5173',
+    'http://159.89.175.168:3000',
+    'http://159.89.175.168:3001',
     'https://zenop.ai',
     'https://www.zenop.ai',
     'http://159.89.175.168:3001',
@@ -186,7 +186,7 @@ const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const EMAIL_PORT = process.env.EMAIL_PORT || 587;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
-const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
+const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://159.89.175.168:3002';
 
 // Email configuration
 if (process.env.SENDGRID_API_KEY) {
@@ -229,6 +229,7 @@ function generateManagerEmailHTML(workflowData) {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Technical Team Approval Required</title>
     </head>
+<<<<<<< HEAD
     <body style="font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f5f5f5; padding: 20px 0;">
         <tr>
@@ -292,6 +293,42 @@ function generateManagerEmailHTML(workflowData) {
           </td>
         </tr>
       </table>
+=======
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #3B82F6, #1E40AF); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>🔔 Technical Team Approval Required</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Technical Team,</h2>
+          
+          <p>A new document requires your <strong>Technical Team</strong> approval:</p>
+          
+          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+               style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+          </div>
+          
+          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+>>>>>>> eabde4aebac8f6b435d00045739b8865b8d60948
     </body>
     </html>
   `;
@@ -357,13 +394,13 @@ function generateCEOEmailHTML(workflowData) {
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
                      style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ✅ Review & Approve
                   </a>
                 </td>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/ceo-approval?workflow=${workflowData.workflowId}" 
                      style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ❌ Deny Request
                   </a>
@@ -424,13 +461,13 @@ function generateClientEmailHTML(workflowData) {
             <table cellspacing="0" cellpadding="0" style="margin: 0 auto;">
               <tr>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/client-notification?workflow=${workflowData.workflowId}" 
                      style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ✅ Review & Approve
                   </a>
                 </td>
                 <td style="padding: 10px;">
-                  <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+                  <a href="${process.env.BASE_URL || 'http://159.89.175.168:5173'}/client-notification?workflow=${workflowData.workflowId}" 
                      style="background: #DC2626; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                     ❌ Deny Request
                   </a>
@@ -819,7 +856,7 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
     }
 
     // Determine best download URL based on where the file exists
-    const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+    const baseAppUrl = (process.env.APP_BASE_URL || 'http://159.89.175.168:3001').replace(/\/$/, '');
     let resolvedDownloadUrl = null;
 
     try {
@@ -4042,7 +4079,7 @@ app.post('/api/boldsign/send-document', async (req, res) => {
     console.log('  Cleaned base64 length:', cleanBase64.length);
 
     // Prepare BoldSign request with correct casing as per API schema
-    const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3001';
+    const APP_BASE_URL = process.env.APP_BASE_URL || 'http://159.89.175.168:3001';
     const boldSignRequest = {
       Title: documentTitle || `Agreement - ${clientName}`,
       Message: `Please review and sign this agreement. Legal Team will sign first, followed by the Client.\n\nIf you have concerns or need to decline this signature request, please visit: ${APP_BASE_URL}/deny-signature to provide your reason.`,
