@@ -32,6 +32,15 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
     </style>
+    <script>
+        // Get backend URL from environment or use fallback
+        // This will be replaced during build or can be set via window.__BACKEND_URL__
+        const BACKEND_URL = window.__BACKEND_URL__ || 
+                           (typeof import !== 'undefined' && import.meta?.env?.VITE_BACKEND_URL) ||
+                           (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+                            ? 'http://localhost:3001' 
+                            : window.location.origin);
+    </script>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="container mx-auto px-4 py-8 max-w-2xl">
@@ -405,7 +414,7 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
                 
-                const response = await fetch(`http://localhost:3001/api/signature/form/${formId}`, {
+                const response = await fetch(`${BACKEND_URL}/api/signature/form/${formId}`, {
                     signal: controller.signal
                 });
                 
@@ -658,7 +667,7 @@
                     signatureImage: uploadedImageData
                 };
 
-                const response = await fetch('http://localhost:3001/api/signature/client-submit', {
+                const response = await fetch(`${BACKEND_URL}/api/signature/client-submit`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -775,7 +784,7 @@
                 `;
 
                 // Call API to generate final template with both signatures
-                const response = await fetch('http://localhost:3001/api/signature/generate-final-template', {
+                const response = await fetch(`${BACKEND_URL}/api/signature/generate-final-template`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -951,7 +960,7 @@
                 formData.append('signatureType', 'client');
                 
                 // Upload to server
-                const uploadResponse = await fetch('http://localhost:3001/api/signature/upload-image', {
+                const uploadResponse = await fetch(`${BACKEND_URL}/api/signature/upload-image`, {
                     method: 'POST',
                     body: formData
                 });
@@ -991,7 +1000,7 @@
                 `;
 
                 // Call API to generate final template with both signatures
-                const response = await fetch('http://localhost:3001/api/signature/generate-final-template', {
+                const response = await fetch(`${BACKEND_URL}/api/signature/generate-final-template`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

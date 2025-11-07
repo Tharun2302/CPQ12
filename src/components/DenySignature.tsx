@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, Send } from 'lucide-react';
+import { BACKEND_URL } from '../config/api';
 
 interface DenySignatureProps {}
 
@@ -44,7 +45,7 @@ const DenySignature: React.FC<DenySignatureProps> = () => {
     setError('');
 
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const response = await fetch(`${backendUrl}/api/boldsign/deny-signature`, {
         method: 'POST',
         headers: {

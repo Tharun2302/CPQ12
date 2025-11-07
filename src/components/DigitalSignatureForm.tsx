@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CheckCircle, XCircle, Clock, Eye, Download, Send } from 'lucide-react';
+import { BACKEND_URL } from '../config/api';
 
 interface SignatureFormProps {
   formId: string;
@@ -52,7 +53,7 @@ const DigitalSignatureForm: React.FC<SignatureFormProps> = ({
     setInteractions(prev => [...prev, interaction]);
 
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       await fetch(`${backendUrl}/api/signature/track-interaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,7 +169,7 @@ const DigitalSignatureForm: React.FC<SignatureFormProps> = ({
     });
 
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const response = await fetch(`${backendUrl}/api/signature/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

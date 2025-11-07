@@ -1,8 +1,9 @@
 // MongoDB service for approval workflows
 import { ApprovalWorkflow, ApprovalStep } from '../types/approval';
+import { BACKEND_URL } from '../config/api';
 
 class ApprovalWorkflowServiceMongoDB {
-  private baseUrl = import.meta.env.VITE_BACKEND_URL ? `${import.meta.env.VITE_BACKEND_URL}/api` : 'http://localhost:3001/api';
+  private baseUrl = `${BACKEND_URL}/api`;
 
   // Save workflow to MongoDB
   async saveWorkflow(workflow: Omit<ApprovalWorkflow, 'id' | 'createdAt' | 'updatedAt' | 'currentStep' | 'status'>): Promise<string> {

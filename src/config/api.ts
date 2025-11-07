@@ -8,13 +8,22 @@
 const getBackendUrl = (): string => {
   const backendUrl = import.meta.env.VITE_BACKEND_URL;
   
-  if (!backendUrl) {
-    console.error('⚠️ VITE_BACKEND_URL is not set in .env file!');
-    console.error('📝 Please add VITE_BACKEND_URL to your .env file');
-    throw new Error('Backend URL not configured. Please set VITE_BACKEND_URL in .env file');
+  if (backendUrl && backendUrl.trim() !== '') {
+    return backendUrl;
   }
   
-  return backendUrl;
+  // Development fallback - warn but don't throw
+  if (import.meta.env.DEV) {
+    console.warn('⚠️ VITE_BACKEND_URL is not set in .env file!');
+    console.warn('📝 Using development fallback: http://localhost:3001');
+    console.warn('📝 Please add VITE_BACKEND_URL to your .env file for production');
+    return 'http://localhost:3001';
+  }
+  
+  // Production: throw error if not configured
+  console.error('⚠️ VITE_BACKEND_URL is not set in .env file!');
+  console.error('📝 Please add VITE_BACKEND_URL to your .env file');
+  throw new Error('Backend URL not configured. Please set VITE_BACKEND_URL in .env file');
 };
 
 // Export the backend URL (no fallback, pure environment variable)

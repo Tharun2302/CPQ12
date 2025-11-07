@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, Eye, X } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
+import { BACKEND_URL } from '../config/api';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -52,7 +53,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const loadAvailableDocuments = async () => {
     setIsLoadingDocuments(true);
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const response = await fetch(`${backendUrl}/api/documents`);
       if (response.ok) {
         const data = await response.json();
@@ -84,7 +85,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     setPdfPreviewData(null);
 
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const response = await fetch(`${backendUrl}/api/documents/${document.id}/preview`);
       if (response.ok) {
       const result = await response.json();

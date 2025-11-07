@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL } from '../config/api';
 
 interface CEOApprovalDashboardProps {
   ceoEmail?: string;
@@ -54,7 +55,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {
       console.log('📄 Fetching specific workflow from API:', workflowId);
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const response = await fetch(`${backendUrl}/api/approval-workflows/${workflowId}`);
       
       if (response.ok) {
@@ -94,7 +95,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       
       try {
         console.log('🔄 Fetching document preview for:', workflow.documentId);
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const backendUrl = BACKEND_URL;
         const response = await fetch(`${backendUrl}/api/documents/${workflow.documentId}/preview`);
         
         console.log('📡 Response status:', response.status);
@@ -118,7 +119,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
           // Fallback: Try to load document directly
           console.log('🔄 Trying fallback method...');
           try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+            const backendUrl = BACKEND_URL;
             const directResponse = await fetch(`${backendUrl}/api/documents/${workflow.documentId}`);
             if (directResponse.ok) {
               const blob = await directResponse.blob();
@@ -165,7 +166,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
         // 🎯 TRIGGER BOLDSIGN: Send document for signature after Deal Desk approval
         console.log('🎯 Triggering BoldSign integration after Deal Desk approval...');
         try {
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+          const backendUrl = BACKEND_URL;
           const boldSignResponse = await fetch(`${backendUrl}/api/trigger-boldsign`, {
             method: 'POST',
             headers: {
@@ -326,7 +327,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
       
       try {
         console.log('🔄 Fetching document preview for:', workflow.documentId);
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const backendUrl = BACKEND_URL;
         const response = await fetch(`${backendUrl}/api/documents/${workflow.documentId}/preview`);
         
         console.log('📡 Response status:', response.status);
@@ -350,7 +351,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
           // Fallback: Try to load document directly
           console.log('🔄 Trying fallback method...');
           try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+            const backendUrl = BACKEND_URL;
             const directResponse = await fetch(`${backendUrl}/api/documents/${workflow.documentId}`);
             if (directResponse.ok) {
               const blob = await directResponse.blob();

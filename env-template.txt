@@ -80,6 +80,13 @@ VITE_FRONTEND_URL=http://localhost:5173
 BASE_URL=http://localhost:5173
 APP_BASE_URL=http://localhost:3001
 
+# CORS Origins - Comma-separated list of allowed origins (optional, will auto-detect from URLs above)
+# Example: CORS_ORIGINS=http://localhost:5173,https://yourdomain.com,https://www.yourdomain.com
+CORS_ORIGINS=
+
+# LibreOffice Service URL (for document conversion)
+LIBREOFFICE_SERVICE_URL=http://localhost:3002
+
 # ===========================================
 # BOLDSIGN INTEGRATION
 # ===========================================
@@ -112,10 +119,14 @@ VITE_APPROVAL_CLIENT_EMAIL=
 VITE_APPROVAL_DEALDESK_EMAIL=
 
 # Backend defaults (fallbacks if frontend doesn't provide addresses)
-TECHNICAL_TEAM_EMAIL=anush.dasari@cloudfuze.com
-LEGAL_TEAM_EMAIL=abhilasha.kandakatla@cloudfuze.com
+TECHNICAL_TEAM_EMAIL=raya.durai@cloudfuze.com
+LEGAL_TEAM_EMAIL=sakshi.priya@cloudfuze.com
 CLIENT_EMAIL=abhilasha.kandakatla@cloudfuze.com
 DEAL_DESK_EMAIL=
+
+# CloudFuze Signer Name (for signature forms - left side)
+# This name will be suggested/pre-filled in the CloudFuze signature fields
+CLOUDFUZE_SIGNER_NAME=Aadhi Nandyala
 
 # ===========================================
 # WEBHOOK CONFIGURATION

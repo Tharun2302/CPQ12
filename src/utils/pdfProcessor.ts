@@ -2,6 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsPDF from 'jspdf';
 import { saveAs } from 'file-saver';
+import { BACKEND_URL } from '../config/api';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -369,7 +370,7 @@ export async function savePDFToDatabase(
     };
     
     // Send to backend
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    const backendUrl = BACKEND_URL;
     const response = await fetch(`${backendUrl}/api/documents`, {
       method: 'POST',
       headers: {

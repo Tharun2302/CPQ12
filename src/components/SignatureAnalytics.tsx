@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BACKEND_URL } from '../config/api';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -39,7 +40,7 @@ const SignatureAnalytics: React.FC = () => {
   const fetchAnalytics = async () => {
     try {
       setIsLoading(true);
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const response = await fetch(`${backendUrl}/api/signature/analytics`);
       
       if (response.ok) {

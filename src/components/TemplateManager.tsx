@@ -18,6 +18,7 @@ import { extractTemplateContent } from '../utils/pdfMerger';
 import { formatCurrency } from '../utils/pricing';
 import { templateService } from '../utils/templateService';
 import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
+import { BACKEND_URL } from '../config/api';
 
 // Helper function to limit consecutive spaces to maximum 5
 function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
@@ -1519,7 +1520,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
           formData.append('formId', template.id);
           formData.append('signatureType', 'user');
           
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+          const backendUrl = BACKEND_URL;
           const uploadResponse = await fetch(`${backendUrl}/api/signature/upload-image`, {
             method: 'POST',
             body: formData
@@ -1591,7 +1592,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         }
       }
       
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const formResponse = await fetch(`${backendUrl}/api/signature/create-form`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
