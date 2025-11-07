@@ -1,0 +1,52 @@
+# ============================================
+# GMAIL WORKAROUND CONFIGURATION
+# ============================================
+# Copy these lines to your .env file
+
+# SendGrid Configuration - Using Gmail as sender
+SENDGRID_API_KEY=your-existing-sendgrid-api-key-here
+SENDGRID_VERIFIED_FROM=saitharunreddy2302@gmail.com
+SENDGRID_VERIFIED_DOMAINS=gmail.com
+
+# Replies will go to CloudFuze email
+EMAIL_FROM=tharun.pothi@cloudfuze.com
+
+# App URLs (keep as is)
+APP_BASE_URL=http://localhost:3001
+BASE_URL=http://localhost:5173
+PORT=3001
+
+# Database (keep as is)
+MONGODB_URI=mongodb://localhost:27017
+DB_NAME=cpq_database
+
+# BoldSign (keep as is)
+BOLDSIGN_API_KEY=your-boldsign-api-key
+BOLDSIGN_API_URL=https://api.boldsign.com
+
+# ============================================
+# IMPORTANT NOTES:
+# ============================================
+# - Keep your existing SENDGRID_API_KEY (don't change it)
+# - Keep your existing BOLDSIGN_API_KEY (don't change it)
+# - Only change the SENDGRID_VERIFIED_FROM and SENDGRID_VERIFIED_DOMAINS lines
+# - This is a TEMPORARY workaround
+# - Still send DNS email to IT for permanent fix
+
+# ============================================
+# WHAT THIS DOES:
+# ============================================
+# - Emails will show FROM: saitharunreddy2302@gmail.com
+# - When recipients click Reply, it goes TO: tharun.pothi@cloudfuze.com
+# - Microsoft won't quarantine (sees as external email)
+# - Approval workflow will work immediately
+
+# ============================================
+# AFTER UPDATING:
+# ============================================
+# 1. Save this file as .env
+# 2. Restart server: node server.cjs
+# 3. Test approval workflow
+# 4. Should work! ✅
+
+

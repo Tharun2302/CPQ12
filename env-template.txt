@@ -46,6 +46,8 @@ EMAIL_PASS=your-app-password
 # ===========================================
 # For HubSpot CRM integration
 HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
+# HubSpot Webhook Secret - Optional, for webhook signature verification
+HUBSPOT_WEBHOOK_SECRET=your-hubspot-webhook-secret-here
 
 # ===========================================
 # BOLDSIGN INTEGRATION
@@ -53,6 +55,8 @@ HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
 # BoldSign API Key - Get from https://app.boldsign.com/settings/api
 BOLDSIGN_API_KEY=your-boldsign-api-key-here
 BOLDSIGN_API_URL=https://api.boldsign.com
+# BoldSign Webhook Secret - Optional, for webhook signature verification
+BOLDSIGN_WEBHOOK_SECRET=your-boldsign-webhook-secret-here
 
 # ===========================================
 # SERVER CONFIGURATION
@@ -75,9 +79,19 @@ NODE_ENV=development
 # Frontend defaults (Vite requires VITE_ prefix)
 VITE_APPROVAL_TECH_EMAIL=
 VITE_APPROVAL_LEGAL_EMAIL=
+VITE_APPROVAL_CLIENT_EMAIL=
 VITE_APPROVAL_DEALDESK_EMAIL=
 
 # Backend defaults (fallbacks if frontend doesn't provide addresses)
-TECHNICAL_TEAM_EMAIL=
-LEGAL_TEAM_EMAIL=
+TECHNICAL_TEAM_EMAIL=anush.dasari@cloudfuze.com
+LEGAL_TEAM_EMAIL=abhilasha.kandakatla@cloudfuze.com
+CLIENT_EMAIL=abhilasha.kandakatla@cloudfuze.com
 DEAL_DESK_EMAIL=
+
+# ===========================================
+# WEBHOOK CONFIGURATION
+# ===========================================
+# Generic webhook secret (fallback if service-specific secret not set)
+WEBHOOK_SECRET=your-generic-webhook-secret-here
+# Service-specific webhook secrets (e.g., STRIPE_WEBHOOK_SECRET, GITHUB_WEBHOOK_SECRET)
+# Format: {SERVICE_NAME}_WEBHOOK_SECRET=your-secret-here

@@ -1,0 +1,71 @@
+# ===========================================
+# SENDGRID EMAIL CONFIGURATION - CRITICAL!
+# ===========================================
+# COPY THIS FILE TO .env AND UPDATE VALUES
+
+# Get your SendGrid API key from: https://app.sendgrid.com/settings/api_keys
+SENDGRID_API_KEY=your-sendgrid-api-key-here
+
+# The email address to send FROM (must be verified in SendGrid)
+SENDGRID_FROM_EMAIL=tharun.pothi@cloudfuze.com
+
+# Verified sender email (should match FROM_EMAIL)
+SENDGRID_VERIFIED_FROM=tharun.pothi@cloudfuze.com
+
+# Verified domains (comma-separated if multiple)
+SENDGRID_VERIFIED_DOMAINS=cloudfuze.com
+
+# Optional: BCC all emails to this address for debugging
+# EMAIL_DEBUG_BCC=debug@yourdomain.com
+
+# ===========================================
+# APPLICATION CONFIGURATION
+# ===========================================
+APP_BASE_URL=http://localhost:3001
+BASE_URL=http://localhost:5173
+PORT=3001
+NODE_ENV=development
+
+# ===========================================
+# DATABASE CONFIGURATION
+# ===========================================
+MONGODB_URI=mongodb://localhost:27017
+DB_NAME=cpq_database
+
+# Optional: MySQL/MariaDB (if using instead of MongoDB)
+# DB_HOST=localhost
+# DB_USER=root
+# DB_PASSWORD=root
+# DB_NAME=cpq_database1
+# DB_PORT=3306
+
+# ===========================================
+# BOLDSIGN CONFIGURATION
+# ===========================================
+# Get your BoldSign API key from: https://app.boldsign.com/settings/api
+BOLDSIGN_API_KEY=your-boldsign-api-key-here
+BOLDSIGN_API_URL=https://api.boldsign.com
+
+# ===========================================
+# MICROSOFT AUTHENTICATION (Optional)
+# ===========================================
+# Get from: https://portal.azure.com > Azure Active Directory > App registrations
+VITE_MSAL_CLIENT_ID=your-microsoft-client-id-here
+VITE_MSAL_REDIRECT_URI=
+
+# ===========================================
+# HUBSPOT INTEGRATION (Optional)
+# ===========================================
+HUBSPOT_API_KEY=demo-key
+
+# ===========================================
+# HOW TO USE THIS FILE
+# ===========================================
+# 1. Copy this entire file
+# 2. Create a new file named .env (exactly: .env)
+# 3. Paste this content into .env
+# 4. Update SENDGRID_API_KEY with your actual key
+# 5. Save .env file
+# 6. Restart server: node server.cjs
+# 7. Test: node verify-email-config.cjs
+

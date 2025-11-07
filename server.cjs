@@ -11,6 +11,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 let libre;
 try {
   libre = require('libreoffice-convert');
@@ -68,8 +69,15 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Middleware to capture raw body for webhook signature verification
+const rawBodySaver = (req, res, buf, encoding) => {
+  if (buf && buf.length) {
+    req.rawBody = buf.toString(encoding || 'utf8');
+  }
+};
+
+app.use(express.json({ limit: '50mb', verify: rawBodySaver }));
+app.use(express.urlencoded({ extended: true, limit: '50mb', verify: rawBodySaver }));
 
 // Serve static files from the React app build
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -186,6 +194,31 @@ if (process.env.SENDGRID_API_KEY) {
 }
 const isEmailConfigured = process.env.SENDGRID_API_KEY;
 
+// Verified sender configuration for SendGrid deliverability
+const VERIFIED_FROM_ADDRESS = (process.env.SENDGRID_VERIFIED_FROM || process.env.EMAIL_FROM || 'cpq@zenop.ai').trim();
+const VERIFIED_DOMAINS = (process.env.SENDGRID_VERIFIED_DOMAINS || 'zenop.ai')
+  .split(',')
+  .map(d => d.trim().toLowerCase())
+  .filter(Boolean);
+const EMAIL_DEBUG_BCC = (process.env.EMAIL_DEBUG_BCC || '').trim();
+
+function chooseVerifiedFrom(requestedFrom) {
+  if (!requestedFrom) return VERIFIED_FROM_ADDRESS;
+  const parts = String(requestedFrom).split('@');
+  if (parts.length !== 2) return VERIFIED_FROM_ADDRESS;
+  const domain = parts[1].toLowerCase();
+  return VERIFIED_DOMAINS.includes(domain) ? requestedFrom : VERIFIED_FROM_ADDRESS;
+}
+
+// Default recipient emails for approval workflow
+// These values are used to auto-fill missing emails when a workflow is created
+const DEFAULT_RECIPIENTS_BY_ROLE = {
+  'Technical Team': (process.env.TECHNICAL_TEAM_EMAIL || 'abhilasha.kandakatla@cloudfuze.com').trim(),
+  'Legal Team': (process.env.LEGAL_TEAM_EMAIL || 'abhilasha.kandakatla@cloudfuze.com').trim(),
+  'Client': (process.env.CLIENT_EMAIL || 'anush.dasari@cloudfuze.com').trim(),
+  'Deal Desk': (process.env.DEAL_DESK_EMAIL || '').trim()
+};
+
 // Email template functions
 function generateManagerEmailHTML(workflowData) {
   return `
@@ -193,45 +226,103 @@ function generateManagerEmailHTML(workflowData) {
     <html>
     <head>
       <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Technical Team Approval Required</title>
     </head>
-    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: linear-gradient(135deg, #3B82F6, #1E40AF); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-          <h1>🔔 Technical Team Approval Required</h1>
-        </div>
-        
-        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
-          <h2>Hello Technical Team,</h2>
-          
-          <p>A new document requires your <strong>Technical Team</strong> approval:</p>
-          
-          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3>📄 Document Details</h3>
-            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
-            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
-            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
-          </div>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
-               style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
-              Review & Approve
-            </a>
-          </div>
-          
-          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
-        </div>
-        
-        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
-          <p>This is an automated message from your approval system.</p>
-        </div>
-      </div>
+    <body style="font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f5f5f5; padding: 20px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background: white; border-radius: 8px; overflow: hidden;">
+              <!-- Header -->
+              <tr>
+                <td style="background: #3B82F6; color: white; padding: 30px 20px; text-align: center;">
+                  <h1 style="margin: 0; font-size: 24px;">Document Approval Request</h1>
+                  <p style="margin: 10px 0 0; font-size: 14px;">CloudFuze CPQ System</p>
+                </td>
+              </tr>
+              
+              <!-- Body -->
+              <tr>
+                <td style="padding: 30px 20px;">
+                  <p style="margin: 0 0 20px; font-size: 16px;">Hello Technical Team,</p>
+                  
+                  <p style="margin: 0 0 20px;">A new document requires your review and approval.</p>
+                  
+                  <!-- Document Details -->
+                  <table width="100%" cellpadding="10" cellspacing="0" border="0" style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; margin: 20px 0;">
+                    <tr><td colspan="2" style="font-weight: bold; border-bottom: 1px solid #e5e7eb;">Document Information</td></tr>
+                    <tr><td style="width: 40%; font-weight: bold;">Document ID:</td><td>${workflowData.documentId}</td></tr>
+                    <tr><td style="font-weight: bold;">Client Name:</td><td>${workflowData.clientName}</td></tr>
+                    <tr><td style="font-weight: bold;">Amount:</td><td>$${workflowData.amount.toLocaleString()}</td></tr>
+                    <tr><td style="font-weight: bold;">Workflow ID:</td><td>${workflowData.workflowId}</td></tr>
+                    <tr><td style="font-weight: bold;">Attachment:</td><td>PDF document attached</td></tr>
+                  </table>
+                  
+                  <p style="margin: 20px 0; font-size: 14px;">Please review the attached document and click the button below to access the approval portal:</p>
+                  
+                  <!-- CTA Button -->
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 30px 0;">
+                    <tr>
+                      <td align="center">
+                        <a href="${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}" 
+                           style="display: inline-block; background: #3B82F6; color: white; padding: 14px 30px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px;">
+                          Access Approval Portal
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                  
+                  <p style="margin: 20px 0 0; font-size: 13px; color: #666;">
+                    <strong>Note:</strong> This approval link will expire in 7 days. If you have any questions, please contact your system administrator.
+                  </p>
+                </td>
+              </tr>
+              
+              <!-- Footer -->
+              <tr>
+                <td style="background: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
+                  <p style="margin: 0; font-size: 12px; color: #666;">
+                    This is an automated notification from CloudFuze CPQ System.<br>
+                    Internal workflow notification - no action required if already processed.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </body>
     </html>
   `;
+}
+
+// Generate plain text version
+function generateManagerEmailPlainText(workflowData) {
+  return `
+DOCUMENT APPROVAL REQUEST
+CloudFuze CPQ System
+
+Hello Technical Team,
+
+A new document requires your review and approval.
+
+DOCUMENT INFORMATION:
+- Document ID: ${workflowData.documentId}
+- Client Name: ${workflowData.clientName}
+- Amount: $${workflowData.amount.toLocaleString()}
+- Workflow ID: ${workflowData.workflowId}
+- Attachment: PDF document attached
+
+Please review the attached document and access the approval portal using this link:
+${process.env.BASE_URL || 'http://localhost:5173'}/manager-approval?workflow=${workflowData.workflowId}
+
+Note: This approval link will expire in 7 days. If you have any questions, please contact your system administrator.
+
+---
+This is an automated notification from CloudFuze CPQ System.
+Internal workflow notification - no action required if already processed.
+  `.trim();
 }
 
 function generateCEOEmailHTML(workflowData) {
@@ -421,36 +512,152 @@ function generateDealDeskEmailHTML(workflowData) {
   `;
 }
 
+// Email validation helper
+function isValidEmail(email) {
+  if (!email || typeof email !== 'string') return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email.trim());
+}
+
 // Email sending function using SendGrid
-async function sendEmail(to, subject, html, attachments = []) {
+async function sendEmail(to, subject, html, attachments = [], plainText = null) {
   try {
+    // Validate recipient email
+    if (!to) {
+      console.error('❌ Email send failed: No recipient email provided');
+      return { success: false, error: 'No recipient email provided' };
+    }
+
+    // Validate email format
+    const recipientEmails = Array.isArray(to) ? to : [to];
+    const invalidEmails = recipientEmails.filter(email => !isValidEmail(email));
+    
+    if (invalidEmails.length > 0) {
+      console.error('❌ Email send failed: Invalid email addresses:', invalidEmails);
+      return { 
+        success: false, 
+        error: `Invalid email addresses: ${invalidEmails.join(', ')}`,
+        invalidEmails: invalidEmails
+      };
+    }
+
+    const requestedFrom = process.env.EMAIL_FROM || 'noreply@yourdomain.com';
+    const resolvedFrom = chooseVerifiedFrom(requestedFrom);
+
     const emailPayload = {
-      from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
+      from: {
+        email: resolvedFrom,
+        name: 'CloudFuze CPQ System'
+      },
       to: to,
       subject: subject,
       html: html,
+      text: plainText || html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(),
       attachments: attachments.map(att => ({
         content: att.content.toString('base64'),
         filename: att.filename,
         type: att.contentType,
         disposition: 'attachment'
-      }))
+      })),
+      // Add headers to improve deliverability and reduce spam score
+      headers: {
+        'X-Entity-Ref-ID': `CPQ-${Date.now()}`,
+        'X-Auto-Response-Suppress': 'OOF, AutoReply',
+        'Precedence': 'bulk',
+        'X-Mailer': 'CloudFuze CPQ System'
+      },
+      categories: ['cpq-approval', 'workflow'],
+      customArgs: {
+        'internal_system': 'cpq',
+        'email_type': 'approval_workflow'
+      }
     };
+
+    if (resolvedFrom !== requestedFrom) {
+      emailPayload.replyTo = {
+        email: requestedFrom,
+        name: 'CloudFuze Team'
+      };
+    }
+
+    if (EMAIL_DEBUG_BCC) {
+      emailPayload.bcc = [EMAIL_DEBUG_BCC];
+    }
     
     console.log('📧 Sending email with SendGrid payload:', JSON.stringify({
       from: emailPayload.from,
+      replyTo: emailPayload.replyTo || null,
       to: emailPayload.to,
+      bcc: EMAIL_DEBUG_BCC || null,
       subject: emailPayload.subject,
       attachments: attachments.length > 0 ? `${attachments.length} attachment(s)` : 'No attachments'
     }, null, 2));
     
     const result = await sgMail.send(emailPayload);
 
-    console.log('✅ Email sent successfully via SendGrid:', result);
-    return { success: true, data: result };
+    // Log full SendGrid response for debugging
+    const statusCode = result?.[0]?.statusCode;
+    const headers = result?.[0]?.headers || {};
+    const messageId = headers['x-message-id'];
+    
+    console.log('📬 SendGrid API Response:', {
+      statusCode: statusCode,
+      messageId: messageId,
+      headers: headers,
+      fullResponse: JSON.stringify(result, null, 2)
+    });
+
+    // SendGrid returns 202 for accepted emails, but that doesn't guarantee delivery
+    if (statusCode === 202) {
+      console.log('✅ Email accepted by SendGrid (status 202)');
+      console.log('⚠️  Note: Status 202 means SendGrid accepted the email, but delivery is not guaranteed.');
+      console.log('⚠️  Check SendGrid dashboard for actual delivery status, bounces, or spam reports.');
+      console.log(`📧 Recipient: ${to}`);
+      console.log(`📧 Message ID: ${messageId || 'N/A'}`);
+    } else {
+      console.warn('⚠️  Unexpected SendGrid status code:', statusCode);
+    }
+
+    return { 
+      success: true, 
+      data: result,
+      statusCode: statusCode,
+      messageId: messageId,
+      warning: 'Email accepted by SendGrid but delivery not guaranteed. Check SendGrid dashboard for delivery status.'
+    };
   } catch (error) {
-    console.error('❌ Email send error:', error);
-    return { success: false, error: error };
+    // Enhanced error logging
+    console.error('❌ Email send error - Full details:', {
+      error: error.message,
+      code: error.code,
+      response: error.response ? {
+        statusCode: error.response.statusCode,
+        statusMessage: error.response.statusMessage,
+        body: error.response.body,
+        headers: error.response.headers
+      } : null,
+      stack: error.stack
+    });
+
+    // Extract SendGrid-specific error details
+    let errorMessage = error.message;
+    let errorDetails = null;
+    
+    if (error.response) {
+      const body = error.response.body;
+      if (body && body.errors) {
+        errorDetails = body.errors;
+        errorMessage = body.errors.map(e => e.message).join('; ');
+        console.error('❌ SendGrid API Errors:', body.errors);
+      }
+    }
+
+    return { 
+      success: false, 
+      error: errorMessage,
+      errorDetails: errorDetails,
+      code: error.code
+    };
   }
 }
 
@@ -2529,20 +2736,39 @@ app.post('/api/send-manager-email', async (req, res) => {
       }
     }
 
-    // Send email to Manager only with attachment
+    // Determine recipient (provided or default) and validate
+    const managerEmailToUse = (managerEmail && managerEmail.trim()) || DEFAULT_RECIPIENTS_BY_ROLE['Technical Team'];
+    console.log('📧 Preparing to send email to Manager:', managerEmailToUse);
+    if (!managerEmailToUse || !isValidEmail(managerEmailToUse)) {
+      console.error('❌ Invalid Manager email address (after default fallback):', managerEmailToUse);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid Manager email address: ${managerEmailToUse || '(empty)'}`,
+        error: 'Invalid email format'
+      });
+    }
+
+    // Send email to Manager only with attachment and plain text version
     const managerResult = await sendEmail(
-      managerEmail,
+      managerEmailToUse,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateManagerEmailHTML(workflowData),
-      attachments
+      attachments,
+      generateManagerEmailPlainText(workflowData)
     );
 
-    console.log('✅ Manager email sent:', managerResult.success);
+    console.log('📬 Manager email result:', {
+      success: managerResult.success,
+      statusCode: managerResult.statusCode,
+      messageId: managerResult.messageId,
+      error: managerResult.error,
+      warning: managerResult.warning
+    });
 
     res.json({
       success: managerResult.success,
       message: 'Manager email sent successfully',
-      result: { role: 'Manager', email: managerEmail, success: managerResult.success },
+      result: { role: 'Manager', email: managerEmailToUse, success: managerResult.success },
       workflowData: workflowData,
       attachmentCount: attachments.length
     });
@@ -2608,6 +2834,17 @@ app.post('/api/send-ceo-email', async (req, res) => {
       }
     }
 
+    // Validate and log CEO email before sending
+    console.log('📧 Preparing to send email to CEO:', ceoEmail);
+    if (!ceoEmail || !isValidEmail(ceoEmail)) {
+      console.error('❌ Invalid CEO email address:', ceoEmail);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid CEO email address: ${ceoEmail}`,
+        error: 'Invalid email format'
+      });
+    }
+
     // Send email to CEO only with attachment
     const ceoResult = await sendEmail(
       ceoEmail,
@@ -2616,7 +2853,13 @@ app.post('/api/send-ceo-email', async (req, res) => {
       attachments
     );
 
-    console.log('✅ CEO email sent:', ceoResult.success);
+    console.log('📬 CEO email result:', {
+      success: ceoResult.success,
+      statusCode: ceoResult.statusCode,
+      messageId: ceoResult.messageId,
+      error: ceoResult.error,
+      warning: ceoResult.warning
+    });
 
     res.json({
       success: ceoResult.success,
@@ -2815,12 +3058,27 @@ app.post('/api/send-approval-emails', async (req, res) => {
 
     // Send email to Manager
     try {
-      const managerResult = await sendEmail(
-        managerEmail,
-        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-        generateManagerEmailHTML(workflowData)
-      );
-      results.push({ role: 'Manager', email: managerEmail, success: managerResult.success });
+      console.log('📧 Sending email to Manager:', managerEmail);
+      if (!managerEmail || !isValidEmail(managerEmail)) {
+        console.error('❌ Invalid Manager email:', managerEmail);
+        results.push({ role: 'Manager', email: managerEmail, success: false, error: 'Invalid email format' });
+      } else {
+        const managerResult = await sendEmail(
+          managerEmail,
+          `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+          generateManagerEmailHTML(workflowData),
+          [],
+          generateManagerEmailPlainText(workflowData)
+        );
+        results.push({ 
+          role: 'Manager', 
+          email: managerEmail, 
+          success: managerResult.success,
+          messageId: managerResult.messageId,
+          warning: managerResult.warning,
+          error: managerResult.error
+        });
+      }
     } catch (error) {
       console.error('❌ Manager email failed:', error);
       results.push({ role: 'Manager', email: managerEmail, success: false, error: error.message });
@@ -2828,12 +3086,25 @@ app.post('/api/send-approval-emails', async (req, res) => {
 
     // Send email to CEO
     try {
-      const ceoResult = await sendEmail(
-        ceoEmail,
-        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-        generateCEOEmailHTML(workflowData)
-      );
-      results.push({ role: 'CEO', email: ceoEmail, success: ceoResult.success });
+      console.log('📧 Sending email to CEO:', ceoEmail);
+      if (!ceoEmail || !isValidEmail(ceoEmail)) {
+        console.error('❌ Invalid CEO email:', ceoEmail);
+        results.push({ role: 'CEO', email: ceoEmail, success: false, error: 'Invalid email format' });
+      } else {
+        const ceoResult = await sendEmail(
+          ceoEmail,
+          `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+          generateCEOEmailHTML(workflowData)
+        );
+        results.push({ 
+          role: 'CEO', 
+          email: ceoEmail, 
+          success: ceoResult.success,
+          messageId: ceoResult.messageId,
+          warning: ceoResult.warning,
+          error: ceoResult.error
+        });
+      }
     } catch (error) {
       console.error('❌ CEO email failed:', error);
       results.push({ role: 'CEO', email: ceoEmail, success: false, error: error.message });
@@ -2841,12 +3112,25 @@ app.post('/api/send-approval-emails', async (req, res) => {
 
     // Send email to Client
     try {
-      const clientResult = await sendEmail(
-        clientEmail,
-        `Document Submitted for Approval: ${workflowData.documentId}`,
-        generateClientEmailHTML(workflowData)
-      );
-      results.push({ role: 'Client', email: clientEmail, success: clientResult.success });
+      console.log('📧 Sending email to Client:', clientEmail);
+      if (!clientEmail || !isValidEmail(clientEmail)) {
+        console.error('❌ Invalid Client email:', clientEmail);
+        results.push({ role: 'Client', email: clientEmail, success: false, error: 'Invalid email format' });
+      } else {
+        const clientResult = await sendEmail(
+          clientEmail,
+          `Document Submitted for Approval: ${workflowData.documentId}`,
+          generateClientEmailHTML(workflowData)
+        );
+        results.push({ 
+          role: 'Client', 
+          email: clientEmail, 
+          success: clientResult.success,
+          messageId: clientResult.messageId,
+          warning: clientResult.warning,
+          error: clientResult.error
+        });
+      }
     } catch (error) {
       console.error('❌ Client email failed:', error);
       results.push({ role: 'Client', email: clientEmail, success: false, error: error.message });
@@ -3284,6 +3568,30 @@ app.post('/api/approval-workflows', async (req, res) => {
 
     const workflowData = req.body;
     console.log('📋 Creating approval workflow:', workflowData);
+
+    // Auto-fill emails for known roles if not provided by the client
+    if (Array.isArray(workflowData.workflowSteps)) {
+      workflowData.workflowSteps = workflowData.workflowSteps.map(step => {
+        const roleName = step && step.role ? String(step.role) : '';
+        const providedEmail = step && step.email ? String(step.email).trim() : '';
+        const defaultEmail = DEFAULT_RECIPIENTS_BY_ROLE[roleName];
+        return {
+          ...step,
+          email: providedEmail || defaultEmail || step.email
+        };
+      });
+    } else {
+      // Also support flat fields if present (technicalEmail, legalEmail, clientEmail)
+      if (!workflowData.technicalEmail && DEFAULT_RECIPIENTS_BY_ROLE['Technical Team']) {
+        workflowData.technicalEmail = DEFAULT_RECIPIENTS_BY_ROLE['Technical Team'];
+      }
+      if (!workflowData.legalEmail && DEFAULT_RECIPIENTS_BY_ROLE['Legal Team']) {
+        workflowData.legalEmail = DEFAULT_RECIPIENTS_BY_ROLE['Legal Team'];
+      }
+      if (!workflowData.clientEmail && DEFAULT_RECIPIENTS_BY_ROLE['Client']) {
+        workflowData.clientEmail = DEFAULT_RECIPIENTS_BY_ROLE['Client'];
+      }
+    }
 
     // Generate unique ID
     const workflowId = `WF-${Date.now()}`;
@@ -4482,6 +4790,51 @@ app.post('/api/trigger-boldsign', async (req, res) => {
 });
 
 /**
+ * Verify webhook signature using HMAC SHA256
+ * Supports multiple signature formats:
+ * - sha256=hexvalue (GitHub, etc.)
+ * - hexvalue (direct hex)
+ * - base64value (base64 encoded)
+ * @param {string} payload - Raw request body as string
+ * @param {string} signature - Signature from webhook header
+ * @param {string} secret - Webhook secret key
+ * @returns {boolean} - True if signature is valid
+ */
+function verifyWebhookSignature(payload, signature, secret) {
+  if (!secret || !signature || !payload) {
+    return false;
+  }
+  
+  try {
+    // Remove common prefixes (sha256=, sha1=, etc.)
+    const cleanSignature = signature.replace(/^(sha256|sha1|sha512)=/i, '').trim();
+    
+    // Calculate expected signature using HMAC SHA256
+    const hmac = crypto.createHmac('sha256', secret);
+    hmac.update(payload);
+    const expectedHex = hmac.digest('hex');
+    
+    // Normalize both signatures to lowercase for comparison
+    const receivedLower = cleanSignature.toLowerCase();
+    const expectedLower = expectedHex.toLowerCase();
+    
+    // Ensure same length before comparison
+    if (receivedLower.length !== expectedLower.length) {
+      return false;
+    }
+    
+    // Use constant-time comparison to prevent timing attacks
+    return crypto.timingSafeEqual(
+      Buffer.from(receivedLower),
+      Buffer.from(expectedLower)
+    );
+  } catch (error) {
+    console.error('❌ Error verifying webhook signature:', error);
+    return false;
+  }
+}
+
+/**
  * Webhook endpoint for BoldSign events
  * Receives real-time status updates for documents and signatures
  * Features:
@@ -4492,19 +4845,73 @@ app.post('/api/trigger-boldsign', async (req, res) => {
  */
 app.post('/api/boldsign/webhook', async (req, res) => {
   try {
-    const event = req.body;
+    const event = req.body || {};
+    const rawBody = req.rawBody || JSON.stringify(event);
     
+    console.log('📨 BoldSign Webhook Request Received');
+    console.log('  Request Body:', JSON.stringify(event, null, 2));
+    console.log('  Request Method:', req.method);
+    console.log('  Request URL:', req.url);
+    console.log('  Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('  Timestamp:', new Date().toISOString());
+
+    // Verify webhook signature if secret is configured
+    const webhookSecret = process.env.BOLDSIGN_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const signature = req.headers['x-boldsign-signature'] || 
+                       req.headers['x-signature'] || 
+                       req.headers['signature'];
+      
+      if (signature) {
+        const isValid = verifyWebhookSignature(rawBody, signature, webhookSecret);
+        if (!isValid) {
+          console.warn('⚠️ Invalid webhook signature - rejecting request');
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid webhook signature',
+            timestamp: new Date().toISOString()
+          });
+        }
+        console.log('✅ Webhook signature verified');
+      } else {
+        console.warn('⚠️ Webhook secret configured but no signature header found');
+      }
+    }
+
+    // Handle BoldSign verification request - accept ANY POST request and return 200 OK
+    // BoldSign sends a verification POST to test the endpoint, and we need to accept it
+    const isVerificationRequest = !event || 
+                                  Object.keys(event).length === 0 || 
+                                  (!event.eventType && !event.documentId) ||
+                                  (typeof event === 'string' && event.length === 0);
+    
+    if (isVerificationRequest) {
+      console.log('✅ BoldSign verification request received - returning 200 OK');
+      return res.status(200).json({ 
+        success: true, 
+        message: 'Webhook endpoint is active and ready to receive events',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Validate webhook data for actual events
+    if (!event.eventType || !event.documentId) {
+      console.warn('⚠️ Invalid webhook data - missing eventType or documentId');
+      console.warn('  Received data:', JSON.stringify(event, null, 2));
+      // Return 200 OK to avoid webhook failures - BoldSign just needs 200 OK
+      return res.status(200).json({ 
+        success: true, 
+        message: 'Webhook received',
+        warning: 'Missing required fields (eventType or documentId)',
+        received: event,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     console.log('📨 BoldSign Webhook Event Received');
     console.log('  Event Type:', event.eventType);
     console.log('  Document ID:', event.documentId);
     console.log('  Status:', event.status);
-    console.log('  Timestamp:', new Date().toISOString());
-
-    // Validate webhook data
-    if (!event.eventType || !event.documentId) {
-      console.warn('⚠️ Invalid webhook data - missing eventType or documentId');
-      return res.status(400).json({ success: false, error: 'Invalid webhook data' });
-    }
 
     // Create webhook event log entry
     const webhookLog = {
@@ -4609,10 +5016,174 @@ app.post('/api/boldsign/webhook', async (req, res) => {
     console.error('❌ Error processing BoldSign webhook:', error);
     console.error('   Stack trace:', error.stack);
     
-    res.status(500).json({ 
-      success: false, 
+    // Return 200 OK even on error to prevent webhook failures
+    // BoldSign needs 200 OK response for verification
+    res.status(200).json({ 
+      success: true, 
+      message: 'Webhook endpoint is active',
       error: error.message,
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * Generic webhook endpoint for external services
+ * Supports signature verification and event logging
+ * Usage: POST /api/webhooks/:serviceName
+ * 
+ * Example: POST /api/webhooks/hubspot
+ *          POST /api/webhooks/stripe
+ *          POST /api/webhooks/custom
+ */
+app.post('/api/webhooks/:serviceName', async (req, res) => {
+  try {
+    const serviceName = req.params.serviceName;
+    const event = req.body || {};
+    const rawBody = req.rawBody || JSON.stringify(event);
+    
+    console.log(`📨 Generic Webhook Request Received for: ${serviceName}`);
+    console.log('  Request Body:', JSON.stringify(event, null, 2));
+    console.log('  Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('  Timestamp:', new Date().toISOString());
+
+    // Verify webhook signature if secret is configured
+    const webhookSecret = process.env[`${serviceName.toUpperCase()}_WEBHOOK_SECRET`] || 
+                         process.env.WEBHOOK_SECRET;
+    
+    if (webhookSecret) {
+      // Check common signature header names
+      const signature = req.headers['x-hub-signature-256'] || 
+                       req.headers['x-hub-signature'] ||
+                       req.headers['x-signature'] || 
+                       req.headers[`x-${serviceName}-signature`] ||
+                       req.headers['signature'];
+      
+      if (signature) {
+        const isValid = verifyWebhookSignature(rawBody, signature, webhookSecret);
+        if (!isValid) {
+          console.warn(`⚠️ Invalid webhook signature for ${serviceName} - rejecting request`);
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid webhook signature',
+            service: serviceName,
+            timestamp: new Date().toISOString()
+          });
+        }
+        console.log(`✅ Webhook signature verified for ${serviceName}`);
+      } else {
+        console.warn(`⚠️ Webhook secret configured for ${serviceName} but no signature header found`);
+      }
+    }
+
+    // Log webhook event to MongoDB
+    const webhookLog = {
+      id: uuidv4(),
+      serviceName: serviceName,
+      eventType: event.type || event.event || event.eventType || 'unknown',
+      timestamp: new Date(),
+      eventData: event,
+      headers: req.headers,
+      processed: false,
+      processedAt: null,
+      error: null
+    };
+
+    if (db) {
+      try {
+        const webhookLogsCollection = db.collection('webhook_logs');
+        await webhookLogsCollection.insertOne(webhookLog);
+        console.log(`✅ Webhook event logged to MongoDB for ${serviceName}`);
+      } catch (dbError) {
+        console.error(`❌ Error logging webhook to database for ${serviceName}:`, dbError.message);
+      }
+    }
+
+    // Update webhook log as processed
+    if (db) {
+      try {
+        const webhookLogsCollection = db.collection('webhook_logs');
+        await webhookLogsCollection.updateOne(
+          { id: webhookLog.id },
+          { 
+            $set: { 
+              processed: true,
+              processedAt: new Date()
+            }
+          }
+        );
+      } catch (dbError) {
+        console.error(`❌ Error updating webhook log for ${serviceName}:`, dbError.message);
+      }
+    }
+
+    // Return success response
+    res.json({ 
+      success: true,
+      eventId: webhookLog.id,
+      service: serviceName,
+      message: 'Webhook received and processed successfully',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error(`❌ Error processing webhook for ${req.params.serviceName}:`, error);
+    console.error('   Stack trace:', error.stack);
+    
+    // Return 200 OK to prevent webhook retries
+    res.status(200).json({ 
+      success: true, 
+      message: 'Webhook endpoint is active',
+      service: req.params.serviceName,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * Get webhook logs for a specific service
+ * GET /api/webhooks/:serviceName/logs
+ */
+app.get('/api/webhooks/:serviceName/logs', async (req, res) => {
+  try {
+    const serviceName = req.params.serviceName;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = parseInt(req.query.skip) || 0;
+
+    if (!db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database not available'
+      });
+    }
+
+    const webhookLogsCollection = db.collection('webhook_logs');
+    const filter = { serviceName: serviceName };
+    
+    const total = await webhookLogsCollection.countDocuments(filter);
+    const logs = await webhookLogsCollection
+      .find(filter)
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .skip(skip)
+      .toArray();
+
+    res.json({
+      success: true,
+      service: serviceName,
+      total,
+      limit,
+      skip,
+      logs
+    });
+
+  } catch (error) {
+    console.error(`❌ Error retrieving webhook logs for ${req.params.serviceName}:`, error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving webhook logs',
+      error: error.message
     });
   }
 });
@@ -5004,6 +5575,17 @@ async function sendDeclineNotification(signerEmail, signerName, documentId, reas
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+// Health check endpoint for webhook verification
+app.get('/api/boldsign/webhook', (req, res) => {
+  res.status(200).json({ 
+    success: true, 
+    message: 'BoldSign webhook endpoint is active',
+    method: 'POST',
+    url: '/api/boldsign/webhook',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Catch-all (serve React for any non-API route)

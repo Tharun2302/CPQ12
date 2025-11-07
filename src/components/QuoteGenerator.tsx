@@ -369,10 +369,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [approvalEmails, setApprovalEmails] = useState({
-    role1: '',
-    role2: '',
-    role3: '',
-    role4: ''
+    role1: (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'abhilasha.kandakatla@cloudfuze.com',
+    role2: (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'anush.dasari@cloudfuze.com',
+    role3: (import.meta.env.VITE_APPROVAL_CLIENT_EMAIL as string) || 'abhilasha.kandakatla@cloudfuze.com',
+    role4: (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || ''
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
 
@@ -1539,8 +1539,6 @@ Total Price: {{total price}}`;
         const result = await response.json();
         if (result.success) {
           alert('✅ Approval workflow started successfully!\n📧 Technical Team has been notified. The workflow will continue sequentially when each role approves.');
-          setShowApprovalModal(false);
-          setApprovalEmails({ role1: '', role2: '', role3: '', role4: '' });
         } else {
           alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
         }
@@ -4441,12 +4439,22 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
-                        onClick={() => setShowApprovalModal(true)}
-                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
+                        onClick={handleStartApprovalWorkflow}
+                        disabled={isStartingWorkflow}
+                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Start Approval Workflow"
                       >
-                        <Workflow className="w-3 h-3 inline mr-1" />
-                        Start Workflow
+                        {isStartingWorkflow ? (
+                          <>
+                            <div className="w-3 h-3 inline mr-1 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Sending...
+                          </>
+                        ) : (
+                          <>
+                            <Workflow className="w-3 h-3 inline mr-1" />
+                            Start Workflow
+                          </>
+                        )}
                       </button>
                       <button
                         onClick={handleEmailAgreement}

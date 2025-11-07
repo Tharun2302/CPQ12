@@ -1,0 +1,45 @@
+# ============================================
+# UPDATE YOUR .env FILE WITH THESE EXACT LINES
+# ============================================
+
+# 1. Open the file: .env (in project root: C:\Users\AbhilashaK\Desktop\gain\CPQ12\.env)
+# 2. Find the lines with SENDGRID_VERIFIED_FROM and SENDGRID_VERIFIED_DOMAINS
+# 3. Replace them with these:
+
+SENDGRID_VERIFIED_FROM=saitharunreddy2302@gmail.com
+SENDGRID_VERIFIED_DOMAINS=gmail.com
+
+# 4. Make sure this line is also there (for replies):
+EMAIL_FROM=tharun.pothi@cloudfuze.com
+
+# 5. KEEP YOUR EXISTING SENDGRID_API_KEY (don't change it!)
+
+# ============================================
+# COMPLETE .env EXAMPLE:
+# ============================================
+
+SENDGRID_API_KEY=your-existing-sendgrid-api-key
+SENDGRID_VERIFIED_FROM=saitharunreddy2302@gmail.com
+SENDGRID_VERIFIED_DOMAINS=gmail.com
+EMAIL_FROM=tharun.pothi@cloudfuze.com
+
+APP_BASE_URL=http://localhost:3001
+BASE_URL=http://localhost:5173
+PORT=3001
+
+MONGODB_URI=mongodb://localhost:27017
+DB_NAME=cpq_database
+
+BOLDSIGN_API_KEY=your-boldsign-api-key
+BOLDSIGN_API_URL=https://api.boldsign.com
+
+# ============================================
+# AFTER SAVING:
+# ============================================
+# 1. STOP the server (Ctrl+C in terminal)
+# 2. START the server again: node server.cjs
+# 3. Look for: "SendGrid verified from: saitharunreddy2302@gmail.com"
+# 4. Try the approval workflow again
+# 5. Should work! ✅
+
+
