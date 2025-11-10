@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Calculator, FileText, Sparkles, Upload, Building, Menu, X, CheckCircle } from 'lucide-react';
+import { Calculator, FileText, Sparkles, Upload, Building, Menu, X, CheckCircle, Activity } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
@@ -33,6 +33,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
     { id: 'quotes', label: 'Documents', icon: FileText, path: '/dashboard/documents' },
     { id: 'templates', label: 'Templates', icon: Upload, path: '/dashboard/templates' },
     { id: 'approval', label: 'Approval', icon: CheckCircle, path: '/dashboard/approval' },
+    { id: 'status', label: 'Status', icon: Activity, path: '/document-status' },
     // Settings tab hidden per requirement
     // { id: 'settings', label: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ];

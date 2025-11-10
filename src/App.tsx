@@ -17,6 +17,7 @@ import ManagerApprovalDashboard from './components/ManagerApprovalDashboard';
 import CEOApprovalDashboard from './components/CEOApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
 import DenySignature from './components/DenySignature';
+import DocumentStatusDashboard from './components/DocumentStatusDashboard';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -1588,6 +1589,7 @@ function App() {
               />
             } />
             <Route path="/deny-signature" element={<DenySignature />} />
+            <Route path="/document-status" element={<DocumentStatusDashboard />} />
             <Route path="/dashboard/*" element={
               <ProtectedRoute>
                 <Dashboard
