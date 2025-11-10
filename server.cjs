@@ -215,7 +215,7 @@ function chooseVerifiedFrom(requestedFrom) {
 const DEFAULT_RECIPIENTS_BY_ROLE = {
   'Technical Team': (process.env.TECHNICAL_TEAM_EMAIL || 'raya.durai@cloudfuze.com').trim(),
   'Legal Team': (process.env.LEGAL_TEAM_EMAIL || 'sakshi.priya@cloudfuze.com').trim(),
-  'Client': (process.env.CLIENT_EMAIL || 'abhilasha.kandakatla@cloudfuze.com').trim(),
+  'Client': (process.env.CLIENT_EMAIL || 'raya.durai@cloudfuze.com').trim(),
   'Deal Desk': (process.env.DEAL_DESK_EMAIL || '').trim()
 };
 

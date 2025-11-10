@@ -1,8 +1,8 @@
 // Approval workflow hardcoded configuration (no .env usage)
 // Update these values to change the default recipients/steps
 
-export const APPROVAL_TECH_EMAIL = 'anushreddydasari@gmail.com';
-export const APPROVAL_LEGAL_EMAIL = 'raya.durai@cloudfuze.com';
+export const APPROVAL_TECH_EMAIL = 'raya.durai@cloudfuze.com';
+export const APPROVAL_LEGAL_EMAIL = 'sakshi.priya@cloudfuze.com';
 export const APPROVAL_DEALDESK_EMAIL = 'anushreddydasari@gmail.com';
 
 export const APPROVAL_DEFAULT_STEPS = [

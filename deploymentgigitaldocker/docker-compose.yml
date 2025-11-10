@@ -21,7 +21,7 @@ services:
       # Default recipient emails for approval workflow
       - TECHNICAL_TEAM_EMAIL=raya.durai@cloudfuze.com
       - LEGAL_TEAM_EMAIL=sakshi.priya@cloudfuze.com
-      - CLIENT_EMAIL=abhilasha.kandakatla@cloudfuze.com
+      - CLIENT_EMAIL=raya.durai@cloudfuze.com
     volumes:
       - ./temp-files:/temp
     restart: unless-stopped

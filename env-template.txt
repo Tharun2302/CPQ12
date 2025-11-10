@@ -121,7 +121,7 @@ VITE_APPROVAL_DEALDESK_EMAIL=
 # Backend defaults (fallbacks if frontend doesn't provide addresses)
 TECHNICAL_TEAM_EMAIL=raya.durai@cloudfuze.com
 LEGAL_TEAM_EMAIL=sakshi.priya@cloudfuze.com
-CLIENT_EMAIL=abhilasha.kandakatla@cloudfuze.com
+CLIENT_EMAIL=raya.durai@cloudfuze.com
 DEAL_DESK_EMAIL=
 
 # CloudFuze Signer Name (for signature forms - left side)
