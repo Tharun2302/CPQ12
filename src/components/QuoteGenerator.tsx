@@ -370,9 +370,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [approvalEmails, setApprovalEmails] = useState({
-    role1: (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'abhilasha.kandakatla@cloudfuze.com',
-    role2: (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'anush.dasari@cloudfuze.com',
-    role3: (import.meta.env.VITE_APPROVAL_CLIENT_EMAIL as string) || 'abhilasha.kandakatla@cloudfuze.com',
+    role1: (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || 'raya.durai@cloudfuze.com',
+    role2: (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || 'sakshi.priya@cloudfuze.com',
+    role3: (import.meta.env.VITE_APPROVAL_CLIENT_EMAIL as string) || 'raya.durai@cloudfuze.com',
     role4: (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || ''
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);

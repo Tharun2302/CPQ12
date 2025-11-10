@@ -49,6 +49,26 @@ interface DocumentStatusData {
   };
 }
 
+interface BoldSignDocument {
+  documentId: string;
+  documentName: string;
+  status: string;
+  createdDate: string;
+  modifiedDate?: string;
+  expiryDate?: string;
+  completionPercentage: number;
+  totalSigners: number;
+  completedSigners: number;
+  signers: Array<{
+    name: string;
+    email: string;
+    signedOn?: string;
+    status: string;
+  }>;
+  lastEvent?: string;
+  lastEventAt?: string;
+}
+
 interface WebhookLog {
   id: string;
   eventType: string;
@@ -63,12 +83,76 @@ interface WebhookLog {
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 const DocumentStatusDashboard: React.FC = () => {
+  const [allDocuments, setAllDocuments] = useState<BoldSignDocument[]>([]);
+  const [filteredDocuments, setFilteredDocuments] = useState<BoldSignDocument[]>([]);
+  const [activeFilter, setActiveFilter] = useState<string>('All');
   const [documentId, setDocumentId] = useState('');
   const [statusData, setStatusData] = useState<DocumentStatusData | null>(null);
   const [recentEvents, setRecentEvents] = useState<WebhookLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true); // Auto-refresh enabled by default
+
+  // Fetch all BoldSign documents
+  const fetchAllDocuments = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${BACKEND_URL}/api/boldsign/all-documents`);
+      const result = await response.json();
+      
+      if (result.success) {
+        setAllDocuments(result.data.documents);
+        filterDocuments(result.data.documents, activeFilter);
+        setError('');
+      } else {
+        setError(result.data?.message || 'Failed to fetch documents');
+      }
+    } catch (err) {
+      console.error('Error fetching documents:', err);
+      setError('Failed to connect to server');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter documents by status
+  const filterDocuments = (docs: BoldSignDocument[], filter: string) => {
+    let filtered = docs;
+    
+    switch (filter) {
+      case 'Waiting for me':
+        filtered = docs.filter(d => d.status === 'InProgress' || d.status === 'WaitingForMe');
+        break;
+      case 'Waiting for others':
+        filtered = docs.filter(d => d.status === 'WaitingForOthers');
+        break;
+      case 'Needs attention':
+        filtered = docs.filter(d => d.status === 'NeedsAttention');
+        break;
+      case 'Completed':
+        filtered = docs.filter(d => d.status === 'Completed');
+        break;
+      case 'Declined':
+        filtered = docs.filter(d => d.status === 'Declined');
+        break;
+      case 'Expired':
+        filtered = docs.filter(d => d.status === 'Expired');
+        break;
+      case 'Revoked':
+        filtered = docs.filter(d => d.status === 'Revoked');
+        break;
+      default:
+        filtered = docs;
+    }
+    
+    setFilteredDocuments(filtered);
+  };
+
+  // Handle filter change
+  const handleFilterChange = (filter: string) => {
+    setActiveFilter(filter);
+    filterDocuments(allDocuments, filter);
+  };
 
   // Fetch document status
   const fetchDocumentStatus = async (docId: string) => {
@@ -119,12 +203,27 @@ const DocumentStatusDashboard: React.FC = () => {
     }
   }, [autoRefresh, documentId]);
 
-  // Initial load of recent events
+  // Initial load of all data
   useEffect(() => {
+    fetchAllDocuments();
     fetchRecentEvents();
-    const interval = setInterval(fetchRecentEvents, 15000); // Refresh every 15 seconds
-    return () => clearInterval(interval);
   }, []);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (autoRefresh) {
+      const interval = setInterval(() => {
+        fetchAllDocuments();
+        fetchRecentEvents();
+      }, 10000); // Refresh every 10 seconds
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh]);
+
+  // Filter documents when allDocuments changes
+  useEffect(() => {
+    filterDocuments(allDocuments, activeFilter);
+  }, [allDocuments, activeFilter]);
 
   // Get status badge
   const getStatusBadge = (status: string) => {
@@ -167,67 +266,339 @@ const DocumentStatusDashboard: React.FC = () => {
     );
   };
 
+  // Get filter counts
+  const getFilterCounts = () => {
+    return {
+      all: allDocuments.length,
+      waitingForMe: allDocuments.filter(d => d.status === 'InProgress' || d.status === 'WaitingForMe').length,
+      waitingForOthers: allDocuments.filter(d => d.status === 'WaitingForOthers').length,
+      needsAttention: allDocuments.filter(d => d.status === 'NeedsAttention').length,
+      completed: allDocuments.filter(d => d.status === 'Completed').length,
+      declined: allDocuments.filter(d => d.status === 'Declined').length,
+      expired: allDocuments.filter(d => d.status === 'Expired').length,
+      revoked: allDocuments.filter(d => d.status === 'Revoked').length,
+      scheduled: allDocuments.filter(d => d.status === 'Scheduled').length
+    };
+  };
+
+  const counts = getFilterCounts();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-6">
+    <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                <FileText className="w-8 h-8 text-blue-600" />
-                Document Status Dashboard
-              </h1>
-              <p className="text-gray-600 mt-1">Real-time BoldSign document tracking</p>
-            </div>
-            <button
-              onClick={fetchRecentEvents}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </button>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+              <FileText className="w-7 h-7 text-blue-600" />
+              Document Status Dashboard
+            </h1>
+            <p className="text-gray-600 mt-1 text-sm">Real-time BoldSign document tracking</p>
           </div>
-
-          {/* Search Bar */}
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={documentId}
-              onChange={(e) => setDocumentId(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && fetchDocumentStatus(documentId)}
-              placeholder="Enter BoldSign Document ID"
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <button
-              onClick={() => fetchDocumentStatus(documentId)}
-              disabled={loading || !documentId.trim()}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
-            >
-              {loading ? 'Loading...' : 'Check Status'}
-            </button>
-            <label className="flex items-center gap-2 px-4 py-3 bg-gray-100 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 checked={autoRefresh}
                 onChange={(e) => setAutoRefresh(e.target.checked)}
                 className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-sm font-medium text-gray-700">Auto-refresh</span>
+              Auto-refresh (10s)
             </label>
+            <button
+              onClick={() => {
+                fetchAllDocuments();
+                fetchRecentEvents();
+              }}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-yellow-800 font-medium">Configuration Note</p>
+              <p className="text-yellow-700 text-sm mt-1">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Main Container */}
+        <div className="bg-white rounded-lg shadow">
+          {/* Filter Tabs */}
+          <div className="border-b border-gray-200 px-6 pt-4">
+            <div className="flex items-center gap-2 overflow-x-auto pb-3">
+              <button
+                onClick={() => handleFilterChange('All')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'All'
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => handleFilterChange('Waiting for me')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'Waiting for me'
+                    ? 'bg-purple-100 text-purple-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Waiting for me
+                {counts.waitingForMe > 0 && (
+                  <span className="ml-2 px-2 py-0.5 bg-purple-200 text-purple-900 rounded-full text-xs">
+                    {counts.waitingForMe}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => handleFilterChange('Waiting for others')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'Waiting for others'
+                    ? 'bg-blue-100 text-blue-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Waiting for others
+                {counts.waitingForOthers > 0 && (
+                  <span className="ml-2 px-2 py-0.5 bg-blue-200 text-blue-900 rounded-full text-xs">
+                    {counts.waitingForOthers}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => handleFilterChange('Needs attention')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'Needs attention'
+                    ? 'bg-yellow-100 text-yellow-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Needs attention
+                {counts.needsAttention > 0 && (
+                  <span className="ml-2 px-2 py-0.5 bg-yellow-200 text-yellow-900 rounded-full text-xs">
+                    {counts.needsAttention}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => handleFilterChange('Completed')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'Completed'
+                    ? 'bg-green-100 text-green-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Completed
+                {counts.completed > 0 && (
+                  <span className="ml-2 px-2 py-0.5 bg-green-200 text-green-900 rounded-full text-xs">
+                    {counts.completed}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => handleFilterChange('Declined')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'Declined'
+                    ? 'bg-red-100 text-red-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Declined
+              </button>
+              <button
+                onClick={() => handleFilterChange('Expired')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'Expired'
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Expired
+              </button>
+              <button
+                onClick={() => handleFilterChange('Revoked')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeFilter === 'Revoked'
+                    ? 'bg-orange-100 text-orange-900'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Revoked
+              </button>
+            </div>
           </div>
 
-          {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-red-800">{error}</p>
-            </div>
-          )}
+          {/* Documents Table */}
+          <div className="p-6">
+            {loading && filteredDocuments.length === 0 ? (
+              <div className="text-center py-12">
+                <RefreshCw className="w-12 h-12 text-gray-300 mx-auto mb-4 animate-spin" />
+                <p className="text-gray-600">Loading documents...</p>
+              </div>
+            ) : filteredDocuments.length === 0 ? (
+              <div className="text-center py-12">
+                <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-600 font-medium">No documents found</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  {activeFilter === 'All' 
+                    ? 'Documents will appear here automatically after being sent for signatures'
+                    : `No documents in "${activeFilter}" status`}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden">
+                <table className="w-full">
+                  <thead className="border-b border-gray-200">
+                    <tr>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Title</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Status</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Last Activity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDocuments.map((doc) => (
+                      <tr key={doc.documentId} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="py-4 px-4">
+                          <div>
+                            <p className="font-medium text-gray-900">{doc.documentName}</p>
+                            <div className="flex items-center gap-1 mt-1 text-sm text-gray-600">
+                              <span className="text-xs">↗</span>
+                              <span>To: {doc.signers.map(s => s.name || s.email).join(', ')}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center gap-2">
+                            {doc.status === 'Completed' ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-green-100">
+                                  <CheckCircle className="w-4 h-4 text-green-600" />
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">Completed</p>
+                                  <p className="text-xs text-gray-600">
+                                    Signed by all {doc.totalSigners} signer{doc.totalSigners > 1 ? 's' : ''}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : doc.status === 'InProgress' ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100">
+                                  <Clock className="w-4 h-4 text-blue-600" />
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">In Progress</p>
+                                  <p className="text-xs text-gray-600">
+                                    {doc.completedSigners}/{doc.totalSigners} signed
+                                  </p>
+                                </div>
+                              </div>
+                            ) : doc.status === 'Declined' ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-red-100">
+                                  <XCircle className="w-4 h-4 text-red-600" />
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">Declined</p>
+                                  <p className="text-xs text-gray-600">Signing declined</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100">
+                                  <FileText className="w-4 h-4 text-gray-600" />
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">{doc.status}</p>
+                                  <p className="text-xs text-gray-600">
+                                    {doc.completedSigners}/{doc.totalSigners} signed
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div>
+                            <p className="text-sm text-gray-900">
+                              {doc.lastEventAt 
+                                ? new Date(doc.lastEventAt).toLocaleString('en-US', {
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })
+                                : new Date(doc.createdDate).toLocaleString('en-US', {
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })
+                              }
+                            </p>
+                            {doc.lastEvent && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                {doc.lastEvent === 'DocumentSigned' && `${doc.signers.find(s => s.signedOn)?.name || 'Someone'} has signed the document`}
+                                {doc.lastEvent === 'DocumentCompleted' && 'All signers have completed'}
+                                {doc.lastEvent === 'DocumentViewed' && 'Document was viewed'}
+                                {doc.lastEvent === 'DocumentDeclined' && 'Document was declined'}
+                                {!['DocumentSigned', 'DocumentCompleted', 'DocumentViewed', 'DocumentDeclined'].includes(doc.lastEvent) && doc.lastEvent}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Webhook Events (Optional - for debugging) */}
+        {recentEvents.length > 0 && (
+          <div className="mt-6 bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Webhook Events</h2>
+            <div className="space-y-2">
+              {recentEvents.slice(0, 5).map((event) => (
+                <div key={event.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      event.eventType === 'DocumentCompleted' ? 'bg-green-100 text-green-800' :
+                      event.eventType === 'DocumentSigned' ? 'bg-blue-100 text-blue-800' :
+                      event.eventType === 'DocumentViewed' ? 'bg-purple-100 text-purple-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {event.eventType}
+                    </span>
+                    <span className="text-sm text-gray-600">{event.documentId.substring(0, 12)}...</span>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Document Status Details */}
         {statusData && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
             {/* Main Status Card */}
             <div className="lg:col-span-2 bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Document Details</h2>
@@ -403,77 +774,6 @@ const DocumentStatusDashboard: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* Recent Webhook Events */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Webhook Events</h2>
-          
-          {recentEvents.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600">No webhook events received yet</p>
-              <p className="text-sm text-gray-500 mt-2">
-                Events will appear here when BoldSign sends webhook notifications
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Event Type</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Document ID</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Signer</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Timestamp</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentEvents.map((event) => (
-                    <tr key={event.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-4">{getEventBadge(event.eventType)}</td>
-                      <td className="py-3 px-4">
-                        <button
-                          onClick={() => {
-                            setDocumentId(event.documentId);
-                            fetchDocumentStatus(event.documentId);
-                          }}
-                          className="text-blue-600 hover:text-blue-800 font-mono text-sm hover:underline"
-                        >
-                          {event.documentId.substring(0, 16)}...
-                        </button>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {event.signerName || 'N/A'}
-                          </p>
-                          <p className="text-xs text-gray-600">{event.signerEmail || '-'}</p>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-600">
-                        {new Date(event.timestamp).toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4">
-                        {event.processed ? (
-                          <span className="inline-flex items-center gap-1 text-green-600 text-sm">
-                            <CheckCircle className="w-4 h-4" />
-                            Processed
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-yellow-600 text-sm">
-                            <Clock className="w-4 h-4" />
-                            Pending
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

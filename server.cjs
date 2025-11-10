@@ -4502,9 +4502,10 @@ app.post('/api/boldsign/deny-signature', async (req, res) => {
 });
 
 /**
- * Check BoldSign document status
+ * Check BoldSign document status directly from BoldSign API
+ * This endpoint is for direct API queries (not used by dashboard)
  */
-app.get('/api/boldsign/document-status/:documentId', async (req, res) => {
+app.get('/api/boldsign/document-properties/:documentId', async (req, res) => {
   try {
     const { documentId } = req.params;
 
@@ -4535,7 +4536,7 @@ app.get('/api/boldsign/document-status/:documentId', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to check document status',
-      error: error.message
+      error: error.response?.data || error.message
     });
   }
 });
@@ -5857,6 +5858,181 @@ app.get('/api/boldsign/document-status/:documentId', async (req, res) => {
   } catch (error) {
     console.error('❌ Error retrieving document status:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Get all documents from BoldSign API (like BoldSign dashboard)
+ * Fetches documents directly from BoldSign API and enriches with local webhook data
+ */
+app.get('/api/boldsign/all-documents', async (req, res) => {
+  try {
+    const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY;
+    if (!BOLDSIGN_API_KEY || BOLDSIGN_API_KEY === 'your-boldsign-api-key-here') {
+      console.log('⚠️ BoldSign API key not configured - returning empty list');
+      return res.json({
+        success: true,
+        data: {
+          documents: [],
+          total: 0,
+          message: 'BoldSign API key not configured'
+        }
+      });
+    }
+
+    console.log('📡 Fetching all documents from BoldSign API...');
+    console.log('🔑 Using API Key:', BOLDSIGN_API_KEY.substring(0, 10) + '...');
+    
+    // Fetch documents from BoldSign API
+    const response = await axios.get(
+      'https://api.boldsign.com/v1/document/list',
+      {
+        headers: {
+          'X-API-KEY': BOLDSIGN_API_KEY
+        },
+        params: {
+          Page: 1,
+          PageSize: 100 // Get last 100 documents
+          // Don't include Status parameter to get all documents
+        }
+      }
+    );
+
+    console.log('✅ BoldSign API response received');
+    
+    // BoldSign API returns documents in 'result' array
+    const boldSignDocuments = response.data?.result || response.data?.pageDetails || [];
+    console.log(`📄 Found ${boldSignDocuments.length} documents in BoldSign`);
+
+    // Enrich with local webhook data if available
+    let enrichedDocuments = boldSignDocuments;
+    
+    if (db) {
+      const signatureStatusCollection = db.collection('signature_status');
+      const webhookLogsCollection = db.collection('boldsign_webhook_logs');
+      
+      enrichedDocuments = await Promise.all(
+        boldSignDocuments.map(async (doc) => {
+          // Get signature status from local DB
+          const signatures = await signatureStatusCollection
+            .find({ documentId: doc.documentId })
+            .toArray();
+          
+          // Get latest webhook events
+          const latestEvent = await webhookLogsCollection
+            .findOne(
+              { documentId: doc.documentId },
+              { sort: { timestamp: -1 } }
+            );
+          
+          // Calculate completion percentage
+          const totalSigners = doc.signers?.length || 0;
+          const completedSigners = doc.signers?.filter(s => s.signedOn)?.length || 0;
+          const completionPercentage = totalSigners > 0 
+            ? Math.round((completedSigners / totalSigners) * 100) 
+            : 0;
+          
+          return {
+            documentId: doc.documentId,
+            documentName: doc.messageTitle || doc.documentName || doc.fileName,
+            status: doc.status,
+            createdDate: doc.createdDate || doc.sentDate,
+            modifiedDate: doc.activityDate || doc.modifiedDate,
+            expiryDate: doc.expiryDate,
+            completionPercentage,
+            totalSigners,
+            completedSigners,
+            signers: (doc.signerDetails || doc.signers || []).map(s => ({
+              name: s.signerName,
+              email: s.signerEmail,
+              signedOn: s.status === 'Completed' ? (s.signedOn || new Date().toISOString()) : null,
+              status: s.status === 'Completed' ? 'Completed' : s.status === 'NotCompleted' ? 'Waiting for me' : s.status
+            })),
+            lastEvent: latestEvent?.eventType || null,
+            lastEventAt: latestEvent?.timestamp || (doc.activityDate ? new Date(doc.activityDate * 1000).toISOString() : null),
+            localSignatures: signatures
+          };
+        })
+      );
+    }
+
+    res.json({
+      success: true,
+      data: {
+        documents: enrichedDocuments,
+        total: enrichedDocuments.length
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching documents from BoldSign:', error.response?.data || error.message);
+    
+    // Fallback: try to get from local database
+    if (db) {
+      console.log('⚠️ Falling back to local database...');
+      try {
+        const webhookLogsCollection = db.collection('boldsign_webhook_logs');
+        const signatureStatusCollection = db.collection('signature_status');
+        
+        // Get unique document IDs from webhook logs
+        const uniqueDocIds = await webhookLogsCollection.distinct('documentId');
+        console.log(`📄 Found ${uniqueDocIds.length} documents in local database`);
+        
+        const documents = await Promise.all(
+          uniqueDocIds.map(async (documentId) => {
+            const latestLog = await webhookLogsCollection.findOne(
+              { documentId },
+              { sort: { timestamp: -1 } }
+            );
+            
+            const signatures = await signatureStatusCollection
+              .find({ documentId })
+              .toArray();
+            
+            const totalSigners = signatures.length;
+            const completedSigners = signatures.filter(s => s.status === 'signed').length;
+            const completionPercentage = totalSigners > 0 
+              ? Math.round((completedSigners / totalSigners) * 100) 
+              : 0;
+            
+            return {
+              documentId,
+              documentName: latestLog?.documentName || 'Agreement',
+              status: latestLog?.status || 'InProgress',
+              createdDate: latestLog?.timestamp,
+              completionPercentage,
+              totalSigners,
+              completedSigners,
+              signers: signatures.map(s => ({
+                name: s.signerName,
+                email: s.signerEmail,
+                signedOn: s.signedAt,
+                status: s.status === 'signed' ? 'Completed' : 'Waiting for me'
+              })),
+              lastEvent: latestLog?.eventType,
+              lastEventAt: latestLog?.timestamp
+            };
+          })
+        );
+        
+        return res.json({
+          success: true,
+          data: {
+            documents: documents.filter(d => d !== null),
+            total: documents.length,
+            source: 'local_database'
+          }
+        });
+      } catch (fallbackError) {
+        console.error('❌ Fallback also failed:', fallbackError);
+      }
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.response?.data?.message || error.message,
+      details: 'Could not fetch documents from BoldSign API or local database'
+    });
   }
 });
 
