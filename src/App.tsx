@@ -1338,6 +1338,7 @@ function App() {
         (combination === 'google-mydrive-to-onedrive' && name.includes('google') && name.includes('mydrive') && name.includes('onedrive')) ||
         (combination === 'google-mydrive-to-sharepoint' && name.includes('google') && name.includes('mydrive') && name.includes('sharepoint')) ||
         (combination === 'google-mydrive-to-google-sharedrive' && name.includes('google') && name.includes('mydrive') && name.includes('sharedrive')) ||
+        (combination === 'google-mydrive-to-google-mydrive' && name.includes('google') && name.includes('mydrive') && name.includes('google') && name.includes('mydrive')) ||
         (combination === 'overage-agreement' && name.includes('overage') && name.includes('agreement'));
       
       console.log('🔍 Name-based template matching:', { 

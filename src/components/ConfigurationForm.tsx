@@ -1018,6 +1018,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
                           { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
                           { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
                           { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                         ];
                         

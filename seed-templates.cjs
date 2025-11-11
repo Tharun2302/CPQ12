@@ -517,6 +517,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'google', 'mydrive', 'sharedrive', 'content', 'migration', 'enterprise']
     },
+    // GOOGLE MYDRIVE TO GOOGLE MYDRIVE templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE Standard',
+      description: 'Standard template for Google MyDrive to Google MyDrive migration - suitable for medium to large projects',
+      fileName: 'google-mydrive-to-google-mydrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-google-mydrive',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'mydrive', 'content', 'migration']
+    },
+    {
+      name: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE Advanced',
+      description: 'Advanced template for Google MyDrive to Google MyDrive migration - suitable for large enterprise projects',
+      fileName: 'google-mydrive-to-google-mydrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-google-mydrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'mydrive', 'content', 'migration', 'enterprise']
+    },
     // OVERAGE AGREEMENT - Single template for BOTH migration types
     {
       name: 'OVERAGE AGREEMENT Messaging',
