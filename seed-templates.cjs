@@ -412,6 +412,111 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'google', 'sharedrive', 'sharepoint', 'content', 'microsoft', 'migration', 'enterprise']
     },
+    // GOOGLE MYDRIVE TO DROPBOX templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE MYDRIVE TO DROPBOX Standard',
+      description: 'Standard template for Google MyDrive to Dropbox migration - suitable for medium to large projects',
+      fileName: 'google-mydrive-to-dropbox-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-dropbox',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'mydrive', 'dropbox', 'content', 'migration']
+    },
+    {
+      name: 'GOOGLE MYDRIVE TO DROPBOX Advanced',
+      description: 'Advanced template for Google MyDrive to Dropbox migration - suitable for large enterprise projects',
+      fileName: 'google-mydrive-to-dropbox-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-dropbox',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'mydrive', 'dropbox', 'content', 'migration', 'enterprise']
+    },
+    // GOOGLE MYDRIVE TO EGNYTE templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE MYDRIVE TO EGNYTE Standard',
+      description: 'Standard template for Google MyDrive to Egnyte migration - suitable for medium to large projects',
+      fileName: 'google-mydrive-to-egnyte-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-egnyte',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'mydrive', 'egnyte', 'content', 'migration']
+    },
+    {
+      name: 'GOOGLE MYDRIVE TO EGNYTE Advanced',
+      description: 'Advanced template for Google MyDrive to Egnyte migration - suitable for large enterprise projects',
+      fileName: 'google-mydrive-to-egnyte-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-egnyte',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'mydrive', 'egnyte', 'content', 'migration', 'enterprise']
+    },
+    // GOOGLE MYDRIVE TO ONEDRIVE templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE MYDRIVE TO ONEDRIVE Standard',
+      description: 'Standard template for Google MyDrive to OneDrive migration - suitable for medium to large projects',
+      fileName: 'google-mydrive-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'mydrive', 'onedrive', 'content', 'microsoft', 'migration']
+    },
+    {
+      name: 'GOOGLE MYDRIVE TO ONEDRIVE Advanced',
+      description: 'Advanced template for Google MyDrive to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'google-mydrive-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'mydrive', 'onedrive', 'content', 'microsoft', 'migration', 'enterprise']
+    },
+    // GOOGLE MYDRIVE TO SHAREPOINT templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE MYDRIVE TO SHAREPOINT Standard',
+      description: 'Standard template for Google MyDrive to SharePoint migration - suitable for medium to large projects',
+      fileName: 'google-mydrive-to-sharepoint-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-sharepoint',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'mydrive', 'sharepoint', 'content', 'microsoft', 'migration']
+    },
+    {
+      name: 'GOOGLE MYDRIVE TO SHAREPOINT Advanced',
+      description: 'Advanced template for Google MyDrive to SharePoint migration - suitable for large enterprise projects',
+      fileName: 'google-mydrive-to-sharepoint-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-sharepoint',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'mydrive', 'sharepoint', 'content', 'microsoft', 'migration', 'enterprise']
+    },
+    // GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE templates (Standard & Advanced only)
+    {
+      name: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE Standard',
+      description: 'Standard template for Google MyDrive to Google Shared Drive migration - suitable for medium to large projects',
+      fileName: 'google-mydrive-to-google-sharedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-google-sharedrive',
+      planType: 'standard',
+      keywords: ['standard', 'google', 'mydrive', 'sharedrive', 'content', 'migration']
+    },
+    {
+      name: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE Advanced',
+      description: 'Advanced template for Google MyDrive to Google Shared Drive migration - suitable for large enterprise projects',
+      fileName: 'google-mydrive-to-google-sharedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'google-mydrive-to-google-sharedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'google', 'mydrive', 'sharedrive', 'content', 'migration', 'enterprise']
+    },
     // OVERAGE AGREEMENT - Single template for BOTH migration types
     {
       name: 'OVERAGE AGREEMENT Messaging',

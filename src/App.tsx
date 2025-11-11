@@ -15,7 +15,6 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
 import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDashboard';
 import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
-import TeamApprovalDashboard from './components/TeamApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
 import { BACKEND_URL } from './config/api';
 import { initClarity } from './analytics/clarity';
@@ -1334,6 +1333,11 @@ function App() {
         (combination === 'google-sharedrive-to-google-sharedrive' && name.includes('google') && name.includes('sharedrive') && name.includes('google') && name.includes('sharedrive')) ||
         (combination === 'google-sharedrive-to-onedrive' && name.includes('google') && name.includes('sharedrive') && name.includes('onedrive')) ||
         (combination === 'google-sharedrive-to-sharepoint' && name.includes('google') && name.includes('sharedrive') && name.includes('sharepoint')) ||
+        (combination === 'google-mydrive-to-dropbox' && name.includes('google') && name.includes('mydrive') && name.includes('dropbox')) ||
+        (combination === 'google-mydrive-to-egnyte' && name.includes('google') && name.includes('mydrive') && name.includes('egnyte')) ||
+        (combination === 'google-mydrive-to-onedrive' && name.includes('google') && name.includes('mydrive') && name.includes('onedrive')) ||
+        (combination === 'google-mydrive-to-sharepoint' && name.includes('google') && name.includes('mydrive') && name.includes('sharepoint')) ||
+        (combination === 'google-mydrive-to-google-sharedrive' && name.includes('google') && name.includes('mydrive') && name.includes('sharedrive')) ||
         (combination === 'overage-agreement' && name.includes('overage') && name.includes('agreement'));
       
       console.log('🔍 Name-based template matching:', { 
@@ -1712,9 +1716,6 @@ function App() {
               <ProtectedRoute>
                 <ApprovalDashboard />
               </ProtectedRoute>
-            } />
-            <Route path="/team-approval" element={
-              <TeamApprovalDashboard />
             } />
             <Route path="/technical-approval" element={
               <TechnicalTeamApprovalDashboard 
