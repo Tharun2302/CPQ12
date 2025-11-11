@@ -146,14 +146,14 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     
     try {
       setHasTakenAction(true);
-      // Update workflow step
-      await updateWorkflowStep(workflowId, 1, { status: 'approved' });
+      // Update workflow step (Technical Team is now step 2)
+      await updateWorkflowStep(workflowId, 2, { status: 'approved' });
       // Optimistically reflect status in the open modal to avoid stale UI
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'in_progress',
-        currentStep: 2,
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
+        currentStep: 3,
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
       // Get workflow data to send Legal Team email
@@ -214,7 +214,7 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
     setIsDenying(true);
     try {
       setHasTakenAction(true);
-      await updateWorkflowStep(workflowId, 1, { 
+      await updateWorkflowStep(workflowId, 2, { 
         status: 'denied',
         comments: commentText.trim()
       });
@@ -222,9 +222,13 @@ const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'denied',
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Technical Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
       } : prev);
-      alert('❌ Workflow denied successfully!');
+      {
+        const wf = workflows.find(w => w.id === workflowId) || selectedWorkflow;
+        const creatorEmail = (wf as any)?.creatorEmail || 'anushreddydasari@gmail.com';
+        alert(`❌ Workflow denied successfully!\n📧 The workflow creator has been notified at ${creatorEmail}.`);
+      }
       
       // Reset comment and close modals - state is already updated by updateWorkflowStep
       setCommentText('');

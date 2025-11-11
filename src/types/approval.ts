@@ -4,6 +4,8 @@ export interface ApprovalWorkflow {
   documentType: string;
   clientName: string;
   amount: number;
+  // Email address of the user who initiated the workflow
+  creatorEmail?: string;
   status: 'pending' | 'approved' | 'denied' | 'in_progress';
   currentStep: number;
   totalSteps: number;
@@ -17,6 +19,8 @@ export interface ApprovalStep {
   role: string;
   email: string;
   status: 'pending' | 'approved' | 'denied';
+  // For Team Approval: SMB/AM/ENT label (or other step-specific info)
+  group?: string;
   comments?: string;
   timestamp?: string;
 }

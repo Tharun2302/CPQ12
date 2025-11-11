@@ -76,7 +76,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
   };
 
   const tabs = [
-    { id: 'queue', label: 'My Approval Queue', icon: Crown, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 2).length },
+    { id: 'queue', label: 'My Approval Queue', icon: Crown, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 3).length },
     { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
 
@@ -147,14 +147,14 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
     
     try {
       setHasTakenAction(true);
-      // Update workflow step
-      await updateWorkflowStep(workflowId, 2, { status: 'approved' });
+      // Update workflow step (Legal Team is now step 3)
+      await updateWorkflowStep(workflowId, 3, { status: 'approved' });
       // Optimistically reflect status in modal
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'in_progress',
-        currentStep: 3,
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Legal Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
+        currentStep: 4,
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 3 && s.role === 'Legal Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
       // Get workflow data to send Deal Desk email
@@ -183,7 +183,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
         if (result.success) {
           // Finalize workflow: mark step 3 as approved and note notification
           try {
-            await updateWorkflowStep(workflowId, 3, { status: 'approved', comments: 'Notified' });
+            await updateWorkflowStep(workflowId, 4, { status: 'approved', comments: 'Notified' });
           } catch (e) {
             // best-effort; do not block UI
           }
@@ -191,7 +191,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
         } else {
           try {
             // Even if email fails, approvals are complete; mark workflow as approved
-            await updateWorkflowStep(workflowId, 3, { status: 'approved', comments: 'Notification failed' });
+            await updateWorkflowStep(workflowId, 4, { status: 'approved', comments: 'Notification failed' });
           } catch (e) {}
           alert('✅ Workflow approved but Deal Desk email failed.\nPlease notify Deal Desk manually.');
         }
@@ -225,7 +225,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
     setIsDenying(true);
     try {
       setHasTakenAction(true);
-      await updateWorkflowStep(workflowId, 2, { 
+      await updateWorkflowStep(workflowId, 3, { 
         status: 'denied',
         comments: commentText.trim()
       });
@@ -233,9 +233,13 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'denied',
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Legal Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 3 && s.role === 'Legal Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
       } : prev);
-      alert('❌ Workflow denied successfully!');
+      {
+        const wf = workflows.find(w => w.id === workflowId) || selectedWorkflow;
+        const creatorEmail = (wf as any)?.creatorEmail || 'anushreddydasari@gmail.com';
+        alert(`❌ Workflow denied successfully!\n📧 The workflow creator has been notified at ${creatorEmail}.`);
+      }
       
       // Reset comment and close modals - state is already updated by updateWorkflowStep
       setCommentText('');
@@ -277,7 +281,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       }
 
       console.log('💬 Legal Team Saving comment for workflow:', commentWorkflowId);
-      updateWorkflowStep(commentWorkflowId, 2, { 
+      updateWorkflowStep(commentWorkflowId, 3, { 
         comments: commentText.trim(),
         timestamp: new Date().toISOString()
       });
@@ -285,7 +289,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       setSelectedWorkflow((prev: any) => prev && prev.id === commentWorkflowId ? {
         ...prev,
         workflowSteps: prev.workflowSteps?.map((s: any) =>
-          s.step === 2 && s.role === 'Legal Team'
+          s.step === 3 && s.role === 'Legal Team'
             ? { ...s, comments: commentText.trim(), timestamp: new Date().toISOString() }
             : s
         )
@@ -400,7 +404,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
     // Filter workflows for Legal Team-specific view
     const filteredWorkflows = workflows.filter(workflow => {
       switch (activeTab) {
-        case 'queue': return (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
+        case 'queue': return (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 3;
         case 'status': return true;
         default: return true;
       }
@@ -531,30 +535,30 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-gray-900">${workflow.amount.toLocaleString()}</p>
-                  <p className="text-sm text-gray-500">Step {workflow.currentStep} of 3</p>
+                  <p className="text-sm text-gray-500">Step {workflow.currentStep} of {workflow.totalSteps || 4}</p>
                 </div>
               </div>
               
               <div className="mb-4">
                 <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                   <span>Progress</span>
-                  <span>{Math.round((workflow.currentStep / 3) * 100)}%</span>
+                  <span>{Math.round((workflow.currentStep / (workflow.totalSteps || 4)) * 100)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(workflow.currentStep / 3) * 100}%` }}
+                    style={{ width: `${(workflow.currentStep / (workflow.totalSteps || 4)) * 100}%` }}
                   ></div>
                 </div>
               </div>
 
                <div className="space-y-2 mb-4">
                  {/* Only show the current step for Legal Team in My Approval Queue */}
-                 {workflow.workflowSteps
-                   .filter((step: any) => step.step === 2 && step.role === 'Legal Team')
+                {workflow.workflowSteps
+                  .filter((step: any) => step.step === 3 && step.role === 'Legal Team')
                    .map((step: any) => {
                      const StepIcon = getStatusIcon(step.status);
-                     const isMyStep = step.step === 2 && step.role === 'Legal Team' && isMyTurn;
+                    const isMyStep = step.step === 3 && step.role === 'Legal Team' && isMyTurn;
                      return (
                        <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-purple-50 border border-purple-200' : ''}`}>
                          <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
@@ -743,9 +747,9 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                  (() => {
                  // Use latest workflow state from store to avoid stale selectedWorkflow after actions
                  const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
-                 // Check if it's still the user's turn (Legal Team, Step 2, pending status)
-                 const legalStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 2 && step.role === 'Legal Team');
-                 const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 2 && legalStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
+                 // Check if it's still the user's turn (Legal Team, Step 3, pending status)
+                 const legalStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Legal Team');
+                 const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 3 && legalStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
                    
                    return isMyTurn ? (
                      <div className="flex gap-3">

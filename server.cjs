@@ -187,6 +187,54 @@ if (process.env.SENDGRID_API_KEY) {
 const isEmailConfigured = process.env.SENDGRID_API_KEY;
 
 // Email template functions
+function generateTeamEmailHTML(workflowData) {
+  const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Team Approval Required</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #0ea5e9, #0369a1); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>🧩 Team Approval Required${teamLabel ? ` - ${teamLabel}` : ''}</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Team${teamLabel ? ` (${teamLabel})` : ''},</h2>
+          
+          <p>A new document requires your <strong>Team Approval</strong>:</p>
+          
+          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📄 Document Details</h3>
+            ${teamLabel ? `<p><strong>Team Group:</strong> ${teamLabel}</p>` : ''}
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/team-approval?workflow=${workflowData.workflowId}" 
+               style="background: #0ea5e9; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+          </div>
+          
+          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
 function generateManagerEmailHTML(workflowData) {
   return `
     <!DOCTYPE html>
@@ -380,6 +428,42 @@ function generateDealDeskEmailHTML(workflowData) {
           </div>
         </div>
         
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated notification from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// Denial notification to workflow creator
+function generateDenialEmailHTML(data) {
+  const { workflowData, deniedBy, comments } = data;
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Approval Denied - ${deniedBy}</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #EF4444, #B91C1C); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>❌ Approval Denied</h1>
+        </div>
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <p>Your approval workflow has been <strong>denied</strong> by <strong>${deniedBy}</strong>.</p>
+          <div style="background: #FEF2F2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #FCA5A5;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${Number(workflowData.amount || 0).toLocaleString()}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId || workflowData.id || ''}</p>
+          </div>
+          ${comments ? `<p><strong>Reason:</strong> ${comments}</p>` : ''}
+          <p>You can review and take action by visiting your dashboard.</p>
+        </div>
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
           <p>This is an automated notification from your approval system.</p>
         </div>
@@ -2513,6 +2597,87 @@ app.post('/api/send-manager-email', async (req, res) => {
   }
 });
 
+// Sequential email sending - Team Approval (first step)
+app.post('/api/send-team-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { teamEmail, workflowData } = req.body;
+    const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'team@company.com';
+    const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
+    
+    console.log('📧 Sending email to Team (first approval step)...');
+    console.log('Team:', resolvedTeamEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Send email to Team with attachment
+    const teamResult = await sendEmail(
+      resolvedTeamEmail,
+      `${teamLabel ? `[${teamLabel}] ` : ''}Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      generateTeamEmailHTML(workflowData),
+      attachments
+    );
+
+    console.log('✅ Team email sent:', teamResult.success);
+
+    res.json({
+      success: teamResult.success,
+      message: 'Team email sent successfully',
+      result: { role: 'Team Approval', email: resolvedTeamEmail, success: teamResult.success },
+      workflowData: workflowData,
+      attachmentCount: attachments.length
+    });
+  } catch (error) {
+    console.error('❌ Error sending Team email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send Team email',
+      error: error.message
+    });
+  }
+});
+
 // Sequential email sending - CEO only (after Manager approves)
 app.post('/api/send-ceo-email', async (req, res) => {
   try {
@@ -3450,6 +3615,34 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
       }
     } else if (stepUpdates.status === 'denied') {
       newStatus = 'denied';
+
+      // Notify the workflow creator about denial
+      try {
+        const deniedStep = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber));
+        const toEmail = workflow.creatorEmail || process.env.WORKFLOW_FALLBACK_EMAIL || 'anushreddydasari@gmail.com';
+        console.log('📧 Denial notification prepared:', {
+          to: toEmail,
+          deniedBy: deniedStep?.role,
+          workflowId: workflow.id,
+          documentId: workflow.documentId
+        });
+        if (toEmail && isEmailConfigured) {
+          const subject = `Approval Denied by ${deniedStep?.role || 'Approver'} - ${workflow.documentId}`;
+          const html = generateDenialEmailHTML({
+            workflowData: { ...workflow, workflowId: workflow.id },
+            deniedBy: deniedStep?.role || 'Approver',
+            comments: stepUpdates.comments || deniedStep?.comments || ''
+          });
+          // Best-effort; do not block the API on email failure
+          sendEmail(toEmail, subject, html)
+            .then(() => console.log('✅ Denial notification email sent to creator:', toEmail))
+            .catch(err => {
+              console.error('❌ Failed to send denial email to creator:', err);
+            });
+        }
+      } catch (e) {
+        console.error('❌ Error preparing denial notification:', e);
+      }
     }
     
     const updateData = {

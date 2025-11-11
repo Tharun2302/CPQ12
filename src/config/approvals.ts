@@ -1,9 +1,9 @@
 // Approval workflow hardcoded configuration (no .env usage)
 // Update these values to change the default recipients/steps
 
-export const APPROVAL_TECH_EMAIL = 'saitharunreddy2302@gmail.com';
-export const APPROVAL_LEGAL_EMAIL = 'saitharunreddy2302@gmail.com';
-export const APPROVAL_DEALDESK_EMAIL = 'saitharunreddy2302@gmail.com';
+export const APPROVAL_TECH_EMAIL = 'anushreddydasari@gmail.com';
+export const APPROVAL_LEGAL_EMAIL = 'anushreddydasari@gmail.com';
+export const APPROVAL_DEALDESK_EMAIL = 'anushreddydasari@gmail.com';
 
 export const APPROVAL_DEFAULT_STEPS = [
   { step: 1, role: 'Technical Team', email: APPROVAL_TECH_EMAIL },

@@ -76,8 +76,8 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   };
 
   const tabs = [
-    { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => w.status === 'pending' && w.currentStep === 1).length },
-    { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
+  { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 2).length },
+  { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
 
 
@@ -147,14 +147,14 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
     
     try {
       setHasTakenAction(true);
-      // Update workflow step
-      await updateWorkflowStep(workflowId, 1, { status: 'approved' });
+      // Update workflow step (Technical Team is now step 2)
+      await updateWorkflowStep(workflowId, 2, { status: 'approved' });
       // Optimistically reflect status in the open modal to avoid stale UI
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'in_progress',
-        currentStep: 2,
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
+        currentStep: 3,
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
       // Get workflow data to send Legal Team email
@@ -215,7 +215,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
     setIsDenying(true);
     try {
       setHasTakenAction(true);
-      await updateWorkflowStep(workflowId, 1, { 
+      await updateWorkflowStep(workflowId, 2, { 
         status: 'denied',
         comments: commentText.trim()
       });
@@ -223,9 +223,13 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
         status: 'denied',
-        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 1 && s.role === 'Technical Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
+        workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Technical Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
       } : prev);
-      alert('❌ Workflow denied successfully!');
+      {
+        const wf = workflows.find(w => w.id === workflowId) || selectedWorkflow;
+        const creatorEmail = (wf as any)?.creatorEmail || 'anushreddydasari@gmail.com';
+        alert(`❌ Workflow denied successfully!\n📧 The workflow creator has been notified at ${creatorEmail}.`);
+      }
       
       // Reset comment and close modals - state is already updated by updateWorkflowStep
       setCommentText('');
@@ -390,7 +394,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
     // Filter workflows for technical team-specific view
     const filteredWorkflows = workflows.filter(workflow => {
       switch (activeTab) {
-        case 'queue': return workflow.status === 'pending' && workflow.currentStep === 1;
+        case 'queue': return (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
         case 'status': return true;
         default: return true;
       }
@@ -520,19 +524,19 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-bold text-gray-900">${workflow.amount.toLocaleString()}</p>
-                  <p className="text-sm text-gray-500">Step {workflow.currentStep} of 3</p>
+                  <p className="text-sm text-gray-500">Step {workflow.currentStep} of {workflow.totalSteps || 4}</p>
                 </div>
               </div>
               
               <div className="mb-4">
                 <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                   <span>Progress</span>
-                  <span>{Math.round((workflow.currentStep / 3) * 100)}%</span>
+                  <span>{Math.round((workflow.currentStep / (workflow.totalSteps || 4)) * 100)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(workflow.currentStep / 3) * 100}%` }}
+                    style={{ width: `${(workflow.currentStep / (workflow.totalSteps || 4)) * 100}%` }}
                   ></div>
                 </div>
               </div>
@@ -540,10 +544,10 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
               <div className="space-y-2 mb-4">
                 {/* Only show the current step for Technical Team in My Approval Queue */}
                 {workflow.workflowSteps
-                  .filter((step: any) => step.step === 1 && step.role === 'Technical Team')
+                  .filter((step: any) => step.step === 2 && step.role === 'Technical Team')
                   .map((step: any) => {
                     const StepIcon = getStatusIcon(step.status);
-                    const isMyStep = step.step === 1 && step.role === 'Technical Team';
+                    const isMyStep = step.step === 2 && step.role === 'Technical Team';
                     return (
                       <div key={step.step} className={`flex items-center gap-3 text-sm p-2 rounded ${isMyStep ? 'bg-blue-50 border border-blue-200' : ''}`}>
                         <div className={`p-1 rounded ${getStatusColor(step.status)}`}>
@@ -732,9 +736,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                  (() => {
                   // Use latest workflow state from store to avoid stale selectedWorkflow after actions
                   const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
-                  // Check if it's still the user's turn (Technical Team, Step 1, pending status)
-                  const techStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 1 && step.role === 'Technical Team');
-                  const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 1 && techStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
+                  // Check if it's still the user's turn (Technical Team, Step 2, pending status)
+                  const techStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 2 && step.role === 'Technical Team');
+                  const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 2 && techStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
                    
                    return isMyTurn ? (
                      <div className="flex gap-3">

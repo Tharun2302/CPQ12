@@ -389,15 +389,38 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   // Use centralized hardcoded defaults
-  const defaultTechEmail = 'saitharunreddy2302@gmail.com';
-  const defaultLegalEmail = 'saitharunreddy2302@gmail.com';
-  const defaultDealDeskEmail = 'saitharunreddy2302@gmail.com';
+  const defaultTechEmail = 'anushreddydasari@gmail.com';
+  const defaultLegalEmail = 'anushreddydasari@gmail.com';
+  const defaultDealDeskEmail = 'anushreddydasari@gmail.com';
+  const workflowCreatorEmail = (() => {
+    try {
+      const raw = localStorage.getItem('cpq_user');
+      if (raw) {
+        const user = JSON.parse(raw);
+        if (user?.email) return user.email;
+      }
+    } catch {}
+    return 'anushreddydasari@gmail.com';
+  })();
   const [approvalEmails, setApprovalEmails] = useState({
     role1: defaultTechEmail,
     role2: defaultLegalEmail,
     role4: defaultDealDeskEmail
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
+  // Team Approval selection (persist across sessions)
+  const [teamSelection, setTeamSelection] = useState<string>(() => {
+    try {
+      return localStorage.getItem('cpq_team_selection') || 'SMB';
+    } catch {
+      return 'SMB';
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('cpq_team_selection', teamSelection);
+    } catch {}
+  }, [teamSelection]);
 
   const ensureDocxPreviewStylesInjected = () => {
     const existing = document.getElementById('docx-preview-css');
@@ -1534,17 +1557,33 @@ Total Price: {{total price}}`;
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       console.log('✅ PDF saved to MongoDB for workflow:', documentId);
 
-      // Create the approval workflow
+      // Resolve Team Approval group from UI selection
+      const choice = (teamSelection || 'SMB').toUpperCase();
+      const teamEmail = 'anushreddydasari@gmail.com';
+
+      // Create the approval workflow (Team Approval -> Technical -> Legal -> Deal Desk)
       const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        totalSteps: 3,
+        // Notify the workflow initiator on denial
+        creatorEmail: (() => {
+          try {
+            const userRaw = localStorage.getItem('cpq_user');
+            if (userRaw) {
+              const user = JSON.parse(userRaw);
+              if (user?.email) return user.email;
+            }
+          } catch {}
+          return 'anushreddydasari@gmail.com';
+        })(),
+        totalSteps: 4,
         workflowSteps: [
-          { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
-          { step: 2, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
-          { step: 3, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
+          { step: 1, role: 'Team Approval', email: teamEmail, status: 'pending' as const, group: choice, comments: '' },
+          { step: 2, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
+          { step: 3, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
+          { step: 4, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
         ]
       };
 
@@ -1560,28 +1599,44 @@ Total Price: {{total price}}`;
         });
       } catch {}
 
-      // Send email ONLY to Technical Team first (sequential approval)
+      // Send email to the selected Team Approval first (sequential approval)
       try {
-        const response = await fetch(`${BACKEND_URL}/api/send-manager-email`, {
+        const response = await fetch(`${BACKEND_URL}/api/send-team-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            managerEmail: approvalEmails.role1,
+            teamEmail,
             workflowData: {
               documentId: documentId,
               documentType: 'PDF Agreement',
               clientName: clientInfo.clientName || 'Unknown Client',
               amount: calculation?.totalCost || 0,
-              workflowId: newWorkflow.id
+              workflowId: newWorkflow.id,
+              // Include selected team so email can display it
+              teamGroup: choice
             }
           })
         });
 
-        const result = await response.json();
-        if (result.success) {
-          alert('✅ Approval workflow started successfully!\n📧 Technical Team has been notified. The workflow will continue sequentially when each role approves.');
+        // Be tolerant of non-JSON error responses (e.g., 404 HTML fallback)
+        let result: any = null;
+        const ct = response.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          result = await response.json();
+        } else {
+          const text = await response.text();
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+          } else {
+            result = { success: true };
+          }
+        }
+
+        if (result?.success) {
+          const creator = workflowData.creatorEmail || workflowCreatorEmail;
+          alert(`✅ Approval workflow started successfully!\n📧 Team Approval (${choice || 'SMB'}) has been notified. The workflow will continue sequentially when each role approves.\nℹ️ If any approver denies, the creator will be notified at ${creator}.`);
           setShowApprovalModal(false);
           setApprovalEmails({ role1: defaultTechEmail, role2: defaultLegalEmail, role4: defaultDealDeskEmail });
         } else {
@@ -4581,7 +4636,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
-                        onClick={handleStartApprovalWorkflow}
+                        onClick={() => setShowApprovalModal(true)}
                         disabled={isStartingWorkflow}
                         className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
                         title="Start Approval Workflow"
@@ -4891,49 +4946,34 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 </button>
               </div>
               
-              <p className="text-sm text-gray-600 mb-4">
-                Enter email addresses for the three approval roles. Technical Team and Legal Team can approve or deny. Deal Desk will be notified after approvals.
+              <p className="text-sm text-gray-600 mb-2">
+                Select the Team Approval group. Technical Team, Legal Team, and Deal Desk recipients will use the default emails.
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                If any approver denies, the workflow creator will be notified at <span className="font-medium">{workflowCreatorEmail}</span>.
               </p>
               
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Technical Team Email
+                    Team Approval Group
                   </label>
-                  <input
-                    type="email"
-                    value={approvalEmails.role1}
-                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role1: e.target.value }))}
+                  <select
+                    value={teamSelection}
+                    onChange={(e) => setTeamSelection(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="technical@company.com"
-                  />
+                  >
+                    <option value="SMB">SMB (anushreddydasari@gmail.com)</option>
+                    <option value="AM">AM (anushreddydasari@gmail.com)</option>
+                    <option value="ENT">ENT (anushreddydasari@gmail.com)</option>
+                  </select>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Legal Team Email
-                  </label>
-                  <input
-                    type="email"
-                    value={approvalEmails.role2}
-                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role2: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="legal@company.com"
-                  />
-                </div>
-                
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Deal Desk Email
-                  </label>
-                  <input
-                    type="email"
-                    value={approvalEmails.role4}
-                    onChange={(e) => setApprovalEmails(prev => ({ ...prev, role4: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="dealdesk@company.com"
-                  />
+                <div className="text-xs text-gray-500">
+                  Defaults:&nbsp;
+                  <span className="font-medium">Technical</span> {approvalEmails.role1}&nbsp;•&nbsp;
+                  <span className="font-medium">Legal</span> {approvalEmails.role2}&nbsp;•&nbsp;
+                  <span className="font-medium">Deal Desk</span> {approvalEmails.role4}
                 </div>
                 
               </div>

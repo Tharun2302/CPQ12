@@ -15,6 +15,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
 import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDashboard';
 import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
+import TeamApprovalDashboard from './components/TeamApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
 import { BACKEND_URL } from './config/api';
 import { initClarity } from './analytics/clarity';
@@ -1711,6 +1712,9 @@ function App() {
               <ProtectedRoute>
                 <ApprovalDashboard />
               </ProtectedRoute>
+            } />
+            <Route path="/team-approval" element={
+              <TeamApprovalDashboard />
             } />
             <Route path="/technical-approval" element={
               <TechnicalTeamApprovalDashboard 
