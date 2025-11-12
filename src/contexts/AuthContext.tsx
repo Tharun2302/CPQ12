@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, AuthContextType, SignUpData, AuthProvider as AuthProviderType } from '../types/auth';
+import { track } from '../analytics/clarity';
  
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -148,7 +149,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           // Update state
           setUser(data.user);
           setIsAuthenticated(true);
-         
+          
+          // Track sign-in event
+          track('user.sign_in', {
+            method: 'email',
+            email: data.user.email
+          });
+          
           return true;
         }
       }
@@ -164,6 +171,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           // Update state
           setUser(user);
           setIsAuthenticated(true);
+          
+          // Track sign-in event
+          track('user.sign_in', {
+            method: 'email',
+            email: user.email,
+            fallback: true
+          });
           
           console.log('✅ Fallback authentication successful for cpq@zenop.ai');
           return true;
@@ -185,6 +199,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           // Update state
           setUser(user);
           setIsAuthenticated(true);
+          
+          // Track sign-in event
+          track('user.sign_in', {
+            method: 'email',
+            email: user.email,
+            fallback: true
+          });
           
           console.log('✅ Fallback authentication successful for cpq@zenop.ai');
           return true;
@@ -401,6 +422,12 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                   // Update state
                   setUser(data.user);
                   setIsAuthenticated(true);
+                  
+                  // Track Microsoft sign-in event
+                  track('user.sign_in', {
+                    method: 'microsoft',
+                    email: data.user.email
+                  });
                 } else {
                   // Backend may be disabled in Render free deploys; store MS access token locally and skip backend auth
                   const user: User = {
@@ -414,6 +441,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                   localStorage.setItem('cpq_token', microsoftUser.accessToken);
                   setUser(user);
                   setIsAuthenticated(true);
+                  
+                  // Track Microsoft sign-in event (fallback)
+                  track('user.sign_in', {
+                    method: 'microsoft',
+                    email: user.email,
+                    fallback: true
+                  });
                 }
               } else {
                 // Same fallback as above if backend returns non-OK
@@ -428,6 +462,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                 localStorage.setItem('cpq_token', microsoftUser.accessToken);
                 setUser(user);
                 setIsAuthenticated(true);
+                
+                // Track Microsoft sign-in event (fallback)
+                track('user.sign_in', {
+                  method: 'microsoft',
+                  email: user.email,
+                  fallback: true
+                });
               }
             } catch (backendError) {
               console.error('Backend Microsoft auth error:', backendError);
@@ -445,6 +486,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
              
               setUser(user);
               setIsAuthenticated(true);
+              
+              // Track Microsoft sign-in event (fallback)
+              track('user.sign_in', {
+                method: 'microsoft',
+                email: user.email,
+                fallback: true
+              });
             }
            
             // Cleanup PKCE artifacts

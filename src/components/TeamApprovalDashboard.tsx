@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle } from 'lucide-react';
+import { track } from '../analytics/clarity';
 
 const TeamApprovalDashboard: React.FC = () => {
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
@@ -30,8 +31,19 @@ const TeamApprovalDashboard: React.FC = () => {
     try {
       setHasTakenAction(true);
       await updateWorkflowStep(workflowId, 1, { status: 'approved' });
-      // Send email to Technical Team (next step)
+      
+      // Track approval action
       const wf = workflows.find(w => w.id === workflowId);
+      track('approval.action', {
+        action: 'approved',
+        workflowId: workflowId,
+        step: 1,
+        role: 'Team Approval',
+        clientName: wf?.clientName,
+        amount: wf?.amount
+      });
+      
+      // Send email to Technical Team (next step)
       const technicalEmail = wf?.workflowSteps?.find(s => s.step === 2)?.email || wf?.workflowSteps?.find(s => s.role === 'Technical Team')?.email;
       if (technicalEmail) {
         try {

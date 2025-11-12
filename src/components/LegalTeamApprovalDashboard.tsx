@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { track } from '../analytics/clarity';
 
 interface LegalTeamApprovalDashboardProps {
   ceoEmail?: string;
@@ -149,6 +150,18 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       setHasTakenAction(true);
       // Update workflow step (Legal Team is now step 3)
       await updateWorkflowStep(workflowId, 3, { status: 'approved' });
+      
+      // Track approval action
+      const workflow = workflows.find(w => w.id === workflowId);
+      track('approval.action', {
+        action: 'approved',
+        workflowId: workflowId,
+        step: 3,
+        role: 'Legal Team',
+        clientName: workflow?.clientName,
+        amount: workflow?.amount
+      });
+      
       // Optimistically reflect status in modal
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
@@ -158,7 +171,6 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       } : prev);
       
       // Get workflow data to send Deal Desk email
-      const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
         // Send email to Deal Desk (next step)
         console.log('📧 Sending email to Deal Desk after Legal Team approval...');
@@ -228,6 +240,18 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       await updateWorkflowStep(workflowId, 3, { 
         status: 'denied',
         comments: commentText.trim()
+      });
+      
+      // Track denial action
+      const workflow = workflows.find(w => w.id === workflowId);
+      track('approval.action', {
+        action: 'denied',
+        workflowId: workflowId,
+        step: 3,
+        role: 'Legal Team',
+        clientName: workflow?.clientName,
+        amount: workflow?.amount,
+        hasComment: !!commentText.trim()
       });
       // Optimistically reflect status locally so buttons hide immediately
       setSelectedWorkflow((prev: any) => prev ? {

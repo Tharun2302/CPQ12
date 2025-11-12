@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 // Function to exchange authorization code for real user data
@@ -149,11 +149,15 @@ async function exchangeCodeForUserData(code: string) {
 
 const MicrosoftCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const hasProcessedCode = useRef(false);
+  const processedCode = useRef<string | null>(null);
 
   useEffect(() => {
+    // Only process once - extract code and error from URL params
+    const code = searchParams.get('code');
+    const error = searchParams.get('error');
+    
     const handleCallback = () => {
-      const code = searchParams.get('code');
-      const error = searchParams.get('error');
 
       if (error) {
         console.error('Microsoft OAuth error:', error);
@@ -165,6 +169,27 @@ const MicrosoftCallback: React.FC = () => {
       }
 
       if (code) {
+        // Prevent duplicate processing of the same code
+        if (hasProcessedCode.current && processedCode.current === code) {
+          console.log('⚠️ Authorization code already processed, skipping duplicate redemption');
+          return;
+        }
+
+        // Check if this code was already processed (stored in sessionStorage)
+        const processedCodes = JSON.parse(sessionStorage.getItem('msal_processed_codes') || '[]');
+        if (processedCodes.includes(code)) {
+          console.log('⚠️ Authorization code already processed (from sessionStorage), skipping duplicate redemption');
+          return;
+        }
+
+        // Mark as processing
+        hasProcessedCode.current = true;
+        processedCode.current = code;
+        
+        // Store in sessionStorage to prevent duplicate processing across re-renders
+        processedCodes.push(code);
+        sessionStorage.setItem('msal_processed_codes', JSON.stringify(processedCodes));
+
         console.log('🔍 Authorization code found:', code);
         console.log('🔍 Starting Microsoft Graph API call...');
         
@@ -173,6 +198,12 @@ const MicrosoftCallback: React.FC = () => {
           console.log('✅ User data received:', userData);
           console.log('✅ Final name:', userData.name);
           console.log('✅ Final email:', userData.email);
+          
+          // Clean up processed code after successful exchange
+          const processedCodes = JSON.parse(sessionStorage.getItem('msal_processed_codes') || '[]');
+          const updatedCodes = processedCodes.filter((c: string) => c !== code);
+          sessionStorage.setItem('msal_processed_codes', JSON.stringify(updatedCodes));
+          
           window.opener?.postMessage({
             type: 'MICROSOFT_AUTH_SUCCESS',
             user: userData
@@ -183,6 +214,11 @@ const MicrosoftCallback: React.FC = () => {
           console.error('❌ This means Microsoft Graph API call failed');
           console.error('❌ Full error object:', error);
           
+          // Clean up processed code even on error (code is already used/invalid)
+          const processedCodes = JSON.parse(sessionStorage.getItem('msal_processed_codes') || '[]');
+          const updatedCodes = processedCodes.filter((c: string) => c !== code);
+          sessionStorage.setItem('msal_processed_codes', JSON.stringify(updatedCodes));
+          
           // Store error details in localStorage for debugging
           localStorage.setItem('microsoft_auth_error', JSON.stringify({
             error: error.message,
@@ -190,6 +226,16 @@ const MicrosoftCallback: React.FC = () => {
             timestamp: new Date().toISOString(),
             fullError: error.toString()
           }));
+          
+          // Check if error is due to code already being redeemed
+          if (error.message && error.message.includes('already redeemed')) {
+            console.error('❌ Authorization code was already redeemed. This usually means the code was processed twice.');
+            window.opener?.postMessage({
+              type: 'MICROSOFT_AUTH_ERROR',
+              error: 'Authorization code already used. Please try signing in again.'
+            }, window.location.origin);
+            return;
+          }
           
           // Fallback to mock user if real API fails (only for cloudfuze.com domain)
           const fallbackUser = {
@@ -212,7 +258,8 @@ const MicrosoftCallback: React.FC = () => {
     };
 
     handleCallback();
-  }, [searchParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount - URL params won't change
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">

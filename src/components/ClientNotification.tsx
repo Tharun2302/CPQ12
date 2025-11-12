@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle, X, MessageCircle, FileText, DollarSign, User, Eye, Download } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { track } from '../analytics/clarity';
 
 interface ClientNotificationProps {
 }
@@ -133,6 +134,16 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         comments: comment || 'Approved by client'
       });
       
+      // Track approval action
+      track('approval.action', {
+        action: 'approved',
+        workflowId: workflow.id,
+        step: 3,
+        role: 'Client',
+        clientName: workflow?.clientName,
+        amount: workflow?.amount
+      });
+      
       // Update workflow status to approved since all steps are complete
       await updateWorkflow(workflow.id, { 
         status: 'approved',
@@ -218,6 +229,17 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
       await updateWorkflowStep(workflow.id, 3, { 
         status: 'denied',
         comments: comment
+      });
+      
+      // Track denial action
+      track('approval.action', {
+        action: 'denied',
+        workflowId: workflow.id,
+        step: 3,
+        role: 'Client',
+        clientName: workflow?.clientName,
+        amount: workflow?.amount,
+        hasComment: !!comment.trim()
       });
       
       alert('❌ Request denied.\n\nYour decision has been recorded and the workflow is now closed.');

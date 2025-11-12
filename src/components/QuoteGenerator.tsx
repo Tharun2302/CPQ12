@@ -1174,6 +1174,18 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       console.log('📝 Sending quote data:', quoteData);
       onGenerateQuote(quoteData);
       
+      // Track quote generation
+      track('quote.generated', {
+        quoteId: quoteData.id,
+        clientName: quoteData.clientName,
+        totalCost: safeCalculation.totalCost,
+        tier: safeCalculation.tier,
+        templateId: selectedTemplate?.id,
+        templateName: selectedTemplate?.name,
+        migrationType: configuration?.migrationType,
+        numberOfUsers: configuration?.numberOfUsers
+      });
+      
       // Automatically open quote preview instead of showing success message
       setShowPreview(true);
     }
@@ -1325,6 +1337,15 @@ Total Price: {{total price}}`;
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
+      // Track document download
+      track('document.downloaded', {
+        fileType: 'docx',
+        fileName: link.download,
+        clientName: clientInfo.clientName,
+        templateName: selectedTemplate?.name,
+        totalCost: calculation?.totalCost || 0
+      });
+      
       // Close preview after download
       setShowAgreementPreview(false);
       setProcessedAgreement(null);
@@ -1395,6 +1416,15 @@ Total Price: {{total price}}`;
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      
+      // Track document download
+      track('document.downloaded', {
+        fileType: 'pdf',
+        fileName: link.download,
+        clientName: clientInfo.clientName,
+        templateName: selectedTemplate?.name,
+        totalCost: calculation?.totalCost || 0
+      });
     } catch (error) {
       console.error('❌ Server conversion failed, falling back to in-modal PDF capture:', error);
       try {

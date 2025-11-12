@@ -17,6 +17,7 @@ import { extractTemplateContent } from '../utils/pdfMerger';
 import { formatCurrency } from '../utils/pricing';
 import { templateService } from '../utils/templateService';
 import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
+import { track } from '../analytics/clarity';
 
 // Helper function to limit consecutive spaces to maximum 5
 function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
@@ -1924,6 +1925,15 @@ The client will receive an email with the processed template and a link to compl
   // Template selection handler
   const handleSelectTemplate = (template: Template) => {
     console.log('🎯 Template selected:', template.name);
+    
+    // Track template selection
+    track('template.selected', {
+      templateId: template.id,
+      templateName: template.name,
+      category: template.category,
+      planType: template.planType,
+      combination: template.combination
+    });
     
     if (onTemplateSelect) {
       onTemplateSelect(template);

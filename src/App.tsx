@@ -15,9 +15,10 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import ApprovalDashboard from './components/ApprovalDashboard';
 import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDashboard';
 import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
+import TeamApprovalDashboard from './components/TeamApprovalDashboard';
 import ClientNotification from './components/ClientNotification';
 import { BACKEND_URL } from './config/api';
-import { initClarity } from './analytics/clarity';
+import { initClarity, track } from './analytics/clarity';
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -1697,6 +1698,13 @@ function App() {
     }
 
     setSelectedTemplate(template);
+    
+    // Track template selection
+    track('template.selected', {
+      templateId: template?.id,
+      templateName: template?.name,
+      hasFile: !!template?.file
+    });
   };
 
    return (
@@ -1727,6 +1735,9 @@ function App() {
               <LegalTeamApprovalDashboard 
                 ceoEmail="ceo@company.com"
               />
+            } />
+            <Route path="/team-approval" element={
+              <TeamApprovalDashboard />
             } />
             <Route path="/client-notification" element={
               <ClientNotification />

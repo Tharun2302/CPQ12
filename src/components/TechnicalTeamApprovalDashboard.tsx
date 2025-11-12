@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { track } from '../analytics/clarity';
 
 interface TechnicalTeamApprovalDashboardProps {
   managerEmail?: string;
@@ -149,6 +150,18 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       setHasTakenAction(true);
       // Update workflow step (Technical Team is now step 2)
       await updateWorkflowStep(workflowId, 2, { status: 'approved' });
+      
+      // Track approval action
+      const workflow = workflows.find(w => w.id === workflowId);
+      track('approval.action', {
+        action: 'approved',
+        workflowId: workflowId,
+        step: 2,
+        role: 'Technical Team',
+        clientName: workflow?.clientName,
+        amount: workflow?.amount
+      });
+      
       // Optimistically reflect status in the open modal to avoid stale UI
       setSelectedWorkflow((prev: any) => prev ? {
         ...prev,
@@ -158,7 +171,6 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       } : prev);
       
       // Get workflow data to send Legal Team email
-      const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
         // Send email to Legal Team
         console.log('📧 Sending email to Legal Team after Technical Team approval...');
@@ -218,6 +230,18 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       await updateWorkflowStep(workflowId, 2, { 
         status: 'denied',
         comments: commentText.trim()
+      });
+      
+      // Track denial action
+      const workflow = workflows.find(w => w.id === workflowId);
+      track('approval.action', {
+        action: 'denied',
+        workflowId: workflowId,
+        step: 2,
+        role: 'Technical Team',
+        clientName: workflow?.clientName,
+        amount: workflow?.amount,
+        hasComment: !!commentText.trim()
       });
       // Optimistically reflect status locally so buttons hide immediately
       setSelectedWorkflow((prev: any) => prev ? {
