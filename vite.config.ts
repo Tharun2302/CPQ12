@@ -4,7 +4,13 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Optimize dependency pre-bundling
   optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+    ],
     exclude: ['lucide-react'],
   },
   build: {
@@ -23,24 +29,10 @@ export default defineConfig({
     },
     // Optimize chunk size
     chunkSizeWarningLimit: 1000,
-    // Enable minification
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: false, // Keep console logs for debugging
-        drop_debugger: true,
-      },
-    },
+    // Enable minification (esbuild is faster and default in Vite 7)
+    // Keep console logs for debugging
+    minify: 'esbuild',
     // Enable source maps for production debugging (optional)
     sourcemap: false,
-  },
-  // Optimize dependency pre-bundling
-  optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'react-router-dom',
-    ],
-    exclude: ['lucide-react'],
   },
 });

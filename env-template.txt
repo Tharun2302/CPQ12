@@ -45,6 +45,21 @@ HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
 # Port for your backend server
 PORT=3001
 
+# Backend URL (for frontend API calls)
+# Local: http://localhost:3001
+# Production: https://zenop.ai
+VITE_BACKEND_URL=http://localhost:3001
+
+# Frontend URL (for email links and redirects)
+# Local: http://localhost:5173
+# Production: https://zenop.ai
+BASE_URL=http://localhost:5173
+
+# Backend Base URL (for CORS and email links)
+# Local: http://localhost:3001
+# Production: https://zenop.ai
+APP_BASE_URL=http://localhost:3001
+
 # JWT Secret for authentication tokens (CHANGE IN PRODUCTION!)
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 
