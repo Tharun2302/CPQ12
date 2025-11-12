@@ -1962,8 +1962,8 @@ The client will receive an email with the processed template and a link to compl
         <p className="text-gray-600">Upload and manage your quote templates</p>
         
 
-        {/* Storage Management */}
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
+        {/* Storage Management - Hidden */}
+        {/* <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-blue-800">Storage Management</h3>
@@ -1981,7 +1981,7 @@ The client will receive an email with the processed template and a link to compl
           <p className="text-xs text-blue-600 mt-2">
             If you're getting storage errors, try clearing templates or use smaller files.
           </p>
-        </div>
+        </div> */}
       </div>
 
       {/* Global Selection Success Message */}
@@ -1997,8 +1997,8 @@ The client will receive an email with the processed template and a link to compl
         </div>
       )}
 
-      {/* Upload Button */}
-      <div className="mb-8">
+      {/* Upload Button - Hidden */}
+      {/* <div className="mb-8">
         <button
           onClick={() => setShowUploadModal(true)}
           className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-300 font-semibold flex items-center gap-2 shadow-lg"
@@ -2006,7 +2006,7 @@ The client will receive an email with the processed template and a link to compl
           <Plus className="w-4 h-4" />
           Upload New Template
         </button>
-      </div>
+      </div> */}
 
       {/* Templates Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

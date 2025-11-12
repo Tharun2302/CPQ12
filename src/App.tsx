@@ -1,24 +1,32 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import Dashboard from './components/Dashboard';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from './types/pricing';
 import { calculateAllTiers, PRICING_TIERS } from './utils/pricing';
 
-// Import authentication page components
-import LandingPage from './pages/LandingPage';
-import SignInPage from './pages/SignInPage';
-import SignUpPage from './pages/SignUpPage';
-import MicrosoftCallback from './pages/MicrosoftCallback';
-import HubSpotAuthHandler from './components/auth/HubSpotAuthHandler';
-import ProtectedRoute from './components/auth/ProtectedRoute';
-import ApprovalDashboard from './components/ApprovalDashboard';
-import TechnicalTeamApprovalDashboard from './components/TechnicalTeamApprovalDashboard';
-import LegalTeamApprovalDashboard from './components/LegalTeamApprovalDashboard';
-import TeamApprovalDashboard from './components/TeamApprovalDashboard';
-import ClientNotification from './components/ClientNotification';
+// Lazy load components for code splitting and better performance
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+const SignInPage = lazy(() => import('./pages/SignInPage'));
+const SignUpPage = lazy(() => import('./pages/SignUpPage'));
+const MicrosoftCallback = lazy(() => import('./pages/MicrosoftCallback'));
+const HubSpotAuthHandler = lazy(() => import('./components/auth/HubSpotAuthHandler'));
+const ProtectedRoute = lazy(() => import('./components/auth/ProtectedRoute'));
+const ApprovalDashboard = lazy(() => import('./components/ApprovalDashboard'));
+const TechnicalTeamApprovalDashboard = lazy(() => import('./components/TechnicalTeamApprovalDashboard'));
+const LegalTeamApprovalDashboard = lazy(() => import('./components/LegalTeamApprovalDashboard'));
+const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashboard'));
+const ClientNotification = lazy(() => import('./components/ClientNotification'));
+
 import { BACKEND_URL } from './config/api';
 import { initClarity, track } from './analytics/clarity';
+
+// Loading fallback component
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+  </div>
+);
 
 function App() {
   const [configuration, setConfiguration] = useState<ConfigurationData | undefined>(undefined);
@@ -27,13 +35,34 @@ function App() {
   const [showPricing, setShowPricing] = useState(false);
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(PRICING_TIERS);
 
-  // Initialize Microsoft Clarity (production only)
+  // Initialize Microsoft Clarity (production only) - Defer to improve LCP
   useEffect(() => {
-    try {
-      const clarityId = (import.meta as any)?.env?.VITE_CLARITY_ID as string | undefined;
-      initClarity(clarityId);
-    } catch {
-      // no-op
+    // Defer Clarity initialization until after page is interactive
+    const initClarityDeferred = () => {
+      try {
+        const clarityId = (import.meta as any)?.env?.VITE_CLARITY_ID as string | undefined;
+        if (clarityId) {
+          // Use requestIdleCallback if available, otherwise setTimeout
+          if ('requestIdleCallback' in window) {
+            (window as any).requestIdleCallback(() => {
+              initClarity(clarityId);
+            }, { timeout: 2000 });
+          } else {
+            setTimeout(() => {
+              initClarity(clarityId);
+            }, 2000);
+          }
+        }
+      } catch {
+        // no-op
+      }
+    };
+
+    // Wait for page to be interactive before loading analytics
+    if (document.readyState === 'complete') {
+      initClarityDeferred();
+    } else {
+      window.addEventListener('load', initClarityDeferred, { once: true });
     }
   }, []);
 
@@ -1368,7 +1397,6 @@ function App() {
     // Fallback to scoring system for other cases
     const scoreTemplate = (t: any): number => {
       const name = (t?.name || '').toLowerCase();
-      const desc = (t?.description || '').toLowerCase();
       const templateCombination = (t?.combination || '').toLowerCase();
       const templateCategory = (t?.category || '').toLowerCase();
       let score = 0;
@@ -1710,99 +1738,101 @@ function App() {
    return (
     <Router>
       <AuthProvider>
-        <HubSpotAuthHandler>
-          <Routes>
-            {/* Public Routes */}
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/signin" element={<SignInPage />} />
-            <Route path="/signup" element={<SignUpPage />} />
-            <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
-            <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
-            
-            {/* Protected Routes - Dashboard with URL-based tab navigation */}
-            <Route path="/dashboard" element={<Navigate to="/dashboard/deal" replace />} />
-            <Route path="/approval-tracking" element={
-              <ProtectedRoute>
-                <ApprovalDashboard />
-              </ProtectedRoute>
-            } />
-            <Route path="/technical-approval" element={
-              <TechnicalTeamApprovalDashboard 
-                managerEmail="manager@company.com"
-              />
-            } />
-            <Route path="/legal-approval" element={
-              <LegalTeamApprovalDashboard 
-                ceoEmail="ceo@company.com"
-              />
-            } />
-            <Route path="/team-approval" element={
-              <TeamApprovalDashboard />
-            } />
-            <Route path="/client-notification" element={
-              <ClientNotification />
-            } />
-            <Route path="/dashboard/*" element={
-              <ProtectedRoute>
-                <Dashboard
-                  configuration={configuration}
-                  setConfiguration={setConfiguration}
-                  calculations={calculations}
-                  setCalculations={setCalculations}
-                  selectedTier={selectedTier}
-                  setSelectedTier={setSelectedTier}
-                  showPricing={showPricing}
-                  setShowPricing={setShowPricing}
-                  pricingTiers={pricingTiers}
-                  setPricingTiers={setPricingTiers}
-                  hubspotState={hubspotState}
-                  setHubspotState={setHubspotState}
-                  companyInfo={companyInfo}
-                  setCompanyInfo={setCompanyInfo}
-                  selectedTemplate={selectedTemplate}
-                  setSelectedTemplate={setSelectedTemplate}
-                  templates={templates}
-                  setTemplates={setTemplates}
-                  quotes={quotes}
-                  setQuotes={setQuotes}
-                  dealData={dealData}
-                  setDealData={setDealData}
-                  activeDealData={activeDealData}
-                  setActiveDealData={setActiveDealData}
-                  currentClientInfo={currentClientInfo}
-                  setCurrentClientInfo={setCurrentClientInfo}
-                  configureContactInfo={configureContactInfo}
-                  setConfigureContactInfo={setConfigureContactInfo}
-                  signatureFormData={signatureFormData}
-                  setSignatureFormData={setSignatureFormData}
-                  isSignatureForm={isSignatureForm}
-                  setIsSignatureForm={setIsSignatureForm}
-                  handleConfigurationChange={handleConfigurationChange}
-                  handleSubmitConfiguration={handleSubmitConfiguration}
-                  handleSelectTier={handleSelectTier}
-                  handleTierUpdate={handleTierUpdate}
-                  handleGenerateQuote={handleGenerateQuote}
-                  handleDeleteQuote={handleDeleteQuote}
-                  handleUpdateQuoteStatus={handleUpdateQuoteStatus}
-                  handleUpdateQuote={handleUpdateQuote}
-                  handleTemplateSelect={handleTemplateSelect}
-                  handleTemplatesUpdate={handleTemplatesUpdate}
-                  updateCompanyInfo={updateCompanyInfo}
-                  handleSelectHubSpotContact={handleSelectHubSpotContact}
-                  handleConfigureContactInfoChange={handleConfigureContactInfoChange}
-                  handleClientInfoChange={handleClientInfoChange}
-                  refreshDealData={refreshDealData}
-                  handleUseDealData={handleUseDealData}
-                  handleSignatureFormComplete={handleSignatureFormComplete}
-                  getCurrentQuoteData={getCurrentQuoteData}
+        <Suspense fallback={<LoadingFallback />}>
+          <HubSpotAuthHandler>
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/signin" element={<SignInPage />} />
+              <Route path="/signup" element={<SignUpPage />} />
+              <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
+              <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
+              
+              {/* Protected Routes - Dashboard with URL-based tab navigation */}
+              <Route path="/dashboard" element={<Navigate to="/dashboard/deal" replace />} />
+              <Route path="/approval-tracking" element={
+                <ProtectedRoute>
+                  <ApprovalDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/technical-approval" element={
+                <TechnicalTeamApprovalDashboard 
+                  managerEmail="manager@company.com"
                 />
-              </ProtectedRoute>
-            } />
-            
-            {/* Redirect any other routes to landing page */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </HubSpotAuthHandler>
+              } />
+              <Route path="/legal-approval" element={
+                <LegalTeamApprovalDashboard 
+                  ceoEmail="ceo@company.com"
+                />
+              } />
+              <Route path="/team-approval" element={
+                <TeamApprovalDashboard />
+              } />
+              <Route path="/client-notification" element={
+                <ClientNotification />
+              } />
+              <Route path="/dashboard/*" element={
+                <ProtectedRoute>
+                  <Dashboard
+                    configuration={configuration}
+                    setConfiguration={setConfiguration}
+                    calculations={calculations}
+                    setCalculations={setCalculations}
+                    selectedTier={selectedTier}
+                    setSelectedTier={setSelectedTier}
+                    showPricing={showPricing}
+                    setShowPricing={setShowPricing}
+                    pricingTiers={pricingTiers}
+                    setPricingTiers={setPricingTiers}
+                    hubspotState={hubspotState}
+                    setHubspotState={setHubspotState}
+                    companyInfo={companyInfo}
+                    setCompanyInfo={setCompanyInfo}
+                    selectedTemplate={selectedTemplate}
+                    setSelectedTemplate={setSelectedTemplate}
+                    templates={templates}
+                    setTemplates={setTemplates}
+                    quotes={quotes}
+                    setQuotes={setQuotes}
+                    dealData={dealData}
+                    setDealData={setDealData}
+                    activeDealData={activeDealData}
+                    setActiveDealData={setActiveDealData}
+                    currentClientInfo={currentClientInfo}
+                    setCurrentClientInfo={setCurrentClientInfo}
+                    configureContactInfo={configureContactInfo}
+                    setConfigureContactInfo={setConfigureContactInfo}
+                    signatureFormData={signatureFormData}
+                    setSignatureFormData={setSignatureFormData}
+                    isSignatureForm={isSignatureForm}
+                    setIsSignatureForm={setIsSignatureForm}
+                    handleConfigurationChange={handleConfigurationChange}
+                    handleSubmitConfiguration={handleSubmitConfiguration}
+                    handleSelectTier={handleSelectTier}
+                    handleTierUpdate={handleTierUpdate}
+                    handleGenerateQuote={handleGenerateQuote}
+                    handleDeleteQuote={handleDeleteQuote}
+                    handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                    handleUpdateQuote={handleUpdateQuote}
+                    handleTemplateSelect={handleTemplateSelect}
+                    handleTemplatesUpdate={handleTemplatesUpdate}
+                    updateCompanyInfo={updateCompanyInfo}
+                    handleSelectHubSpotContact={handleSelectHubSpotContact}
+                    handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                    handleClientInfoChange={handleClientInfoChange}
+                    refreshDealData={refreshDealData}
+                    handleUseDealData={handleUseDealData}
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                  />
+                </ProtectedRoute>
+              } />
+              
+              {/* Redirect any other routes to landing page */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </HubSpotAuthHandler>
+        </Suspense>
       </AuthProvider>
     </Router>
   );
