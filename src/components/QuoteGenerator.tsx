@@ -594,6 +594,38 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     }
   }, [dealData, hubspotState?.selectedContact, configureContactInfo]);
 
+  // Auto-fill Client Email for Approval modal from Configure/HubSpot contact info
+  useEffect(() => {
+    try {
+      const fromConfigure = configureContactInfo?.clientEmail?.trim();
+      const fromClientInfo = clientInfo.clientEmail?.trim();
+      let fromStorage = '';
+      try {
+        const s = sessionStorage.getItem('cpq_configure_contact_info');
+        if (s) {
+          const parsed = JSON.parse(s);
+          fromStorage = (parsed?.clientEmail || '').trim();
+        }
+      } catch {
+        // ignore storage parsing errors
+      }
+      const resolvedEmail = fromConfigure || fromClientInfo || fromStorage;
+      if (resolvedEmail) {
+        const defaultClient =
+          (import.meta.env.VITE_APPROVAL_CLIENT_EMAIL as string) || 'raya.durai@cloudfuze.com';
+        if (
+          !approvalEmails.role3 ||
+          approvalEmails.role3 === defaultClient ||
+          approvalEmails.role3 === 'client@company.com'
+        ) {
+          setApprovalEmails(prev => ({ ...prev, role3: resolvedEmail }));
+        }
+      }
+    } catch {
+      // no-op
+    }
+  }, [configureContactInfo?.clientEmail, clientInfo.clientEmail]);
+
   // REMOVED: useEffect that was causing infinite loop by calling onClientInfoChange on every render
   // onClientInfoChange will be called only when user makes actual changes to client info
 
@@ -1465,8 +1497,8 @@ Total Price: {{total price}}`;
       return;
     }
     
-    if (!approvalEmails.role2 || !approvalEmails.role3) {
-      alert('Please fill in Legal Team and Client email addresses for BoldSign integration.');
+    if (!approvalEmails.role2 || !(approvalEmails.role3 || clientInfo.clientEmail || configureContactInfo?.clientEmail)) {
+      alert('Please provide Legal Team email and ensure a Client email (from Configure/HubSpot or manual).');
       return;
     }
 
@@ -1512,7 +1544,7 @@ Total Price: {{total price}}`;
         ],
         // Store Legal Team and Client emails for BoldSign integration
         legalTeamEmail: approvalEmails.role2,
-        clientEmail: approvalEmails.role3
+        clientEmail: (configureContactInfo?.clientEmail || clientInfo.clientEmail || approvalEmails.role3)
       };
 
       const newWorkflow = await createWorkflow(workflowData);

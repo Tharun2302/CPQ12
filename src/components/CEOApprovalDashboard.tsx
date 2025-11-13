@@ -177,7 +177,7 @@ const CEOApprovalDashboard: React.FC<CEOApprovalDashboardProps> = ({
               workflowId: workflow.id,
               clientName: workflow.clientName,
               legalTeamEmail: workflow.legalTeamEmail || 'legal@cloudfuze.com', // Added missing field
-              clientEmail: workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com'
+            clientEmail: workflow.clientEmail || workflow.workflowSteps?.find(step => step.role === 'Client')?.email || 'client@company.com'
             })
           });
 

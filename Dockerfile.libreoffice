@@ -8,14 +8,14 @@ RUN apk add --no-cache \
     python3 \
     py3-pip
 
-# Install required Node.js packages
-RUN npm install -g express multer cors
-
 # Create app directory
 WORKDIR /app
 
 # Create the conversion service
 COPY libreoffice-converter.js /app/converter.js
+
+# Install required Node.js packages locally so require() can resolve them
+RUN npm init -y && npm install express multer cors
 
 # Create temp directories
 RUN mkdir -p /temp/input /temp/output
