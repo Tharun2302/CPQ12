@@ -25,7 +25,7 @@ import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
-import { track } from '../analytics/clarity';
+import { track, trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -1190,15 +1190,15 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       onGenerateQuote(quoteData);
       
       // Track quote generation
-      track('quote.generated', {
+      trackQuoteOperation({
+        action: 'generated',
         quoteId: quoteData.id,
         clientName: quoteData.clientName,
+        clientEmail: quoteData.clientEmail,
         totalCost: safeCalculation.totalCost,
-        tier: safeCalculation.tier,
+        tier: safeCalculation.tier?.name,
         templateId: selectedTemplate?.id,
-        templateName: selectedTemplate?.name,
-        migrationType: configuration?.migrationType,
-        numberOfUsers: configuration?.numberOfUsers
+        templateName: selectedTemplate?.name
       });
       
       // Automatically open quote preview instead of showing success message
@@ -1353,12 +1353,12 @@ Total Price: {{total price}}`;
       URL.revokeObjectURL(url);
       
       // Track document download
-      track('document.downloaded', {
-        fileType: 'docx',
-        fileName: link.download,
-        clientName: clientInfo.clientName,
-        templateName: selectedTemplate?.name,
-        totalCost: calculation?.totalCost || 0
+      trackDocumentOperation({
+        action: 'downloaded',
+        documentType: 'agreement',
+        documentName: link.download,
+        format: 'docx',
+        fileSize: blob.size / 1024 // Convert to KB
       });
       
       // Close preview after download
@@ -1433,12 +1433,12 @@ Total Price: {{total price}}`;
       URL.revokeObjectURL(url);
       
       // Track document download
-      track('document.downloaded', {
-        fileType: 'pdf',
-        fileName: link.download,
-        clientName: clientInfo.clientName,
-        templateName: selectedTemplate?.name,
-        totalCost: calculation?.totalCost || 0
+      trackDocumentOperation({
+        action: 'downloaded',
+        documentType: 'agreement',
+        documentName: link.download,
+        format: 'pdf',
+        fileSize: pdfBlob.size / 1024 // Convert to KB
       });
     } catch (error) {
       console.error('❌ Server conversion failed, falling back to in-modal PDF capture:', error);
@@ -1637,10 +1637,10 @@ Total Price: {{total price}}`;
 
       // Analytics: workflow started
       try {
-        track('approval.workflow_started', {
-          amount: calculation?.totalCost || 0,
-          steps: 3,
-          documentType: 'PDF Agreement'
+        trackApprovalEvent({
+          action: 'workflow_started',
+          quoteId: quoteId,
+          workflowId: newWorkflow?.id
         });
       } catch {}
 

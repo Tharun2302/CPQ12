@@ -19,7 +19,7 @@ const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashbo
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
 
 import { BACKEND_URL } from './config/api';
-import { initClarity, track } from './analytics/clarity';
+import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -1462,6 +1462,16 @@ function App() {
 
   const handleSelectTier = async (calculation: PricingCalculation) => {
     setSelectedTier(calculation);
+
+    // Track tier selection
+    trackTierSelection({
+      tierName: calculation?.tier?.name,
+      totalCost: calculation?.totalCost,
+      userCost: calculation?.userCost,
+      dataCost: calculation?.dataCost,
+      migrationCost: calculation?.migrationCost,
+      instanceCost: calculation?.instanceCost
+    });
 
     // Attempt to auto-select a template matching the chosen plan
     try {

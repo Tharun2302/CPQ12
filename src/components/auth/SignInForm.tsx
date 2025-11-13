@@ -20,6 +20,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
   });
   const [errors, setErrors] = useState<AuthError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMicrosoftLoading, setIsMicrosoftLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -69,7 +70,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
 
 
   const handleMicrosoftLogin = async () => {
-    setIsSubmitting(true);
+    setIsMicrosoftLoading(true);
     
     try {
       const success = await loginWithMicrosoft();
@@ -85,7 +86,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
       setErrors([{ field: 'general', message: 'Microsoft authentication error. Please try again or use email/password.' }]);
       onError?.('Microsoft authentication error. Please try again or use email/password.');
     } finally {
-      setIsSubmitting(false);
+      setIsMicrosoftLoading(false);
     }
   };
 
@@ -173,10 +174,10 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isSubmitting || loading}
+            disabled={isSubmitting || isMicrosoftLoading}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {isSubmitting || loading ? (
+            {isSubmitting ? (
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                 Signing In...
@@ -201,7 +202,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
         {/* Microsoft Sign In Button */}
         <button
           onClick={handleMicrosoftLogin}
-          disabled={isSubmitting || loading}
+          disabled={isSubmitting || isMicrosoftLoading}
           className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -210,7 +211,7 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
             <rect x="1" y="13" width="10" height="10" fill="#00A4EF"/>
             <rect x="13" y="13" width="10" height="10" fill="#FFB900"/>
           </svg>
-          {isSubmitting || loading ? (
+          {isMicrosoftLoading ? (
             <div className="flex items-center">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
               Signing in...

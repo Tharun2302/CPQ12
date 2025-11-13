@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X } from 'lucide-react';
+import { trackConfiguration } from '../analytics/clarity';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -564,6 +565,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
     
     console.log('✅ Form validation passed, submitting configuration');
+    
+    // Track configuration submission
+    trackConfiguration({
+      migrationType: config.migrationType,
+      numberOfUsers: config.numberOfUsers,
+      instanceType: config.instanceType,
+      numberOfInstances: config.numberOfInstances,
+      duration: config.duration,
+      dataSizeGB: config.dataSizeGB,
+      messages: config.messages,
+      combination: config.combination,
+      hasDiscount: !!discountValue && parseFloat(discountValue) > 0,
+      discountValue: discountValue ? parseFloat(discountValue) : undefined
+    });
+    
     onSubmit();
     
     // Scroll to pricing section after a short delay to allow the component to render

@@ -83,9 +83,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
             </div>
           )}
 
-          {/* User Menu - Right Side */}
+          {/* User Menu - Right Side (Desktop) */}
           {isAuthenticated && (
-            <div className="absolute right-0">
+            <div className="hidden lg:block absolute right-0">
               <UserMenu />
             </div>
           )}
