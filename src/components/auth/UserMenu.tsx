@@ -35,16 +35,16 @@ const UserMenu: React.FC = () => {
       {/* User Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-3 text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-3 py-2 hover:bg-gray-50 transition-all duration-200"
+        className="flex items-center space-x-2 text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-2 hover:bg-gray-50 transition-all duration-200"
       >
         <div className="w-8 h-8 sm:w-9 sm:h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-md">
           <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
         </div>
-        <div className="hidden md:flex flex-col text-left leading-tight">
-          <span className="font-medium text-sm">{user.name}</span>
-          <span className="text-sm text-gray-700">{user.email}</span>
+        <div className="hidden md:flex flex-col text-left leading-tight max-w-[140px]">
+          <span className="font-medium text-sm truncate">{user.name}</span>
+          <span className="text-xs text-gray-500 truncate">{user.email}</span>
         </div>
-        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-0' : 'rotate-180'}`} />
+        <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-0' : 'rotate-180'}`} />
       </button>
 
       {/* Dropdown Menu */}

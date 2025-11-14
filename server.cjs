@@ -3966,8 +3966,8 @@ app.post('/api/boldsign/send-document', async (req, res) => {
         // Move down to sit on the underline
         bounds: { x: 120, y: 320, width: 180, height: 25 },
         isRequired: true,
-        value: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // Default CloudFuze signer name
-        placeholder: 'Aadhi Nandyala' // Suggest name for CloudFuze side
+        value: process.env.CLOUDFUZE_SIGNER_NAME || 'Adi Nandyala', // Default CloudFuze signer name
+        placeholder: 'Adi Nandyala' // Suggest name for CloudFuze side
       },
       {
         id: 'legal_title',
@@ -4093,7 +4093,7 @@ app.post('/api/boldsign/send-document', async (req, res) => {
       ],
       Signers: [
         {
-          Name: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // This pre-fills the signature modal's "Your name" field
+          Name: process.env.CLOUDFUZE_SIGNER_NAME || 'Adi Nandyala', // This pre-fills the signature modal's "Your name" field
           EmailAddress: legalTeamEmail,
           SignerOrder: 1,
           FormFields: mapToBoldSignFields(legalTeamFields)
@@ -4613,8 +4613,8 @@ app.post('/api/trigger-boldsign', async (req, res) => {
         y: 320,
         width: 180,
         height: 25,
-        value: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // Default CloudFuze signer name
-        placeholder: 'Aadhi Nandyala' // Suggest name for CloudFuze side
+        value: process.env.CLOUDFUZE_SIGNER_NAME || 'Adi Nandyala', // Default CloudFuze signer name
+        placeholder: 'Adi Nandyala' // Suggest name for CloudFuze side
       },
       {
         id: 'legal_title',
@@ -4771,7 +4771,7 @@ app.post('/api/trigger-boldsign', async (req, res) => {
       ],
       Signers: [
         {
-          Name: process.env.CLOUDFUZE_SIGNER_NAME || 'Aadhi Nandyala', // This pre-fills the signature modal's "Your name" field
+          Name: process.env.CLOUDFUZE_SIGNER_NAME || 'Adi Nandyala', // This pre-fills the signature modal's "Your name" field
           EmailAddress: legalTeamEmail,
           SignerOrder: 1,
           FormFields: mapToBoldSignFields(legalTeamFields)

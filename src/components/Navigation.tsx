@@ -41,9 +41,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
   return (
     <nav className="bg-gradient-to-r from-white via-blue-50/50 to-indigo-50/50 shadow-2xl border-b border-blue-100/50 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-center h-16 relative">
+        <div className="flex items-center justify-between h-16 gap-4">
           {/* Logo Section */}
-          <div className="flex items-center gap-3 absolute left-0">
+          <div className="flex items-center gap-3 flex-shrink-0">
             <div className="relative flex-shrink-0">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
                 <Calculator className="w-6 h-6 text-white" />
@@ -57,9 +57,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
             </h1>
           </div>
 
-          {/* Desktop Navigation - Centered */}
+          {/* Desktop Navigation - Centered with flex-grow */}
           {isAuthenticated && (
-            <div className="hidden lg:flex items-center space-x-2">
+            <div className="hidden lg:flex items-center justify-center space-x-2 flex-grow overflow-x-auto">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = currentTab === tab.id;
@@ -67,7 +67,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
                   <Link
                     key={tab.id}
                     to={tab.path}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-300 ${
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all duration-300 whitespace-nowrap ${
                       isActive
                         ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
                         : 'text-gray-700 hover:text-gray-900 hover:bg-white/60 hover:shadow-md'
@@ -83,7 +83,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
 
           {/* User Menu - Right Side */}
           {isAuthenticated && (
-            <div className="absolute right-0">
+            <div className="flex-shrink-0">
               <UserMenu />
             </div>
           )}

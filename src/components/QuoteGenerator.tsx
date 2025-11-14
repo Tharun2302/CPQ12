@@ -376,6 +376,20 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     role4: (import.meta.env.VITE_APPROVAL_DEALDESK_EMAIL as string) || ''
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
+  // Client email quick prompt
+  const [showClientEmailModal, setShowClientEmailModal] = useState(false);
+  const [clientEmailInput, setClientEmailInput] = useState<string>('');
+
+  const openClientEmailModal = () => {
+    const seed =
+      (configureContactInfo?.clientEmail ||
+        clientInfo.clientEmail ||
+        approvalEmails.role3 ||
+        (import.meta.env.VITE_APPROVAL_CLIENT_EMAIL as string) ||
+        '').trim();
+    setClientEmailInput(seed);
+    setShowClientEmailModal(true);
+  };
 
   const ensureDocxPreviewStylesInjected = () => {
     const existing = document.getElementById('docx-preview-css');
@@ -1491,14 +1505,31 @@ Total Price: {{total price}}`;
       return;
     }
 
-    // Validate email addresses
-    if (!approvalEmails.role1) {
-      alert('Please fill in the Technical Team email address.');
+    // Resolve recipients (client email captured via quick popup)
+    const resolvedTechnicalEmail =
+      (approvalEmails.role1 || (import.meta.env.VITE_APPROVAL_TECH_EMAIL as string) || '').trim();
+    const resolvedLegalEmail =
+      (approvalEmails.role2 || (import.meta.env.VITE_APPROVAL_LEGAL_EMAIL as string) || '').trim();
+    const resolvedClientEmail =
+      (
+        clientEmailInput ||
+        configureContactInfo?.clientEmail ||
+        clientInfo.clientEmail ||
+        (import.meta.env.VITE_APPROVAL_CLIENT_EMAIL as string) ||
+        ''
+      ).trim();
+
+    // Minimal validation
+    if (!resolvedTechnicalEmail) {
+      alert('Technical Team email is required (set default via VITE_APPROVAL_TECH_EMAIL).');
       return;
     }
-    
-    if (!approvalEmails.role2 || !(approvalEmails.role3 || clientInfo.clientEmail || configureContactInfo?.clientEmail)) {
-      alert('Please provide Legal Team email and ensure a Client email (from Configure/HubSpot or manual).');
+    if (!resolvedLegalEmail) {
+      alert('Legal Team email is required (set default via VITE_APPROVAL_LEGAL_EMAIL).');
+      return;
+    }
+    if (!resolvedClientEmail) {
+      alert('Client email is required.');
       return;
     }
 
@@ -1532,19 +1563,21 @@ Total Price: {{total price}}`;
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
 
 
-      // Create the approval workflow - Only Technical Team approval required, then BoldSign integration
+      // Create the approval workflow - Technical Team -> Legal Team -> Client
       const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        totalSteps: 1,
+        totalSteps: 3,
         workflowSteps: [
-          { step: 1, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const }
+          { step: 1, role: 'Technical Team', email: resolvedTechnicalEmail, status: 'pending' as const },
+          { step: 2, role: 'Legal Team', email: resolvedLegalEmail, status: 'pending' as const },
+          { step: 3, role: 'Client', email: resolvedClientEmail, status: 'pending' as const }
         ],
         // Store Legal Team and Client emails for BoldSign integration
-        legalTeamEmail: approvalEmails.role2,
-        clientEmail: (configureContactInfo?.clientEmail || clientInfo.clientEmail || approvalEmails.role3)
+        legalTeamEmail: resolvedLegalEmail,
+        clientEmail: resolvedClientEmail
       };
 
       const newWorkflow = await createWorkflow(workflowData);
@@ -1586,6 +1619,7 @@ Total Price: {{total price}}`;
       alert('Error starting approval workflow. Please try again.');
     } finally {
       setIsStartingWorkflow(false);
+      setShowClientEmailModal(false);
     }
   };
 
@@ -4473,7 +4507,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
-                        onClick={handleStartApprovalWorkflow}
+                        onClick={openClientEmailModal}
                         disabled={isStartingWorkflow}
                         className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Start Approval Workflow"
@@ -4854,6 +4888,68 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <div className="flex gap-3 mt-6">
                 <button
                   onClick={() => setShowApprovalModal(false)}
+                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartApprovalWorkflow}
+                  disabled={isStartingWorkflow}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {isStartingWorkflow ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Workflow className="w-4 h-4" />
+                      Start Workflow
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Client Email Quick Prompt */}
+        {showClientEmailModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 transform -translate-y-[14rem] -translate-x-8 md:-translate-y-[15rem] md:-translate-x-12 lg:-translate-y-[16rem] lg:-translate-x-16">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Workflow className="w-5 h-5 text-blue-600" />
+                  Start Approval Workflow
+                </h3>
+                <button
+                  onClick={() => setShowClientEmailModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Enter the client email to start the workflow. Technical and Legal emails use defaults.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Client Email
+                  </label>
+                  <input
+                    type="email"
+                    value={clientEmailInput}
+                    onChange={(e) => setClientEmailInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="client@company.com"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowClientEmailModal(false)}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Cancel

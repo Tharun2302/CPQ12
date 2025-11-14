@@ -126,7 +126,7 @@ DEAL_DESK_EMAIL=
 
 # CloudFuze Signer Name (for signature forms - left side)
 # This name will be suggested/pre-filled in the CloudFuze signature fields
-CLOUDFUZE_SIGNER_NAME=Aadhi Nandyala
+CLOUDFUZE_SIGNER_NAME=Adi Nandyala
 
 # ===========================================
 # WEBHOOK CONFIGURATION
