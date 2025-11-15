@@ -11,6 +11,7 @@ import DealDetails from './DealDetails';
 import Settings from './Settings';
 import DigitalSignatureForm from './DigitalSignatureForm';
 import ApprovalWorkflow from './ApprovalWorkflow';
+import SQLAgent from './SQLAgent';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
 import { FileText } from 'lucide-react';
@@ -530,6 +531,9 @@ const Dashboard: React.FC<DashboardProps> = ({
             updateCompanyInfo={updateCompanyInfo}
           />
         );
+
+      case 'sql-agent':
+        return <SQLAgent />;
 
       default:
         return <Navigate to="/dashboard/deal" replace />;

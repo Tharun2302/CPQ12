@@ -17,7 +17,7 @@ VITE_MSAL_REDIRECT_URI=
 DB_HOST=localhost
 DB_USER=root
 DB_PASSWORD=root
-DB_NAME=cpq_database1
+DB_NAME=lama
 DB_PORT=3306
 
 # For MongoDB (if using MongoDB instead)

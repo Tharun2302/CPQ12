@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Calculator, FileText, Sparkles, Upload, Building, Menu, X, CheckCircle } from 'lucide-react';
+import { Calculator, FileText, Upload, Building, Menu, X, CheckCircle, Database } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
@@ -33,6 +33,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
     { id: 'documents', label: 'Documents', icon: FileText, path: '/dashboard/documents' },
     { id: 'templates', label: 'Templates', icon: Upload, path: '/dashboard/templates' },
     { id: 'approval', label: 'Approval', icon: CheckCircle, path: '/dashboard/approval' },
+    { id: 'sql-agent', label: 'SQL Agent', icon: Database, path: '/dashboard/sql-agent' },
     // Settings tab hidden per requirement
     // { id: 'settings', label: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ];
@@ -50,11 +51,8 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
               <div className="w-12 h-12 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
                 <Calculator className="w-6 h-6 text-white" />
               </div>
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
-                <Sparkles className="w-2 h-2 text-white" />
-              </div>
             </div>
-            <h1 className="text-xl font-bold text-gray-900">
+            <h1 className="text-xl font-bold text-blue-600">
               Zenop.ai
             </h1>
           </Link>

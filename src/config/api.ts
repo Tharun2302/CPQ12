@@ -76,6 +76,10 @@ export const API_ENDPOINTS = {
   
   // Convert
   CONVERT_DOCX_TO_PDF: '/api/convert/docx-to-pdf',
+  
+  // SQL Agent
+  SQL_AGENT_QUERY: '/api/sql-agent/query',
+  SQL_AGENT_SCHEMA: '/api/sql-agent/schema',
 };
 
 // Debug info (only in development)

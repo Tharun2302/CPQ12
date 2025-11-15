@@ -3707,6 +3707,65 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
   }
 });
 
+// SQL Agent endpoints
+const sqlAgent = require('./sql-agent-service.cjs');
+
+// Query database using natural language
+app.post('/api/sql-agent/query', async (req, res) => {
+  try {
+    const { query } = req.body;
+    
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Query is required and must be a non-empty string'
+      });
+    }
+
+    console.log('🤖 SQL Agent query received:', query);
+    const result = await sqlAgent.processQuery(query.trim());
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ SQL Agent error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to process query'
+    });
+  }
+});
+
+// Get database schema and available query patterns
+app.get('/api/sql-agent/schema', async (req, res) => {
+  try {
+    const schemaInfo = sqlAgent.getSchemaInfo();
+    res.json({
+      success: true,
+      ...schemaInfo
+    });
+  } catch (error) {
+    console.error('❌ Error getting schema info:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get schema information'
+    });
+  }
+});
+
+// Test LLM connection
+app.get('/api/sql-agent/test-llm', async (req, res) => {
+  try {
+    const result = await sqlAgent.testLLMConnection();
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Error testing LLM connection:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to test LLM connection'
+    });
+  }
+});
+
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
@@ -3756,6 +3815,8 @@ async function startServer() {
       console.log(`   - GET  /api/templates/:id/file`);
       console.log(`   - PUT  /api/templates/:id`);
       console.log(`   - DELETE /api/templates/:id`);
+      console.log(`   - POST /api/sql-agent/query`);
+      console.log(`   - GET  /api/sql-agent/schema`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
