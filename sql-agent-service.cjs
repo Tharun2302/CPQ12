@@ -1,5 +1,6 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+const trainingCollector = require('./training-data-collector.cjs');
 
 // Database configuration
 const dbConfig = {
@@ -98,6 +99,22 @@ const QUERY_PATTERNS = {
     sql: `SELECT DISTINCT client_name, client_email, company FROM quotes ORDER BY client_name`,
     description: 'List of all client names'
   },
+  'clients': {
+    sql: `SELECT DISTINCT client_name, client_email, company FROM quotes ORDER BY client_name`,
+    description: 'List of all clients'
+  },
+  'show clients': {
+    sql: `SELECT DISTINCT client_name, client_email, company FROM quotes ORDER BY client_name`,
+    description: 'Show all clients'
+  },
+  'show client': {
+    sql: `SELECT DISTINCT client_name, client_email, company FROM quotes ORDER BY client_name`,
+    description: 'Show all clients'
+  },
+  'client name': {
+    sql: `SELECT DISTINCT client_name, client_email, company FROM quotes ORDER BY client_name`,
+    description: 'List of all client names'
+  },
   'client serials': {
     sql: `SELECT id as serial, client_name, client_email, company, created_at FROM quotes ORDER BY created_at DESC`,
     description: 'Client serials (quote IDs)'
@@ -121,6 +138,15 @@ const QUERY_PATTERNS = {
   'rejected agreements': {
     sql: `SELECT COUNT(*) as rejected_count FROM signature_forms WHERE approval_status = 'rejected'`,
     description: 'Count of rejected agreements'
+  },
+  // Deals grouped by status (predefined to avoid LLM timeout for this common query)
+  'deals grouped by status': {
+    sql: `SELECT status, COUNT(*) as count_of_deals FROM hubspot_integrations GROUP BY status`,
+    description: 'Deals grouped by status with counts'
+  },
+  'grouped by status': {
+    sql: `SELECT status, COUNT(*) as count_of_deals FROM hubspot_integrations GROUP BY status`,
+    description: 'Deals grouped by status with counts'
   }
 };
 
@@ -138,7 +164,24 @@ async function callLLMForSQL(userQuery) {
       fetch = nodeFetch.default;
     }
     
-    const prompt = `You are a SQL expert. Given the following database schema, generate a MySQL SELECT query for: "${userQuery}"
+    // Use a shorter prompt for fine-tuned models to improve latency and avoid timeouts
+    const isFineTunedModel = LLM_MODEL && LLM_MODEL.toLowerCase().startsWith('sql-agent');
+    const prompt = isFineTunedModel
+      ? `You are the fine-tuned SQL agent model for the CPQ "lama" database.
+
+IMPORTANT RULES:
+- Generate ONLY a MySQL SELECT query (no INSERT, UPDATE, DELETE, DROP, ALTER)
+- Use proper MySQL syntax
+- Return ONLY the SQL query, no explanations, no markdown, no code blocks
+- If the user asks for a specific number (like "1 approval", "5 clients", "show 10 deals"), you MUST add a LIMIT clause with that number
+- For counting, use COUNT(*) as alias
+- Use the known tables and columns from your training (quotes, signature_forms, templates, hubspot_integrations, pricing_tiers)
+- If the question is unclear, return a simple safe SELECT query.
+
+User Question: ${userQuery}
+
+SQL Query:`
+      : `You are a SQL expert. Given the following database schema, generate a MySQL SELECT query for: "${userQuery}"
 
 ${DATABASE_SCHEMA}
 
@@ -168,9 +211,12 @@ SQL Query:`;
         options: {
           temperature: 0.3,
           top_p: 0.9,
+          // Limit output tokens to keep responses fast and within timeout
+          num_predict: 128
         }
       }),
-      signal: AbortSignal.timeout(10000) // 10 second timeout
+      // Increased timeout to 120 seconds to avoid premature LLM timeouts
+      signal: AbortSignal.timeout(120000)
     });
 
     if (!response.ok) {
@@ -212,17 +258,43 @@ SQL Query:`;
 
 /**
  * Extract number from query (for LIMIT clauses)
+ * Handles both numeric (1, 2, 3) and word forms (one, two, three)
  */
 function extractNumber(query) {
-  const match = query.match(/\b(\d+)\b/);
-  return match ? parseInt(match[1]) : null;
+  // First try numeric match
+  const numericMatch = query.match(/\b(\d+)\b/);
+  if (numericMatch) {
+    return parseInt(numericMatch[1]);
+  }
+  
+  // Then try word forms
+  const wordNumbers = {
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+  };
+  
+  for (const [word, num] of Object.entries(wordNumbers)) {
+    if (query.includes(` ${word} `) || query.startsWith(`${word} `) || query.endsWith(` ${word}`)) {
+      return num;
+    }
+  }
+  
+  return null;
 }
 
 /**
- * Generate SQL query from natural language using LLM or rule-based approach
+ * Generate SQL query from natural language using LLM (primary) or rule-based (fallback)
  */
 async function generateSQLQuery(userQuery) {
-  const queryLower = userQuery.toLowerCase().trim();
+  // Allow forcing LLM by prefixing query with "llm:" or "llama:"
+  let rawQuery = userQuery || '';
+  const forceLLMPrefix = /^(llm|llama)[:\-]\s*/i;
+  const forceLLM = forceLLMPrefix.test(rawQuery.trim());
+  if (forceLLM) {
+    rawQuery = rawQuery.trim().replace(forceLLMPrefix, '');
+  }
+
+  const queryLower = rawQuery.toLowerCase().trim();
   
   // Fix common typos
   const fixedQuery = queryLower
@@ -231,35 +303,48 @@ async function generateSQLQuery(userQuery) {
     .replace(/templete/gi, 'template')
     .replace(/deal/gi, 'deal');
   
-  // Try rule-based matching first (fast and reliable) - only for very simple queries
-  for (const [pattern, config] of Object.entries(QUERY_PATTERNS)) {
-    if (fixedQuery.includes(pattern)) {
-      // Only use rule-based if query doesn't have numbers (let LLM handle LIMIT)
-      const hasNumber = /\d+/.test(fixedQuery);
-      if (!hasNumber) {
+  // Extract number from query for LIMIT (before pattern matching)
+  const requestedNumber = extractNumber(fixedQuery);
+  
+  // Check if we have a simple pattern match first (fast path)
+  // This helps avoid LLM timeout for common queries
+  // Skip this if user explicitly forced LLM with "llm:" / "llama:" prefix
+  if (!forceLLM) {
+    for (const [pattern, config] of Object.entries(QUERY_PATTERNS)) {
+      if (fixedQuery.includes(pattern)) {
+        let sql = config.sql;
+        
+        // If query has a number, add LIMIT to rule-based query
+        if (requestedNumber && requestedNumber > 0) {
+          if (!sql.toUpperCase().includes('LIMIT')) {
+            sql = sql + ` LIMIT ${requestedNumber}`;
+          } else {
+            sql = sql.replace(/LIMIT\s+\d+/i, `LIMIT ${requestedNumber}`);
+          }
+        }
+        
+        console.log('✅ Using rule-based pattern for:', userQuery);
         return {
-          sql: config.sql,
-          description: config.description,
+          sql: sql,
+          description: requestedNumber 
+            ? `${config.description} (showing ${requestedNumber} result${requestedNumber > 1 ? 's' : ''})`
+            : config.description,
           method: 'rule-based'
         };
       }
-      // If has number, let LLM handle it (will add LIMIT automatically)
-      break;
     }
   }
   
-  // If rule-based doesn't match, try LLM with timeout
+  // PRIMARY: Try LLM for complex queries (this is the SQL Agent with Llama)
   try {
-    console.log('🤖 Using LLM to generate SQL for query:', userQuery);
+    console.log('🤖 Using LLM (Llama) to generate SQL for query:', rawQuery);
     
-    // Extract number from query for LIMIT enforcement
-    const requestedNumber = extractNumber(fixedQuery);
-    
-    // Add timeout wrapper for LLM call
+    // Add timeout wrapper for LLM call (increased for better reliability)
     let sql = await Promise.race([
       callLLMForSQL(fixedQuery),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('LLM request timeout after 15 seconds')), 15000)
+        // Match the 120 second timeout used in callLLMForSQL
+        setTimeout(() => reject(new Error('LLM request timeout after 120 seconds')), 120000)
       )
     ]);
     
@@ -292,22 +377,46 @@ async function generateSQLQuery(userQuery) {
       method: 'llm'
     };
   } catch (error) {
-    console.error('LLM error, falling back:', error.message);
+    console.error('LLM error, falling back to rule-based:', error.message);
     
-    // Check if it's a timeout or connection error
+    // FALLBACK: If LLM fails, try rule-based patterns
+    for (const [pattern, config] of Object.entries(QUERY_PATTERNS)) {
+      if (fixedQuery.includes(pattern)) {
+        let sql = config.sql;
+        
+        // If query has a number, add LIMIT to rule-based query
+        if (requestedNumber && requestedNumber > 0) {
+          if (!sql.toUpperCase().includes('LIMIT')) {
+            sql = sql + ` LIMIT ${requestedNumber}`;
+          } else {
+            sql = sql.replace(/LIMIT\s+\d+/i, `LIMIT ${requestedNumber}`);
+          }
+        }
+        
+        console.log('✅ Using rule-based fallback for:', userQuery);
+        return {
+          sql: sql,
+          description: requestedNumber 
+            ? `${config.description} (showing ${requestedNumber} result${requestedNumber > 1 ? 's' : ''})`
+            : config.description,
+          method: 'rule-based (fallback)'
+        };
+      }
+    }
+    
+    // If both LLM and rule-based fail
     if (error.message.includes('timeout') || error.message.includes('ECONNREFUSED')) {
       return {
         sql: null,
-        description: `LLM server not responding. Make sure Ollama is running: "ollama serve". Try simple queries like "How many deals done?" or "Show client names" which work without LLM.`,
-        method: 'fallback'
+        description: `LLM server not responding. Make sure Ollama is running: "ollama serve". Error: ${error.message}`,
+        method: 'error'
       };
     }
     
-    // Fallback: return helpful message
     return {
       sql: null,
       description: `Could not understand the query. Try asking about: deals, client names, templates, or approval status. Error: ${error.message}`,
-      method: 'fallback'
+      method: 'error'
     };
   }
 }
@@ -367,7 +476,12 @@ async function processQuery(userQuery) {
     
     console.log(`✅ Query executed, returned ${results.length} rows`);
     
-    // Step 3: Return results
+    // Step 3: Log for training data collection (only successful queries)
+    if (sql && method) {
+      trainingCollector.logQuery(userQuery, sql, method, results);
+    }
+    
+    // Step 4: Return results
     return {
       success: true,
       query: userQuery,
@@ -401,6 +515,10 @@ function getSchemaInfo() {
       apiUrl: LLM_API_URL,
       model: LLM_MODEL,
       enabled: true
+    },
+    trainingData: {
+      count: trainingCollector.getTrainingDataCount(),
+      file: trainingCollector.TRAINING_DATA_FILE
     }
   };
 }
@@ -449,5 +567,9 @@ module.exports = {
   getSchemaInfo,
   executeQuery,
   generateSQLQuery,
-  testLLMConnection
+  testLLMConnection,
+  getTrainingData: () => trainingCollector.getTrainingExamples(),
+  getTrainingDataCount: () => trainingCollector.getTrainingDataCount(),
+  exportTrainingData: (format) => trainingCollector.exportTrainingData(format),
+  clearTrainingData: () => trainingCollector.clearTrainingData()
 };

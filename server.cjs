@@ -3766,6 +3766,54 @@ app.get('/api/sql-agent/test-llm', async (req, res) => {
   }
 });
 
+// Get training data statistics
+app.get('/api/sql-agent/training-data', async (req, res) => {
+  try {
+    const count = sqlAgent.getTrainingDataCount();
+    const examples = sqlAgent.getTrainingData();
+    res.json({
+      success: true,
+      count: count,
+      examples: examples.slice(-10), // Last 10 examples
+      file: 'training-data/query-examples.jsonl'
+    });
+  } catch (error) {
+    console.error('❌ Error getting training data:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get training data'
+    });
+  }
+});
+
+// Export training data
+app.get('/api/sql-agent/export-training-data', async (req, res) => {
+  try {
+    const format = req.query.format || 'jsonl'; // jsonl, json, csv
+    const filePath = sqlAgent.exportTrainingData(format);
+    
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid format. Use: jsonl, json, or csv'
+      });
+    }
+    
+    res.json({
+      success: true,
+      file: filePath,
+      format: format,
+      message: `Training data exported to ${filePath}`
+    });
+  } catch (error) {
+    console.error('❌ Error exporting training data:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export training data'
+    });
+  }
+});
+
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
