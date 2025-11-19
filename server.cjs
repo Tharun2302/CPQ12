@@ -2606,7 +2606,7 @@ app.post('/api/send-team-email', async (req, res) => {
     }
 
     const { teamEmail, workflowData } = req.body;
-    const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'team@company.com';
+    const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'anushreddydasari@gmail.com';
     const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
     
     console.log('📧 Sending email to Team (first approval step)...');

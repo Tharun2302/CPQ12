@@ -423,18 +423,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   }, [teamSelection]);
 
   // Helper function to get team approval email based on selection
-  const getTeamApprovalEmail = (team: string): string => {
-    const teamUpper = team.toUpperCase();
-    switch (teamUpper) {
-      case 'SMB':
-        return 'chitradip.saha@cloudfuze.com';
-      case 'AM':
-        return 'lawrence.lewis@cloudfuze.com';
-      case 'ENT':
-        return 'anthony@cloudfuze.com';
-      default:
-        return 'chitradip.saha@cloudfuze.com'; // Default to SMB
-    }
+  // All team approvals are routed to Anush's email
+  const getTeamApprovalEmail = (_team: string): string => {
+    return 'anushreddydasari@gmail.com';
   };
 
   const ensureDocxPreviewStylesInjected = () => {
@@ -1358,7 +1349,7 @@ Total Price: {{total price}}`;
         documentType: 'agreement',
         documentName: link.download,
         format: 'docx',
-        fileSize: blob.size / 1024 // Convert to KB
+        fileSize: processedAgreement.size / 1024 // Convert to KB
       });
       
       // Close preview after download
@@ -5008,9 +4999,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     onChange={(e) => setTeamSelection(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="SMB">SMB (chitradip.saha@cloudfuze.com)</option>
-                    <option value="AM">AM (lawrence.lewis@cloudfuze.com)</option>
-                    <option value="ENT">ENT (anthony@cloudfuze.com)</option>
+                    <option value="SMB">SMB (anushreddydasari@gmail.com)</option>
+                    <option value="AM">AM (anushreddydasari@gmail.com)</option>
+                    <option value="ENT">ENT (anushreddydasari@gmail.com)</option>
                   </select>
                 </div>
                 
