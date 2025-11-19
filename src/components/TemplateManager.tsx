@@ -5,7 +5,6 @@ import {
   Eye, 
   Download, 
   Plus, 
-  Settings,
   CheckCircle,
   AlertCircle,
   X,
@@ -711,36 +710,8 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     }
   };
 
-  // handleDeleteTemplate function removed - templates should not be deleted from UI
-  // to preserve database integrity and prevent accidental deletion of seeded templates
-
-  const handleSetDefault = async (templateId: string) => {
-    try {
-      console.log('📝 Setting default template in database:', templateId);
-      
-      // Update in database
-      await templateService.updateTemplate(templateId, { isDefault: true });
-      
-      // Update state
-      setTemplates(prev => prev.map(t => ({
-        ...t,
-        isDefault: t.id === templateId
-      })));
-      
-      // Dispatch event to notify App.tsx about template update
-      console.log('📢 Dispatching templatesUpdated event (default template changed)...');
-      window.dispatchEvent(new CustomEvent('templatesUpdated'));
-      
-      console.log('✅ Default template updated in database');
-      setUploadSuccess('Default template updated successfully!');
-      setTimeout(() => setUploadSuccess(null), 3000);
-      
-    } catch (error) {
-      console.error('❌ Error updating default template:', error);
-      setUploadError(`Failed to update default template: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setTimeout(() => setUploadError(null), 5000);
-    }
-  };
+  // handleDeleteTemplate and handleSetDefault functions are intentionally removed
+  // from the active UI to prevent accidental deletion or changing of seeded defaults.
 
   // Process template content for non-PDF templates
   const processTemplateContent = async (template: Template, quote: any): Promise<string> => {
@@ -1955,12 +1926,13 @@ The client will receive an email with the processed template and a link to compl
     <div className="max-w-6xl mx-auto p-8">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-          <FileText className="w-8 h-8 text-white" />
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+            <FileText className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800">Template Manager</h1>
         </div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">Template Manager</h1>
-        <p className="text-gray-600">Upload and manage your quote templates</p>
-        
+        <p className="text-gray-600">Here you can see and manage all your deal agreement templates</p>
 
         {/* Storage Management - Hidden */}
         {/* <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
@@ -2106,31 +2078,13 @@ The client will receive an email with the processed template and a link to compl
                   PDF
                 </button>
 
-                                 {template.wordFile ? (
-                   <button
-                     onClick={() => handleDownloadWordTemplate(template)}
-                     className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
-                   >
-                     <WordIcon className="w-4 h-4 inline mr-1" />
-                     RTF
-                   </button>
-                 ) : (
-                   <button
-                     onClick={() => handleConvertToWord(template)}
-                     className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 transition-colors"
-                   >
-                     <WordIcon className="w-4 h-4 inline mr-1" />
-                     Convert
-                   </button>
-                 )}
-                
-                {!template.isDefault && (
+                {template.wordFile && (
                   <button
-                    onClick={() => handleSetDefault(template.id)}
-                    className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 transition-colors"
+                    onClick={() => handleDownloadWordTemplate(template)}
+                    className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
                   >
-                    <Settings className="w-4 h-4 inline mr-1" />
-                    Set Default
+                    <WordIcon className="w-4 h-4 inline mr-1" />
+                    RTF
                   </button>
                 )}
               </div>
