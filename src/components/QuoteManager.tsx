@@ -1260,7 +1260,7 @@ The client will receive an email with the PDF quote and a link to complete the d
           <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
             <FileText className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-800">Quote Manager</h1>
+          <h1 className="text-3xl font-bold text-gray-800">Deal Documents Manager</h1>
         </div>
         <p className="text-gray-600">Here you can see all your created Deal Documents</p>
         

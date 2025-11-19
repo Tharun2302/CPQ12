@@ -388,7 +388,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Approval workflow state
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
-  // Use centralized hardcoded defaults
+  // Use centralized hardcoded defaults (original team addresses)
   const defaultTechEmail = 'nivas@cloudfuze.com';
   const defaultLegalEmail = 'adi.nandyala@cloudfuze.com';
   const defaultDealDeskEmail = 'salesops@cloudfuze.com';
@@ -1603,7 +1603,7 @@ Total Price: {{total price}}`;
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        // Notify the workflow initiator on denial
+        // Notify the actual workflow initiator (current CPQ user)
         creatorEmail: (() => {
           try {
             const userRaw = localStorage.getItem('cpq_user');
@@ -1612,6 +1612,7 @@ Total Price: {{total price}}`;
               if (user?.email) return user.email;
             }
           } catch {}
+          // Fallback if no user is stored
           return 'anushreddydasari@gmail.com';
         })(),
         totalSteps: 4,
@@ -4122,10 +4123,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
   return (
     <div className="max-w-4xl mx-auto p-8">
       <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-          <FileText className="w-8 h-8 text-white" />
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+            <FileText className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800">Generate Professional Quote</h1>
         </div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">Generate Professional Quote</h1>
         <p className="text-gray-600">Create a detailed quote for your client</p>
       </div>
 

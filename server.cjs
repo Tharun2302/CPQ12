@@ -2836,6 +2836,7 @@ app.post('/api/send-client-email', async (req, res) => {
 });
 
 // Send Deal Desk notification email (after client approval)
+// Also notifies the workflow creator (approval initiator) when available
 app.post('/api/send-deal-desk-email', async (req, res) => {
   try {
     if (!isEmailConfigured) {
@@ -2888,6 +2889,24 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
       }
     }
 
+    // Look up workflow to find creator email (approval initiator)
+    let creatorEmailForNotification = null;
+    if (workflowData && workflowData.workflowId && db) {
+      try {
+        const workflowRecord = await db
+          .collection('approval_workflows')
+          .findOne({ id: workflowData.workflowId });
+        if (workflowRecord && workflowRecord.creatorEmail) {
+          creatorEmailForNotification = workflowRecord.creatorEmail;
+          console.log('📧 Found workflow creator email for completion notification:', creatorEmailForNotification);
+        } else {
+          console.log('ℹ️ No creatorEmail found on workflow; skipping creator completion email.');
+        }
+      } catch (creatorLookupError) {
+        console.error('❌ Error fetching workflow for creator completion email:', creatorLookupError);
+      }
+    }
+
     // Send notification email to Deal Desk
     const dealDeskResult = await sendEmail(
       resolvedDealDeskEmail,
@@ -2898,10 +2917,31 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
 
     console.log('✅ Deal Desk notification email sent:', dealDeskResult.success);
 
+    // Best-effort notification email to workflow creator (if available)
+    if (creatorEmailForNotification) {
+      try {
+        const creatorResult = await sendEmail(
+          creatorEmailForNotification,
+          `Approval Workflow Completed: ${workflowData.documentId}`,
+          generateDealDeskEmailHTML(workflowData),
+          attachments
+        );
+        console.log('✅ Workflow creator completion email sent:', creatorResult.success);
+      } catch (creatorEmailError) {
+        // Do not fail the whole request if creator email fails; just log
+        console.error('❌ Error sending workflow creator completion email:', creatorEmailError);
+      }
+    }
+
     res.json({
       success: dealDeskResult.success,
-      message: 'Deal Desk notification email sent successfully',
-      result: { role: 'Deal Desk', email: resolvedDealDeskEmail, success: dealDeskResult.success },
+      message: creatorEmailForNotification
+        ? 'Deal Desk and creator notification emails sent successfully'
+        : 'Deal Desk notification email sent successfully',
+      result: {
+        dealDesk: { role: 'Deal Desk', email: resolvedDealDeskEmail, success: dealDeskResult.success },
+        creator: creatorEmailForNotification ? { role: 'Creator', email: creatorEmailForNotification } : null
+      },
       workflowData: workflowData,
       attachmentCount: attachments.length
     });
