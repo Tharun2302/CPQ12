@@ -1042,18 +1042,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
                           { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
                           { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
-                          { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
-                          { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
-<<<<<<< HEAD
-                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
-                          { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
-                          { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
-                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
-                          { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
-=======
-                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' }
->>>>>>> main
+                         { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
+                         { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                         { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
+                         { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
+                         { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
+                         { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
+                         { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' }
                         ];
                         
                         const filtered = contentCombinations.filter(combo => 
@@ -1101,21 +1096,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
                             { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
                             { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
-                            { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
-                            { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
-<<<<<<< HEAD
-                            { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
-                            { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
-                            { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
-                            { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
-                            { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-=======
-                            { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' }
-                          ];
-                          const overageCombinations = [
->>>>>>> main
-                            { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
-                          ];
+                         { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
+                         { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                         { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
+                         { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
+                         { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
+                         { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
+                         { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' }
+                       ];
+                       const overageCombinations = [
+                         { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                       ];
 
                           let allCombinations: { value: string; label: string }[] = [];
                           if (config.migrationType === 'Messaging') {
