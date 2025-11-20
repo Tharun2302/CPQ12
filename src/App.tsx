@@ -1276,13 +1276,19 @@ function App() {
         const templateCombination = (t?.combination || '').toLowerCase();
         const templateCategory = (t?.category || '').toLowerCase();
         const matchesCombination = templateCombination === 'overage-agreement';
-        const matchesCategory = templateCategory === migration;
+
+        // For legacy Messaging/Content flows, still respect category.
+        // For the dedicated "Overage Agreement" migration type, allow any category
+        // so we can reuse existing templates regardless of how they were seeded.
+        const isOverageMigrationType = (config?.migrationType || '').toLowerCase() === 'overage agreement';
+        const matchesCategory = isOverageMigrationType ? true : templateCategory === migration;
         
         console.log('🎯 Overage Agreement matching:', {
           templateName: t?.name,
           templateCombination,
           templateCategory,
           targetMigration: migration,
+          isOverageMigrationType,
           matchesCombination,
           matchesCategory,
           finalMatch: matchesCombination && matchesCategory

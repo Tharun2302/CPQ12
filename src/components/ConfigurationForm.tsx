@@ -895,7 +895,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               <select
                 value={config.migrationType}
                 onChange={(e) => {
-                  const newMigrationType = e.target.value as 'Messaging' | 'Content';
+                  const newMigrationType = e.target.value as 'Messaging' | 'Content' | 'Overage Agreement';
                   console.log(`🔄 Migration type changing from "${config.migrationType}" to "${newMigrationType}"`);
                   
                   // Create new config with updated migration type and cleared combination
@@ -927,6 +927,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 <option value="">Select Migration Type</option>
                 <option value="Messaging">Messaging</option>
                 <option value="Content">Content</option>
+                <option value="Overage Agreement">Overage</option>
               </select>
             </div>
           </div>
@@ -1005,8 +1006,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       {config.migrationType === 'Messaging' && (() => {
                         const messagingCombinations = [
                           { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
-                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }
                         ];
                         
                         const filtered = messagingCombinations.filter(combo => 
@@ -1034,14 +1034,27 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
                           { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
                           { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
-                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
-                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' }
                         ];
                         
                         const filtered = contentCombinations.filter(combo => 
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                         );
                         
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
+                      {/* Overage Agreement migration type - show only overage agreement combination */}
+                      {config.migrationType === 'Overage Agreement' && (() => {
+                        const overageCombinations = [
+                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                        ];
+
+                        const filtered = overageCombinations.filter(combo =>
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
+
                         return filtered.map(combo => (
                           <option key={combo.value} value={combo.value}>{combo.label}</option>
                         ));
@@ -1054,8 +1067,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         {(() => {
                           const messagingCombinations = [
                             { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                            { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
-                            { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                            { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }
                           ];
                           const contentCombinations = [
                             { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
@@ -1067,9 +1079,26 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
                             { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
                             { value: 'google-sharedrive-to-sharepoint', label: 'GOOGLE SHARED DRIVE TO SHAREPOINT' },
+                            { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
+                            { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
+                            { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
+                            { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
+                            { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                            { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' }
+                          ];
+                          const overageCombinations = [
                             { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                           ];
-                          const allCombinations = config.migrationType === 'Messaging' ? messagingCombinations : contentCombinations;
+
+                          let allCombinations: { value: string; label: string }[] = [];
+                          if (config.migrationType === 'Messaging') {
+                            allCombinations = messagingCombinations;
+                          } else if (config.migrationType === 'Content') {
+                            allCombinations = contentCombinations;
+                          } else if (config.migrationType === 'Overage Agreement') {
+                            allCombinations = overageCombinations;
+                          }
+
                           const filtered = allCombinations.filter(combo => 
                             combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                           );

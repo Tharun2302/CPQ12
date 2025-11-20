@@ -168,6 +168,24 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     }
   };
 
+  // Helper: user-friendly template name for UI
+  const getSelectedTemplateDisplayName = (): string => {
+    const rawName: string = selectedTemplate?.name || '';
+
+    // For overage agreements, hide the "Content"/"Messaging" suffix
+    const isOverageCombination =
+      (configuration?.combination || '').toLowerCase() === 'overage-agreement';
+    const isOverageMigrationType =
+      (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+
+    if ((isOverageCombination || isOverageMigrationType) &&
+        rawName.toUpperCase().startsWith('OVERAGE AGREEMENT')) {
+      return 'OVERAGE AGREEMENT';
+    }
+
+    return rawName || 'Selected Template';
+  };
+
   // Safety check - if calculation is undefined, show warning but continue
   if (!calculation) {
     console.warn('⚠️ QuoteGenerator: calculation is undefined, using fallback');
@@ -4147,7 +4165,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <div>
                     <h3 className="font-semibold text-gray-800">Template Selected</h3>
                     <p className="text-sm text-gray-600">
-                      Using template: <span className="font-medium text-green-700">{selectedTemplate.name}</span>
+                      Using template: <span className="font-medium text-green-700">{getSelectedTemplateDisplayName()}</span>
                     </p>
                     <p className="text-xs text-green-600 mt-1">
                       ✅ Ready to generate agreement with this template
