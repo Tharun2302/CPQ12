@@ -1615,7 +1615,13 @@ Total Price: {{total price}}`;
       const choice = (teamSelection || 'SMB').toUpperCase();
       const teamEmail = getTeamApprovalEmail(choice);
 
+      // Determine if this is an overage agreement workflow (special approval routing)
+      const isOverageWorkflow =
+        (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+        (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+      
       // Create the approval workflow (Team Approval -> Technical -> Legal -> Deal Desk)
+      // For overage workflows, Technical Team approval will be auto-skipped in Team step.
       const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
@@ -1633,6 +1639,7 @@ Total Price: {{total price}}`;
           // Fallback if no user is stored
           return 'anushreddydasari@gmail.com';
         })(),
+        isOverage: isOverageWorkflow,
         totalSteps: 4,
         workflowSteps: [
           { step: 1, role: 'Team Approval', email: teamEmail, status: 'pending' as const, group: choice, comments: '' },

@@ -6,6 +6,8 @@ export interface ApprovalWorkflow {
   amount: number;
   // Email address of the user who initiated the workflow
   creatorEmail?: string;
+  // Optional flag to indicate special handling (e.g. overage agreement workflows)
+  isOverage?: boolean;
   status: 'pending' | 'approved' | 'denied' | 'in_progress';
   currentStep: number;
   totalSteps: number;
