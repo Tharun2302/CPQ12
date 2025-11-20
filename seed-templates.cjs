@@ -538,6 +538,90 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'google', 'mydrive', 'content', 'migration', 'enterprise']
     },
+    // SHAREFILE TO GOOGLE MYDRIVE templates (Standard & Advanced only)
+    {
+      name: 'SHAREFILE TO GOOGLE MYDRIVE Standard',
+      description: 'Standard template for ShareFile to Google MyDrive migration - suitable for medium to large projects',
+      fileName: 'sharefile-to-google-mydrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-google-mydrive',
+      planType: 'standard',
+      keywords: ['standard', 'sharefile', 'google', 'mydrive', 'content', 'migration']
+    },
+    {
+      name: 'SHAREFILE TO GOOGLE MYDRIVE Advanced',
+      description: 'Advanced template for ShareFile to Google MyDrive migration - suitable for large enterprise projects',
+      fileName: 'sharefile-to-google-mydrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-google-mydrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharefile', 'google', 'mydrive', 'content', 'migration', 'enterprise']
+    },
+    // SHAREFILE TO GOOGLE SHARED DRIVE templates (Standard & Advanced only)
+    {
+      name: 'SHAREFILE TO GOOGLE SHARED DRIVE Standard',
+      description: 'Standard template for ShareFile to Google Shared Drive migration - suitable for medium to large projects',
+      fileName: 'sharefile-to-google-sharedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-google-sharedrive',
+      planType: 'standard',
+      keywords: ['standard', 'sharefile', 'google', 'sharedrive', 'shared drive', 'content', 'migration']
+    },
+    {
+      name: 'SHAREFILE TO GOOGLE SHARED DRIVE Advanced',
+      description: 'Advanced template for ShareFile to Google Shared Drive migration - suitable for large enterprise projects',
+      fileName: 'sharefile-to-google-sharedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-google-sharedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharefile', 'google', 'sharedrive', 'shared drive', 'content', 'migration', 'enterprise']
+    },
+    // SHAREFILE TO ONEDRIVE templates (Standard & Advanced only)
+    {
+      name: 'SHAREFILE TO ONEDRIVE Standard',
+      description: 'Standard template for ShareFile to OneDrive migration - suitable for medium to large projects',
+      fileName: 'sharefile-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'sharefile', 'onedrive', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'SHAREFILE TO ONEDRIVE Advanced',
+      description: 'Advanced template for ShareFile to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'sharefile-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharefile', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
+    },
+    // SHAREFILE TO SHAREFILE templates (Standard & Advanced only)
+    {
+      name: 'SHAREFILE TO SHAREFILE Standard',
+      description: 'Standard template for ShareFile to ShareFile migration - suitable for medium to large projects',
+      fileName: 'sharefile-to-sharefile-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-sharefile',
+      planType: 'standard',
+      keywords: ['standard', 'sharefile', 'content', 'migration']
+    },
+    {
+      name: 'SHAREFILE TO SHAREFILE Advanced',
+      description: 'Advanced template for ShareFile to ShareFile migration - suitable for large enterprise projects',
+      fileName: 'sharefile-to-sharefile-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-sharefile',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharefile', 'content', 'migration', 'enterprise']
+    },
     // OVERAGE AGREEMENT - Single template for BOTH migration types
     {
       name: 'OVERAGE AGREEMENT Messaging',
@@ -671,13 +755,14 @@ async function seedDefaultTemplates(db) {
   }
 
   console.log(`🎉 Template seeding completed! Uploaded ${uploadedCount} templates`);
-  console.log(`📊 Total templates: 4 Messaging + 24 Content + 2 Overage Agreement (30 templates total)`);
+  console.log(`📊 Total templates: 4 Messaging + 30 Content + 2 Overage Agreement (36 templates total)`);
   console.log(`   - Messaging: SLACK TO TEAMS, SLACK TO GOOGLE CHAT (Basic, Advanced)`);
   console.log(`   - Content: DROPBOX TO MYDRIVE, DROPBOX TO SHAREDRIVE (Basic, Standard, Advanced)`);
   console.log(`   - Content: DROPBOX TO SHAREPOINT, DROPBOX TO ONEDRIVE, DROPBOX TO GOOGLE, DROPBOX TO MICROSOFT (Standard, Advanced only)`);
   console.log(`   - Content: BOX TO BOX, BOX TO GOOGLE MYDRIVE, BOX TO GOOGLE SHARED DRIVE, BOX TO ONEDRIVE, BOX TO MICROSOFT, BOX TO GOOGLE (Standard, Advanced only)`);
   console.log(`   - Content: GOOGLE SHARED DRIVE TO EGNYTE, GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE (Standard, Advanced only)`);
   console.log(`   - Content: GOOGLE SHARED DRIVE TO ONEDRIVE, GOOGLE SHARED DRIVE TO SHAREPOINT (Standard, Advanced only)`);
+  console.log(`   - Content: SHAREFILE TO GOOGLE MYDRIVE, SHAREFILE TO GOOGLE SHARED DRIVE, SHAREFILE TO ONEDRIVE, SHAREFILE TO SHAREFILE (Standard, Advanced only)`);
   console.log(`   - Overage: OVERAGE AGREEMENT (Messaging, Content)`);
   return uploadedCount > 0;
 }
