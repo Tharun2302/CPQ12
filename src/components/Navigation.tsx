@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Calculator, FileText, Sparkles, Upload, Building, Menu, X, CheckCircle } from 'lucide-react';
+import { FileText, Upload, Building, Menu, X, CheckCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
@@ -26,7 +26,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
   
   const tabs = [
     { id: 'deal', label: 'Deal', icon: Building, path: '/dashboard/deal' },
-    { id: 'configure', label: 'Configure', icon: Calculator, path: '/dashboard/configure' },
+    { id: 'configure', label: 'Configure', icon: FileText, path: '/dashboard/configure' },
     // Pricing tab hidden per requirement
     // { id: 'pricing-config', label: 'Pricing', icon: DollarSign, path: '/dashboard/pricing-config' },
     { id: 'quote', label: 'Quote', icon: FileText, path: '/dashboard/quote' },
@@ -42,19 +42,11 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-center h-16 relative">
           {/* Logo Section - Clickable to navigate to Deal page */}
-          <Link 
-            to="/dashboard/deal" 
+          <Link
+            to="/dashboard/deal"
             className="flex items-center gap-3 absolute left-0 cursor-pointer hover:opacity-80 transition-opacity duration-200"
           >
-            <div className="relative flex-shrink-0">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
-                <Calculator className="w-6 h-6 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
-                <Sparkles className="w-2 h-2 text-white" />
-              </div>
-            </div>
-            <h1 className="text-xl font-bold text-gray-900">
+            <h1 className="text-xl font-bold text-blue-700">
               Zenop.ai
             </h1>
           </Link>
@@ -83,9 +75,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
             </div>
           )}
 
-          {/* User Menu - Right Side */}
+          {/* User Menu - Right Side (Desktop) */}
           {isAuthenticated && (
-            <div className="absolute right-0">
+            <div className="hidden lg:block absolute right-0">
               <UserMenu />
             </div>
           )}

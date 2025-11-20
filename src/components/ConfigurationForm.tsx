@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X } from 'lucide-react';
+import { trackConfiguration } from '../analytics/clarity';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -574,6 +575,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
     
     console.log('✅ Form validation passed, submitting configuration');
+    
+    // Track configuration submission
+    trackConfiguration({
+      migrationType: config.migrationType,
+      numberOfUsers: config.numberOfUsers,
+      instanceType: config.instanceType,
+      numberOfInstances: config.numberOfInstances,
+      duration: config.duration,
+      dataSizeGB: config.dataSizeGB,
+      messages: config.messages,
+      combination: config.combination,
+      hasDiscount: !!discountValue && parseFloat(discountValue) > 0,
+      discountValue: discountValue ? parseFloat(discountValue) : undefined
+    });
+    
     onSubmit();
     
     // Scroll to pricing section after a short delay to allow the component to render
@@ -889,7 +905,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               <select
                 value={config.migrationType}
                 onChange={(e) => {
-                  const newMigrationType = e.target.value as 'Messaging' | 'Content';
+                  const newMigrationType = e.target.value as 'Messaging' | 'Content' | 'Overage Agreement';
                   console.log(`🔄 Migration type changing from "${config.migrationType}" to "${newMigrationType}"`);
                   
                   // Create new config with updated migration type and cleared combination
@@ -921,6 +937,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 <option value="">Select Migration Type</option>
                 <option value="Messaging">Messaging</option>
                 <option value="Content">Content</option>
+                <option value="Overage Agreement">Overage</option>
               </select>
             </div>
           </div>
@@ -999,8 +1016,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       {config.migrationType === 'Messaging' && (() => {
                         const messagingCombinations = [
                           { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
-                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }
                         ];
                         
                         const filtered = messagingCombinations.filter(combo => 
@@ -1028,18 +1044,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
                           { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
                           { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+<<<<<<< HEAD
                           { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
                           { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
                           { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
                           { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
                           { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
                           { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+=======
+                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' }
+>>>>>>> main
                         ];
                         
                         const filtered = contentCombinations.filter(combo => 
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                         );
                         
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
+                      {/* Overage Agreement migration type - show only overage agreement combination */}
+                      {config.migrationType === 'Overage Agreement' && (() => {
+                        const overageCombinations = [
+                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                        ];
+
+                        const filtered = overageCombinations.filter(combo =>
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
+
                         return filtered.map(combo => (
                           <option key={combo.value} value={combo.value}>{combo.label}</option>
                         ));
@@ -1052,8 +1086,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         {(() => {
                           const messagingCombinations = [
                             { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                            { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
-                            { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
+                            { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }
                           ];
                           const contentCombinations = [
                             { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
@@ -1070,14 +1103,29 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
                             { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
                             { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+<<<<<<< HEAD
                             { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
                             { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
                             { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
                             { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
                             { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
+=======
+                            { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' }
+                          ];
+                          const overageCombinations = [
+>>>>>>> main
                             { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                           ];
-                          const allCombinations = config.migrationType === 'Messaging' ? messagingCombinations : contentCombinations;
+
+                          let allCombinations: { value: string; label: string }[] = [];
+                          if (config.migrationType === 'Messaging') {
+                            allCombinations = messagingCombinations;
+                          } else if (config.migrationType === 'Content') {
+                            allCombinations = contentCombinations;
+                          } else if (config.migrationType === 'Overage Agreement') {
+                            allCombinations = overageCombinations;
+                          }
+
                           const filtered = allCombinations.filter(combo => 
                             combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                           );

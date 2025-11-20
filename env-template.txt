@@ -45,6 +45,21 @@ HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
 # Port for your backend server
 PORT=3001
 
+# Backend URL (for frontend API calls)
+# Local: http://localhost:3001
+# Production: https://zenop.ai
+VITE_BACKEND_URL=http://localhost:3001
+
+# Frontend URL (for email links and redirects)
+# Local: http://localhost:5173
+# Production: https://zenop.ai
+BASE_URL=http://localhost:5173
+
+# Backend Base URL (for CORS and email links)
+# Local: http://localhost:3001
+# Production: https://zenop.ai
+APP_BASE_URL=http://localhost:3001
+
 # JWT Secret for authentication tokens (CHANGE IN PRODUCTION!)
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 
@@ -53,6 +68,17 @@ JWT_SECRET=your-super-secret-jwt-key-change-in-production
 # ===========================================
 # Set to 'production' when deploying
 NODE_ENV=development
+
+# ===========================================
+# MICROSOFT CLARITY ANALYTICS
+# ===========================================
+# Get your Clarity Project ID from: https://clarity.microsoft.com/
+# Create a project and copy the Project ID
+VITE_CLARITY_ID=your-clarity-project-id-here
+
+# Enable Clarity in development mode (set to '1' to enable, '0' or leave empty to disable)
+# In production, Clarity automatically works (no need to set this)
+VITE_CLARITY_ENABLE_DEV=0
 
 # ===========================================
 # APPROVAL WORKFLOW DEFAULT RECIPIENTS

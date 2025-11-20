@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, Eye, X } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
@@ -28,6 +28,10 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [pdfPreviewData, setPdfPreviewData] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Optional: show quotes list (not used for eSign document download)
   useEffect(() => {
@@ -79,6 +83,18 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   };
 
   const handlePreviewDocument = async (document: any) => {
+    // Make sure the modal has a document to display
+    setSelectedDocument(document);
+
+    // If we already have base64 file data from the documents API,
+    // use it directly without another backend call.
+    if (document.fileData) {
+      const dataUrl = `data:application/pdf;base64,${document.fileData}`;
+      setPdfPreviewData(dataUrl);
+      setShowPreview(true);
+      return;
+    }
+
     setIsLoadingPreview(true);
     setPdfPreviewData(null);
 
@@ -103,6 +119,90 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     setPdfPreviewData(null);
   };
 
+  const handleUploadButtonClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileUploadChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadMessage(null);
+    setIsUploadingDocument(true);
+
+    try {
+      // Convert file (Blob) to base64, similar to pdfProcessor.savePDFToDatabase
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const withoutPrefix = result.split(',')[1] || '';
+          resolve(withoutPrefix);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const documentData = {
+        fileName: file.name,
+        fileData: base64,
+        fileSize: file.size,
+        clientName: 'Manual Upload',
+        company: 'Manual Upload',
+        quoteId: null,
+        metadata: {
+          totalCost: 0
+        },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        generatedDate: new Date().toISOString()
+      };
+
+      const response = await fetch(`${BACKEND_URL}/api/documents`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(documentData)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to save document');
+      }
+
+      const uploadedDocument = {
+        id: result.documentId,
+        name: file.name,
+        fileName: file.name,
+        type: 'PDF Agreement',
+        clientName: documentData.clientName,
+        company: documentData.company,
+        amount: 0,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        // Store base64 so preview works immediately without another request
+        fileData: base64
+      };
+
+      setAvailableDocuments(prev => [uploadedDocument, ...prev]);
+      handleDocumentSelect(uploadedDocument);
+
+      setUploadMessage('Document uploaded, saved and selected successfully.');
+    } catch (error: any) {
+      console.error('Error uploading document:', error);
+      setUploadMessage(error.message || 'Error uploading document. Please try again.');
+    } finally {
+      setIsUploadingDocument(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const handleStartWorkflow = async () => {
     if (!formData.documentId) {
       alert('Please select a document first');
@@ -110,7 +210,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     }
 
     try {
-      await createWorkflow({
+      const newWorkflow = await createWorkflow({
       documentId: formData.documentId,
       documentType: formData.documentType,
         clientName: 'John Smith', // Default client name
@@ -131,8 +231,13 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
           }
         ]
       });
+
+      if (newWorkflow) {
+        alert('Approval workflow started successfully.');
+      }
     } catch (error) {
       console.error('Error starting workflow:', error);
+      alert('Failed to start approval workflow. Please try again.');
     }
   };
 
@@ -280,7 +385,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
           </div>
           <p className="text-gray-600 mb-4">Select a document to automatically populate the form fields above.</p>
           
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4 items-center">
             <button
                   onClick={loadAvailableDocuments}
               disabled={isLoadingDocuments}
@@ -296,7 +401,30 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   <X className="w-4 h-4" />
                   Clear List
             </button>
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                onChange={handleFileUploadChange}
+                className="hidden"
+              />
+              <button
+                onClick={handleUploadButtonClick}
+                disabled={isUploadingDocument}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                {isUploadingDocument ? 'Uploading...' : 'Upload PDF'}
+              </button>
+            </div>
           </div>
+
+          {uploadMessage && (
+            <p className="mt-3 text-sm text-gray-700">
+              {uploadMessage}
+            </p>
+          )}
 
           {availableDocuments.length > 0 && (
                 <div className="mt-6 space-y-3">

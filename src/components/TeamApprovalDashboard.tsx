@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle } from 'lucide-react';
+import { track } from '../analytics/clarity';
 
 const TeamApprovalDashboard: React.FC = () => {
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
@@ -30,28 +31,84 @@ const TeamApprovalDashboard: React.FC = () => {
     try {
       setHasTakenAction(true);
       await updateWorkflowStep(workflowId, 1, { status: 'approved' });
-      // Send email to Technical Team (next step)
+      
+      // Track approval action
       const wf = workflows.find(w => w.id === workflowId);
-      const technicalEmail = wf?.workflowSteps?.find(s => s.step === 2)?.email || wf?.workflowSteps?.find(s => s.role === 'Technical Team')?.email;
-      if (technicalEmail) {
+      track('approval.action', {
+        action: 'approved',
+        workflowId: workflowId,
+        step: 1,
+        role: 'Team Approval',
+        clientName: wf?.clientName,
+        amount: wf?.amount
+      });
+
+      const isOverage = wf?.isOverage === true;
+
+      if (isOverage) {
+        // For overage agreement workflows, skip Technical Team approval entirely.
+        // Auto-mark the Technical step as approved and notify Legal Team directly.
         try {
-          await fetch(`${BACKEND_URL}/api/send-manager-email`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              managerEmail: technicalEmail,
-              workflowData: {
-                documentId: wf?.documentId,
-                documentType: wf?.documentType,
-                clientName: wf?.clientName,
-                amount: wf?.amount,
-                workflowId: wf?.id
-              }
-            })
-          });
-        } catch {}
+          await updateWorkflowStep(workflowId, 2, { status: 'approved', comments: 'Skipped for overage agreement' });
+        } catch {
+          // Best-effort; do not block approval if this fails
+        }
+
+        const legalEmail =
+          wf?.workflowSteps?.find(s => s.role === 'Legal Team')?.email ||
+          wf?.workflowSteps?.find(s => s.step === 3)?.email;
+
+        if (legalEmail) {
+          try {
+            await fetch(`${BACKEND_URL}/api/send-ceo-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ceoEmail: legalEmail,
+                workflowData: {
+                  documentId: wf?.documentId,
+                  documentType: wf?.documentType,
+                  clientName: wf?.clientName,
+                  amount: wf?.amount,
+                  workflowId: wf?.id
+                }
+              })
+            });
+          } catch {
+            // If email fails we still treat approval as valid
+          }
+        }
+
+        alert('✅ Team approval recorded. Legal Team has been notified (Technical approval skipped for overage).');
+      } else {
+        // Standard workflows: notify Technical Team for next approval step
+        const technicalEmail =
+          wf?.workflowSteps?.find(s => s.step === 2)?.email ||
+          wf?.workflowSteps?.find(s => s.role === 'Technical Team')?.email;
+
+        if (technicalEmail) {
+          try {
+            await fetch(`${BACKEND_URL}/api/send-manager-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                managerEmail: technicalEmail,
+                workflowData: {
+                  documentId: wf?.documentId,
+                  documentType: wf?.documentType,
+                  clientName: wf?.clientName,
+                  amount: wf?.amount,
+                  workflowId: wf?.id
+                }
+              })
+            });
+          } catch {
+            // Ignore email errors here; workflow state is already updated
+          }
+        }
+
+        alert('✅ Team approval recorded. Technical Team has been notified.');
       }
-      alert('✅ Team approval recorded. Technical Team has been notified.');
       // Close modal after action
       setShowDocumentModal(false);
       setSelectedWorkflow(null);

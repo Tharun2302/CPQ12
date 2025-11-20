@@ -25,7 +25,7 @@ import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
-import { track } from '../analytics/clarity';
+import { track, trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -166,6 +166,24 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       gbLimits: { from: 1, to: 10000 },
       features: ['Basic support', 'Standard migration', 'Email support', 'Basic reporting']
     }
+  };
+
+  // Helper: user-friendly template name for UI
+  const getSelectedTemplateDisplayName = (): string => {
+    const rawName: string = selectedTemplate?.name || '';
+
+    // For overage agreements, hide the "Content"/"Messaging" suffix
+    const isOverageCombination =
+      (configuration?.combination || '').toLowerCase() === 'overage-agreement';
+    const isOverageMigrationType =
+      (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+
+    if ((isOverageCombination || isOverageMigrationType) &&
+        rawName.toUpperCase().startsWith('OVERAGE AGREEMENT')) {
+      return 'OVERAGE AGREEMENT';
+    }
+
+    return rawName || 'Selected Template';
   };
 
   // Safety check - if calculation is undefined, show warning but continue
@@ -388,10 +406,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Approval workflow state
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
-  // Use centralized hardcoded defaults
-  const defaultTechEmail = 'anushreddydasari@gmail.com';
-  const defaultLegalEmail = 'anushreddydasari@gmail.com';
-  const defaultDealDeskEmail = 'anushreddydasari@gmail.com';
+  // Use centralized hardcoded defaults (original team addresses)
+  const defaultTechEmail = 'nivas@cloudfuze.com';
+  const defaultLegalEmail = 'adi.nandyala@cloudfuze.com';
+  const defaultDealDeskEmail = 'salesops@cloudfuze.com';
   const workflowCreatorEmail = (() => {
     try {
       const raw = localStorage.getItem('cpq_user');
@@ -421,6 +439,12 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       localStorage.setItem('cpq_team_selection', teamSelection);
     } catch {}
   }, [teamSelection]);
+
+  // Helper function to get team approval email based on selection
+  // All team approvals are routed to Anush's email
+  const getTeamApprovalEmail = (_team: string): string => {
+    return 'anushreddydasari@gmail.com';
+  };
 
   const ensureDocxPreviewStylesInjected = () => {
     const existing = document.getElementById('docx-preview-css');
@@ -1174,6 +1198,18 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       console.log('📝 Sending quote data:', quoteData);
       onGenerateQuote(quoteData);
       
+      // Track quote generation
+      trackQuoteOperation({
+        action: 'generated',
+        quoteId: quoteData.id,
+        clientName: quoteData.clientName,
+        clientEmail: quoteData.clientEmail,
+        totalCost: safeCalculation.totalCost,
+        tier: safeCalculation.tier?.name,
+        templateId: selectedTemplate?.id,
+        templateName: selectedTemplate?.name
+      });
+      
       // Automatically open quote preview instead of showing success message
       setShowPreview(true);
     }
@@ -1325,6 +1361,15 @@ Total Price: {{total price}}`;
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
+      // Track document download
+      trackDocumentOperation({
+        action: 'downloaded',
+        documentType: 'agreement',
+        documentName: link.download,
+        format: 'docx',
+        fileSize: processedAgreement.size / 1024 // Convert to KB
+      });
+      
       // Close preview after download
       setShowAgreementPreview(false);
       setProcessedAgreement(null);
@@ -1395,6 +1440,15 @@ Total Price: {{total price}}`;
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      
+      // Track document download
+      trackDocumentOperation({
+        action: 'downloaded',
+        documentType: 'agreement',
+        documentName: link.download,
+        format: 'pdf',
+        fileSize: pdfBlob.size / 1024 // Convert to KB
+      });
     } catch (error) {
       console.error('❌ Server conversion failed, falling back to in-modal PDF capture:', error);
       try {
@@ -1559,15 +1613,21 @@ Total Price: {{total price}}`;
 
       // Resolve Team Approval group from UI selection
       const choice = (teamSelection || 'SMB').toUpperCase();
-      const teamEmail = 'anushreddydasari@gmail.com';
+      const teamEmail = getTeamApprovalEmail(choice);
 
+      // Determine if this is an overage agreement workflow (special approval routing)
+      const isOverageWorkflow =
+        (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+        (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+      
       // Create the approval workflow (Team Approval -> Technical -> Legal -> Deal Desk)
+      // For overage workflows, Technical Team approval will be auto-skipped in Team step.
       const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
-        // Notify the workflow initiator on denial
+        // Notify the actual workflow initiator (current CPQ user)
         creatorEmail: (() => {
           try {
             const userRaw = localStorage.getItem('cpq_user');
@@ -1576,8 +1636,10 @@ Total Price: {{total price}}`;
               if (user?.email) return user.email;
             }
           } catch {}
+          // Fallback if no user is stored
           return 'anushreddydasari@gmail.com';
         })(),
+        isOverage: isOverageWorkflow,
         totalSteps: 4,
         workflowSteps: [
           { step: 1, role: 'Team Approval', email: teamEmail, status: 'pending' as const, group: choice, comments: '' },
@@ -1592,10 +1654,10 @@ Total Price: {{total price}}`;
 
       // Analytics: workflow started
       try {
-        track('approval.workflow_started', {
-          amount: calculation?.totalCost || 0,
-          steps: 3,
-          documentType: 'PDF Agreement'
+        trackApprovalEvent({
+          action: 'workflow_started',
+          quoteId: quoteId,
+          workflowId: newWorkflow?.id
         });
       } catch {}
 
@@ -4086,10 +4148,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
   return (
     <div className="max-w-4xl mx-auto p-8">
       <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-          <FileText className="w-8 h-8 text-white" />
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+            <FileText className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800">Generate Professional Quote</h1>
         </div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">Generate Professional Quote</h1>
         <p className="text-gray-600">Create a detailed quote for your client</p>
       </div>
 
@@ -4108,7 +4172,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <div>
                     <h3 className="font-semibold text-gray-800">Template Selected</h3>
                     <p className="text-sm text-gray-600">
-                      Using template: <span className="font-medium text-green-700">{selectedTemplate.name}</span>
+                      Using template: <span className="font-medium text-green-700">{getSelectedTemplateDisplayName()}</span>
                     </p>
                     <p className="text-xs text-green-600 mt-1">
                       ✅ Ready to generate agreement with this template

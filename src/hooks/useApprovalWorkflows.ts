@@ -29,23 +29,8 @@ export const useApprovalWorkflows = () => {
   };
 
   const createWorkflow = async (workflowData: Omit<ApprovalWorkflow, 'id' | 'createdAt' | 'updatedAt' | 'currentStep' | 'status'>) => {
-    console.log('🔄 Creating new workflow:', workflowData);
-    
-    // Check for duplicate workflows based on documentId and clientName
-    const existingWorkflow = workflows.find(w => 
-      w.documentId === workflowData.documentId && 
-      w.clientName === workflowData.clientName &&
-      w.status === 'pending'
-    );
-    
-    if (existingWorkflow) {
-      console.log('⚠️ Duplicate workflow detected:', existingWorkflow.id);
-      console.log('📋 Existing workflow:', existingWorkflow);
-      console.log('🔄 New workflow data:', workflowData);
-      alert(`A pending workflow already exists for this document:\n\nDocument: ${workflowData.documentId}\nClient: ${workflowData.clientName}\n\nPlease delete the existing workflow first or use a different document.`);
-      return existingWorkflow;
-    }
-    
+    console.log('🔄 Creating new workflow (duplicates allowed):', workflowData);
+
     try {
       // Save to MongoDB
       const workflowId = await approvalWorkflowServiceMongoDB.saveWorkflow(workflowData);

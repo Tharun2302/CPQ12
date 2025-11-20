@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, AuthContextType, SignUpData, AuthProvider as AuthProviderType } from '../types/auth';
+import { track, identify } from '../analytics/clarity';
  
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -50,6 +51,14 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               const userData = JSON.parse(storedUser);
               setUser(userData);
               setIsAuthenticated(true);
+              
+              // Identify user in Clarity (for already logged-in users)
+              identify(userData.email, {
+                name: userData.name,
+                email: userData.email,
+                userId: userData.id
+              });
+              
               console.log('✅ HubSpot user authenticated from localStorage:', userData);
             } catch (error) {
               console.error('Failed to parse HubSpot user data:', error);
@@ -75,6 +84,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                 if (data.success) {
                   setUser(data.user);
                   setIsAuthenticated(true);
+                  
+                  // Identify user in Clarity (for already logged-in users)
+                  identify(data.user.email, {
+                    name: data.user.name,
+                    email: data.user.email,
+                    userId: data.user.id
+                  });
                 } else {
                   // Token invalid, clear storage
                   localStorage.removeItem('cpq_user');
@@ -91,6 +107,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               const userData = JSON.parse(storedUser);
               setUser(userData);
               setIsAuthenticated(true);
+              
+              // Identify user in Clarity (for already logged-in users)
+              identify(userData.email, {
+                name: userData.name,
+                email: userData.email,
+                userId: userData.id
+              });
             }
           } else {
             // Token is not a JWT (likely local/mock/MS access token). Use local user only.
@@ -98,6 +121,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               const userData = JSON.parse(storedUser);
               setUser(userData);
               setIsAuthenticated(true);
+              
+              // Identify user in Clarity (for already logged-in users)
+              identify(userData.email, {
+                name: userData.name,
+                email: userData.email,
+                userId: userData.id
+              });
             } catch (e) {
               localStorage.removeItem('cpq_user');
               localStorage.removeItem('cpq_token');
@@ -148,7 +178,20 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           // Update state
           setUser(data.user);
           setIsAuthenticated(true);
-         
+          
+          // Identify user in Clarity (so email appears in dashboard)
+          identify(data.user.email, {
+            name: data.user.name,
+            email: data.user.email,
+            userId: data.user.id
+          });
+          
+          // Track sign-in event
+          track('user.sign_in', {
+            method: 'email',
+            email: data.user.email
+          });
+          
           return true;
         }
       }
@@ -164,6 +207,20 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           // Update state
           setUser(user);
           setIsAuthenticated(true);
+          
+          // Identify user in Clarity (so email appears in dashboard)
+          identify(user.email, {
+            name: user.name,
+            email: user.email,
+            userId: user.id
+          });
+          
+          // Track sign-in event
+          track('user.sign_in', {
+            method: 'email',
+            email: user.email,
+            fallback: true
+          });
           
           console.log('✅ Fallback authentication successful for cpq@zenop.ai');
           return true;
@@ -185,6 +242,20 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           // Update state
           setUser(user);
           setIsAuthenticated(true);
+          
+          // Identify user in Clarity (so email appears in dashboard)
+          identify(user.email, {
+            name: user.name,
+            email: user.email,
+            userId: user.id
+          });
+          
+          // Track sign-in event
+          track('user.sign_in', {
+            method: 'email',
+            email: user.email,
+            fallback: true
+          });
           
           console.log('✅ Fallback authentication successful for cpq@zenop.ai');
           return true;
@@ -401,6 +472,19 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                   // Update state
                   setUser(data.user);
                   setIsAuthenticated(true);
+                  
+                  // Identify user in Clarity (so email appears in dashboard)
+                  identify(data.user.email, {
+                    name: data.user.name,
+                    email: data.user.email,
+                    userId: data.user.id
+                  });
+                  
+                  // Track Microsoft sign-in event
+                  track('user.sign_in', {
+                    method: 'microsoft',
+                    email: data.user.email
+                  });
                 } else {
                   // Backend may be disabled in Render free deploys; store MS access token locally and skip backend auth
                   const user: User = {
@@ -414,6 +498,20 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                   localStorage.setItem('cpq_token', microsoftUser.accessToken);
                   setUser(user);
                   setIsAuthenticated(true);
+                  
+                  // Identify user in Clarity (so email appears in dashboard)
+                  identify(user.email, {
+                    name: user.name,
+                    email: user.email,
+                    userId: user.id
+                  });
+                  
+                  // Track Microsoft sign-in event (fallback)
+                  track('user.sign_in', {
+                    method: 'microsoft',
+                    email: user.email,
+                    fallback: true
+                  });
                 }
               } else {
                 // Same fallback as above if backend returns non-OK
@@ -428,6 +526,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                 localStorage.setItem('cpq_token', microsoftUser.accessToken);
                 setUser(user);
                 setIsAuthenticated(true);
+                
+                // Track Microsoft sign-in event (fallback)
+                track('user.sign_in', {
+                  method: 'microsoft',
+                  email: user.email,
+                  fallback: true
+                });
               }
             } catch (backendError) {
               console.error('Backend Microsoft auth error:', backendError);
@@ -445,6 +550,13 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
              
               setUser(user);
               setIsAuthenticated(true);
+              
+              // Track Microsoft sign-in event (fallback)
+              track('user.sign_in', {
+                method: 'microsoft',
+                email: user.email,
+                fallback: true
+              });
             }
            
             // Cleanup PKCE artifacts

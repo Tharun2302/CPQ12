@@ -5,7 +5,6 @@ import {
   Eye, 
   Download, 
   Plus, 
-  Settings,
   CheckCircle,
   AlertCircle,
   X,
@@ -17,6 +16,7 @@ import { extractTemplateContent } from '../utils/pdfMerger';
 import { formatCurrency } from '../utils/pricing';
 import { templateService } from '../utils/templateService';
 import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
+import { track } from '../analytics/clarity';
 
 // Helper function to limit consecutive spaces to maximum 5
 function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
@@ -710,36 +710,8 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     }
   };
 
-  // handleDeleteTemplate function removed - templates should not be deleted from UI
-  // to preserve database integrity and prevent accidental deletion of seeded templates
-
-  const handleSetDefault = async (templateId: string) => {
-    try {
-      console.log('📝 Setting default template in database:', templateId);
-      
-      // Update in database
-      await templateService.updateTemplate(templateId, { isDefault: true });
-      
-      // Update state
-      setTemplates(prev => prev.map(t => ({
-        ...t,
-        isDefault: t.id === templateId
-      })));
-      
-      // Dispatch event to notify App.tsx about template update
-      console.log('📢 Dispatching templatesUpdated event (default template changed)...');
-      window.dispatchEvent(new CustomEvent('templatesUpdated'));
-      
-      console.log('✅ Default template updated in database');
-      setUploadSuccess('Default template updated successfully!');
-      setTimeout(() => setUploadSuccess(null), 3000);
-      
-    } catch (error) {
-      console.error('❌ Error updating default template:', error);
-      setUploadError(`Failed to update default template: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setTimeout(() => setUploadError(null), 5000);
-    }
-  };
+  // handleDeleteTemplate and handleSetDefault functions are intentionally removed
+  // from the active UI to prevent accidental deletion or changing of seeded defaults.
 
   // Process template content for non-PDF templates
   const processTemplateContent = async (template: Template, quote: any): Promise<string> => {
@@ -1925,6 +1897,15 @@ The client will receive an email with the processed template and a link to compl
   const handleSelectTemplate = (template: Template) => {
     console.log('🎯 Template selected:', template.name);
     
+    // Track template selection
+    track('template.selected', {
+      templateId: template.id,
+      templateName: template.name,
+      category: template.category,
+      planType: template.planType,
+      combination: template.combination
+    });
+    
     if (onTemplateSelect) {
       onTemplateSelect(template);
       console.log('✅ Template selection callback called');
@@ -1945,15 +1926,16 @@ The client will receive an email with the processed template and a link to compl
     <div className="max-w-6xl mx-auto p-8">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-          <FileText className="w-8 h-8 text-white" />
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+            <FileText className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800">Template Manager</h1>
         </div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">Template Manager</h1>
-        <p className="text-gray-600">Upload and manage your quote templates</p>
-        
+        <p className="text-gray-600">Here you can see and manage all your deal agreement templates</p>
 
-        {/* Storage Management */}
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
+        {/* Storage Management - Hidden */}
+        {/* <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-blue-800">Storage Management</h3>
@@ -1971,7 +1953,7 @@ The client will receive an email with the processed template and a link to compl
           <p className="text-xs text-blue-600 mt-2">
             If you're getting storage errors, try clearing templates or use smaller files.
           </p>
-        </div>
+        </div> */}
       </div>
 
       {/* Global Selection Success Message */}
@@ -1987,8 +1969,8 @@ The client will receive an email with the processed template and a link to compl
         </div>
       )}
 
-      {/* Upload Button */}
-      <div className="mb-8">
+      {/* Upload Button - Hidden */}
+      {/* <div className="mb-8">
         <button
           onClick={() => setShowUploadModal(true)}
           className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-300 font-semibold flex items-center gap-2 shadow-lg"
@@ -1996,7 +1978,7 @@ The client will receive an email with the processed template and a link to compl
           <Plus className="w-4 h-4" />
           Upload New Template
         </button>
-      </div>
+      </div> */}
 
       {/* Templates Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -2096,31 +2078,13 @@ The client will receive an email with the processed template and a link to compl
                   PDF
                 </button>
 
-                                 {template.wordFile ? (
-                   <button
-                     onClick={() => handleDownloadWordTemplate(template)}
-                     className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
-                   >
-                     <WordIcon className="w-4 h-4 inline mr-1" />
-                     RTF
-                   </button>
-                 ) : (
-                   <button
-                     onClick={() => handleConvertToWord(template)}
-                     className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 transition-colors"
-                   >
-                     <WordIcon className="w-4 h-4 inline mr-1" />
-                     Convert
-                   </button>
-                 )}
-                
-                {!template.isDefault && (
+                {template.wordFile && (
                   <button
-                    onClick={() => handleSetDefault(template.id)}
-                    className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 transition-colors"
+                    onClick={() => handleDownloadWordTemplate(template)}
+                    className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
                   >
-                    <Settings className="w-4 h-4 inline mr-1" />
-                    Set Default
+                    <WordIcon className="w-4 h-4 inline mr-1" />
+                    RTF
                   </button>
                 )}
               </div>

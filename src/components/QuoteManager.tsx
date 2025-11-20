@@ -1256,11 +1256,13 @@ The client will receive an email with the PDF quote and a link to complete the d
     <div className="max-w-6xl mx-auto p-8">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-          <FileText className="w-8 h-8 text-white" />
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
+            <FileText className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800">Deal Documents Manager</h1>
         </div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">Quote Manager</h1>
-        <p className="text-gray-600">View and manage all your generated quotes</p>
+        <p className="text-gray-600">Here you can see all your created Deal Documents</p>
         
         {/* Template Status Indicator */}
         <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
