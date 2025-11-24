@@ -4693,7 +4693,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <div>
                     <h2 className="text-lg font-bold">🎉 Agreement Generated!</h2>
                     <p className="text-green-100 text-xs">
-                      {selectedTemplate?.name} | {clientInfo.clientName}
+                      {getSelectedTemplateDisplayName()} | {clientInfo.clientName}
                     </p>
                   </div>
                 </div>
