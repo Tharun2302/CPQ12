@@ -1374,8 +1374,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         window.dispatchEvent(new CustomEvent('discountUpdated'));
                       } catch {}
                     }}
-                    className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                    placeholder={`Enter discount percentage (max 10%)`}
+                   className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
+                   placeholder={`Enter discount percentage (max 15%)`}
                   />
                   <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
                 </div>
