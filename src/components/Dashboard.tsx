@@ -135,19 +135,28 @@ const Dashboard: React.FC<DashboardProps> = ({
   // Get current tab from URL path
   const getCurrentTab = () => {
     const path = location.pathname;
-    if (path.startsWith('/dashboard/')) {
-      const tab = path.split('/dashboard/')[1] || 'deal';
-      
-      // Handle backward compatibility for old quotes URL
-      if (tab === 'quotes') {
-        // Redirect to documents URL
-        navigate('/dashboard/documents', { replace: true });
-        return 'documents';
-      }
-      
-      return tab;
+
+    // Normalize both /dashboard/deal and /deal → 'deal'
+    let segment = path;
+
+    if (segment.startsWith('/dashboard/')) {
+      segment = segment.slice('/dashboard/'.length); // 'deal/...'
+    } else if (segment === '/dashboard') {
+      segment = 'deal';
+    } else if (segment.startsWith('/')) {
+      segment = segment.slice(1); // '/deal' -> 'deal'
     }
-    return 'deal';
+
+    const tab = (segment.split('/')[0] || 'deal').toLowerCase();
+
+    // Backward-compatibility for old 'quotes' tab
+    if (tab === 'quotes') {
+      navigate('/documents', { replace: true });
+      return 'documents';
+    }
+
+    const allowed = ['deal', 'configure', 'quote', 'documents', 'templates', 'approval'];
+    return allowed.includes(tab) ? tab : 'deal';
   };
 
   const currentTab = getCurrentTab();
@@ -243,7 +252,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }));
     
     // Navigate to the new tab
-    navigate(`/dashboard/${tab}`);
+    navigate(`/${tab}`);
     
     // Reset navigation flag
     setTimeout(() => {
@@ -306,7 +315,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     // Navigate to configure tab after using deal data
     console.log('🔄 Dashboard: Navigating to configure tab...');
     try {
-      navigate('/dashboard/configure');
+      navigate('/configure');
       console.log('✅ Dashboard: Navigation to configure tab successful');
     } catch (error) {
       console.error('❌ Dashboard: Navigation failed:', error);
@@ -324,7 +333,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     // Navigate to quote tab after tier selection
     console.log('🔄 Dashboard: Navigating to quote tab after tier selection...');
     try {
-      navigate('/dashboard/quote');
+      navigate('/quote');
       console.log('✅ Dashboard: Navigation to quote tab successful');
     } catch (error) {
       console.error('❌ Dashboard: Navigation to quote tab failed:', error);
@@ -428,7 +437,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </p>
                 <div className="space-x-4">
                   <button
-                    onClick={() => window.location.href = '/dashboard/configure'}
+                    onClick={() => window.location.href = '/configure'}
                     className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold"
                   >
                     Go to Configuration
@@ -532,7 +541,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
 
       default:
-        return <Navigate to="/dashboard/deal" replace />;
+        return <Navigate to="/deal" replace />;
     }
   };
 

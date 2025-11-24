@@ -7,7 +7,7 @@ const SignInPage: React.FC = () => {
   const navigate = useNavigate();
 
   const handleSuccess = () => {
-    navigate('/dashboard');
+    navigate('/deal');
   };
 
   const handleError = (message: string) => {

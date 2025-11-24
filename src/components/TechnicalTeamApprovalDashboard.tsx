@@ -251,7 +251,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       } : prev);
       {
         const wf = workflows.find(w => w.id === workflowId) || selectedWorkflow;
-        const creatorEmail = (wf as any)?.creatorEmail || 'anushreddydasari@gmail.com';
+        const creatorEmail = (wf as any)?.creatorEmail || 'abhilasha.kandakatla@cloudfuze.com';
         alert(`❌ Workflow denied successfully!\n📧 The workflow creator has been notified at ${creatorEmail}.`);
       }
       

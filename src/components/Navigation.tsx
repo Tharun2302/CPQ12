@@ -25,14 +25,14 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
   }, []);
   
   const tabs = [
-    { id: 'deal', label: 'Deal', icon: Building, path: '/dashboard/deal' },
-    { id: 'configure', label: 'Configure', icon: FileText, path: '/dashboard/configure' },
+    { id: 'deal',      label: 'Deal',      icon: Building, path: '/deal' },
+    { id: 'configure', label: 'Configure', icon: FileText, path: '/configure' },
     // Pricing tab hidden per requirement
     // { id: 'pricing-config', label: 'Pricing', icon: DollarSign, path: '/dashboard/pricing-config' },
-    { id: 'quote', label: 'Quote', icon: FileText, path: '/dashboard/quote' },
-    { id: 'documents', label: 'Documents', icon: FileText, path: '/dashboard/documents' },
-    { id: 'templates', label: 'Templates', icon: Upload, path: '/dashboard/templates' },
-    { id: 'approval', label: 'Approval', icon: CheckCircle, path: '/dashboard/approval' },
+    { id: 'quote',     label: 'Quote',     icon: FileText, path: '/quote' },
+    { id: 'documents', label: 'Documents', icon: FileText, path: '/documents' },
+    { id: 'templates', label: 'Templates', icon: Upload,   path: '/templates' },
+    { id: 'approval',  label: 'Approval',  icon: CheckCircle, path: '/approval' },
     // Settings tab hidden per requirement
     // { id: 'settings', label: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ];
@@ -43,7 +43,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
         <div className="flex items-center justify-center h-16 relative">
           {/* Logo Section - Clickable to navigate to Deal page */}
           <Link
-            to="/dashboard/deal"
+            to="/deal"
             className="flex items-center gap-3 absolute left-0 cursor-pointer hover:opacity-80 transition-opacity duration-200"
           >
             <h1 className="text-xl font-bold text-blue-700">

@@ -418,7 +418,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         if (user?.email) return user.email;
       }
     } catch {}
-    return 'anushreddydasari@gmail.com';
+    return 'abhilasha.kandakatla@cloudfuze.com';
   })();
   const [approvalEmails, setApprovalEmails] = useState({
     role1: defaultTechEmail,
@@ -441,9 +441,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   }, [teamSelection]);
 
   // Helper function to get team approval email based on selection
-  // All team approvals are routed to Anush's email
+  // All team approvals are routed to Abhilasha's email by default
   const getTeamApprovalEmail = (_team: string): string => {
-    return 'anushreddydasari@gmail.com';
+    return 'abhilasha.kandakatla@cloudfuze.com';
   };
 
   const ensureDocxPreviewStylesInjected = () => {
@@ -1622,13 +1622,13 @@ Total Price: {{total price}}`;
       
       // Create the approval workflow (Team Approval -> Technical -> Legal -> Deal Desk)
       // For overage workflows, Technical Team approval will be auto-skipped in Team step.
-      const workflowData = {
+        const workflowData = {
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: calculation?.totalCost || 0,
         // Notify the actual workflow initiator (current CPQ user)
-        creatorEmail: (() => {
+          creatorEmail: (() => {
           try {
             const userRaw = localStorage.getItem('cpq_user');
             if (userRaw) {
@@ -1637,7 +1637,7 @@ Total Price: {{total price}}`;
             }
           } catch {}
           // Fallback if no user is stored
-          return 'anushreddydasari@gmail.com';
+          return 'abhilasha.kandakatla@cloudfuze.com';
         })(),
         isOverage: isOverageWorkflow,
         totalSteps: 4,
@@ -5027,9 +5027,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     onChange={(e) => setTeamSelection(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="SMB">SMB (anushreddydasari@gmail.com)</option>
-                    <option value="AM">AM (anushreddydasari@gmail.com)</option>
-                    <option value="ENT">ENT (anushreddydasari@gmail.com)</option>
+                    <option value="SMB">SMB (abhilasha.kandakatla@cloudfuze.com)</option>
+                    <option value="AM">AM (abhilasha.kandakatla@cloudfuze.com)</option>
+                    <option value="ENT">ENT (abhilasha.kandakatla@cloudfuze.com)</option>
                   </select>
                 </div>
                 

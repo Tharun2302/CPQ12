@@ -1346,6 +1346,7 @@ function App() {
       const isDropboxToSharedDrive = name.includes('dropbox') && name.includes('sharedrive');
       const isDropboxToSharePoint = name.includes('dropbox') && name.includes('sharepoint');
       const isDropboxToOneDrive = name.includes('dropbox') && name.includes('onedrive');
+      const isEgnyteToGoogleSharedDrive = name.includes('egnyte') && name.includes('google') && name.includes('sharedrive');
       
       const matchesPlan = name.includes(safeTier);
       
@@ -1357,6 +1358,7 @@ function App() {
         (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive) ||
         (combination === 'dropbox-to-sharepoint' && isDropboxToSharePoint) ||
         (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive) ||
+        (combination === 'egnyte-to-google-sharedrive' && isEgnyteToGoogleSharedDrive) ||
         (combination === 'dropbox-to-google' && name.includes('dropbox') && name.includes('google') && !name.includes('mydrive') && !name.includes('sharedrive')) ||
         (combination === 'dropbox-to-microsoft' && name.includes('dropbox') && name.includes('microsoft')) ||
         (combination === 'box-to-box' && name.includes('box') && name.includes('box')) ||
@@ -1378,6 +1380,7 @@ function App() {
         (combination === 'sharefile-to-google-mydrive' && name.includes('sharefile') && name.includes('google') && name.includes('mydrive')) ||
         (combination === 'sharefile-to-google-sharedrive' && name.includes('sharefile') && name.includes('google') && name.includes('sharedrive')) ||
         (combination === 'sharefile-to-onedrive' && name.includes('sharefile') && name.includes('onedrive')) ||
+        (combination === 'sharefile-to-sharepoint' && name.includes('sharefile') && name.includes('sharepoint')) ||
         (combination === 'sharefile-to-sharefile' && name.includes('sharefile') && name.includes('sharefile')) ||
         (combination === 'overage-agreement' && name.includes('overage') && name.includes('agreement'));
       
@@ -1768,9 +1771,8 @@ function App() {
               <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
               <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
               
-              {/* Protected Routes - Dashboard with URL-based tab navigation */}
-              <Route path="/dashboard" element={<Navigate to="/dashboard/deal" replace />} />
-              <Route path="/approval-tracking" element={
+             {/* Protected Routes - Dashboard with URL-based tab navigation */}
+             <Route path="/approval-tracking" element={
                 <ProtectedRoute>
                   <ApprovalDashboard />
                 </ProtectedRoute>
@@ -1791,62 +1793,367 @@ function App() {
               <Route path="/client-notification" element={
                 <ClientNotification />
               } />
-              <Route path="/dashboard/*" element={
-                <ProtectedRoute>
-                  <Dashboard
-                    configuration={configuration}
-                    setConfiguration={setConfiguration}
-                    calculations={calculations}
-                    setCalculations={setCalculations}
-                    selectedTier={selectedTier}
-                    setSelectedTier={setSelectedTier}
-                    showPricing={showPricing}
-                    setShowPricing={setShowPricing}
-                    pricingTiers={pricingTiers}
-                    setPricingTiers={setPricingTiers}
-                    hubspotState={hubspotState}
-                    setHubspotState={setHubspotState}
-                    companyInfo={companyInfo}
-                    setCompanyInfo={setCompanyInfo}
-                    selectedTemplate={selectedTemplate}
-                    setSelectedTemplate={setSelectedTemplate}
-                    templates={templates}
-                    setTemplates={setTemplates}
-                    quotes={quotes}
-                    setQuotes={setQuotes}
-                    dealData={dealData}
-                    setDealData={setDealData}
-                    activeDealData={activeDealData}
-                    setActiveDealData={setActiveDealData}
-                    currentClientInfo={currentClientInfo}
-                    setCurrentClientInfo={setCurrentClientInfo}
-                    configureContactInfo={configureContactInfo}
-                    setConfigureContactInfo={setConfigureContactInfo}
-                    signatureFormData={signatureFormData}
-                    setSignatureFormData={setSignatureFormData}
-                    isSignatureForm={isSignatureForm}
-                    setIsSignatureForm={setIsSignatureForm}
-                    handleConfigurationChange={handleConfigurationChange}
-                    handleSubmitConfiguration={handleSubmitConfiguration}
-                    handleSelectTier={handleSelectTier}
-                    handleTierUpdate={handleTierUpdate}
-                    handleGenerateQuote={handleGenerateQuote}
-                    handleDeleteQuote={handleDeleteQuote}
-                    handleUpdateQuoteStatus={handleUpdateQuoteStatus}
-                    handleUpdateQuote={handleUpdateQuote}
-                    handleTemplateSelect={handleTemplateSelect}
-                    handleTemplatesUpdate={handleTemplatesUpdate}
-                    updateCompanyInfo={updateCompanyInfo}
-                    handleSelectHubSpotContact={handleSelectHubSpotContact}
-                    handleConfigureContactInfoChange={handleConfigureContactInfoChange}
-                    handleClientInfoChange={handleClientInfoChange}
-                    refreshDealData={refreshDealData}
-                    handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
-                    getCurrentQuoteData={getCurrentQuoteData}
-                  />
-                </ProtectedRoute>
-              } />
+
+             {/* Main app tabs without /dashboard prefix */}
+             <Route
+               path="/deal"
+               element={
+                 <ProtectedRoute>
+                   <Dashboard
+                     configuration={configuration}
+                     setConfiguration={setConfiguration}
+                     calculations={calculations}
+                     setCalculations={setCalculations}
+                     selectedTier={selectedTier}
+                     setSelectedTier={setSelectedTier}
+                     showPricing={showPricing}
+                     setShowPricing={setShowPricing}
+                     pricingTiers={pricingTiers}
+                     setPricingTiers={setPricingTiers}
+                     hubspotState={hubspotState}
+                     setHubspotState={setHubspotState}
+                     companyInfo={companyInfo}
+                     setCompanyInfo={setCompanyInfo}
+                     selectedTemplate={selectedTemplate}
+                     setSelectedTemplate={setSelectedTemplate}
+                     templates={templates}
+                     setTemplates={setTemplates}
+                     quotes={quotes}
+                     setQuotes={setQuotes}
+                     dealData={dealData}
+                     setDealData={setDealData}
+                     activeDealData={activeDealData}
+                     setActiveDealData={setActiveDealData}
+                     currentClientInfo={currentClientInfo}
+                     setCurrentClientInfo={setCurrentClientInfo}
+                     configureContactInfo={configureContactInfo}
+                     setConfigureContactInfo={setConfigureContactInfo}
+                     signatureFormData={signatureFormData}
+                     setSignatureFormData={setSignatureFormData}
+                     isSignatureForm={isSignatureForm}
+                     setIsSignatureForm={setIsSignatureForm}
+                     handleConfigurationChange={handleConfigurationChange}
+                     handleSubmitConfiguration={handleSubmitConfiguration}
+                     handleSelectTier={handleSelectTier}
+                     handleTierUpdate={handleTierUpdate}
+                     handleGenerateQuote={handleGenerateQuote}
+                     handleDeleteQuote={handleDeleteQuote}
+                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                     handleUpdateQuote={handleUpdateQuote}
+                     handleTemplateSelect={handleTemplateSelect}
+                     handleTemplatesUpdate={handleTemplatesUpdate}
+                     updateCompanyInfo={updateCompanyInfo}
+                     handleSelectHubSpotContact={handleSelectHubSpotContact}
+                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                     handleClientInfoChange={handleClientInfoChange}
+                     refreshDealData={refreshDealData}
+                     handleUseDealData={handleUseDealData}
+                     handleSignatureFormComplete={handleSignatureFormComplete}
+                     getCurrentQuoteData={getCurrentQuoteData}
+                   />
+                 </ProtectedRoute>
+               }
+             />
+
+             <Route
+               path="/configure"
+               element={
+                 <ProtectedRoute>
+                   <Dashboard
+                     configuration={configuration}
+                     setConfiguration={setConfiguration}
+                     calculations={calculations}
+                     setCalculations={setCalculations}
+                     selectedTier={selectedTier}
+                     setSelectedTier={setSelectedTier}
+                     showPricing={showPricing}
+                     setShowPricing={setShowPricing}
+                     pricingTiers={pricingTiers}
+                     setPricingTiers={setPricingTiers}
+                     hubspotState={hubspotState}
+                     setHubspotState={setHubspotState}
+                     companyInfo={companyInfo}
+                     setCompanyInfo={setCompanyInfo}
+                     selectedTemplate={selectedTemplate}
+                     setSelectedTemplate={setSelectedTemplate}
+                     templates={templates}
+                     setTemplates={setTemplates}
+                     quotes={quotes}
+                     setQuotes={setQuotes}
+                     dealData={dealData}
+                     setDealData={setDealData}
+                     activeDealData={activeDealData}
+                     setActiveDealData={setActiveDealData}
+                     currentClientInfo={currentClientInfo}
+                     setCurrentClientInfo={setCurrentClientInfo}
+                     configureContactInfo={configureContactInfo}
+                     setConfigureContactInfo={setConfigureContactInfo}
+                     signatureFormData={signatureFormData}
+                     setSignatureFormData={setSignatureFormData}
+                     isSignatureForm={isSignatureForm}
+                     setIsSignatureForm={setIsSignatureForm}
+                     handleConfigurationChange={handleConfigurationChange}
+                     handleSubmitConfiguration={handleSubmitConfiguration}
+                     handleSelectTier={handleSelectTier}
+                     handleTierUpdate={handleTierUpdate}
+                     handleGenerateQuote={handleGenerateQuote}
+                     handleDeleteQuote={handleDeleteQuote}
+                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                     handleUpdateQuote={handleUpdateQuote}
+                     handleTemplateSelect={handleTemplateSelect}
+                     handleTemplatesUpdate={handleTemplatesUpdate}
+                     updateCompanyInfo={updateCompanyInfo}
+                     handleSelectHubSpotContact={handleSelectHubSpotContact}
+                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                     handleClientInfoChange={handleClientInfoChange}
+                     refreshDealData={refreshDealData}
+                     handleUseDealData={handleUseDealData}
+                     handleSignatureFormComplete={handleSignatureFormComplete}
+                     getCurrentQuoteData={getCurrentQuoteData}
+                   />
+                 </ProtectedRoute>
+               }
+             />
+
+             <Route
+               path="/quote"
+               element={
+                 <ProtectedRoute>
+                   <Dashboard
+                     configuration={configuration}
+                     setConfiguration={setConfiguration}
+                     calculations={calculations}
+                     setCalculations={setCalculations}
+                     selectedTier={selectedTier}
+                     setSelectedTier={setSelectedTier}
+                     showPricing={showPricing}
+                     setShowPricing={setShowPricing}
+                     pricingTiers={pricingTiers}
+                     setPricingTiers={setPricingTiers}
+                     hubspotState={hubspotState}
+                     setHubspotState={setHubspotState}
+                     companyInfo={companyInfo}
+                     setCompanyInfo={setCompanyInfo}
+                     selectedTemplate={selectedTemplate}
+                     setSelectedTemplate={setSelectedTemplate}
+                     templates={templates}
+                     setTemplates={setTemplates}
+                     quotes={quotes}
+                     setQuotes={setQuotes}
+                     dealData={dealData}
+                     setDealData={setDealData}
+                     activeDealData={activeDealData}
+                     setActiveDealData={setActiveDealData}
+                     currentClientInfo={currentClientInfo}
+                     setCurrentClientInfo={setCurrentClientInfo}
+                     configureContactInfo={configureContactInfo}
+                     setConfigureContactInfo={setConfigureContactInfo}
+                     signatureFormData={signatureFormData}
+                     setSignatureFormData={setSignatureFormData}
+                     isSignatureForm={isSignatureForm}
+                     setIsSignatureForm={setIsSignatureForm}
+                     handleConfigurationChange={handleConfigurationChange}
+                     handleSubmitConfiguration={handleSubmitConfiguration}
+                     handleSelectTier={handleSelectTier}
+                     handleTierUpdate={handleTierUpdate}
+                     handleGenerateQuote={handleGenerateQuote}
+                     handleDeleteQuote={handleDeleteQuote}
+                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                     handleUpdateQuote={handleUpdateQuote}
+                     handleTemplateSelect={handleTemplateSelect}
+                     handleTemplatesUpdate={handleTemplatesUpdate}
+                     updateCompanyInfo={updateCompanyInfo}
+                     handleSelectHubSpotContact={handleSelectHubSpotContact}
+                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                     handleClientInfoChange={handleClientInfoChange}
+                     refreshDealData={refreshDealData}
+                     handleUseDealData={handleUseDealData}
+                     handleSignatureFormComplete={handleSignatureFormComplete}
+                     getCurrentQuoteData={getCurrentQuoteData}
+                   />
+                 </ProtectedRoute>
+               }
+             />
+
+             <Route
+               path="/documents"
+               element={
+                 <ProtectedRoute>
+                   <Dashboard
+                     configuration={configuration}
+                     setConfiguration={setConfiguration}
+                     calculations={calculations}
+                     setCalculations={setCalculations}
+                     selectedTier={selectedTier}
+                     setSelectedTier={setSelectedTier}
+                     showPricing={showPricing}
+                     setShowPricing={setShowPricing}
+                     pricingTiers={pricingTiers}
+                     setPricingTiers={setPricingTiers}
+                     hubspotState={hubspotState}
+                     setHubspotState={setHubspotState}
+                     companyInfo={companyInfo}
+                     setCompanyInfo={setCompanyInfo}
+                     selectedTemplate={selectedTemplate}
+                     setSelectedTemplate={setSelectedTemplate}
+                     templates={templates}
+                     setTemplates={setTemplates}
+                     quotes={quotes}
+                     setQuotes={setQuotes}
+                     dealData={dealData}
+                     setDealData={setDealData}
+                     activeDealData={activeDealData}
+                     setActiveDealData={setActiveDealData}
+                     currentClientInfo={currentClientInfo}
+                     setCurrentClientInfo={setCurrentClientInfo}
+                     configureContactInfo={configureContactInfo}
+                     setConfigureContactInfo={setConfigureContactInfo}
+                     signatureFormData={signatureFormData}
+                     setSignatureFormData={setSignatureFormData}
+                     isSignatureForm={isSignatureForm}
+                     setIsSignatureForm={setIsSignatureForm}
+                     handleConfigurationChange={handleConfigurationChange}
+                     handleSubmitConfiguration={handleSubmitConfiguration}
+                     handleSelectTier={handleSelectTier}
+                     handleTierUpdate={handleTierUpdate}
+                     handleGenerateQuote={handleGenerateQuote}
+                     handleDeleteQuote={handleDeleteQuote}
+                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                     handleUpdateQuote={handleUpdateQuote}
+                     handleTemplateSelect={handleTemplateSelect}
+                     handleTemplatesUpdate={handleTemplatesUpdate}
+                     updateCompanyInfo={updateCompanyInfo}
+                     handleSelectHubSpotContact={handleSelectHubSpotContact}
+                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                     handleClientInfoChange={handleClientInfoChange}
+                     refreshDealData={refreshDealData}
+                     handleUseDealData={handleUseDealData}
+                     handleSignatureFormComplete={handleSignatureFormComplete}
+                     getCurrentQuoteData={getCurrentQuoteData}
+                   />
+                 </ProtectedRoute>
+               }
+             />
+
+             <Route
+               path="/templates"
+               element={
+                 <ProtectedRoute>
+                   <Dashboard
+                     configuration={configuration}
+                     setConfiguration={setConfiguration}
+                     calculations={calculations}
+                     setCalculations={setCalculations}
+                     selectedTier={selectedTier}
+                     setSelectedTier={setSelectedTier}
+                     showPricing={showPricing}
+                     setShowPricing={setShowPricing}
+                     pricingTiers={pricingTiers}
+                     setPricingTiers={setPricingTiers}
+                     hubspotState={hubspotState}
+                     setHubspotState={setHubspotState}
+                     companyInfo={companyInfo}
+                     setCompanyInfo={setCompanyInfo}
+                     selectedTemplate={selectedTemplate}
+                     setSelectedTemplate={setSelectedTemplate}
+                     templates={templates}
+                     setTemplates={setTemplates}
+                     quotes={quotes}
+                     setQuotes={setQuotes}
+                     dealData={dealData}
+                     setDealData={setDealData}
+                     activeDealData={activeDealData}
+                     setActiveDealData={setActiveDealData}
+                     currentClientInfo={currentClientInfo}
+                     setCurrentClientInfo={setCurrentClientInfo}
+                     configureContactInfo={configureContactInfo}
+                     setConfigureContactInfo={setConfigureContactInfo}
+                     signatureFormData={signatureFormData}
+                     setSignatureFormData={setSignatureFormData}
+                     isSignatureForm={isSignatureForm}
+                     setIsSignatureForm={setIsSignatureForm}
+                     handleConfigurationChange={handleConfigurationChange}
+                     handleSubmitConfiguration={handleSubmitConfiguration}
+                     handleSelectTier={handleSelectTier}
+                     handleTierUpdate={handleTierUpdate}
+                     handleGenerateQuote={handleGenerateQuote}
+                     handleDeleteQuote={handleDeleteQuote}
+                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                     handleUpdateQuote={handleUpdateQuote}
+                     handleTemplateSelect={handleTemplateSelect}
+                     handleTemplatesUpdate={handleTemplatesUpdate}
+                     updateCompanyInfo={updateCompanyInfo}
+                     handleSelectHubSpotContact={handleSelectHubSpotContact}
+                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                     handleClientInfoChange={handleClientInfoChange}
+                     refreshDealData={refreshDealData}
+                     handleUseDealData={handleUseDealData}
+                     handleSignatureFormComplete={handleSignatureFormComplete}
+                     getCurrentQuoteData={getCurrentQuoteData}
+                   />
+                 </ProtectedRoute>
+               }
+             />
+
+             <Route
+               path="/approval"
+               element={
+                 <ProtectedRoute>
+                   <Dashboard
+                     configuration={configuration}
+                     setConfiguration={setConfiguration}
+                     calculations={calculations}
+                     setCalculations={setCalculations}
+                     selectedTier={selectedTier}
+                     setSelectedTier={setSelectedTier}
+                     showPricing={showPricing}
+                     setShowPricing={setShowPricing}
+                     pricingTiers={pricingTiers}
+                     setPricingTiers={setPricingTiers}
+                     hubspotState={hubspotState}
+                     setHubspotState={setHubspotState}
+                     companyInfo={companyInfo}
+                     setCompanyInfo={setCompanyInfo}
+                     selectedTemplate={selectedTemplate}
+                     setSelectedTemplate={setSelectedTemplate}
+                     templates={templates}
+                     setTemplates={setTemplates}
+                     quotes={quotes}
+                     setQuotes={setQuotes}
+                     dealData={dealData}
+                     setDealData={setDealData}
+                     activeDealData={activeDealData}
+                     setActiveDealData={setActiveDealData}
+                     currentClientInfo={currentClientInfo}
+                     setCurrentClientInfo={setCurrentClientInfo}
+                     configureContactInfo={configureContactInfo}
+                     setConfigureContactInfo={setConfigureContactInfo}
+                     signatureFormData={signatureFormData}
+                     setSignatureFormData={setSignatureFormData}
+                     isSignatureForm={isSignatureForm}
+                     setIsSignatureForm={setIsSignatureForm}
+                     handleConfigurationChange={handleConfigurationChange}
+                     handleSubmitConfiguration={handleSubmitConfiguration}
+                     handleSelectTier={handleSelectTier}
+                     handleTierUpdate={handleTierUpdate}
+                     handleGenerateQuote={handleGenerateQuote}
+                     handleDeleteQuote={handleDeleteQuote}
+                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                     handleUpdateQuote={handleUpdateQuote}
+                     handleTemplateSelect={handleTemplateSelect}
+                     handleTemplatesUpdate={handleTemplatesUpdate}
+                     updateCompanyInfo={updateCompanyInfo}
+                     handleSelectHubSpotContact={handleSelectHubSpotContact}
+                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                     handleClientInfoChange={handleClientInfoChange}
+                     refreshDealData={refreshDealData}
+                     handleUseDealData={handleUseDealData}
+                     handleSignatureFormComplete={handleSignatureFormComplete}
+                     getCurrentQuoteData={getCurrentQuoteData}
+                   />
+                 </ProtectedRoute>
+               }
+             />
               
               {/* Redirect any other routes to landing page */}
               <Route path="*" element={<Navigate to="/" replace />} />

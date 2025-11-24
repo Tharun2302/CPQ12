@@ -558,14 +558,34 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     // Instance cost (same for both migration types)
     const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
 
-    const totalCost = userCost + dataCost + instanceCost + migrationCost;
+    let totalCost = userCost + dataCost + instanceCost + migrationCost;
+    
+    // CRITICAL: Apply $2500 minimum by adjusting user cost only
+    const MINIMUM_TOTAL = 2500;
+    let adjustedUserCost = userCost;
+    
+    if (totalCost < MINIMUM_TOTAL) {
+      const deficit = MINIMUM_TOTAL - totalCost;
+      adjustedUserCost = userCost + deficit;
+      totalCost = MINIMUM_TOTAL;
+      
+      console.log('💰 Applied $2500 minimum to Content plan:', {
+        plan: tier.name,
+        originalTotal: userCost + dataCost + instanceCost + migrationCost,
+        originalUserCost: userCost,
+        deficit,
+        adjustedUserCost,
+        finalTotal: MINIMUM_TOTAL,
+        unchangedCosts: { dataCost, migrationCost, instanceCost }
+      });
+    }
 
     console.log('📊 Content Migration Calculation:', {
       tier: tier.name,
       k2Value,
       m2,
       userCostPerUser,
-      userCost,
+      userCost: adjustedUserCost,
       k3Value,
       m3,
       perGBCost,
@@ -578,8 +598,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       totalCost
     });
 
+
     return {
-      userCost,
+      userCost: adjustedUserCost,
       dataCost,
       migrationCost,
       instanceCost,

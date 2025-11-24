@@ -412,6 +412,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'google', 'sharedrive', 'sharepoint', 'content', 'microsoft', 'migration', 'enterprise']
     },
+    // EGNYTE TO GOOGLE SHARED DRIVE templates (Standard & Advanced only)
+    {
+      name: 'EGNYTE TO GOOGLE SHARED DRIVE Standard',
+      description: 'Standard template for Egnyte to Google Shared Drive migration - suitable for medium to large projects',
+      fileName: 'egnyte-to-google-sharedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-google-sharedrive',
+      planType: 'standard',
+      keywords: ['standard', 'egnyte', 'google', 'sharedrive', 'content', 'migration']
+    },
+    {
+      name: 'EGNYTE TO GOOGLE SHARED DRIVE Advanced',
+      description: 'Advanced template for Egnyte to Google Shared Drive migration - suitable for large enterprise projects',
+      fileName: 'egnyte-to-google-sharedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-google-sharedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'egnyte', 'google', 'sharedrive', 'content', 'migration', 'enterprise']
+    },
     // GOOGLE MYDRIVE TO DROPBOX templates (Standard & Advanced only)
     {
       name: 'GOOGLE MYDRIVE TO DROPBOX Standard',
@@ -622,6 +643,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'sharefile', 'content', 'migration', 'enterprise']
     },
+    // SHAREFILE TO SHAREPOINT templates (Standard & Advanced only)
+    {
+      name: 'SHAREFILE TO SHAREPOINT Standard',
+      description: 'Standard template for ShareFile to SharePoint migration - suitable for medium to large projects',
+      fileName: 'sharefile-to-sharepoint-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-sharepoint',
+      planType: 'standard',
+      keywords: ['standard', 'sharefile', 'sharepoint', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'SHAREFILE TO SHAREPOINT Advanced',
+      description: 'Advanced template for ShareFile to SharePoint migration - suitable for large enterprise projects',
+      fileName: 'sharefile-to-sharepoint-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharefile-to-sharepoint',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharefile', 'sharepoint', 'microsoft', 'content', 'migration', 'enterprise']
+    },
     // OVERAGE AGREEMENT - Single template for BOTH migration types
     {
       name: 'OVERAGE AGREEMENT Messaging',
@@ -755,16 +797,37 @@ async function seedDefaultTemplates(db) {
   }
 
   console.log(`🎉 Template seeding completed! Uploaded ${uploadedCount} templates`);
-  console.log(`📊 Total templates: 4 Messaging + 30 Content + 2 Overage Agreement (36 templates total)`);
+  console.log(`📊 Total templates: 4 Messaging + 32 Content + 2 Overage Agreement (38 templates total)`);
   console.log(`   - Messaging: SLACK TO TEAMS, SLACK TO GOOGLE CHAT (Basic, Advanced)`);
   console.log(`   - Content: DROPBOX TO MYDRIVE, DROPBOX TO SHAREDRIVE (Basic, Standard, Advanced)`);
   console.log(`   - Content: DROPBOX TO SHAREPOINT, DROPBOX TO ONEDRIVE, DROPBOX TO GOOGLE, DROPBOX TO MICROSOFT (Standard, Advanced only)`);
   console.log(`   - Content: BOX TO BOX, BOX TO GOOGLE MYDRIVE, BOX TO GOOGLE SHARED DRIVE, BOX TO ONEDRIVE, BOX TO MICROSOFT, BOX TO GOOGLE (Standard, Advanced only)`);
   console.log(`   - Content: GOOGLE SHARED DRIVE TO EGNYTE, GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE (Standard, Advanced only)`);
   console.log(`   - Content: GOOGLE SHARED DRIVE TO ONEDRIVE, GOOGLE SHARED DRIVE TO SHAREPOINT (Standard, Advanced only)`);
-  console.log(`   - Content: SHAREFILE TO GOOGLE MYDRIVE, SHAREFILE TO GOOGLE SHARED DRIVE, SHAREFILE TO ONEDRIVE, SHAREFILE TO SHAREFILE (Standard, Advanced only)`);
+  console.log(`   - Content: GOOGLE MYDRIVE TO DROPBOX, GOOGLE MYDRIVE TO EGNYTE, GOOGLE MYDRIVE TO ONEDRIVE, GOOGLE MYDRIVE TO SHAREPOINT (Standard, Advanced only)`);
+  console.log(`   - Content: GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE, GOOGLE MYDRIVE TO GOOGLE MYDRIVE (Standard, Advanced only)`);
+  console.log(`   - Content: SHAREFILE TO GOOGLE MYDRIVE, SHAREFILE TO GOOGLE SHARED DRIVE, SHAREFILE TO ONEDRIVE, SHAREFILE TO SHAREFILE, SHAREFILE TO SHAREPOINT (Standard, Advanced only)`);
+  console.log(`   - Content: EGNYTE TO GOOGLE SHARED DRIVE (Standard, Advanced only)`);
   console.log(`   - Overage: OVERAGE AGREEMENT (Messaging, Content)`);
   return uploadedCount > 0;
 }
 
 module.exports = { seedDefaultTemplates };
+
+// Execute seeding if run directly
+if (require.main === module) {
+  seedDefaultTemplates()
+    .then(success => {
+      if (success) {
+        console.log('✅ Seeding completed successfully');
+        process.exit(0);
+      } else {
+        console.log('⚠️ Seeding completed with warnings');
+        process.exit(0);
+      }
+    })
+    .catch(error => {
+      console.error('❌ Seeding failed:', error);
+      process.exit(1);
+    });
+}

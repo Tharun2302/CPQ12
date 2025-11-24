@@ -95,7 +95,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                             combination === 'sharefile-to-google-mydrive' ||
                             combination === 'sharefile-to-google-sharedrive' ||
                             combination === 'sharefile-to-onedrive' ||
-                            combination === 'sharefile-to-sharefile';
+                            combination === 'sharefile-to-sharepoint' ||
+                            combination === 'sharefile-to-sharefile' ||
+                            combination === 'egnyte-to-google-sharedrive';
       
       // Hide Basic plan for specific combinations (SharePoint, OneDrive, all Box combinations, and all Google SharedDrive combinations)
       if (hideBasicPlan && calc.tier.name === 'Basic') {

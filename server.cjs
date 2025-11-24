@@ -2606,7 +2606,7 @@ app.post('/api/send-team-email', async (req, res) => {
     }
 
     const { teamEmail, workflowData } = req.body;
-    const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'anushreddydasari@gmail.com';
+    const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
     const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
     
     console.log('📧 Sending email to Team (first approval step)...');
@@ -3657,7 +3657,7 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
       // Notify the workflow creator about denial
       try {
         const deniedStep = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber));
-        const toEmail = workflow.creatorEmail || process.env.WORKFLOW_FALLBACK_EMAIL || 'anushreddydasari@gmail.com';
+        const toEmail = workflow.creatorEmail || process.env.WORKFLOW_FALLBACK_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
         console.log('📧 Denial notification prepared:', {
           to: toEmail,
           deniedBy: deniedStep?.role,

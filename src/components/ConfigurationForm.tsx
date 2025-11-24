@@ -119,6 +119,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'google-sharedrive-to-google-sharedrive': 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE',
       'google-sharedrive-to-onedrive': 'GOOGLE SHARED DRIVE TO ONEDRIVE',
       'google-sharedrive-to-sharepoint': 'GOOGLE SHARED DRIVE TO SHAREPOINT',
+      'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
       'google-mydrive-to-dropbox': 'GOOGLE MYDRIVE TO DROPBOX',
       'google-mydrive-to-egnyte': 'GOOGLE MYDRIVE TO EGNYTE',
       'google-mydrive-to-onedrive': 'GOOGLE MYDRIVE TO ONEDRIVE',
@@ -128,6 +129,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'sharefile-to-google-mydrive': 'SHAREFILE TO GOOGLE MYDRIVE',
       'sharefile-to-google-sharedrive': 'SHAREFILE TO GOOGLE SHARED DRIVE',
       'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
+      'sharefile-to-sharepoint': 'SHAREFILE TO SHAREPOINT',
       'sharefile-to-sharefile': 'SHAREFILE TO SHAREFILE',
       'overage-agreement': 'OVERAGE AGREEMENT',
       'slack-to-teams': 'SLACK TO TEAMS',
@@ -1048,7 +1050,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                          { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
                          { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
-                         { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' }
+                         { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
+                         { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
+                         { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' }
                         ];
                         
                         const filtered = contentCombinations.filter(combo => 
@@ -1102,6 +1106,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                          { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
                          { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
+                         { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
                          { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' }
                        ];
                        const overageCombinations = [

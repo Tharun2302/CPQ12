@@ -88,7 +88,7 @@ const UserMenu: React.FC = () => {
           {/* <button
             onClick={() => {
               setIsOpen(false);
-              navigate('/dashboard');
+              navigate('/deal');
               setTimeout(() => {
                 window.dispatchEvent(new CustomEvent('navigateToTab', { detail: 'settings' }));
               }, 0);
