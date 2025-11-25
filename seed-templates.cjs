@@ -412,6 +412,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'google', 'sharedrive', 'sharepoint', 'content', 'microsoft', 'migration', 'enterprise']
     },
+    // EGNYTE TO SHAREPOINT ONLINE templates (Standard & Advanced only)
+    {
+      name: 'EGNYTE TO SHAREPOINT ONLINE Standard',
+      description: 'Standard template for Egnyte to SharePoint Online migration - suitable for medium to large projects',
+      fileName: 'egnyte-to-sharepoint-online-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-sharepoint-online',
+      planType: 'standard',
+      keywords: ['standard', 'egnyte', 'sharepoint', 'online', 'content', 'migration', 'microsoft']
+    },
+    {
+      name: 'EGNYTE TO SHAREPOINT ONLINE Advanced',
+      description: 'Advanced template for Egnyte to SharePoint Online migration - suitable for large enterprise projects',
+      fileName: 'egnyte-to-sharepoint-online-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-sharepoint-online',
+      planType: 'advanced',
+      keywords: ['advanced', 'egnyte', 'sharepoint', 'online', 'content', 'migration', 'microsoft', 'enterprise']
+    },
     // EGNYTE TO GOOGLE SHARED DRIVE templates (Standard & Advanced only)
     {
       name: 'EGNYTE TO GOOGLE SHARED DRIVE Standard',
@@ -432,6 +453,27 @@ async function seedDefaultTemplates(db) {
       combination: 'egnyte-to-google-sharedrive',
       planType: 'advanced',
       keywords: ['advanced', 'egnyte', 'google', 'sharedrive', 'content', 'migration', 'enterprise']
+    },
+    // EGNYTE TO GOOGLE MYDRIVE templates (Standard & Advanced only)
+    {
+      name: 'EGNYTE TO GOOGLE MYDRIVE Standard',
+      description: 'Standard template for Egnyte to Google MyDrive migration - suitable for medium to large projects',
+      fileName: 'egnyte-to-google-mydrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-google-mydrive',
+      planType: 'standard',
+      keywords: ['standard', 'egnyte', 'google', 'mydrive', 'content', 'migration']
+    },
+    {
+      name: 'EGNYTE TO GOOGLE MYDRIVE Advanced',
+      description: 'Advanced template for Egnyte to Google MyDrive migration - suitable for large enterprise projects',
+      fileName: 'egnyte-to-google-mydrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-google-mydrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'egnyte', 'google', 'mydrive', 'content', 'migration', 'enterprise']
     },
     // GOOGLE MYDRIVE TO DROPBOX templates (Standard & Advanced only)
     {
@@ -807,7 +849,7 @@ async function seedDefaultTemplates(db) {
   console.log(`   - Content: GOOGLE MYDRIVE TO DROPBOX, GOOGLE MYDRIVE TO EGNYTE, GOOGLE MYDRIVE TO ONEDRIVE, GOOGLE MYDRIVE TO SHAREPOINT (Standard, Advanced only)`);
   console.log(`   - Content: GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE, GOOGLE MYDRIVE TO GOOGLE MYDRIVE (Standard, Advanced only)`);
   console.log(`   - Content: SHAREFILE TO GOOGLE MYDRIVE, SHAREFILE TO GOOGLE SHARED DRIVE, SHAREFILE TO ONEDRIVE, SHAREFILE TO SHAREFILE, SHAREFILE TO SHAREPOINT (Standard, Advanced only)`);
-  console.log(`   - Content: EGNYTE TO GOOGLE SHARED DRIVE (Standard, Advanced only)`);
+  console.log(`   - Content: EGNYTE TO GOOGLE SHARED DRIVE, EGNYTE TO SHAREPOINT ONLINE, EGNYTE TO GOOGLE MYDRIVE (Standard, Advanced only)`);
   console.log(`   - Overage: OVERAGE AGREEMENT (Messaging, Content)`);
   return uploadedCount > 0;
 }

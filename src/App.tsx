@@ -1347,6 +1347,8 @@ function App() {
       const isDropboxToSharePoint = name.includes('dropbox') && name.includes('sharepoint');
       const isDropboxToOneDrive = name.includes('dropbox') && name.includes('onedrive');
       const isEgnyteToGoogleSharedDrive = name.includes('egnyte') && name.includes('google') && name.includes('sharedrive');
+      const isEgnyteToSharePointOnline = name.includes('egnyte') && name.includes('sharepoint');
+      const isEgnyteToGoogleMyDrive = name.includes('egnyte') && name.includes('mydrive');
       
       const matchesPlan = name.includes(safeTier);
       
@@ -1359,6 +1361,8 @@ function App() {
         (combination === 'dropbox-to-sharepoint' && isDropboxToSharePoint) ||
         (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive) ||
         (combination === 'egnyte-to-google-sharedrive' && isEgnyteToGoogleSharedDrive) ||
+        (combination === 'egnyte-to-sharepoint-online' && isEgnyteToSharePointOnline) ||
+        (combination === 'egnyte-to-google-mydrive' && isEgnyteToGoogleMyDrive) ||
         (combination === 'dropbox-to-google' && name.includes('dropbox') && name.includes('google') && !name.includes('mydrive') && !name.includes('sharedrive')) ||
         (combination === 'dropbox-to-microsoft' && name.includes('dropbox') && name.includes('microsoft')) ||
         (combination === 'box-to-box' && name.includes('box') && name.includes('box')) ||

@@ -120,6 +120,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'google-sharedrive-to-onedrive': 'GOOGLE SHARED DRIVE TO ONEDRIVE',
       'google-sharedrive-to-sharepoint': 'GOOGLE SHARED DRIVE TO SHAREPOINT',
       'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
+      'egnyte-to-sharepoint-online': 'EGNYTE TO SHAREPOINT ONLINE',
+      'egnyte-to-google-mydrive': 'EGNYTE TO GOOGLE MYDRIVE',
       'google-mydrive-to-dropbox': 'GOOGLE MYDRIVE TO DROPBOX',
       'google-mydrive-to-egnyte': 'GOOGLE MYDRIVE TO EGNYTE',
       'google-mydrive-to-onedrive': 'GOOGLE MYDRIVE TO ONEDRIVE',
@@ -1052,7 +1054,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
                          { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
                          { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-                         { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' }
+                         { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
+                         { value: 'egnyte-to-sharepoint-online', label: 'EGNYTE TO SHAREPOINT ONLINE' },
+                         { value: 'egnyte-to-google-mydrive', label: 'EGNYTE TO GOOGLE MYDRIVE' }
                         ];
                         
                         const filtered = contentCombinations.filter(combo => 
