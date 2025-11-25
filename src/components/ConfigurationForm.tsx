@@ -1329,8 +1329,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </div>
                 )}
 
-                {/* Discount - HIDDEN from UI but functionality retained for future use */}
-                {false && (
+                {/* Discount - now visible in UI */}
                 <div className="group">
                   <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                     <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
@@ -1341,7 +1340,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <input
                     type="number"
                     min={0}
-                    max={10}
+                    max={15}
                     step={0.01}
                     value={discountValue}
                     onChange={(e) => {
@@ -1359,37 +1358,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       
                       const numValue = Number(raw);
                       
-                      // Check if value exceeds 10%
-                      if (numValue > 10) {
-                        alert('Discount cannot be more than 10%');
+                      // Check if value exceeds 15%
+                      if (numValue > 15) {
+                        alert('Discount cannot be more than 15%');
                         return; // Don't update the value
                       }
                       
                       // Ensure value is not negative
                       if (numValue < 0) {
-                      setDiscountValue('0');
+                        setDiscountValue('0');
+                        try { 
+                          sessionStorage.setItem('cpq_discount_session', '0');
+                          window.dispatchEvent(new CustomEvent('discountUpdated'));
+                        } catch {}
+                        return;
+                      }
+                      
+                      // Update the display value immediately
+                      setDiscountValue(raw);
+                      
+                      // Save to sessionStorage and notify other components
                       try { 
-                        sessionStorage.setItem('cpq_discount_session', '0');
+                        sessionStorage.setItem('cpq_discount_session', raw);
                         window.dispatchEvent(new CustomEvent('discountUpdated'));
                       } catch {}
-                      return;
-                    }
-                    
-                    // Update the display value immediately
-                    setDiscountValue(raw);
-                    
-                    // Save to sessionStorage and notify other components
-                    try { 
-                      sessionStorage.setItem('cpq_discount_session', raw);
-                      window.dispatchEvent(new CustomEvent('discountUpdated'));
-                    } catch {}
                     }}
-                    className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                    placeholder={`Enter discount percentage (max 10%)`}
+                   className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
+                   placeholder={`Enter discount percentage (max 15%)`}
                   />
-                  <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 10%.</p>
+                  <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
                 </div>
-                )}
 
                 {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
                 {config.migrationType === 'Messaging' && config.combination !== 'overage-agreement' && (

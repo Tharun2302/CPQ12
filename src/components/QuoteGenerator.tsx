@@ -440,10 +440,20 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     } catch {}
   }, [teamSelection]);
 
+  // Mapping for Team Approval emails by group
+  // SMB  -> chitradip.saha@cloudfuze.com
+  // AM   -> lawrence.lewis@cloudfuze.com
+  // ENT  -> anthony@cloudfuze.com
+  const TEAM_APPROVAL_EMAILS: Record<string, string> = {
+    SMB: 'chitradip.saha@cloudfuze.com',
+    AM: 'lawrence.lewis@cloudfuze.com',
+    ENT: 'anthony@cloudfuze.com', // Update if Enterprise owner changes
+  };
+
   // Helper function to get team approval email based on selection
-  // All team approvals are routed to Abhilasha's email by default
-  const getTeamApprovalEmail = (_team: string): string => {
-    return 'abhilasha.kandakatla@cloudfuze.com';
+  const getTeamApprovalEmail = (team: string): string => {
+    const key = (team || '').toUpperCase();
+    return TEAM_APPROVAL_EMAILS[key] || '';
   };
 
   const ensureDocxPreviewStylesInjected = () => {
@@ -1614,6 +1624,12 @@ Total Price: {{total price}}`;
       // Resolve Team Approval group from UI selection
       const choice = (teamSelection || 'SMB').toUpperCase();
       const teamEmail = getTeamApprovalEmail(choice);
+
+      if (!teamEmail) {
+        alert('Please select a valid Team Approval group email before starting the workflow.');
+        setIsStartingWorkflow(false);
+        return;
+      }
 
       // Determine if this is an overage agreement workflow (special approval routing)
       const isOverageWorkflow =
@@ -4677,7 +4693,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <div>
                     <h2 className="text-lg font-bold">🎉 Agreement Generated!</h2>
                     <p className="text-green-100 text-xs">
-                      {selectedTemplate?.name} | {clientInfo.clientName}
+                      {getSelectedTemplateDisplayName()} | {clientInfo.clientName}
                     </p>
                   </div>
                 </div>
@@ -5027,9 +5043,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     onChange={(e) => setTeamSelection(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="SMB">SMB (abhilasha.kandakatla@cloudfuze.com)</option>
-                    <option value="AM">AM (abhilasha.kandakatla@cloudfuze.com)</option>
-                    <option value="ENT">ENT (abhilasha.kandakatla@cloudfuze.com)</option>
+                    <option value="SMB">SMB ({TEAM_APPROVAL_EMAILS.SMB})</option>
+                    <option value="AM">AM ({TEAM_APPROVAL_EMAILS.AM})</option>
+                    <option value="ENT">ENT ({TEAM_APPROVAL_EMAILS.ENT})</option>
                   </select>
                 </div>
                 

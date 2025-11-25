@@ -287,7 +287,7 @@ const TeamApprovalDashboard: React.FC = () => {
 
       {showDocumentModal && selectedWorkflow && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl max-w-[96vw] w-full max-h-[98vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
@@ -305,7 +305,7 @@ const TeamApprovalDashboard: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(95vh-150px)]">
+            <div className="p-4 overflow-y-auto max-h-[calc(98vh-150px)]">
               <div className="bg-gray-100 rounded-lg p-3">
                 {isLoadingPreview ? (
                   <div className="text-center py-8">
@@ -313,7 +313,7 @@ const TeamApprovalDashboard: React.FC = () => {
                     <p className="text-gray-600 text-sm">Loading document preview...</p>
                   </div>
                 ) : documentPreview ? (
-                  <iframe src={documentPreview} className="w-full h-[70vh] border-0" title="Document Preview" />
+                  <iframe src={documentPreview} className="w-full h-[82vh] border-0" title="Document Preview" />
                 ) : (
                   <div className="text-center py-8 text-gray-600">No preview available</div>
                 )}
