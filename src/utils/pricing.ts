@@ -65,7 +65,7 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       case 'Large':
         return 2000;
       case 'Extra Large':
-        return 3500;
+        return 5000;
       default:
         return 500;
     }

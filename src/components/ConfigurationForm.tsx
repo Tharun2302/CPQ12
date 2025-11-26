@@ -133,6 +133,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
       'sharefile-to-sharepoint': 'SHAREFILE TO SHAREPOINT',
       'sharefile-to-sharefile': 'SHAREFILE TO SHAREFILE',
+      'egnyte-to-onedrive': 'EGNYTE TO ONEDRIVE',
+      'nfs-to-onedrive': 'NFS TO ONEDRIVE',
+      'nfs-to-sharepoint': 'NFS TO SHAREPOINT',
       'overage-agreement': 'OVERAGE AGREEMENT',
       'slack-to-teams': 'SLACK TO TEAMS',
       'slack-to-google-chat': 'SLACK TO GOOGLE CHAT'
@@ -1046,17 +1049,20 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
                           { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
                           { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
-                         { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
-                         { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
-                         { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
-                         { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
-                         { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
-                         { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
-                         { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
-                         { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-                         { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
-                         { value: 'egnyte-to-sharepoint-online', label: 'EGNYTE TO SHAREPOINT ONLINE' },
-                         { value: 'egnyte-to-google-mydrive', label: 'EGNYTE TO GOOGLE MYDRIVE' }
+                          { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
+                          { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
+                          { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
+                          { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
+                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
+                          { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
+                          { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
+                          { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
+                          { value: 'egnyte-to-sharepoint-online', label: 'EGNYTE TO SHAREPOINT ONLINE' },
+                          { value: 'egnyte-to-google-mydrive', label: 'EGNYTE TO GOOGLE MYDRIVE' },
+                          { value: 'egnyte-to-onedrive', label: 'EGNYTE TO ONEDRIVE' },
+                          { value: 'nfs-to-onedrive', label: 'NFS TO ONEDRIVE' },
+                          { value: 'nfs-to-sharepoint', label: 'NFS TO SHAREPOINT' }
                         ];
                         
                         const filtered = contentCombinations.filter(combo => 
@@ -1104,14 +1110,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
                             { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
                             { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
-                         { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
-                         { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
-                         { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
-                         { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
-                         { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
-                         { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
-                         { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
-                         { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' }
+                            { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
+                            { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                            { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
+                            { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
+                            { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
+                            { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
+                            { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
+                            { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
+                            { value: 'egnyte-to-onedrive', label: 'EGNYTE TO ONEDRIVE' },
+                            { value: 'nfs-to-onedrive', label: 'NFS TO ONEDRIVE' },
+                            { value: 'nfs-to-sharepoint', label: 'NFS TO SHAREPOINT' }
                        ];
                        const overageCombinations = [
                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
