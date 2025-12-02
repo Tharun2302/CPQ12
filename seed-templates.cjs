@@ -475,6 +475,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'egnyte', 'google', 'mydrive', 'content', 'migration', 'enterprise']
     },
+    // EGNYTE TO ONEDRIVE templates (Standard & Advanced only)
+    {
+      name: 'EGNYTE TO ONEDRIVE Standard',
+      description: 'Standard template for Egnyte to OneDrive migration - suitable for medium to large projects',
+      fileName: 'egnyte-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'egnyte', 'onedrive', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'EGNYTE TO ONEDRIVE Advanced',
+      description: 'Advanced template for Egnyte to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'egnyte-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'egnyte', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
+    },
     // GOOGLE MYDRIVE TO DROPBOX templates (Standard & Advanced only)
     {
       name: 'GOOGLE MYDRIVE TO DROPBOX Standard',
@@ -663,6 +684,48 @@ async function seedDefaultTemplates(db) {
       combination: 'sharefile-to-onedrive',
       planType: 'advanced',
       keywords: ['advanced', 'sharefile', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
+    },
+    // NFS TO ONEDRIVE templates (Standard & Advanced only)
+    {
+      name: 'NFS TO ONEDRIVE Standard',
+      description: 'Standard template for NFS to OneDrive migration - suitable for medium to large projects',
+      fileName: 'nfs-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'nfs', 'onedrive', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'NFS TO ONEDRIVE Advanced',
+      description: 'Advanced template for NFS to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'nfs-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'nfs', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
+    },
+    // NFS TO SHAREPOINT templates (Standard & Advanced only)
+    {
+      name: 'NFS TO SHAREPOINT Standard',
+      description: 'Standard template for NFS to SharePoint migration - suitable for medium to large projects',
+      fileName: 'nfs-to-sharepoint-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-sharepoint',
+      planType: 'standard',
+      keywords: ['standard', 'nfs', 'sharepoint', 'microsoft', 'content', 'migration']
+    },
+    {
+      name: 'NFS TO SHAREPOINT Advanced',
+      description: 'Advanced template for NFS to SharePoint migration - suitable for large enterprise projects',
+      fileName: 'nfs-to-sharepoint-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-sharepoint',
+      planType: 'advanced',
+      keywords: ['advanced', 'nfs', 'sharepoint', 'microsoft', 'content', 'migration', 'enterprise']
     },
     // SHAREFILE TO SHAREFILE templates (Standard & Advanced only)
     {
