@@ -243,7 +243,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
 
   const tabs = [
     { id: 'dashboard', label: 'Admin Dashboard', icon: BarChart3 },
-    { id: 'start', label: 'Start Approval Workflow', icon: FileCheck }
+    { id: 'start', label: 'Start Manual Approval Workflow', icon: FileCheck }
   ];
 
   return (
@@ -370,7 +370,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   className="w-full max-w-sm mx-auto flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-lg font-semibold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 shadow-md hover:shadow-lg"
               >
                   <Rocket className="w-4 h-4" />
-                Start Approval Workflow
+                Start Manual Approval Workflow
               </button>
           </div>
         </div>
