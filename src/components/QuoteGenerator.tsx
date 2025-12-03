@@ -407,9 +407,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   // Use centralized hardcoded defaults (original team addresses)
-  const defaultTechEmail = 'nivas@cloudfuze.com';
-  const defaultLegalEmail = 'adi.nandyala@cloudfuze.com';
-  const defaultDealDeskEmail = 'salesops@cloudfuze.com';
+  const defaultTechEmail = 'anushreddydasari@gmail.com';
+  const defaultLegalEmail = 'anushreddydasari@gmail.com';
+  const defaultDealDeskEmail = 'anushreddydasari@gmail.com';
   const workflowCreatorEmail = (() => {
     try {
       const raw = localStorage.getItem('cpq_user');
@@ -444,10 +444,12 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // SMB  -> chitradip.saha@cloudfuze.com
   // AM   -> lawrence.lewis@cloudfuze.com
   // ENT  -> anthony@cloudfuze.com
+  // DEV  -> anushreddydasari@gmail.com
   const TEAM_APPROVAL_EMAILS: Record<string, string> = {
     SMB: 'chitradip.saha@cloudfuze.com',
     AM: 'lawrence.lewis@cloudfuze.com',
     ENT: 'anthony@cloudfuze.com', // Update if Enterprise owner changes
+    DEV: 'anushreddydasari@gmail.com',
   };
 
   // Helper function to get team approval email based on selection
@@ -783,7 +785,7 @@ Quote ID: ${quoteData.id}
       `.trim();
 
       // Send email directly through backend API
-      const dealDeskEmail = 'dealdesk@cloudfuze.com'; // Replace with actual deal desk email
+      const dealDeskEmail = 'anushreddydasari@gmail.com'; // Deal Desk email
       
       const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
@@ -1037,7 +1039,7 @@ Quote ID: ${quoteData.id}
       }
 
       // Send directly to CloudFuze sales operations
-      const to = 'salesops@cloudfuze.com';
+      const to = 'anushreddydasari@gmail.com';
 
       const emailCompanyName = clientInfo.company || dealData?.companyByContact || dealData?.company || 'Client';
       const emailClientName = clientInfo.clientName || dealData?.contactName || 'Valued Client';
@@ -1143,7 +1145,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         // Show more detailed success message
         const messageId = result.messageId ? `\nMessage ID: ${result.messageId}` : '';
         const statusCode = result.statusCode ? `\nStatus: ${result.statusCode}` : '';
-        alert(`✅ Agreement emailed successfully to salesops@cloudfuze.com!${messageId}${statusCode}\n\nNote: The email has been sent to CloudFuze Sales Operations.`);
+        alert(`✅ Agreement emailed successfully to anushreddydasari@gmail.com!${messageId}${statusCode}\n\nNote: The email has been sent to CloudFuze Sales Operations.`);
       } else {
         throw new Error(result.message);
       }
@@ -5071,6 +5073,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <option value="SMB">SMB ({TEAM_APPROVAL_EMAILS.SMB})</option>
                     <option value="AM">AM ({TEAM_APPROVAL_EMAILS.AM})</option>
                     <option value="ENT">ENT ({TEAM_APPROVAL_EMAILS.ENT})</option>
+                    <option value="DEV">DEV ({TEAM_APPROVAL_EMAILS.DEV})</option>
                   </select>
                 </div>
                 

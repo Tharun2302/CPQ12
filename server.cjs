@@ -2526,7 +2526,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     }
 
     const { managerEmail, workflowData } = req.body;
-    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'manager@company.com';
+    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'anushreddydasari@gmail.com';
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
     console.log('Manager:', resolvedManagerEmail);
@@ -2687,7 +2687,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     }
 
     const { ceoEmail, workflowData } = req.body;
-    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'legal@company.com';
+    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'anushreddydasari@gmail.com';
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');
     console.log('CEO:', resolvedCeoEmail);
@@ -2847,7 +2847,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     }
 
     const { dealDeskEmail, workflowData } = req.body;
-    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'dealdesk@company.com';
+    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'anushreddydasari@gmail.com';
     
     console.log('📧 Sending notification email to Deal Desk (after client approval)...');
     console.log('Deal Desk:', resolvedDealDeskEmail);

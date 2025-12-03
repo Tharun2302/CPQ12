@@ -18,8 +18,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [formData, setFormData] = useState({
     documentType: 'PDF Agreement',
     documentId: '',
-    role1Email: 'saitharunreddy2302@gmail.com',
-    role2Email: 'saitharunreddy2302@gmail.com'
+    role1Email: 'anushreddydasari@gmail.com',
+    role2Email: 'anushreddydasari@gmail.com'
   });
 
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
