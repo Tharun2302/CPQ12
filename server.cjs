@@ -2561,7 +2561,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     }
 
     const { managerEmail, workflowData } = req.body;
-    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'anushreddydasari@gmail.com';
+    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'anush.dasari@cloudfuze.com';
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
     console.log('Manager:', resolvedManagerEmail);
@@ -2734,7 +2734,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     }
 
     const { ceoEmail, workflowData } = req.body;
-    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'anushreddydasari@gmail.com';
+    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'raya.durai@cloudfuze.com';
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');
     console.log('CEO:', resolvedCeoEmail);
