@@ -128,12 +128,30 @@ async function initializeDatabase() {
     // Test the connection
     await db.admin().ping();
     
-    // Auto-seed default templates on server startup
-    try {
-      const { seedDefaultTemplates } = require('./seed-templates.cjs');
-      await seedDefaultTemplates(db);
-    } catch (error) {
-      console.log('⚠️ Template seeding skipped:', error.message);
+    // Auto-seed default templates on server startup (optional)
+    //
+    // NOTE:
+    // - This seeding is relatively heavy against MongoDB Atlas and can make
+    //   the server feel "stuck" on startup while it checks/updates every template.
+    // - We now only run it when explicitly enabled via environment variable,
+    //   so normal local runs stay fast and Atlas cold starts hurt less.
+    //
+    // To force seeding on a given environment, set:
+    //   SEED_TEMPLATES_ON_STARTUP=true
+    // in your env and restart the server.
+    const shouldSeedTemplates =
+      process.env.SEED_TEMPLATES_ON_STARTUP &&
+      process.env.SEED_TEMPLATES_ON_STARTUP.toLowerCase() === 'true';
+
+    if (shouldSeedTemplates) {
+      try {
+        const { seedDefaultTemplates } = require('./seed-templates.cjs');
+        await seedDefaultTemplates(db);
+      } catch (error) {
+        console.log('⚠️ Template seeding skipped due to error:', error.message);
+      }
+    } else {
+      console.log('⏭️ Skipping template seeding on startup (SEED_TEMPLATES_ON_STARTUP not set to true)');
     }
     console.log('✅ MongoDB Atlas ping successful');
     
@@ -1478,19 +1496,36 @@ app.get('/api/templates', async (req, res) => {
     }
 
     console.log('📄 Fetching templates from database...');
-    
-    const templates = await db.collection('templates')
-      .find({}, { fileData: 0 }) // Exclude file data from list
-      .sort({ createdAt: -1 })
-      .toArray();
-    
-    console.log(`✅ Fetched ${templates.length} templates from database`);
 
-      res.json({
-        success: true,
-      templates: templates,
-        count: templates.length
-      });
+    const queryStart = Date.now();
+
+    // IMPORTANT: In MongoDB Node.js driver v6+, projection must be specified
+    // via the "projection" option. Passing { fileData: 0 } as the second
+    // argument no longer works and was causing the full (large) fileData
+    // blobs to be read from the database and sent over the network.
+    //
+    // Restrict the fields we return to keep the payload small and fast.
+    const templatesCursor = db.collection('templates')
+      .find(
+        {},
+        {
+          projection: {
+            fileData: 0, // never send the big binary/base64 data in the list call
+          }
+        }
+      )
+      .sort({ createdAt: -1 });
+
+    const templates = await templatesCursor.toArray();
+    const queryDuration = Date.now() - queryStart;
+
+    console.log(`✅ Fetched ${templates.length} templates from database (${queryDuration}ms)`);
+
+    res.json({
+      success: true,
+      templates,
+      count: templates.length
+    });
   } catch (error) {
     console.error('❌ Error fetching templates:', error);
     res.status(500).json({ 
@@ -2568,21 +2603,27 @@ app.post('/api/send-manager-email', async (req, res) => {
       }
     }
 
-    // Send email to Manager only with attachment
-    const managerResult = await sendEmail(
+    // Send email to Manager only with attachment (fire-and-forget for faster UX)
+    const sendStartedAt = Date.now();
+    sendEmail(
       resolvedManagerEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateManagerEmailHTML(workflowData),
       attachments
-    );
+    )
+      .then(result => {
+        console.log(`✅ Manager email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ Manager email async error:', err);
+      });
 
-    console.log('✅ Manager email sent:', managerResult.success);
-
+    // Immediately respond so the frontend is not blocked by SendGrid latency
     res.json({
-      success: managerResult.success,
-      message: 'Manager email sent successfully',
-      result: { role: 'Manager', email: resolvedManagerEmail, success: managerResult.success },
-      workflowData: workflowData,
+      success: true,
+      message: 'Manager email queued for sending',
+      result: { role: 'Manager', email: resolvedManagerEmail, success: true },
+      workflowData,
       attachmentCount: attachments.length
     });
 
@@ -2649,21 +2690,27 @@ app.post('/api/send-team-email', async (req, res) => {
       }
     }
 
-    // Send email to Team with attachment
-    const teamResult = await sendEmail(
+    // Send email to Team with attachment (fire-and-forget for faster UX)
+    const sendStartedAt = Date.now();
+    sendEmail(
       resolvedTeamEmail,
       `${teamLabel ? `[${teamLabel}] ` : ''}Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateTeamEmailHTML(workflowData),
       attachments
-    );
+    )
+      .then(result => {
+        console.log(`✅ Team email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ Team email async error:', err);
+      });
 
-    console.log('✅ Team email sent:', teamResult.success);
-
+    // Immediately respond so the frontend is not blocked by SendGrid latency
     res.json({
-      success: teamResult.success,
-      message: 'Team email sent successfully',
-      result: { role: 'Team Approval', email: resolvedTeamEmail, success: teamResult.success },
-      workflowData: workflowData,
+      success: true,
+      message: 'Team email queued for sending',
+      result: { role: 'Team Approval', email: resolvedTeamEmail, success: true },
+      workflowData,
       attachmentCount: attachments.length
     });
   } catch (error) {
@@ -2729,21 +2776,27 @@ app.post('/api/send-ceo-email', async (req, res) => {
       }
     }
 
-    // Send email to CEO only with attachment
-    const ceoResult = await sendEmail(
+    // Send email to CEO only with attachment (fire-and-forget for faster UX)
+    const sendStartedAt = Date.now();
+    sendEmail(
       resolvedCeoEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
       generateCEOEmailHTML(workflowData),
       attachments
-    );
+    )
+      .then(result => {
+        console.log(`✅ CEO email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ CEO email async error:', err);
+      });
 
-    console.log('✅ CEO email sent:', ceoResult.success);
-
+    // Immediately respond so the frontend is not blocked by SendGrid latency
     res.json({
-      success: ceoResult.success,
-      message: 'CEO email sent successfully',
-      result: { role: 'CEO', email: resolvedCeoEmail, success: ceoResult.success },
-      workflowData: workflowData,
+      success: true,
+      message: 'CEO email queued for sending',
+      result: { role: 'CEO', email: resolvedCeoEmail, success: true },
+      workflowData,
       attachmentCount: attachments.length
     });
 
