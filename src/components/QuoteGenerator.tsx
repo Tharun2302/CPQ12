@@ -321,8 +321,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Allow discount only when total project cost exceeds $2500
   const isDiscountAllowed = totalCost >= 2500;
   
-  // Check if user has entered a valid discount
-  const hasValidDiscount = discountPercent > 0 && discountPercent <= 10;
+  // Check if user has entered a valid discount (capped at 15% as per business rules)
+  const hasValidDiscount = discountPercent > 0 && discountPercent <= 15;
   
   // Calculate final total after discount
   const discountAmount = hasValidDiscount ? totalCost * (discountPercent / 100) : 0;
@@ -409,9 +409,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   // Use centralized hardcoded defaults (original team addresses)
-  const defaultTechEmail = 'nivas@cloudfuze.com';
-  const defaultLegalEmail = 'adi.nandyala@cloudfuze.com';
-  const defaultDealDeskEmail = 'salesops@cloudfuze.com';
+  const defaultTechEmail = 'anush.dasari@cloudfuze.com';
+  const defaultLegalEmail = 'raya.durai@cloudfuze.com';
+  const defaultDealDeskEmail = 'anushreddydasari@gmail.com';
   const workflowCreatorEmail = (() => {
     try {
       const raw = localStorage.getItem('cpq_user');
@@ -446,10 +446,12 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // SMB  -> chitradip.saha@cloudfuze.com
   // AM   -> lawrence.lewis@cloudfuze.com
   // ENT  -> anthony@cloudfuze.com
+  // DEV  -> anushreddydasari@gmail.com
   const TEAM_APPROVAL_EMAILS: Record<string, string> = {
     SMB: 'chitradip.saha@cloudfuze.com',
     AM: 'lawrence.lewis@cloudfuze.com',
     ENT: 'anthony@cloudfuze.com', // Update if Enterprise owner changes
+    DEV: 'anushreddydasari@gmail.com',
   };
 
   // Helper function to get team approval email based on selection
@@ -785,7 +787,7 @@ Quote ID: ${quoteData.id}
       `.trim();
 
       // Send email directly through backend API
-      const dealDeskEmail = 'dealdesk@cloudfuze.com'; // Replace with actual deal desk email
+      const dealDeskEmail = 'anushreddydasari@gmail.com'; // Deal Desk email
       
       const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
@@ -1039,7 +1041,7 @@ Quote ID: ${quoteData.id}
       }
 
       // Send directly to CloudFuze sales operations
-      const to = 'salesops@cloudfuze.com';
+      const to = 'anushreddydasari@gmail.com';
 
       const emailCompanyName = clientInfo.company || dealData?.companyByContact || dealData?.company || 'Client';
       const emailClientName = clientInfo.clientName || dealData?.contactName || 'Valued Client';
@@ -1145,7 +1147,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         // Show more detailed success message
         const messageId = result.messageId ? `\nMessage ID: ${result.messageId}` : '';
         const statusCode = result.statusCode ? `\nStatus: ${result.statusCode}` : '';
-        alert(`✅ Agreement emailed successfully to salesops@cloudfuze.com!${messageId}${statusCode}\n\nNote: The email has been sent to CloudFuze Sales Operations.`);
+        alert(`✅ Agreement emailed successfully to anushreddydasari@gmail.com!${messageId}${statusCode}\n\nNote: The email has been sent to CloudFuze Sales Operations.`);
       } else {
         throw new Error(result.message);
       }
@@ -2567,6 +2569,27 @@ Total Price: {{total price}}`;
         const numberOfInstances = quoteData.configuration?.numberOfInstances || 1;
         const dataSizeGB = quoteData.configuration?.dataSizeGB ?? configuration?.dataSizeGB ?? 0;
         
+        // CRITICAL: Recalculate discount based on the local totalCost value
+        // This ensures discount is calculated correctly for the template preview
+        const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
+        const localIsDiscountAllowed = totalCost >= 2500;
+        const localHasValidDiscount = localDiscountPercent > 0 && localDiscountPercent <= 15; // Updated to 15% cap
+        const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
+        const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
+        const localIsDiscountValid = localHasValidDiscount ? localFinalTotalAfterDiscount >= 2500 : true;
+        const localShouldApplyDiscount = localIsDiscountAllowed && localHasValidDiscount && localIsDiscountValid;
+        
+        console.log('🧮 Discount calculation in handleGenerateAgreement:', {
+          totalCost,
+          localDiscountPercent,
+          localIsDiscountAllowed,
+          localHasValidDiscount,
+          localDiscountAmount,
+          localFinalTotalAfterDiscount,
+          localIsDiscountValid,
+          localShouldApplyDiscount
+        });
+        
         // Debug: Log critical data extraction
         console.log('🔍 DATA SIZE DEBUG:');
         console.log('  quoteData.configuration?.dataSizeGB:', quoteData.configuration?.dataSizeGB);
@@ -2809,24 +2832,25 @@ Total Price: {{total price}}`;
           '{{sub_total}}': formatCurrency(totalCost || 0),
           
           // Discount information - hide discount tokens when discount is 0
-        '{{discount}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-        '{{discount_percent}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-          '{{discount_percentage}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-        '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
-          '{{discountAmount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
-          '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
-          '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
+        // CRITICAL: Use local discount variables calculated from local totalCost
+        '{{discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+        '{{discount_percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_percentage}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+        '{{discount_amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discountAmount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount_text}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `Discount (${localDiscountPercent}%)` : '',
+          '{{discount_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
           
           // Enhanced discount tokens for better template control
-          '{{discount_label}}': (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '',
-          '{{discount_percent_only}}': (shouldApplyDiscount && discountPercent > 0) ? `${discountPercent}%` : '',
-          '{{discount_percent_with_parentheses}}': (shouldApplyDiscount && discountPercent > 0) ? `(${discountPercent}%)` : '',
-          '{{discount_display}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%)` : '',
-          '{{discount_full_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
-        '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
-          '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
-          '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
-          '{{finalTotal}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
+          '{{discount_label}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'Discount' : '',
+          '{{discount_percent_only}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `${localDiscountPercent}%` : '',
+          '{{discount_percent_with_parentheses}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `(${localDiscountPercent}%)` : '',
+          '{{discount_display}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%)` : '',
+          '{{discount_full_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+        '{{total_after_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{total_price_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{final_total}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{finalTotal}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           
           // Plan and tier information
           '{{tier_name}}': tierName,
@@ -3051,7 +3075,7 @@ Total Price: {{total price}}`;
         
         // Ensure discount label token always exists (even when empty)
         if (templateData['{{discount_label}}'] === undefined) {
-          templateData['{{discount_label}}'] = (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '';
+          templateData['{{discount_label}}'] = (localShouldApplyDiscount && localDiscountPercent > 0) ? 'Discount' : '';
         }
 
         // DIAGNOSTIC: Run comprehensive template analysis
@@ -3078,10 +3102,13 @@ Total Price: {{total price}}`;
 
         // Pre-check and log whether discount will show
         console.log('🧮 Discount pre-check before generate:', {
-          discountPercent,
-          shouldApplyDiscount,
+          localDiscountPercent,
+          localShouldApplyDiscount,
+          localDiscountAmount,
+          localFinalTotalAfterDiscount,
           discount_label: templateData['{{discount_label}}'],
-          discount_amount: templateData['{{discount_amount}}']
+          discount_amount: templateData['{{discount_amount}}'],
+          total_after_discount: templateData['{{total_after_discount}}']
         });
 
         // Show diagnostic results to user (only for non-optional tokens)
@@ -4726,10 +4753,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         onClick={() => setShowApprovalModal(true)}
                         disabled={isStartingWorkflow}
                         className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
-                        title="Start Approval Workflow"
+                        title="Start Manual Approval Workflow"
                       >
                         <Workflow className="w-3 h-3 inline mr-1" />
-                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Approval Workflow'}
+                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Manual Approval Workflow'}
                       </button>
                       <button
                         onClick={handleEmailAgreement}
@@ -5023,7 +5050,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <Workflow className="w-5 h-5 text-blue-600" />
-                  Start Approval Workflow
+                  Start Manual Approval Workflow
                 </h3>
                 <button
                   onClick={() => setShowApprovalModal(false)}
@@ -5053,6 +5080,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <option value="SMB">SMB ({TEAM_APPROVAL_EMAILS.SMB})</option>
                     <option value="AM">AM ({TEAM_APPROVAL_EMAILS.AM})</option>
                     <option value="ENT">ENT ({TEAM_APPROVAL_EMAILS.ENT})</option>
+                    <option value="DEV">DEV ({TEAM_APPROVAL_EMAILS.DEV})</option>
                   </select>
                 </div>
                 
@@ -5085,7 +5113,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   ) : (
                     <>
                       <Workflow className="w-4 h-4" />
-                      Start Approval Workflow
+                      Start Manual Approval Workflow
                     </>
                   )}
                 </button>

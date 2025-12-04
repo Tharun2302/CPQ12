@@ -156,7 +156,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         console.log('📧 Workflow data:', workflow);
         console.log('📧 Deal Desk email:', workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email);
         
-        const dealDeskEmail = workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email || 'dealdesk@company.com';
+        const dealDeskEmail = workflow.workflowSteps?.find((step: any) => step.role === 'Deal Desk')?.email || 'anushreddydasari@gmail.com';
         console.log('📧 Using Deal Desk email:', dealDeskEmail);
         
         const response = await fetch(`${BACKEND_URL}/api/send-deal-desk-email`, {

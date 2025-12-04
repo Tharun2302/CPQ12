@@ -20,7 +20,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
   const [documentPreview, setDocumentPreview] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [modalOpenedFromTab, setModalOpenedFromTab] = useState<string>('queue');
-  const [hasTakenAction, setHasTakenAction] = useState(false);
+  const [hasTakenAction, setHasTakenAction] = useState<Set<string>>(new Set());
   const [denyAfterComment, setDenyAfterComment] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isDenying, setIsDenying] = useState(false);
@@ -142,12 +142,18 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
 
   const handleApprove = async (workflowId: string) => {
     if (isApproving) return; // Prevent double-clicks
+    if (!workflowId) {
+      console.error('❌ No workflowId provided to handleApprove');
+      alert('❌ Error: No workflow ID provided. Please try again.');
+      return;
+    }
     
-    console.log('Legal Team Approving workflow:', workflowId);
+    console.log('✅ Legal Team Approving workflow:', workflowId);
     setIsApproving(true);
     
     try {
-      setHasTakenAction(true);
+      // Mark this specific workflow as acted upon
+      setHasTakenAction(prev => new Set(prev).add(workflowId));
       // Update workflow step (Legal Team is now step 3)
       await updateWorkflowStep(workflowId, 3, { status: 'approved' });
       
@@ -180,7 +186,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            dealDeskEmail: workflow.workflowSteps?.find(step => step.role === 'Deal Desk')?.email || 'saitharunreddy2302@gmail.com',
+            dealDeskEmail: workflow.workflowSteps?.find(step => step.role === 'Deal Desk')?.email || 'anushreddydasari@gmail.com',
             workflowData: {
               documentId: workflow.documentId,
               documentType: workflow.documentType,
@@ -214,7 +220,13 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
       // Close modal - state is already updated by updateWorkflowStep
       closeDocumentModal();
     } catch (error) {
-      console.error('Error approving workflow:', error);
+      console.error('❌ Error approving workflow:', error);
+      // Remove from hasTakenAction if approval failed
+      setHasTakenAction(prev => {
+        const next = new Set(prev);
+        next.delete(workflowId);
+        return next;
+      });
       alert('❌ Failed to approve workflow. Please try again.');
     } finally {
       setIsApproving(false);
@@ -223,20 +235,27 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
 
   const handleDeny = async (workflowId: string) => {
     if (isDenying) return; // Prevent double-clicks
+    if (!workflowId) {
+      console.error('❌ No workflowId provided to handleDeny');
+      alert('❌ Error: No workflow ID provided. Please try again.');
+      return;
+    }
     
-    console.log('Legal Team Denying workflow:', workflowId);
+    console.log('🛑 Legal Team Denying workflow:', workflowId);
     
     // Check if comment is provided
     if (!commentText.trim()) {
       alert('⚠️ Please provide a reason for denial before proceeding.');
       setCommentWorkflowId(workflowId);
       setShowCommentModal(true);
+      setIsDenying(false); // Reset since we're not denying yet
       return;
     }
     
     setIsDenying(true);
     try {
-      setHasTakenAction(true);
+      // Mark this specific workflow as acted upon
+      setHasTakenAction(prev => new Set(prev).add(workflowId));
       await updateWorkflowStep(workflowId, 3, { 
         status: 'denied',
         comments: commentText.trim()
@@ -259,19 +278,25 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
         status: 'denied',
         workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 3 && s.role === 'Legal Team' ? { ...s, status: 'denied', comments: commentText.trim(), timestamp: new Date().toISOString() } : s)
       } : prev);
-      {
-        const wf = workflows.find(w => w.id === workflowId) || selectedWorkflow;
-        const creatorEmail = (wf as any)?.creatorEmail || 'abhilasha.kandakatla@cloudfuze.com';
-        alert(`❌ Workflow denied successfully!\n📧 The workflow creator has been notified at ${creatorEmail}.`);
-      }
+      
+      const wf = workflows.find(w => w.id === workflowId) || selectedWorkflow;
+      const creatorEmail = (wf as any)?.creatorEmail || 'abhilasha.kandakatla@cloudfuze.com';
+      alert(`❌ Workflow denied successfully!\n📧 The workflow creator has been notified at ${creatorEmail}.`);
       
       // Reset comment and close modals - state is already updated by updateWorkflowStep
       setCommentText('');
       setCommentWorkflowId(null);
       setShowCommentModal(false);
+      setDenyAfterComment(false);
       closeDocumentModal();
     } catch (error) {
-      console.error('Error denying workflow:', error);
+      console.error('❌ Error denying workflow:', error);
+      // Remove from hasTakenAction if denial failed
+      setHasTakenAction(prev => {
+        const next = new Set(prev);
+        next.delete(workflowId);
+        return next;
+      });
       alert('❌ Failed to deny workflow. Please try again.');
     } finally {
       setIsDenying(false);
@@ -457,6 +482,8 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Team Approval Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Team Approval Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Legal Team Status</th>
@@ -469,9 +496,10 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
             <tbody>
               {workflows.map((workflow) => {
                 const createdDate = workflow.createdAt ? new Date(workflow.createdAt) : new Date();
+                const teamStep = workflow.workflowSteps?.find(step => step.role === 'Team Approval');
                 const technicalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Technical Team');
-              const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
-              const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
+                const legalTeamStep = workflow.workflowSteps?.find(step => step.role === 'Legal Team');
+                const dealDeskStep = workflow.workflowSteps?.find(step => step.role === 'Deal Desk');
                 
                 return (
                   <tr key={workflow.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -480,6 +508,18 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                     </td>
                     <td className="py-4 px-4 text-gray-700">
                       {workflow.clientName || 'Unknown Client'}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                        teamStep?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        teamStep?.status === 'denied' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {teamStep?.status || 'pending'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">
+                      {teamStep?.comments || 'No comments'}
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
@@ -505,7 +545,6 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                     <td className="py-4 px-4 text-gray-600 text-sm">
                       {legalTeamStep?.comments || 'No comments'}
                     </td>
-                    
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
                         (dealDeskStep?.comments || '').toLowerCase().includes('notified')
@@ -773,13 +812,21 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                  const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
                  // Check if it's still the user's turn (Legal Team, Step 3, pending status)
                  const legalStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 3 && step.role === 'Legal Team');
-                 const isMyTurn = !hasTakenAction && latestWorkflow?.currentStep === 3 && legalStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
+                 // Check if THIS specific workflow has been acted upon
+                 const hasActedOnThis = selectedWorkflow?.id ? hasTakenAction.has(selectedWorkflow.id) : false;
+                 const isMyTurn = !hasActedOnThis && latestWorkflow?.currentStep === 3 && legalStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
                    
                    return isMyTurn ? (
                      <div className="flex gap-3">
                        <button
-                         onClick={() => handleApprove(selectedWorkflow.id)}
-                         disabled={isApproving}
+                         onClick={() => {
+                           if (!selectedWorkflow?.id) {
+                             alert('❌ Error: No workflow ID found. Please close and reopen the document.');
+                             return;
+                           }
+                           handleApprove(selectedWorkflow.id);
+                         }}
+                         disabled={isApproving || hasActedOnThis}
                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                        >
                          {isApproving ? (
@@ -796,6 +843,10 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                        </button>
                        <button
                          onClick={() => {
+                           if (!selectedWorkflow?.id) {
+                             alert('❌ Error: No workflow ID found. Please close and reopen the document.');
+                             return;
+                           }
                            if (!commentText.trim()) {
                              alert('⚠️ Please provide a reason for denial before proceeding.');
                              setCommentWorkflowId(selectedWorkflow.id);
@@ -805,7 +856,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                              handleDeny(selectedWorkflow.id);
                            }
                          }}
-                         disabled={isDenying}
+                         disabled={isDenying || hasActedOnThis}
                          className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                        >
                          {isDenying ? (
