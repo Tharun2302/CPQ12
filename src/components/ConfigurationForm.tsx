@@ -119,9 +119,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'google-sharedrive-to-google-sharedrive': 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE',
       'google-sharedrive-to-onedrive': 'GOOGLE SHARED DRIVE TO ONEDRIVE',
       'google-sharedrive-to-sharepoint': 'GOOGLE SHARED DRIVE TO SHAREPOINT',
-      'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
-      'egnyte-to-sharepoint-online': 'EGNYTE TO SHAREPOINT ONLINE',
-      'egnyte-to-google-mydrive': 'EGNYTE TO GOOGLE MYDRIVE',
       'google-mydrive-to-dropbox': 'GOOGLE MYDRIVE TO DROPBOX',
       'google-mydrive-to-egnyte': 'GOOGLE MYDRIVE TO EGNYTE',
       'google-mydrive-to-onedrive': 'GOOGLE MYDRIVE TO ONEDRIVE',
@@ -133,9 +130,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
       'sharefile-to-sharepoint': 'SHAREFILE TO SHAREPOINT',
       'sharefile-to-sharefile': 'SHAREFILE TO SHAREFILE',
-      'egnyte-to-onedrive': 'EGNYTE TO ONEDRIVE',
-      'nfs-to-onedrive': 'NFS TO ONEDRIVE',
-      'nfs-to-sharepoint': 'NFS TO SHAREPOINT',
+      'nfs-to-google': 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)',
+      'egnyte-to-google': 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)',
+      'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'overage-agreement': 'OVERAGE AGREEMENT',
       'slack-to-teams': 'SLACK TO TEAMS',
       'slack-to-google-chat': 'SLACK TO GOOGLE CHAT'
@@ -1057,12 +1054,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
                           { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
                           { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-                          { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
-                          { value: 'egnyte-to-sharepoint-online', label: 'EGNYTE TO SHAREPOINT ONLINE' },
-                          { value: 'egnyte-to-google-mydrive', label: 'EGNYTE TO GOOGLE MYDRIVE' },
-                          { value: 'egnyte-to-onedrive', label: 'EGNYTE TO ONEDRIVE' },
-                          { value: 'nfs-to-onedrive', label: 'NFS TO ONEDRIVE' },
-                          { value: 'nfs-to-sharepoint', label: 'NFS TO SHAREPOINT' }
+                          { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
+                          { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
+                          { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
                         ];
                         
                         const filtered = contentCombinations.filter(combo => 
@@ -1118,10 +1112,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
                             { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
                             { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-                            { value: 'egnyte-to-onedrive', label: 'EGNYTE TO ONEDRIVE' },
-                            { value: 'nfs-to-onedrive', label: 'NFS TO ONEDRIVE' },
-                            { value: 'nfs-to-sharepoint', label: 'NFS TO SHAREPOINT' }
-                       ];
+                            { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
+                            { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
+                            { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
+                          ];
                        const overageCombinations = [
                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                        ];

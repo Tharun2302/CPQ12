@@ -25,6 +25,7 @@ import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { useNavigate } from 'react-router-dom';
 import { track, trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 // EmailJS import removed - now using server-side email with attachment support
 
@@ -143,6 +144,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   dealData,
   configureContactInfo
 }) => {
+  const navigate = useNavigate();
   // Reduced logging for performance
   if (!calculation) {
     console.log('🔍 QuoteGenerator render - calculation is null/undefined');
@@ -1724,6 +1726,11 @@ Total Price: {{total price}}`;
         console.error('❌ Error sending Technical Team email:', emailError);
         alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
       }
+
+      // Navigate to Approval page → Start Approval Workflow tab so user can see the workflow
+      navigate('/approval', {
+        state: { openStartApprovalTab: true, source: 'quote-approval', documentId: documentId }
+      });
 
     } catch (error) {
       console.error('❌ Error starting approval workflow:', error);

@@ -3,6 +3,7 @@ import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, 
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
 import { BACKEND_URL } from '../config/api';
+import { useLocation } from 'react-router-dom';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -13,6 +14,7 @@ interface ApprovalWorkflowProps {
 const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({ 
   quotes = []
 }) => {
+  const location = useLocation();
   const { createWorkflow } = useApprovalWorkflows();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [formData, setFormData] = useState({
@@ -32,6 +34,25 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // If navigated from template upload / quote approval, jump directly to Start Approval Workflow tab
+  useEffect(() => {
+    const state = location.state as { openStartApprovalTab?: boolean; documentId?: string } | null;
+    if (state?.openStartApprovalTab) {
+      setActiveTab('start');
+    }
+  }, [location.state]);
+
+  // When documents are loaded and a specific documentId was passed, auto-select it
+  useEffect(() => {
+    const state = location.state as { documentId?: string } | null;
+    if (!state?.documentId || !availableDocuments.length) return;
+
+    const doc = availableDocuments.find(d => d.id === state.documentId);
+    if (doc) {
+      handleDocumentSelect(doc);
+    }
+  }, [location.state, availableDocuments]);
 
   // Optional: show quotes list (not used for eSign document download)
   useEffect(() => {
@@ -200,6 +221,41 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const handleDeleteDocument = async (document: any) => {
+    const confirmed = window.confirm(`Are you sure you want to delete "${document.name}"?`);
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/documents/${document.id}`, {
+        method: 'DELETE'
+      });
+
+      let result: any = {};
+      try {
+        result = await response.json();
+      } catch {
+        // ignore JSON parse errors
+      }
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.error || 'Failed to delete document');
+      }
+
+      setAvailableDocuments(prev => prev.filter(d => d.id !== document.id));
+
+      if (selectedDocument?.id === document.id) {
+        setSelectedDocument(null);
+        setShowPreview(false);
+        setPdfPreviewData(null);
+      }
+
+      setUploadMessage('Document deleted successfully.');
+    } catch (error: any) {
+      console.error('Error deleting document:', error);
+      setUploadMessage(error.message || 'Error deleting document. Please try again.');
     }
   };
 
@@ -446,22 +502,31 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                             </p>
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                      <div className="flex gap-2">
                         <button
+                          type="button"
                           onClick={() => handlePreviewDocument(doc)}
-                            className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                          className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                         >
-                            <Eye className="w-4 h-4" />
+                          <Eye className="w-4 h-4" />
                           Preview
                         </button>
-                          <button
-                            onClick={() => handleDocumentSelect(doc)}
-                            className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                            Select
-                          </button>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDocumentSelect(doc)}
+                          className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Select
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDocument(doc)}
+                          className="flex items-center gap-1 px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm"
+                        >
+                          Delete
+                        </button>
+                      </div>
                 </div>
               ))}
                   </div>

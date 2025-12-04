@@ -1349,6 +1349,7 @@ function App() {
       const isEgnyteToGoogleSharedDrive = name.includes('egnyte') && name.includes('google') && name.includes('sharedrive');
       const isEgnyteToSharePointOnline = name.includes('egnyte') && name.includes('sharepoint');
       const isEgnyteToGoogleMyDrive = name.includes('egnyte') && name.includes('mydrive');
+      const isEgnyteToMicrosoft = name.includes('egnyte') && name.includes('microsoft');
       
       const matchesPlan = name.includes(safeTier);
       
@@ -1386,6 +1387,9 @@ function App() {
         (combination === 'sharefile-to-onedrive' && name.includes('sharefile') && name.includes('onedrive')) ||
         (combination === 'sharefile-to-sharepoint' && name.includes('sharefile') && name.includes('sharepoint')) ||
         (combination === 'sharefile-to-sharefile' && name.includes('sharefile') && name.includes('sharefile')) ||
+        (combination === 'nfs-to-google' && name.includes('nfs') && name.includes('google')) ||
+        (combination === 'egnyte-to-google' && name.includes('egnyte') && name.includes('google') && !name.includes('mydrive') && !name.includes('sharedrive') && !name.includes('microsoft')) ||
+        (combination === 'egnyte-to-microsoft' && isEgnyteToMicrosoft) ||
         (combination === 'overage-agreement' && name.includes('overage') && name.includes('agreement'));
       
       console.log('🔍 Name-based template matching:', { 

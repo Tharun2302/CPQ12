@@ -90,6 +90,8 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     });
 
     return {
+
+      
       userCost: 0,
       dataCost: 0,
       migrationCost: 0,

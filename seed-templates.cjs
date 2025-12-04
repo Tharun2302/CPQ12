@@ -685,48 +685,6 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'sharefile', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
     },
-    // NFS TO ONEDRIVE templates (Standard & Advanced only)
-    {
-      name: 'NFS TO ONEDRIVE Standard',
-      description: 'Standard template for NFS to OneDrive migration - suitable for medium to large projects',
-      fileName: 'nfs-to-onedrive-standard.docx',
-      isDefault: false,
-      category: 'content',
-      combination: 'nfs-to-onedrive',
-      planType: 'standard',
-      keywords: ['standard', 'nfs', 'onedrive', 'microsoft', 'content', 'migration']
-    },
-    {
-      name: 'NFS TO ONEDRIVE Advanced',
-      description: 'Advanced template for NFS to OneDrive migration - suitable for large enterprise projects',
-      fileName: 'nfs-to-onedrive-advanced.docx',
-      isDefault: false,
-      category: 'content',
-      combination: 'nfs-to-onedrive',
-      planType: 'advanced',
-      keywords: ['advanced', 'nfs', 'onedrive', 'microsoft', 'content', 'migration', 'enterprise']
-    },
-    // NFS TO SHAREPOINT templates (Standard & Advanced only)
-    {
-      name: 'NFS TO SHAREPOINT Standard',
-      description: 'Standard template for NFS to SharePoint migration - suitable for medium to large projects',
-      fileName: 'nfs-to-sharepoint-standard.docx',
-      isDefault: false,
-      category: 'content',
-      combination: 'nfs-to-sharepoint',
-      planType: 'standard',
-      keywords: ['standard', 'nfs', 'sharepoint', 'microsoft', 'content', 'migration']
-    },
-    {
-      name: 'NFS TO SHAREPOINT Advanced',
-      description: 'Advanced template for NFS to SharePoint migration - suitable for large enterprise projects',
-      fileName: 'nfs-to-sharepoint-advanced.docx',
-      isDefault: false,
-      category: 'content',
-      combination: 'nfs-to-sharepoint',
-      planType: 'advanced',
-      keywords: ['advanced', 'nfs', 'sharepoint', 'microsoft', 'content', 'migration', 'enterprise']
-    },
     // SHAREFILE TO SHAREFILE templates (Standard & Advanced only)
     {
       name: 'SHAREFILE TO SHAREFILE Standard',
@@ -768,6 +726,69 @@ async function seedDefaultTemplates(db) {
       combination: 'sharefile-to-sharepoint',
       planType: 'advanced',
       keywords: ['advanced', 'sharefile', 'sharepoint', 'microsoft', 'content', 'migration', 'enterprise']
+    },
+    // NFS TO GOOGLE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'NFS TO GOOGLE Standard',
+      description: 'Standard template for NFS to Google (MyDrive/Shared Drive) migration - suitable for medium to large projects',
+      fileName: 'nfs-to-google-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-google',
+      planType: 'standard',
+      keywords: ['standard', 'nfs', 'google', 'mydrive', 'sharedrive', 'content', 'migration']
+    },
+    {
+      name: 'NFS TO GOOGLE Advanced',
+      description: 'Advanced template for NFS to Google (MyDrive/Shared Drive) migration - suitable for large enterprise projects',
+      fileName: 'nfs-to-google-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-google',
+      planType: 'advanced',
+      keywords: ['advanced', 'nfs', 'google', 'mydrive', 'sharedrive', 'content', 'migration', 'enterprise']
+    },
+    // EGNYTE TO GOOGLE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'EGNYTE TO GOOGLE Standard',
+      description: 'Standard template for Egnyte to Google (Shared Drive / MyDrive) migration - suitable for medium to large projects',
+      fileName: 'egnyte-to-google-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-google',
+      planType: 'standard',
+      keywords: ['standard', 'egnyte', 'google', 'sharedrive', 'mydrive', 'content', 'migration']
+    },
+    {
+      name: 'EGNYTE TO GOOGLE Advanced',
+      description: 'Advanced template for Egnyte to Google (Shared Drive / MyDrive) migration - suitable for large enterprise projects',
+      fileName: 'egnyte-to-google-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-google',
+      planType: 'advanced',
+      keywords: ['advanced', 'egnyte', 'google', 'sharedrive', 'mydrive', 'content', 'migration', 'enterprise']
+    },
+    // EGNYTE TO MICROSOFT templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'EGNYTE TO MICROSOFT Standard',
+      description: 'Standard template for Egnyte to Microsoft (OneDrive/SharePoint) migration - suitable for medium to large projects',
+      fileName: 'egnyte-to-microsoft-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-microsoft',
+      planType: 'standard',
+      keywords: ['standard', 'egnyte', 'microsoft', 'onedrive', 'sharepoint', 'content', 'migration']
+    },
+    {
+      name: 'EGNYTE TO MICROSOFT Advanced',
+      description: 'Advanced template for Egnyte to Microsoft (OneDrive/SharePoint) migration - suitable for large enterprise projects',
+      fileName: 'egnyte-to-microsoft-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'egnyte-to-microsoft',
+      planType: 'advanced',
+      keywords: ['advanced', 'egnyte', 'microsoft', 'onedrive', 'sharepoint', 'content', 'migration', 'enterprise']
     },
     // OVERAGE AGREEMENT - Single template for BOTH migration types
     {

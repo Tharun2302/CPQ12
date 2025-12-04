@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Upload, 
   FileText, 
@@ -17,6 +18,8 @@ import { formatCurrency } from '../utils/pricing';
 import { templateService } from '../utils/templateService';
 import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
 import { track } from '../analytics/clarity';
+import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL } from '../config/api';
 
 // Helper function to limit consecutive spaces to maximum 5
 function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
@@ -99,12 +102,15 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
   const [convertedPdfCache, setConvertedPdfCache] = useState<{[key: string]: File}>({});  // Cache for DOCX→PDF conversions
   const [isPreConvertingTemplates, setIsPreConvertingTemplates] = useState(false);  // Background conversion status
   const [fileCache, setFileCache] = useState<{[key: string]: File}>({});  // Cache for loaded template files - INSTANT ACCESS! ⚡
+  const [activeTab, setActiveTab] = useState<'templates' | 'upload'>('templates'); // UI tab state
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     description: '',
     file: null as File | null,
     wordFile: undefined as File | undefined
   });
+  const navigate = useNavigate();
+  const { createWorkflow } = useApprovalWorkflows();
   
   // Email functionality state
   const [showEmailModal, setShowEmailModal] = useState<string | null>(null);
@@ -666,6 +672,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
       // Reset form
       setNewTemplate({ name: '', description: '', file: null, wordFile: undefined });
       setShowUploadModal(false);
+      setActiveTab('templates');
       setUploadError(null);
       setUploadSuccess('Template uploaded successfully to database!');
 
@@ -682,6 +689,95 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
       // Dispatch event to notify App.tsx about template update (ONLY on actual upload)
       console.log('📢 Dispatching templatesUpdated event (template uploaded)...');
       window.dispatchEvent(new CustomEvent('templatesUpdated'));
+
+      // Create a document entry for this template and start an approval workflow
+      try {
+        console.log('📄 Preparing uploaded template for approval workflow...');
+
+        // Convert file to base64 (similar to ApprovalWorkflow)
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            const withoutPrefix = result.split(',')[1] || '';
+            resolve(withoutPrefix);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(newTemplate.file!);
+        });
+
+        const documentData = {
+          fileName: newTemplate.file!.name,
+          fileData: base64,
+          fileSize: newTemplate.file!.size,
+          clientName: 'Template Library',
+          company: 'Template Library',
+          quoteId: null,
+          metadata: {
+            totalCost: 0
+          },
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          generatedDate: new Date().toISOString()
+        };
+
+        const response = await fetch(`${BACKEND_URL}/api/documents`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(documentData)
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Failed to save template document for approval');
+        }
+
+        const documentId = result.documentId as string;
+        console.log('✅ Template saved as document for approval workflow:', documentId);
+
+        // Start a simple Technical + Legal workflow for this template document
+        try {
+          const workflow = await createWorkflow({
+            documentId,
+            documentType: 'Template',
+            clientName: newTemplate.name || 'Template',
+            amount: 0,
+            totalSteps: 2,
+            workflowSteps: [
+              {
+                step: 1,
+                role: 'Technical Team',
+                email: 'saitharunreddy2302@gmail.com',
+                status: 'pending'
+              },
+              {
+                step: 2,
+                role: 'Legal Team',
+                email: 'saitharunreddy2302@gmail.com',
+                status: 'pending'
+              }
+            ]
+          });
+
+          console.log('✅ Template approval workflow created:', workflow?.id);
+        } catch (workflowError) {
+          console.error('❌ Failed to start template approval workflow:', workflowError);
+        }
+
+        // Navigate to Approval page and open Start Approval Workflow tab
+        navigate('/approval', {
+          state: { openStartApprovalTab: true, source: 'template-upload', documentId }
+        });
+      } catch (docError) {
+        console.error('❌ Failed to create document / workflow for uploaded template:', docError);
+      }
+
+      // Navigate to Approval page and open Start Approval Workflow tab
+      navigate('/approval', {
+        state: { openStartApprovalTab: true, source: 'template-upload', templateId: uploadResult.template.id }
+      });
 
       // Also save to localStorage as backup
       try {
@@ -709,9 +805,6 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
       setIsUploading(false);
     }
   };
-
-  // handleDeleteTemplate and handleSetDefault functions are intentionally removed
-  // from the active UI to prevent accidental deletion or changing of seeded defaults.
 
   // Process template content for non-PDF templates
   const processTemplateContent = async (template: Template, quote: any): Promise<string> => {
@@ -1934,6 +2027,40 @@ The client will receive an email with the processed template and a link to compl
         </div>
         <p className="text-gray-600">Here you can see and manage all your deal agreement templates</p>
 
+        {/* Templates / Upload Tabs */}
+        <div className="mt-6 flex justify-center">
+          <div className="inline-flex bg-gray-100 rounded-full p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('templates');
+                setShowUploadModal(false);
+              }}
+              className={`px-5 py-2 text-sm font-medium rounded-full transition-colors ${
+                activeTab === 'templates'
+                  ? 'bg-white shadow text-blue-700'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Templates
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('upload');
+                setShowUploadModal(true);
+              }}
+              className={`ml-1 px-5 py-2 text-sm font-medium rounded-full transition-colors ${
+                activeTab === 'upload'
+                  ? 'bg-white shadow text-blue-700'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Upload Templates
+            </button>
+          </div>
+        </div>
+
         {/* Storage Management - Hidden */}
         {/* <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
           <div className="flex items-center justify-between">
@@ -2013,7 +2140,6 @@ The client will receive an email with the processed template and a link to compl
                     </span>
                   )}
                 </div>
-                {/* Delete button removed - templates should not be deleted from UI to preserve database integrity */}
               </div>
 
               {/* Template Description */}
@@ -2104,7 +2230,10 @@ The client will receive an email with the processed template and a link to compl
             Upload your first PDF template to get started with custom quote generation.
           </p>
           <button
-            onClick={() => setShowUploadModal(true)}
+            onClick={() => {
+              setActiveTab('upload');
+              setShowUploadModal(true);
+            }}
             className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold"
           >
             <Upload className="w-4 h-4 inline mr-2" />
@@ -2120,7 +2249,10 @@ The client will receive an email with the processed template and a link to compl
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-800">Upload Template</h2>
               <button
-                onClick={() => setShowUploadModal(false)}
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setActiveTab('templates');
+                }}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <X className="w-6 h-6" />
@@ -2243,7 +2375,10 @@ The client will receive an email with the processed template and a link to compl
               {/* Action Buttons */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowUploadModal(false)}
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setActiveTab('templates');
+                  }}
                   className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
                 >
                   Cancel
