@@ -790,6 +790,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'egnyte', 'microsoft', 'onedrive', 'sharepoint', 'content', 'migration', 'enterprise']
     },
+    // NFS TO MICROSOFT templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'NFS TO MICROSOFT Standard',
+      description: 'Standard template for NFS to Microsoft (OneDrive/SharePoint) migration - suitable for medium to large projects',
+      fileName: 'nfs-to-microsoft-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-microsoft',
+      planType: 'standard',
+      keywords: ['standard', 'nfs', 'microsoft', 'onedrive', 'sharepoint', 'content', 'migration']
+    },
+    {
+      name: 'NFS TO MICROSOFT Advanced',
+      description: 'Advanced template for NFS to Microsoft (OneDrive/SharePoint) migration - suitable for large enterprise projects',
+      fileName: 'nfs-to-microsoft-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'nfs-to-microsoft',
+      planType: 'advanced',
+      keywords: ['advanced', 'nfs', 'microsoft', 'onedrive', 'sharepoint', 'content', 'migration', 'enterprise']
+    },
     // OVERAGE AGREEMENT - Single template for BOTH migration types
     {
       name: 'OVERAGE AGREEMENT Messaging',

@@ -103,7 +103,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                             combination === 'egnyte-to-onedrive' ||
                             combination === 'nfs-to-google' ||
                             combination === 'egnyte-to-google' ||
-                            combination === 'egnyte-to-microsoft';
+                            combination === 'egnyte-to-microsoft' ||
+                            combination === 'nfs-to-microsoft';
       
       // Hide Basic plan for specific combinations (SharePoint, OneDrive, all Box combinations, and all Google SharedDrive combinations)
       if (hideBasicPlan && calc.tier.name === 'Basic') {

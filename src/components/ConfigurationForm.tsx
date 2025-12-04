@@ -131,6 +131,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'sharefile-to-sharepoint': 'SHAREFILE TO SHAREPOINT',
       'sharefile-to-sharefile': 'SHAREFILE TO SHAREFILE',
       'nfs-to-google': 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)',
+      'nfs-to-microsoft': 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'egnyte-to-google': 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)',
       'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'overage-agreement': 'OVERAGE AGREEMENT',
@@ -1055,6 +1056,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
                           { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
                           { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
+                          { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                           { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
                           { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
                         ];
@@ -1114,6 +1116,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
                             { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
                             { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
+                          { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                             { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
                           ];
                        const overageCombinations = [
