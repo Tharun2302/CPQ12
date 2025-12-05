@@ -409,9 +409,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const { createWorkflow } = useApprovalWorkflows();
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   // Use centralized hardcoded defaults (original team addresses)
-  const defaultTechEmail = 'anush.dasari@cloudfuze.com';
-  const defaultLegalEmail = 'raya.durai@cloudfuze.com';
-  const defaultDealDeskEmail = 'anushreddydasari@gmail.com';
+  const defaultTechEmail = 'cpq.zenop.ai.technical@cloudfuze.com';
+  const defaultLegalEmail = 'cpq.zenop.ai.legal@cloudfuze.com';
+  const defaultDealDeskEmail = 'salesops@cloudfuze.com';
   const workflowCreatorEmail = (() => {
     try {
       const raw = localStorage.getItem('cpq_user');
@@ -787,7 +787,7 @@ Quote ID: ${quoteData.id}
       `.trim();
 
       // Send email directly through backend API
-      const dealDeskEmail = 'anushreddydasari@gmail.com'; // Deal Desk email
+      const dealDeskEmail = 'salesops@cloudfuze.com'; // Deal Desk email
       
       const response = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',

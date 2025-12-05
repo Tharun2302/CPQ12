@@ -9,7 +9,7 @@ interface TechnicalTeamApprovalDashboardProps {
 }
 
 const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardProps> = ({ 
-  managerEmail = 'anushreddydasari@gmail.com'
+  managerEmail = 'cpq.zenop.ai.technical@cloudfuze.com'
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
@@ -208,7 +208,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            ceoEmail: workflow.workflowSteps?.find(step => step.role === 'Legal Team')?.email || 'anushreddydasari@gmail.com',
+            ceoEmail: workflow.workflowSteps?.find(step => step.role === 'Legal Team')?.email || 'cpq.zenop.ai.legal@cloudfuze.com',
             workflowData: {
               documentId: workflow.documentId,
               documentType: workflow.documentType,

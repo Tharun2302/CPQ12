@@ -534,6 +534,21 @@ async function sendEmail(to, subject, html, attachments = []) {
     return { success: true, data: result };
   } catch (error) {
     console.error('❌ Email send error:', error);
+    
+    // Check if it's a bounce/suppression error
+    if (error.response) {
+      const errorBody = error.response.body;
+      if (errorBody && Array.isArray(errorBody.errors)) {
+        errorBody.errors.forEach(err => {
+          if (err.message && (err.message.includes('bounce') || err.message.includes('suppression') || err.message.includes('invalid'))) {
+            console.error('🚨 BOUNCE/SUPPRESSION ERROR:', err.message);
+            console.error('📧 Email address may be on suppression list:', to);
+            console.error('💡 ACTION REQUIRED: Remove', to, 'from SendGrid suppression list at https://app.sendgrid.com/suppressions/bounces');
+          }
+        });
+      }
+    }
+    
     return { success: false, error: error };
   }
 }
@@ -2458,6 +2473,105 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
   }
 });
 
+// API endpoint to check SendGrid suppression status for email addresses
+app.post('/api/email/check-suppression', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { emails } = req.body;
+    if (!emails || !Array.isArray(emails)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an array of email addresses in the "emails" field'
+      });
+    }
+
+    const results = [];
+    const sendgridApiKey = process.env.SENDGRID_API_KEY;
+
+    for (const email of emails) {
+      try {
+        // Check bounces
+        const bounceResponse = await axios.get(
+          `https://api.sendgrid.com/v3/suppression/bounces/${encodeURIComponent(email)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${sendgridApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        results.push({
+          email: email,
+          status: 'on_bounce_list',
+          details: bounceResponse.data
+        });
+      } catch (bounceError) {
+        if (bounceError.response?.status === 404) {
+          // Not on bounce list, check invalid emails
+          try {
+            const invalidResponse = await axios.get(
+              `https://api.sendgrid.com/v3/suppression/invalid_emails/${encodeURIComponent(email)}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${sendgridApiKey}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            results.push({
+              email: email,
+              status: 'on_invalid_list',
+              details: invalidResponse.data
+            });
+          } catch (invalidError) {
+            if (invalidError.response?.status === 404) {
+              results.push({
+                email: email,
+                status: 'not_suppressed',
+                message: 'Email is not on any suppression list'
+              });
+            } else {
+              results.push({
+                email: email,
+                status: 'error',
+                error: invalidError.message
+              });
+            }
+          }
+        } else {
+          results.push({
+            email: email,
+            status: 'error',
+            error: bounceError.message
+          });
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      results: results,
+      instructions: {
+        remove_from_bounces: 'Go to https://app.sendgrid.com/suppressions/bounces and remove the email addresses',
+        remove_from_invalid: 'Go to https://app.sendgrid.com/suppressions/invalid_emails and remove the email addresses'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error checking suppression status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to check suppression status',
+      error: error.message
+    });
+  }
+});
+
 // API endpoint for sending approval workflow emails
 // Sequential email sending - Manager only
 app.post('/api/send-manager-email', async (req, res) => {
@@ -2470,7 +2584,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     }
 
     const { managerEmail, workflowData } = req.body;
-    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'anush.dasari@cloudfuze.com';
+    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'cpq.zenop.ai.technical@cloudfuze.com';
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
     console.log('Manager:', resolvedManagerEmail);
@@ -2643,7 +2757,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     }
 
     const { ceoEmail, workflowData } = req.body;
-    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'raya.durai@cloudfuze.com';
+    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'cpq.zenop.ai.legal@cloudfuze.com';
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');
     console.log('CEO:', resolvedCeoEmail);
@@ -2818,7 +2932,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     }
 
     const { dealDeskEmail, workflowData } = req.body;
-    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'anushreddydasari@gmail.com';
+    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'salesops@cloudfuze.com';
     
     console.log('📧 Sending notification email to Deal Desk (after client approval)...');
     console.log('Deal Desk:', resolvedDealDeskEmail);
