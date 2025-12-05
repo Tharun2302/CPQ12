@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, RefreshCw, CheckCircle, Rocket, Users, FileCheck, BarChart3, Eye, X } from 'lucide-react';
+import { FileText, Rocket, Users, FileCheck, BarChart3 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
 import { BACKEND_URL } from '../config/api';
@@ -32,7 +32,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // If navigated from template upload / quote approval, jump directly to Start Approval Workflow tab
@@ -41,18 +41,14 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     if (state?.openStartApprovalTab) {
       setActiveTab('start');
     }
-  }, [location.state]);
-
-  // When documents are loaded and a specific documentId was passed, auto-select it
-  useEffect(() => {
-    const state = location.state as { documentId?: string } | null;
-    if (!state?.documentId || !availableDocuments.length) return;
-
-    const doc = availableDocuments.find(d => d.id === state.documentId);
-    if (doc) {
-      handleDocumentSelect(doc);
+    // If a documentId is passed via navigation state, pre-fill it
+    if (state?.documentId) {
+      setFormData(prev => ({
+        ...prev,
+        documentId: state.documentId
+      }));
     }
-  }, [location.state, availableDocuments]);
+  }, [location.state]);
 
   // Optional: show quotes list (not used for eSign document download)
   useEffect(() => {
@@ -62,217 +58,131 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         name: `Quote #${quote.id}`,
         type: 'PDF Quote',
         clientName: quote.clientName || 'Unknown Client',
-        amount: quote.totalCost || 0,
+        amount: quote.calculation?.totalCost ?? quote.totalCost ?? 0,
         status: quote.status || 'Draft',
         createdAt: quote.createdAt || new Date().toISOString()
       })));
     }
   }, [quotes]);
 
-  // Auto-load documents on mount, but silently skip if backend is unavailable
-  useEffect(() => {
-    loadAvailableDocuments();
-  }, []);
 
-  const loadAvailableDocuments = async () => {
-    setIsLoadingDocuments(true);
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/documents`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.documents) {
-          setAvailableDocuments(data.documents);
-          console.log('📄 Loaded documents:', data.documents.length);
-        }
-      } else {
-        console.log('⚠️ Backend not available, using quotes only');
-      }
-    } catch (error) {
-      console.log('⚠️ Backend not available, using quotes only');
-    } finally {
-      setIsLoadingDocuments(false);
-    }
-  };
-
-  const handleDocumentSelect = (document: any) => {
-    setFormData(prev => ({
-      ...prev,
-      documentId: document.id,
-      documentType: document.type || 'PDF Quote'
-    }));
-    setSelectedDocument(document);
-  };
-
-  const handlePreviewDocument = async (document: any) => {
-    // Make sure the modal has a document to display
-    setSelectedDocument(document);
-
-    // If we already have base64 file data from the documents API,
-    // use it directly without another backend call.
-    if (document.fileData) {
-      const dataUrl = `data:application/pdf;base64,${document.fileData}`;
-      setPdfPreviewData(dataUrl);
-      setShowPreview(true);
-      return;
-    }
-
-    setIsLoadingPreview(true);
-    setPdfPreviewData(null);
+  // Handle manual document upload (PDF, Excel, CSV, etc.) and save to MongoDB
+  const uploadManualDocument = async (): Promise<string | null> => {
+    if (!uploadedFile) return null;
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/documents/${document.id}/preview`);
-      if (response.ok) {
-      const result = await response.json();
-      if (result.success && result.dataUrl) {
-        setPdfPreviewData(result.dataUrl);
-          setShowPreview(true);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading document preview:', error);
-    } finally {
-      setIsLoadingPreview(false);
-    }
-  };
+      setIsUploadingDocument(true);
+      setUploadMessage(null);
 
-  const handleClosePreview = () => {
-    setShowPreview(false);
-    setPdfPreviewData(null);
-  };
+      const backendUrl = BACKEND_URL || 'http://localhost:3001';
 
-  const handleUploadButtonClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleFileUploadChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setUploadMessage(null);
-    setIsUploadingDocument(true);
-
-    try {
-      // Convert file (Blob) to base64, similar to pdfProcessor.savePDFToDatabase
-      const base64 = await new Promise<string>((resolve, reject) => {
+      // Convert file to base64 (same approach used in TemplateManager)
+      const fileBase64: string = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
           const result = reader.result as string;
-          const withoutPrefix = result.split(',')[1] || '';
-          resolve(withoutPrefix);
+          const base64 = result.split(',')[1];
+          resolve(base64);
         };
         reader.onerror = reject;
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(uploadedFile);
       });
 
-      const documentData = {
-        fileName: file.name,
-        fileData: base64,
-        fileSize: file.size,
-        clientName: 'Manual Upload',
-        company: 'Manual Upload',
+      const nowIso = new Date().toISOString();
+
+      const documentPayload = {
+        fileName: uploadedFile.name,
+        fileData: fileBase64,
+        fileSize: uploadedFile.size,
+        clientName: 'Manual Approval',
+        company: 'Manual Approval',
         quoteId: null,
         metadata: {
           totalCost: 0
         },
         status: 'active',
-        createdAt: new Date().toISOString(),
-        generatedDate: new Date().toISOString()
+        createdAt: nowIso,
+        generatedDate: nowIso
       };
 
-      const response = await fetch(`${BACKEND_URL}/api/documents`, {
+      const response = await fetch(`${backendUrl}/api/documents`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(documentData)
+        body: JSON.stringify(documentPayload)
       });
 
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to save document');
+        const errorMessage = result?.error || 'Failed to upload document for approval';
+        console.error('Error uploading manual document:', errorMessage);
+        setUploadMessage(`Error uploading document: ${errorMessage}`);
+        return null;
       }
 
-      const uploadedDocument = {
-        id: result.documentId,
-        name: file.name,
-        fileName: file.name,
-        type: 'PDF Agreement',
-        clientName: documentData.clientName,
-        company: documentData.company,
-        amount: 0,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        // Store base64 so preview works immediately without another request
-        fileData: base64
-      };
+      const documentId = result.documentId as string | undefined;
+      if (!documentId) {
+        setUploadMessage('Document uploaded but no document ID was returned.');
+        return null;
+      }
 
-      setAvailableDocuments(prev => [uploadedDocument, ...prev]);
-      handleDocumentSelect(uploadedDocument);
+      // Reflect the new document ID in the form so users can see it
+      setFormData(prev => ({ ...prev, documentId }));
+      setUploadMessage('✅ Document uploaded successfully and ready for approval.');
 
-      setUploadMessage('Document uploaded, saved and selected successfully.');
-    } catch (error: any) {
-      console.error('Error uploading document:', error);
-      setUploadMessage(error.message || 'Error uploading document. Please try again.');
+      return documentId;
+    } catch (error) {
+      console.error('Error uploading manual document:', error);
+      setUploadMessage('Error uploading document. Please try again.');
+      return null;
     } finally {
       setIsUploadingDocument(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-  const handleDeleteDocument = async (document: any) => {
-    const confirmed = window.confirm(`Are you sure you want to delete "${document.name}"?`);
-    if (!confirmed) return;
-
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/documents/${document.id}`, {
-        method: 'DELETE'
-      });
-
-      let result: any = {};
-      try {
-        result = await response.json();
-      } catch {
-        // ignore JSON parse errors
-      }
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.error || 'Failed to delete document');
-      }
-
-      setAvailableDocuments(prev => prev.filter(d => d.id !== document.id));
-
-      if (selectedDocument?.id === document.id) {
-        setSelectedDocument(null);
-        setShowPreview(false);
-        setPdfPreviewData(null);
-      }
-
-      setUploadMessage('Document deleted successfully.');
-    } catch (error: any) {
-      console.error('Error deleting document:', error);
-      setUploadMessage(error.message || 'Error deleting document. Please try again.');
     }
   };
 
   const handleStartWorkflow = async () => {
-    if (!formData.documentId) {
-      alert('Please select a document first');
+    let effectiveDocumentId = formData.documentId;
+
+    // If no document ID provided but a file is uploaded, upload it first
+    if (!effectiveDocumentId && uploadedFile) {
+      const uploadedId = await uploadManualDocument();
+      if (!uploadedId) {
+        alert('Failed to upload document. Please try again.');
+        return;
+      }
+      effectiveDocumentId = uploadedId;
+    }
+
+    if (!effectiveDocumentId) {
+      alert('Please enter a Document ID or upload a file before starting the workflow.');
       return;
     }
 
     try {
+      // Try to enrich workflow with data from the selected document / quote
+      const selectedDoc = availableDocuments.find(doc => doc.id === effectiveDocumentId);
+      const matchingQuote = quotes?.find(q => q.id === effectiveDocumentId);
+
+      const clientName =
+        matchingQuote?.clientName ||
+        selectedDoc?.clientName ||
+        'Unknown Client';
+
+      const amount =
+        matchingQuote?.calculation?.totalCost ??
+        matchingQuote?.totalCost ??
+        selectedDoc?.amount ??
+        0;
+
       const newWorkflow = await createWorkflow({
-      documentId: formData.documentId,
-      documentType: formData.documentType,
-        clientName: 'John Smith', // Default client name
-        amount: 0, // Default amount
+        documentId: effectiveDocumentId,
+        documentType: formData.documentType,
+        clientName,
+        amount,
         totalSteps: 2,
-      workflowSteps: [
+        workflowSteps: [
           {
             step: 1,
             role: 'Technical Team',
@@ -289,7 +199,58 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       });
 
       if (newWorkflow) {
-        alert('Approval workflow started successfully.');
+        // After creating the workflow, send the first email to the Technical Team only
+        try {
+          const backendUrl = BACKEND_URL || 'http://localhost:3001';
+          const managerEmail = formData.role1Email;
+
+          console.log('📧 Sending Technical Team email for manual workflow...', {
+            managerEmail,
+            workflowId: newWorkflow.id,
+            documentId: effectiveDocumentId
+          });
+
+          const response = await fetch(`${backendUrl}/api/send-manager-email`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              managerEmail,
+              workflowData: {
+                documentId: effectiveDocumentId,
+                documentType: formData.documentType,
+                clientName,
+                amount,
+                workflowId: newWorkflow.id
+              }
+            })
+          });
+
+          let result: any = null;
+          const ct = response.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            result = await response.json();
+          } else {
+            const text = await response.text();
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+            } else {
+              result = { success: true };
+            }
+          }
+
+          if (result?.success) {
+            alert('✅ Approval workflow started.\n📧 Technical Team has been notified for first approval.');
+          } else {
+            alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
+          }
+        } catch (emailError) {
+          console.error('❌ Error sending Technical Team email for manual workflow:', emailError);
+          alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
+        }
+      } else {
+        alert('Approval workflow could not be created. Please try again.');
       }
     } catch (error) {
       console.error('Error starting workflow:', error);
@@ -336,38 +297,79 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   Document Information
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Document Type */}
-            <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-3">
-                      Document Type
-              </label>
-                <select
-                  value={formData.documentType}
-                      onChange={(e) => setFormData(prev => ({ ...prev, documentType: e.target.value }))}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium bg-white shadow-sm"
-                >
-                      <option value="PDF Agreement">PDF Agreement</option>
-                </select>
-            </div>
-
-            {/* Document ID */}
-            <div>
+                  {/* Document ID */}
+                  <div>
                     <label className="block text-sm font-bold text-gray-700 mb-3">
                       Document ID
-              </label>
-              <input
-                type="text"
-                value={formData.documentId}
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.documentId}
                       onChange={(e) => setFormData(prev => ({ ...prev, documentId: e.target.value }))}
-                placeholder="Enter document ID..."
+                      placeholder="Enter document ID..."
                       className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium bg-white shadow-sm"
                     />
+                  </div>
+
+                  {/* OR upload a document directly for this workflow */}
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-3">
+                      Or Upload Document (PDF, Excel, CSV)
+                    </label>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.csv,.xlsx,.xls"
+                        onChange={(e) => {
+                          const file = e.target.files && e.target.files[0];
+                          setUploadedFile(file || null);
+                          setUploadMessage(null);
+                        }}
+                        className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl bg-white shadow-sm cursor-pointer"
+                      />
+                      {uploadedFile && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadedFile(null);
+                            setUploadMessage(null);
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = '';
+                            }
+                          }}
+                          className="self-start text-xs text-red-600 hover:text-red-700"
+                        >
+                          Clear selected file
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500">
+                      You can either paste an existing Document ID or upload a new file. If you upload,
+                      we&apos;ll automatically save it and use its Document ID for this workflow.
+                    </p>
+                    {uploadedFile && (
+                      <p className="mt-1 text-xs text-gray-600">
+                        Selected file: <span className="font-medium">{uploadedFile.name}</span>
+                      </p>
+                    )}
+                    {isUploadingDocument && (
+                      <p className="mt-1 text-xs text-blue-600">
+                        Uploading document, please wait...
+                      </p>
+                    )}
+                    {uploadMessage && (
+                      <p className="mt-1 text-xs text-gray-700">
+                        {uploadMessage}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
               
               <p className="text-sm text-gray-500">
-                Document ID will be auto-filled when you select a document below.
+                Enter the Document ID of the PDF you want to send for approval, or upload a new
+                document using the file selector above.
               </p>
 
               {/* Approval Roles Section */}
@@ -419,210 +421,17 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 Emails for the approval workflow roles. Each role will receive the document and can approve or deny it.
               </p>
 
-            {/* Start Workflow Button */}
+              {/* Start Workflow Button */}
               <div className="pt-4">
-              <button
-                onClick={handleStartWorkflow}
+                <button
+                  onClick={handleStartWorkflow}
                   className="w-full max-w-sm mx-auto flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-lg font-semibold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 shadow-md hover:shadow-lg"
-              >
+                >
                   <Rocket className="w-4 h-4" />
-                Start Manual Approval Workflow
-              </button>
-          </div>
-        </div>
-
-        {/* Load Available Documents Section */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mt-8">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <FileText className="w-4 h-4 text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Load Available Documents</h2>
-          </div>
-          <p className="text-gray-600 mb-4">Select a document to automatically populate the form fields above.</p>
-          
-          <div className="flex flex-wrap gap-4 items-center">
-            <button
-                  onClick={loadAvailableDocuments}
-              disabled={isLoadingDocuments}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoadingDocuments ? 'animate-spin' : ''}`} />
-                  {isLoadingDocuments ? 'Loading...' : 'Load Documents'}
-            </button>
-            <button
-                  onClick={() => setAvailableDocuments([])}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-                  <X className="w-4 h-4" />
-                  Clear List
-            </button>
-            <div className="flex items-center gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/pdf"
-                onChange={handleFileUploadChange}
-                className="hidden"
-              />
-              <button
-                onClick={handleUploadButtonClick}
-                disabled={isUploadingDocument}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-              >
-                <FileText className="w-4 h-4" />
-                {isUploadingDocument ? 'Uploading...' : 'Upload PDF'}
-              </button>
-            </div>
-          </div>
-
-          {uploadMessage && (
-            <p className="mt-3 text-sm text-gray-700">
-              {uploadMessage}
-            </p>
-          )}
-
-          {availableDocuments.length > 0 && (
-                <div className="mt-6 space-y-3">
-                  <h3 className="text-lg font-semibold text-gray-900">Available Documents:</h3>
-                  <div className="grid gap-3">
-              {availableDocuments.map((doc) => (
-                <div
-                  key={doc.id}
-                        className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-gray-900">{doc.name}</p>
-                            <p className="text-sm text-gray-500">
-                              {doc.type} • {doc.clientName} • ${doc.amount?.toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handlePreviewDocument(doc)}
-                          className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                          Preview
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDocumentSelect(doc)}
-                          className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          Select
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDocument(doc)}
-                          className="flex items-center gap-1 px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                </div>
-              ))}
-                  </div>
-            </div>
-          )}
-      </div>
-
-      {/* PDF Preview Modal */}
-      {showPreview && selectedDocument && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                        <h2 className="text-xl font-semibold text-gray-900">Document Preview</h2>
-                        <p className="text-sm text-gray-500">{selectedDocument.name}</p>
-                </div>
-              </div>
-              <button
-                onClick={handleClosePreview}
-                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                      <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
-                  <div className="bg-gray-100 rounded-lg p-4">
-                    {isLoadingPreview ? (
-                      <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                          <p className="text-gray-600 text-sm">Loading document preview...</p>
-                      </div>
-                    ) : pdfPreviewData ? (
-                      <div className="space-y-4">
-                        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                          <iframe
-                            src={pdfPreviewData}
-                              className="w-full h-[85vh] border-0"
-                              title="Document Preview"
-                          />
-                        </div>
-                        <div className="flex justify-center">
-                          <button
-                            onClick={() => {
-                              const link = document.createElement('a');
-                                link.href = pdfPreviewData;
-                                link.download = `${selectedDocument.name || 'document'}.pdf`;
-                              link.click();
-                            }}
-                              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                              <FileText className="w-4 h-4" />
-                            Download PDF
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                          <p className="text-gray-600">No preview available for this document.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                  {/* Modal Footer */}
-                  <div className="flex items-center justify-between p-6 border-t border-gray-200">
-                    <div className="text-sm text-gray-500">
-                      Document ID: {selectedDocument.id}
-              </div>
-                    <div className="flex gap-3">
-                <button
-                  onClick={handleClosePreview}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    handleDocumentSelect(selectedDocument);
-                    handleClosePreview();
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Select This Document
+                  Start Manual Approval Workflow
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
           </div>
         )}
 

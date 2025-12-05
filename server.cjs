@@ -119,6 +119,7 @@ async function initializeDatabase() {
     await documentsCollection.createIndex({ company: 1 });
     await documentsCollection.createIndex({ clientEmail: 1 });
     await documentsCollection.createIndex({ generatedDate: -1 });
+    await documentsCollection.createIndex({ createdAt: -1 }); // For fast sorting in GET /api/documents
     await documentsCollection.createIndex({ status: 1 });
     console.log('✅ Documents collection ready with indexes');
     
@@ -181,6 +182,21 @@ async function initializeDatabase() {
     console.log('   MONGODB_URI, DB_NAME environment variables');
     return false;
   }
+}
+
+// Helper to generate a friendly document ID
+function generateDocumentId(clientName = 'UnknownClient', company = 'UnknownCompany') {
+  const sanitize = (str) =>
+    String(str)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .substring(0, 20)
+      .replace(/^[0-9]/, 'C$&');
+
+  const sanitizedCompany = sanitize(company);
+  const sanitizedClient = sanitize(clientName);
+  const timestamp = Date.now().toString().slice(-5);
+
+  return `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
 }
 
 // Initialize database on startup
@@ -1604,77 +1620,6 @@ app.get('/api/templates/:id/file', async (req, res) => {
 // PDF DOCUMENTS API ENDPOINTS
 // ============================================
 
-// Get PDF document by ID
-app.get('/api/documents/:id', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available'
-      });
-    }
-
-    const { id } = req.params;
-    console.log('📄 Fetching document:', id);
-
-    const documentsCollection = db.collection('documents');
-    const document = await documentsCollection.findOne({ id: id });
-
-    if (!document) {
-      return res.status(404).json({
-        success: false,
-        error: 'Document not found'
-      });
-    }
-
-    console.log('📄 Document found:', {
-      id: document.id,
-      fileName: document.fileName,
-      fileDataType: typeof document.fileData,
-      isBuffer: Buffer.isBuffer(document.fileData),
-      hasBuffer: !!document.fileData?.buffer,
-      hasData: !!document.fileData?.data
-    });
-
-    // Convert document data to buffer
-    let fileBuffer;
-    if (Buffer.isBuffer(document.fileData)) {
-      fileBuffer = document.fileData;
-    } else if (document.fileData.buffer) {
-      fileBuffer = Buffer.from(document.fileData.buffer);
-    } else if (document.fileData.data) {
-      fileBuffer = Buffer.from(document.fileData.data);
-    } else if (typeof document.fileData === 'string') {
-      // Handle base64 string
-      fileBuffer = Buffer.from(document.fileData, 'base64');
-    } else {
-      console.error('❌ Unknown document data format:', typeof document.fileData);
-      return res.status(500).json({
-        success: false,
-        error: 'Invalid document data format'
-      });
-    }
-
-    console.log('✅ Document found, size:', fileBuffer.length, 'bytes');
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${document.fileName || id}.pdf"`,
-      'Content-Length': fileBuffer.length
-    });
-
-    res.send(fileBuffer);
-
-  } catch (error) {
-    console.error('❌ Error fetching document:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch document',
-      details: error.message
-    });
-  }
-});
-
 // Save PDF document to MongoDB (similar to template save)
 app.post('/api/documents', async (req, res) => {
   try {
@@ -1759,54 +1704,8 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
-// Get all PDF documents (convert Buffer to base64 for frontend)
-app.get('/api/documents', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(503).json({ success: false, error: 'Database not available' });
-    }
-
-    const documentsCollection = db.collection('documents');
-    const documents = await documentsCollection
-      .find({})
-      .sort({ generatedDate: -1 })
-      .toArray();
-
-    console.log('✅ Retrieved documents from MongoDB:', documents.length);
-
-    // Convert Buffer to base64 for frontend (same as templates)
-    const documentsWithBase64 = documents.map(doc => {
-      let base64 = '';
-      try {
-        // Handle both Buffer and BSON Binary
-        if (doc.fileData) {
-          if (Buffer.isBuffer(doc.fileData)) {
-            base64 = doc.fileData.toString('base64');
-          } else if (doc.fileData.buffer) {
-            base64 = Buffer.from(doc.fileData.buffer).toString('base64');
-          } else if (doc.fileData.data) {
-            base64 = Buffer.from(doc.fileData.data).toString('base64');
-          }
-        }
-      } catch (e) {
-        console.warn('⚠️ Could not convert document Buffer to base64 for id:', doc.id, e?.message);
-      }
-      return { ...doc, fileData: base64 };
-    });
-
-    res.json({ 
-      success: true, 
-      documents: documentsWithBase64
-    });
-  } catch (error) {
-    console.error('❌ Error retrieving documents:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to retrieve documents',
-      details: error.message 
-    });
-  }
-});
+// OLD SLOW ENDPOINT REMOVED - This was converting ALL PDFs to base64 which was extremely slow
+// The fast endpoint at line 3216 excludes fileData and is much faster
 
 // Get single PDF document by ID (convert Buffer to base64)
 app.get('/api/documents/:id', async (req, res) => {
@@ -1834,12 +1733,22 @@ app.get('/api/documents/:id', async (req, res) => {
           base64 = Buffer.from(document.fileData.buffer).toString('base64');
         } else if (document.fileData.data) {
           base64 = Buffer.from(document.fileData.data).toString('base64');
+        } else if (typeof document.fileData === 'string') {
+          // Already base64 string
+          base64 = document.fileData;
         }
       }
     } catch (e) {
       console.warn('⚠️ Could not convert single document Buffer to base64 for id:', document.id, e?.message);
     }
-    const documentWithBase64 = { ...document, fileData: base64 };
+    
+    // Serialize dates to strings for frontend compatibility
+    const documentWithBase64 = { 
+      ...document, 
+      fileData: base64,
+      generatedDate: document.generatedDate ? (document.generatedDate instanceof Date ? document.generatedDate.toISOString() : document.generatedDate) : new Date().toISOString(),
+      createdAt: document.createdAt ? (document.createdAt instanceof Date ? document.createdAt.toISOString() : document.createdAt) : new Date().toISOString(),
+    };
 
     res.json({ 
       success: true, 
@@ -2810,6 +2719,9 @@ app.post('/api/send-ceo-email', async (req, res) => {
 });
 
 // Sequential email sending - Client only (after CEO approves)
+// IMPORTANT: This endpoint is designed to respond quickly and not block
+// the approval UI on SendGrid latency. It mirrors the fire-and-forget
+// pattern used for Manager/CEO emails above.
 app.post('/api/send-client-email', async (req, res) => {
   try {
     if (!isEmailConfigured) {
@@ -2821,7 +2733,7 @@ app.post('/api/send-client-email', async (req, res) => {
 
     const { clientEmail, workflowData } = req.body;
     
-    console.log('📧 Sending email to Client (after Legal Team approval)...');
+    console.log('📧 Queuing email to Client (after Legal Team approval)...');
     console.log('Client:', clientEmail);
     console.log('Workflow Data:', workflowData);
 
@@ -2861,26 +2773,32 @@ app.post('/api/send-client-email', async (req, res) => {
       }
     }
 
-    // Send email to Client only with attachment
-    const clientResult = await sendEmail(
+    // Send email to Client only with attachment (fire-and-forget)
+    const sendStartedAt = Date.now();
+    sendEmail(
       clientEmail,
       `Document Submitted for Approval: ${workflowData.documentId}`,
       generateClientEmailHTML(workflowData),
       attachments
-    );
+    )
+      .then(result => {
+        console.log(`✅ Client email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ Client email async error:', err);
+      });
 
-    console.log('✅ Client email sent:', clientResult.success);
-
+    // Immediately respond so the frontend is not blocked by SendGrid latency
     res.json({
-      success: clientResult.success,
-      message: 'Client email sent successfully',
-      result: { role: 'Client', email: clientEmail, success: clientResult.success },
+      success: true,
+      message: 'Client email queued for sending',
+      result: { role: 'Client', email: clientEmail, success: true },
       workflowData: workflowData,
       attachmentCount: attachments.length
     });
 
   } catch (error) {
-    console.error('❌ Error sending Client email:', error);
+    console.error('❌ Error queuing Client email:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3088,8 +3006,9 @@ app.post('/api/send-approval-emails', async (req, res) => {
   }
 });
 
-// API endpoint to save PDF documents to MongoDB
-app.post('/api/documents', upload.single('file'), async (req, res) => {
+// API endpoint to upload documents (PDF, Excel, CSV, etc.) to MongoDB
+// NOTE: This uses multipart/form-data and is separate from the JSON /api/documents endpoint.
+app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
   try {
     if (!db) {
       return res.status(500).json({
@@ -3099,6 +3018,9 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
       });
     }
 
+    // Extract metadata for optional base64 uploads
+    const { clientName, company, quoteId, totalCost, fileName, fileData, fileSize } = req.body;
+
     // Check if we have file data (either from upload or base64)
     if (!req.file && !fileData) {
       return res.status(400).json({
@@ -3107,7 +3029,6 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
       });
     }
 
-    const { clientName, company, quoteId, totalCost, fileName, fileData, fileSize } = req.body;
     const file = req.file;
     
     // Generate document ID with client and company names
@@ -3204,39 +3125,8 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
 });
 
 // API endpoint to fetch PDF documents from MongoDB
-app.get('/api/documents', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({
-        success: false,
-        error: 'Database not available',
-        message: 'Cannot fetch documents without database connection'
-      });
-    }
-
-    console.log('📄 Fetching PDF documents from database...');
-    
-    const documents = await db.collection('documents')
-      .find({}, { fileData: 0 }) // Exclude file data from list for performance
-      .sort({ createdAt: -1 })
-      .toArray();
-    
-    console.log(`✅ Found ${documents.length} documents in database`);
-    
-    res.json({
-      success: true,
-      documents: documents,
-      count: documents.length
-    });
-    
-  } catch (error) {
-    console.error('❌ Error fetching documents:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
+// NOTE: This endpoint is replaced by the one below at line 3725 to avoid duplicates
+// Keeping this comment for reference but the endpoint below should be used
 
 // API endpoint to get specific PDF document file
 app.get('/api/documents/:id/file', async (req, res) => {
@@ -3796,6 +3686,219 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+});
+
+// ========================================
+// Documents API
+// ========================================
+
+// Get all saved documents (without raw fileData)
+app.get('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    console.log('📄 Fetching PDF documents from database...');
+    
+    // Get query parameters for pagination (optional)
+    const limit = parseInt(req.query.limit) || 100; // Default to 100 documents max
+    const skip = parseInt(req.query.skip) || 0;
+
+    const documents = await db
+      .collection('documents')
+      .find({})
+      .project({ fileData: 0 }) // exclude large PDF payload
+      .sort({ createdAt: -1, generatedDate: -1 })
+      .limit(limit)
+      .skip(skip)
+      .toArray();
+
+    // Serialize dates to strings for frontend compatibility
+    const serializedDocuments = documents.map(doc => ({
+      ...doc,
+      generatedDate: doc.generatedDate ? (doc.generatedDate instanceof Date ? doc.generatedDate.toISOString() : doc.generatedDate) : new Date().toISOString(),
+      createdAt: doc.createdAt ? (doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt) : new Date().toISOString(),
+    }));
+
+    console.log(`✅ Found ${serializedDocuments.length} documents in database (limit: ${limit}, skip: ${skip})`);
+
+    res.json({
+      success: true,
+      documents: serializedDocuments,
+      count: serializedDocuments.length
+    });
+  } catch (error) {
+    console.error('❌ Error fetching documents:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Save a new document
+app.post('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const payload = req.body || {};
+
+    if (!payload.fileName || !payload.fileData) {
+      return res.status(400).json({
+        success: false,
+        error: 'fileName and fileData are required',
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    const documentId =
+      payload.id ||
+      generateDocumentId(payload.clientName || 'UnknownClient', payload.company || 'UnknownCompany');
+
+    const documentToSave = {
+      ...payload,
+      id: documentId,
+      status: payload.status || 'active',
+      createdAt: payload.createdAt || nowIso,
+      generatedDate: payload.generatedDate || nowIso,
+    };
+
+    await db.collection('documents').updateOne(
+      { id: documentId },
+      { $set: documentToSave },
+      { upsert: true }
+    );
+
+    const { fileData, ...safeDoc } = documentToSave;
+
+    res.json({
+      success: true,
+      documentId,
+      document: safeDoc,
+    });
+  } catch (error) {
+    console.error('❌ Error saving document:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Get raw PDF file for a document
+app.get('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { id } = req.params;
+    const doc = await db.collection('documents').findOne({ id });
+
+    if (!doc || !doc.fileData) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    const buffer = Buffer.from(doc.fileData, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${doc.fileName || 'document.pdf'}"`
+    );
+    res.send(buffer);
+  } catch (error) {
+    console.error('❌ Error fetching document file:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Get a base64 preview for a document
+app.get('/api/documents/:id/preview', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { id } = req.params;
+    const doc = await db.collection('documents').findOne({ id });
+
+    if (!doc || !doc.fileData) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    const dataUrl = `data:application/pdf;base64,${doc.fileData}`;
+
+    res.json({
+      success: true,
+      dataUrl,
+      fileName: doc.fileName || 'document.pdf',
+      documentId: id,
+    });
+  } catch (error) {
+    console.error('❌ Error generating document preview:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Delete a document
+app.delete('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { id } = req.params;
+    const result = await db.collection('documents').deleteOne({ id });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Document deleted successfully',
+    });
+  } catch (error) {
+    console.error('❌ Error deleting document:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 });

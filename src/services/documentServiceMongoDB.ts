@@ -9,10 +9,12 @@ export interface SavedDocument {
   fileData: string; // base64 encoded PDF
   fileSize: number;
   clientName: string;
-  clientEmail: string;
+  clientEmail?: string;
   company: string;
-  templateName: string;
-  generatedDate: Date;
+  templateName?: string;
+  generatedDate: string;
+  createdAt?: string;
+  status?: string;
   quoteId?: string;
   metadata?: {
     totalCost?: number;
@@ -77,8 +79,17 @@ class DocumentServiceMongoDB {
   async getAllDocuments(): Promise<SavedDocument[]> {
     try {
       console.log('📥 Fetching documents from MongoDB...');
+
+      // Add a safety timeout so the UI is not stuck for minutes
+      const controller = new AbortController();
+      const timeoutMs = 15000; // 15 seconds
+      const timeoutId = setTimeout(() => {
+        console.warn(`⚠️ /api/documents request exceeded ${timeoutMs}ms, aborting`);
+        controller.abort();
+      }, timeoutMs);
       
-      const response = await fetch(this.apiUrl);
+      const response = await fetch(this.apiUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let details = '';
@@ -96,6 +107,7 @@ class DocumentServiceMongoDB {
       return data.documents;
     } catch (error) {
       console.error('❌ Error fetching documents from MongoDB:', error);
+      // On timeout or network failure, fail gracefully with an empty list
       return [];
     }
   }

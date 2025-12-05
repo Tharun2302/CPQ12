@@ -4753,10 +4753,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         onClick={() => setShowApprovalModal(true)}
                         disabled={isStartingWorkflow}
                         className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
-                        title="Start Manual Approval Workflow"
+                        title="Start Approval Workflow"
                       >
                         <Workflow className="w-3 h-3 inline mr-1" />
-                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Manual Approval Workflow'}
+                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Approval Workflow'}
                       </button>
                       <button
                         onClick={handleEmailAgreement}

@@ -76,9 +76,27 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
     }
   };
 
+  const isManualWorkflow = (workflow: any) =>
+    workflow &&
+    workflow.totalSteps === 2 &&
+    Array.isArray(workflow.workflowSteps) &&
+    !workflow.workflowSteps.some((s: any) => s.role === 'Team Approval');
+
   const tabs = [
-  { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 2).length },
-  { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
+    {
+      id: 'queue',
+      label: 'My Approval Queue',
+      icon: User,
+      count: workflows.filter(w => {
+        const manual = isManualWorkflow(w);
+        const isPending = w.status === 'pending' || w.status === 'in_progress';
+        const isCurrentForTech =
+          (!manual && w.currentStep === 2) ||
+          (manual && w.currentStep === 1);
+        return isPending && isCurrentForTech;
+      }).length
+    },
+    { id: 'status', label: 'Workflow Status', icon: BarChart3, count: workflows.length }
   ];
 
 
@@ -154,11 +172,15 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
     try {
       // Mark this specific workflow as acted upon
       setHasTakenAction(prev => new Set(prev).add(workflowId));
-      // Update workflow step (Technical Team is now step 2)
-      await updateWorkflowStep(workflowId, 2, { status: 'approved' });
+
+      const workflow = workflows.find(w => w.id === workflowId) || selectedWorkflow;
+      const manual = workflow ? isManualWorkflow(workflow) : false;
+      const techStepNumber = manual ? 1 : 2;
+
+      // Update workflow step (Technical Team is step 2 for quote workflows, step 1 for manual workflows)
+      await updateWorkflowStep(workflowId, techStepNumber, { status: 'approved' });
       
       // Track approval action
-      const workflow = workflows.find(w => w.id === workflowId);
       track('approval.action', {
         action: 'approved',
         workflowId: workflowId,
@@ -246,17 +268,21 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
     try {
       // Mark this specific workflow as acted upon
       setHasTakenAction(prev => new Set(prev).add(workflowId));
-      await updateWorkflowStep(workflowId, 2, { 
+
+      const workflow = workflows.find(w => w.id === workflowId) || selectedWorkflow;
+      const manual = workflow ? isManualWorkflow(workflow) : false;
+      const techStepNumber = manual ? 1 : 2;
+
+      await updateWorkflowStep(workflowId, techStepNumber, { 
         status: 'denied',
         comments: commentText.trim()
       });
       
       // Track denial action
-      const workflow = workflows.find(w => w.id === workflowId);
       track('approval.action', {
         action: 'denied',
         workflowId: workflowId,
-        step: 2,
+        step: techStepNumber,
         role: 'Technical Team',
         clientName: workflow?.clientName,
         amount: workflow?.amount,
@@ -294,7 +320,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   };
 
   const handleAddComment = (workflowId: string) => {
-    console.log('Adding comment to workflow:', workflowId);
+      console.log('Adding comment to workflow:', workflowId);
     setCommentWorkflowId(workflowId);
     setCommentText('');
     setShowCommentModal(true);
@@ -320,7 +346,11 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       }
 
       console.log('💬 Saving comment for workflow:', commentWorkflowId);
-      updateWorkflowStep(commentWorkflowId, 1, { 
+      const wf = workflows.find(w => w.id === commentWorkflowId) || selectedWorkflow;
+      const manual = wf ? isManualWorkflow(wf) : false;
+      const commentStep = manual ? 1 : 2;
+
+      updateWorkflowStep(commentWorkflowId, commentStep, { 
         comments: commentText.trim(),
         timestamp: new Date().toISOString()
       });
@@ -328,7 +358,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       setSelectedWorkflow((prev: any) => prev && prev.id === commentWorkflowId ? {
         ...prev,
         workflowSteps: prev.workflowSteps?.map((s: any) =>
-          s.step === 1 && s.role === 'Technical Team'
+          (manual ? (s.role === 'Technical Team') : (s.step === 2 && s.role === 'Technical Team'))
             ? { ...s, comments: commentText.trim(), timestamp: new Date().toISOString() }
             : s
         )
@@ -442,10 +472,19 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
 
     // Filter workflows for technical team-specific view
     const filteredWorkflows = workflows.filter(workflow => {
+      const manual = isManualWorkflow(workflow);
       switch (activeTab) {
-        case 'queue': return (workflow.status === 'pending' || workflow.status === 'in_progress') && workflow.currentStep === 2;
-        case 'status': return true;
-        default: return true;
+        case 'queue': {
+          const isPending = workflow.status === 'pending' || workflow.status === 'in_progress';
+          const isCurrentForTech =
+            (!manual && workflow.currentStep === 2) ||
+            (manual && workflow.currentStep === 1);
+          return isPending && isCurrentForTech;
+        }
+        case 'status':
+          return true;
+        default:
+          return true;
       }
     });
 
@@ -799,11 +838,21 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                  (() => {
                   // Use latest workflow state from store to avoid stale selectedWorkflow after actions
                   const latestWorkflow = workflows.find(w => w.id === selectedWorkflow?.id) || selectedWorkflow;
-                  // Check if it's still the user's turn (Technical Team, Step 2, pending status)
-                  const techStep = latestWorkflow?.workflowSteps?.find((step: any) => step.step === 2 && step.role === 'Technical Team');
+                  const manual = isManualWorkflow(latestWorkflow);
+                  // Find the Technical Team step (step 2 for quote workflows, any step for manual 2-step workflows)
+                  const techStep = latestWorkflow?.workflowSteps?.find((step: any) =>
+                    manual ? step.role === 'Technical Team' : (step.step === 2 && step.role === 'Technical Team')
+                  );
                   // Check if THIS specific workflow has been acted upon
                   const hasActedOnThis = selectedWorkflow?.id ? hasTakenAction.has(selectedWorkflow.id) : false;
-                  const isMyTurn = !hasActedOnThis && latestWorkflow?.currentStep === 2 && techStep?.status === 'pending' && latestWorkflow?.status !== 'denied';
+                  const isMyTurn =
+                    !hasActedOnThis &&
+                    techStep?.status === 'pending' &&
+                    latestWorkflow?.status !== 'denied' &&
+                    (
+                      (!manual && latestWorkflow?.currentStep === 2) ||
+                      (manual && latestWorkflow?.currentStep === 1)
+                    );
                    
                    return isMyTurn ? (
                      <div className="flex gap-3">

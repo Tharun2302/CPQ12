@@ -53,10 +53,33 @@ async function setupMongoDB() {
         ]
       },
       {
+        name: 'documents',
+        indexes: [
+          // Document identifier (can be Mongo _id or application-level id)
+          { key: { id: 1 }, unique: true },
+          // Common query patterns
+          { key: { quoteId: 1 } },
+          { key: { clientEmail: 1 } },
+          { key: { company: 1 } },
+          { key: { createdAt: -1 } },
+          { key: { generatedDate: -1 } }
+        ]
+      },
+      {
         name: 'pricing_tiers',
         indexes: [
           { key: { id: 1 }, unique: true },
           { key: { name: 1 } },
+          { key: { created_at: -1 } }
+        ]
+      },
+      // Users collection for authentication (login)
+      // Indexing email ensures fast lookups for /api/auth/login and /api/auth/me
+      {
+        name: 'users',
+        indexes: [
+          { key: { id: 1 }, unique: true },
+          { key: { email: 1 }, unique: true },
           { key: { created_at: -1 } }
         ]
       }

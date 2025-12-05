@@ -2,6 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsPDF from 'jspdf';
 import { saveAs } from 'file-saver';
+import { documentServiceMongoDB, SavedDocument } from '../services/documentServiceMongoDB';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -132,8 +133,15 @@ export function createPlaceholderMap(quoteData: QuoteData): PlaceholderMap {
     'instance_users': quoteData.configuration.numberOfInstances.toString(),
     'instance_type': quoteData.configuration.instanceType,
     'instance_type_cost': (() => {
-      const { getInstanceTypeCost, formatCurrency } = require('./pricing');
-      return formatCurrency(getInstanceTypeCost(quoteData.configuration.instanceType));
+      // Lazily import pricing helpers to avoid circular dependencies at module load
+      try {
+        // Note: this dynamic import is only executed in the browser when needed
+        const pricing = require('./pricing');
+        return pricing.formatCurrency(pricing.getInstanceTypeCost(quoteData.configuration.instanceType));
+      } catch (e) {
+        console.warn('⚠️ Could not load pricing helpers for instance_type_cost token:', e);
+        return '$0';
+      }
     })(),
     'instances': quoteData.configuration.numberOfInstances.toString(),
     
@@ -329,16 +337,16 @@ export function downloadPDF(pdfBlob: Blob, filename: string): void {
 
 // Save PDF to MongoDB database
 export async function savePDFToDatabase(
-  pdfBlob: Blob, 
-  filename: string, 
-  clientName: string, 
-  company: string, 
-  quoteId?: string, 
+  pdfBlob: Blob,
+  filename: string,
+  clientName: string,
+  company: string,
+  quoteId?: string,
   totalCost?: number
 ): Promise<boolean> {
   try {
-    console.log('💾 Saving PDF to database:', filename);
-    
+    console.log('💾 Saving PDF to database via documentServiceMongoDB:', filename);
+
     // Convert blob to base64
     const base64 = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -351,42 +359,30 @@ export async function savePDFToDatabase(
       reader.onerror = reject;
       reader.readAsDataURL(pdfBlob);
     });
-    
-    // Prepare document data
-    const documentData = {
+
+    const nowIso = new Date().toISOString();
+
+    // Prepare document payload matching SavedDocument (minus id)
+    const documentPayload: Omit<SavedDocument, 'id'> = {
       fileName: filename,
       fileData: base64,
       fileSize: pdfBlob.size,
       clientName: clientName || 'Unknown Client',
+      clientEmail: undefined,
       company: company || 'Unknown Company',
-      quoteId: quoteId || null,
+      templateName: undefined,
+      quoteId: quoteId || undefined,
       metadata: {
         totalCost: totalCost || 0
       },
       status: 'active',
-      createdAt: new Date().toISOString(),
-      generatedDate: new Date().toISOString()
+      createdAt: nowIso,
+      generatedDate: nowIso
     };
-    
-    // Send to backend
-    const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/documents`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(documentData)
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      console.log('✅ PDF saved to database successfully:', result.document.id);
-      return true;
-    } else {
-      console.error('❌ Failed to save PDF to database:', result.error);
-      return false;
-    }
-    
+
+    const documentId = await documentServiceMongoDB.saveDocument(documentPayload);
+    console.log('✅ PDF saved to MongoDB successfully with id:', documentId);
+    return true;
   } catch (error) {
     console.error('❌ Error saving PDF to database:', error);
     return false;

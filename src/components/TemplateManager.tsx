@@ -379,80 +379,6 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     saveTemplates();
   }, [templates]);
 
-  // Pre-convert all DOCX templates to PDF in background for INSTANT previews
-  useEffect(() => {
-    const preConvertTemplates = async () => {
-      if (templates.length === 0 || isPreConvertingTemplates) return;
-      
-      console.log('⚡ Starting background pre-conversion of templates for instant previews...');
-      setIsPreConvertingTemplates(true);
-      
-      let convertedCount = 0;
-      
-      for (const template of templates) {
-        try {
-          // Skip if already cached
-          if (convertedPdfCache[template.id]) {
-            continue;
-          }
-          
-          // Fetch template file if not loaded
-          let templateFile = template.file;
-          if (!templateFile && template.loadFile) {
-            console.log(`📥 Pre-loading ${template.name}...`);
-            templateFile = await template.loadFile();
-            
-            // Cache the loaded file for instant access! ⚡
-            if (templateFile) {
-              setFileCache(prev => ({
-                ...prev,
-                [template.id]: templateFile
-              }));
-              console.log(`💾 Cached file for ${template.name}`);
-            }
-          }
-          
-          if (!templateFile) continue;
-          
-          // Check if it's a DOCX file that needs conversion
-          if (templateFile.type.includes('wordprocessingml') || templateFile.name.endsWith('.docx')) {
-            console.log(`🔄 Pre-converting ${template.name}...`);
-            
-            try {
-              const pdfBlob = await templateService.convertDocxToPdf(templateFile);
-              const pdfFile = new File([pdfBlob], template.name + '.pdf', { type: 'application/pdf' });
-              
-              // Cache the converted PDF
-              setConvertedPdfCache(prev => ({
-                ...prev,
-                [template.id]: pdfFile
-              }));
-              
-              convertedCount++;
-              console.log(`✅ ${template.name} ready (${convertedCount})`);
-              
-            } catch (convError) {
-              console.warn(`⚠️ Pre-conversion failed for ${template.name}`);
-            }
-          }
-          
-        } catch (error) {
-          console.warn(`⚠️ Error pre-loading ${template.name}`);
-        }
-      }
-      
-      setIsPreConvertingTemplates(false);
-      if (convertedCount > 0) {
-        console.log(`🎉 ${convertedCount} templates pre-converted! All previews will be INSTANT! ⚡`);
-      }
-    };
-    
-    // Start pre-conversion immediately for INSTANT previews! ⚡
-    const timeoutId = setTimeout(preConvertTemplates, 0);
-    
-    return () => clearTimeout(timeoutId);
-  }, [templates.length]); // Run when templates load
-
   // Helper function to convert File to base64 data URL
   const fileToDataURL = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -2043,20 +1969,6 @@ The client will receive an email with the processed template and a link to compl
               }`}
             >
               Templates
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('upload');
-                setShowUploadModal(true);
-              }}
-              className={`ml-1 px-5 py-2 text-sm font-medium rounded-full transition-colors ${
-                activeTab === 'upload'
-                  ? 'bg-white shadow text-blue-700'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              Upload Templates
             </button>
           </div>
         </div>

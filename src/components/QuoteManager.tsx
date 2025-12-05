@@ -99,23 +99,55 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
   };
   
   // View a saved document
-  const handleViewDocument = (doc: SavedDocument) => {
-    const blob = documentServiceMongoDB.base64ToBlob(doc.fileData);
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
+  const handleViewDocument = async (doc: SavedDocument) => {
+    try {
+      // Fetch full document with fileData if not already present
+      let documentToView = doc;
+      if (!doc.fileData) {
+        const fullDoc = await documentServiceMongoDB.getDocument(doc.id);
+        if (!fullDoc || !fullDoc.fileData) {
+          alert('Unable to load document. File data not available.');
+          return;
+        }
+        documentToView = fullDoc;
+      }
+      
+      const blob = documentServiceMongoDB.base64ToBlob(documentToView.fileData);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error('❌ Error viewing document:', error);
+      alert('Error loading document. Please try again.');
+    }
   };
   
   // Download a saved document
-  const handleDownloadDocument = (doc: SavedDocument) => {
-    const blob = documentServiceMongoDB.base64ToBlob(doc.fileData);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = doc.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownloadDocument = async (doc: SavedDocument) => {
+    try {
+      // Fetch full document with fileData if not already present
+      let documentToDownload = doc;
+      if (!doc.fileData) {
+        const fullDoc = await documentServiceMongoDB.getDocument(doc.id);
+        if (!fullDoc || !fullDoc.fileData) {
+          alert('Unable to download document. File data not available.');
+          return;
+        }
+        documentToDownload = fullDoc;
+      }
+      
+      const blob = documentServiceMongoDB.base64ToBlob(documentToDownload.fileData);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = documentToDownload.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('❌ Error downloading document:', error);
+      alert('Error downloading document. Please try again.');
+    }
   };
   
   // Delete a saved document from MongoDB
@@ -942,12 +974,43 @@ ZENOP Pro Solutions Team`
         console.log('📄 Attempting to use merged template approach...');
         
         try {
-          // Try to get the template file from localStorage or use a default template
-          const storedTemplates = JSON.parse(localStorage.getItem('templates') || '[]');
-          const template = storedTemplates.find((t: any) => t.id === quote.templateUsed?.id);
-          
+          // Prefer in-memory templates passed from App/TemplateManager
+          let template: any | undefined;
+          if (templates && templates.length > 0) {
+            template = templates.find(t => t.id === quote.templateUsed?.id);
+            console.log('📄 Using in-memory templates for email merge. Found:', !!template);
+          }
+
+          // Fallback 1: cpq_templates_cache_v2 (new cache format)
+          if (!template) {
+            try {
+              const cachedRaw = localStorage.getItem('cpq_templates_cache_v2');
+              if (cachedRaw) {
+                const cached = JSON.parse(cachedRaw);
+                if (Array.isArray(cached.templates)) {
+                  template = cached.templates.find((t: any) => t.id === quote.templateUsed?.id);
+                  console.log('📄 Fallback to cpq_templates_cache_v2. Found:', !!template);
+                }
+              }
+            } catch (cacheError) {
+              console.warn('⚠️ Error reading cpq_templates_cache_v2 for email merge:', cacheError);
+            }
+          }
+
+          // Fallback 2: legacy localStorage "templates" key
+          if (!template) {
+            try {
+              const legacyTemplates = JSON.parse(localStorage.getItem('templates') || '[]');
+              template = legacyTemplates.find((t: any) => t.id === quote.templateUsed?.id);
+              console.log('📄 Fallback to legacy templates key. Found:', !!template);
+            } catch (legacyError) {
+              console.warn('⚠️ Error reading legacy templates cache for email merge:', legacyError);
+            }
+          }
+
+          // At this point we expect template.file to be a base64 PDF or we have a loadFile function
           if (template && template.file) {
-            console.log('📄 Template file found, using merged template...');
+            console.log('📄 Template file found in cache, using merged template...');
             
             // Convert base64 to file
             const templateFile = new File(
@@ -961,11 +1024,23 @@ ZENOP Pro Solutions Team`
             pdfBlob = await mergeQuoteIntoTemplate(templateFile, quote, quoteNumber);
             
             console.log('📧 Merged template PDF generated successfully, size:', pdfBlob.size);
+          } else if (template && typeof template.loadFile === 'function') {
+            console.log('📄 No cached base64 file, using loadFile() from templateService for email merge...');
+            const fileFromBackend = await template.loadFile();
+            if (!fileFromBackend) {
+              throw new Error('Template file could not be loaded from backend');
+            }
+            const { mergeQuoteIntoTemplate } = await import('../utils/pdfMerger');
+            pdfBlob = await mergeQuoteIntoTemplate(fileFromBackend, quote, quoteNumber);
+            console.log('📧 Merged template PDF generated successfully from backend file, size:', pdfBlob.size);
           } else {
             throw new Error('Template file not available');
           }
         } catch (error) {
-          console.warn('⚠️ Could not use merged template, falling back to default:', error instanceof Error ? error.message : 'Unknown error');
+          console.warn(
+            '⚠️ Could not use merged template for email, falling back to default:',
+            error instanceof Error ? error.message : 'Unknown error'
+          );
           
           // Fall back to default quote generation
           const pdfContainer = document.createElement('div');
@@ -1263,31 +1338,6 @@ The client will receive an email with the PDF quote and a link to complete the d
           <h1 className="text-3xl font-bold text-gray-800">Deal Documents Manager</h1>
         </div>
         <p className="text-gray-600">Here you can see all your created Deal Documents</p>
-        
-        {/* Template Status Indicator */}
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-sm text-blue-700">
-              <strong>Template Sync Active:</strong> {templates.length} templates available
-            </span>
-            <span className="text-xs text-blue-600">
-              (Last updated: {templatesLastUpdated.toLocaleTimeString()})
-            </span>
-          </div>
-        </div>
-        
-        {/* Template Sync Notification */}
-        {showTemplateSyncNotification && (
-          <div className="mt-3 p-2 bg-green-100 border border-green-300 rounded-lg animate-pulse">
-            <div className="flex items-center justify-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-sm text-green-700 font-medium">
-                ✅ Templates synchronized successfully!
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Saved Documents Section */}
@@ -1297,7 +1347,7 @@ The client will receive an email with the PDF quote and a link to complete the d
           Saved Documents ({savedDocuments.length})
         </h2>
         
-        {loadingDocuments ? (
+          {loadingDocuments ? (
           <div className="text-center py-8">
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading documents...</p>
@@ -1305,7 +1355,9 @@ The client will receive an email with the PDF quote and a link to complete the d
         ) : savedDocuments.length === 0 ? (
           <div className="bg-gray-50 rounded-xl p-8 text-center">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-600">No saved documents yet. Generate an agreement in the Quote session to save it here.</p>
+            <p className="text-gray-600">
+              You don&apos;t have any saved deal documents yet. Generate an agreement from the Quote flow and it will appear here.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1387,9 +1439,9 @@ The client will receive an email with the PDF quote and a link to complete the d
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <FileText className="w-12 h-12 text-gray-400" />
             </div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-2">No Documents Yet</h3>
+            <h3 className="text-xl font-semibold text-gray-800 mb-2">No quotes yet</h3>
             <p className="text-gray-600 mb-6">
-              Generate your first document to see it here.
+              Create your first quote to see it listed on this page.
             </p>
           </div>
         ) : (
@@ -1490,11 +1542,7 @@ The client will receive an email with the PDF quote and a link to complete the d
                       </span>
                     )}
                   </div>
-                  {/* Debug info - remove this later */}
-                  <div className="mt-1 text-xs text-gray-400">
-                    Template ID: {quote.templateUsed?.id || 'none'} | 
-                    Is Default: {quote.templateUsed?.isDefault ? 'Yes' : 'No'}
-                  </div>
+                  {/* Template debug info removed for cleaner UI */}
                 </div>
 
                 {/* Signature and Approval Status */}
