@@ -29,6 +29,13 @@ export interface DocxTemplateData {
   '{{date}}'?: string;
   '{{Effective Date}}'?: string;
   
+  // Payment terms tokens
+  '{{payment_terms}}'?: string;
+  '{{Payment_terms}}'?: string;
+  '{{Payment Terms}}'?: string;
+  '{{Payment_Terms}}'?: string;
+  '{{paymentTerms}}'?: string;
+  
   // Discount and instance cost tokens
   '{{instance_cost}}'?: string;
   '{{discount}}'?: string;
@@ -64,6 +71,7 @@ export interface DocxTemplateData {
   dataSize?: number;
   quoteId?: string;
   planName?: string;
+  paymentTerms?: string;
 }
 
 export interface DocxProcessingResult {
@@ -809,6 +817,15 @@ export class DocxTemplateProcessor {
       timeZone: 'America/New_York'
     });
     
+    // Extract payment terms
+    const paymentTerms = (data as any)['{{payment_terms}}'] ||
+      (data as any)['{{Payment_terms}}'] ||
+      (data as any)['{{Payment Terms}}'] ||
+      (data as any)['{{Payment_Terms}}'] ||
+      (data as any)['{{paymentTerms}}'] ||
+      (data as any).paymentTerms ||
+      '100% Upfront';
+    
     // Extract start and end dates from template data
     const startDate = (data as any)['{{Start_date}}'] || (data as any).configuration?.startDate || '';
     let endDate = (data as any)['{{End_date}}'] || (data as any).configuration?.endDate || '';
@@ -831,6 +848,16 @@ export class DocxTemplateProcessor {
     console.log('  migrationCost:', migrationCost);
     console.log('  startDate:', startDate);
     console.log('  endDate:', endDate);
+    console.log('  paymentTerms:', paymentTerms);
+    
+    console.log('🔍 PAYMENT TERMS EXTRACTION DEBUG:');
+    console.log('  data[{{payment_terms}}]:', (data as any)['{{payment_terms}}']);
+    console.log('  data[{{Payment_terms}}]:', (data as any)['{{Payment_terms}}']);
+    console.log('  data[{{Payment Terms}}]:', (data as any)['{{Payment Terms}}']);
+    console.log('  data[{{Payment_Terms}}]:', (data as any)['{{Payment_Terms}}']);
+    console.log('  data[{{paymentTerms}}]:', (data as any)['{{paymentTerms}}']);
+    console.log('  data.paymentTerms:', (data as any).paymentTerms);
+    console.log('  Final paymentTerms value:', paymentTerms);
     
     // CRITICAL: Check if any core values are using fallbacks
     console.log('🔍 TOKEN SOURCE ANALYSIS:');
@@ -974,6 +1001,13 @@ export class DocxTemplateProcessor {
       '{{effectiveDate}}': date,
       '{{Date}}': date,
       
+      // Payment terms variations
+      '{{payment_terms}}': paymentTerms,
+      '{{Payment_terms}}': paymentTerms,
+      '{{Payment Terms}}': paymentTerms,
+      '{{Payment_Terms}}': paymentTerms,
+      '{{paymentTerms}}': paymentTerms,
+      
       // Project date variations - formatted as mm/dd/yyyy
       '{{Start_date}}': this.formatDateMMDDYYYY(startDate),
       '{{start_date}}': this.formatDateMMDDYYYY(startDate),
@@ -1063,7 +1097,8 @@ export class DocxTemplateProcessor {
       duration: parseInt(duration.toString()),
       dataSize: data.dataSize || 0,
       quoteId: data.quoteId || 'N/A',
-      planName: data.planName || 'Basic'
+      planName: data.planName || 'Basic',
+      paymentTerms: paymentTerms
     };
     
     // Apply all mappings

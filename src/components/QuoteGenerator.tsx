@@ -129,6 +129,7 @@ interface ClientInfo {
   company: string;
   effectiveDate?: string;
   discount?: number;
+  paymentTerms?: string;
 }
 
 const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
@@ -199,7 +200,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     clientEmail: '',
     company: '',
     effectiveDate: '',
-    discount: undefined
+    discount: undefined,
+    paymentTerms: '100% Upfront'
   });
 
   // Read discount entered in Configure session
@@ -279,7 +281,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           clientName: parsed.clientName || '',
           clientEmail: parsed.clientEmail || '',
           company: parsed.company || '',
-          effectiveDate: parsed.effectiveDate || ''
+          effectiveDate: parsed.effectiveDate || '',
+          paymentTerms: parsed.paymentTerms || '100% Upfront'
         }));
       }
     } catch {}
@@ -365,7 +368,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     try { localStorage.setItem('cpq_quote_client_info', JSON.stringify(newClientInfo)); } catch {}
     
     // Only notify parent when user makes actual changes (not during auto-fill)
-    if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.effectiveDate || updates.discount !== undefined)) {
+    if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.effectiveDate || updates.discount !== undefined || updates.paymentTerms !== undefined)) {
       onClientInfoChange(newClientInfo);
     }
   };
@@ -656,7 +659,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         clientName: '',
         clientEmail: '',
         company: '',
-        effectiveDate: ''
+        effectiveDate: '',
+        paymentTerms: '100% Upfront'
       });
     }
   }, [hubspotState?.isConnected]);
@@ -990,6 +994,13 @@ Quote ID: ${quoteData.id}
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          
+          // Payment terms information (overage agreements)
+          '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{paymentTerms}}': clientInfo.paymentTerms || '100% Upfront',
           
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
@@ -2614,6 +2625,7 @@ Total Price: {{total price}}`;
         console.log('  configuration?.startDate:', configuration?.startDate);
         console.log('  configuration?.endDate:', configuration?.endDate);
         console.log('  clientInfo.effectiveDate:', clientInfo.effectiveDate);
+        console.log('  clientInfo.paymentTerms:', clientInfo.paymentTerms);
         console.log('  configuration?.duration:', configuration?.duration);
         console.log('  Full configuration object:', configuration);
         console.log('  Full clientInfo object:', clientInfo);
@@ -2868,6 +2880,13 @@ Total Price: {{total price}}`;
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           
+          // Payment terms information (overage agreements)
+          '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{paymentTerms}}': clientInfo.paymentTerms || '100% Upfront',
+          
           // Deal information (if available)
           '{{deal_id}}': dealData?.dealId || 'N/A',
           '{{dealId}}': dealData?.dealId || 'N/A',
@@ -2929,6 +2948,15 @@ Total Price: {{total price}}`;
         console.log('  {{end_date}}:', templateData['{{end_date}}']);
         console.log('  {{startdate}}:', templateData['{{startdate}}']);
         console.log('  {{enddate}}:', templateData['{{enddate}}']);
+        
+        // Specific debugging for payment terms tokens
+        console.log('🔍 PAYMENT TERMS TOKENS DEBUG:');
+        console.log('  clientInfo.paymentTerms value:', clientInfo.paymentTerms);
+        console.log('  {{payment_terms}}:', templateData['{{payment_terms}}']);
+        console.log('  {{Payment_terms}}:', templateData['{{Payment_terms}}']);
+        console.log('  {{Payment Terms}}:', templateData['{{Payment Terms}}']);
+        console.log('  {{Payment_Terms}}:', templateData['{{Payment_Terms}}']);
+        console.log('  {{paymentTerms}}:', templateData['{{paymentTerms}}']);
         
         console.log('📋 Template data for DOCX processing:', templateData);
         
@@ -4471,6 +4499,49 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
               )}
             </div>
+
+            {/* Payment Terms - Only for Overage Agreement */}
+            {((configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+              (configuration?.migrationType || '').toLowerCase() === 'overage agreement') && (
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Briefcase className="w-4 h-4 text-white" />
+                  </div>
+                  Payment Terms
+                  <span className="text-xs text-gray-500 font-normal">(optional)</span>
+                </label>
+                <div className="flex gap-3 items-center">
+                  <button
+                    type="button"
+                    onClick={() => updateClientInfo({ paymentTerms: '100% Upfront' })}
+                    className={`px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all duration-200 ${
+                      clientInfo.paymentTerms === '100% Upfront'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-emerald-300 hover:bg-emerald-50'
+                    }`}
+                  >
+                    100% Upfront (Default)
+                  </button>
+                  <input
+                    type="text"
+                    placeholder="Or enter custom payment terms"
+                    className="flex-1 px-6 py-5 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-xl font-medium border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 hover:border-emerald-300"
+                    style={{ 
+                      fontSize: '18px',
+                      height: '60px',
+                      paddingTop: '18px',
+                      paddingBottom: '18px'
+                    }}
+                    value={clientInfo.paymentTerms ?? '100% Upfront'}
+                    onChange={(e) => updateClientInfo({ paymentTerms: e.target.value })}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  This value will appear under &quot;Important Payment Notes&quot; in the generated agreement.
+                </p>
+              </div>
+            )}
 
             <button
               type="submit"

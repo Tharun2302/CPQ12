@@ -867,14 +867,14 @@ async function seedDefaultTemplates(db) {
       });
 
       if (existing) {
-        console.log(`⏭️ Template already exists: ${template.name}`);
-        
         // Check if the file has been modified and update if needed
         const fileStats = fs.statSync(filePath);
         const existingModified = existing.lastModified ? new Date(existing.lastModified) : new Date(0);
         
         if (fileStats.mtime > existingModified) {
-          console.log(`🔄 Template file is newer, updating: ${template.name}`);
+          console.log(`🔄 Template file modified, updating: ${template.name}`);
+          console.log(`   File modified: ${fileStats.mtime.toLocaleString()}`);
+          console.log(`   DB version: ${existingModified.toLocaleString()}`);
           
           // Read updated file
           const fileBuffer = fs.readFileSync(filePath);
@@ -894,8 +894,10 @@ async function seedDefaultTemplates(db) {
             }
           );
           
-          console.log(`✅ Updated template: ${template.name} (${Math.round(fileBuffer.length / 1024)}KB)`);
+          console.log(`✅ Updated template: ${template.name} (${Math.round(fileBuffer.length / 1024)}KB, v${((existing.version || 1) + 0.1).toFixed(1)})`);
           uploadedCount++;
+        } else {
+          console.log(`✓ Template up-to-date: ${template.name}`);
         }
         continue;
       }
@@ -943,8 +945,12 @@ async function seedDefaultTemplates(db) {
     }
   }
 
-  console.log(`🎉 Template seeding completed! Uploaded ${uploadedCount} templates`);
-  console.log(`📊 Total templates: 4 Messaging + 32 Content + 2 Overage Agreement (38 templates total)`);
+  if (uploadedCount > 0) {
+    console.log(`🎉 Template seeding completed! Updated/uploaded ${uploadedCount} templates`);
+  } else {
+    console.log(`✅ Template seeding completed! All templates are up-to-date`);
+  }
+  console.log(`📊 Total templates defined: 4 Messaging + 62 Content + 2 Overage Agreement (68 templates total)`);
   console.log(`   - Messaging: SLACK TO TEAMS, SLACK TO GOOGLE CHAT (Basic, Advanced)`);
   console.log(`   - Content: DROPBOX TO MYDRIVE, DROPBOX TO SHAREDRIVE (Basic, Standard, Advanced)`);
   console.log(`   - Content: DROPBOX TO SHAREPOINT, DROPBOX TO ONEDRIVE, DROPBOX TO GOOGLE, DROPBOX TO MICROSOFT (Standard, Advanced only)`);

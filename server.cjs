@@ -132,14 +132,14 @@ async function initializeDatabase() {
     // Auto-seed default templates on server startup (optional)
     //
     // NOTE:
-    // - This seeding is relatively heavy against MongoDB Atlas and can make
-    //   the server feel "stuck" on startup while it checks/updates every template.
-    // - We now only run it when explicitly enabled via environment variable,
-    //   so normal local runs stay fast and Atlas cold starts hurt less.
+    // - This seeding checks for file modifications and auto-updates templates in database
+    // - It compares file modification time with database version
+    // - Only updated templates are re-uploaded (efficient)
+    // - Set SEED_TEMPLATES_ON_STARTUP=true to enable auto-sync
     //
     // To force seeding on a given environment, set:
     //   SEED_TEMPLATES_ON_STARTUP=true
-    // in your env and restart the server.
+    // in your .env file and restart the server.
     const shouldSeedTemplates =
       process.env.SEED_TEMPLATES_ON_STARTUP &&
       process.env.SEED_TEMPLATES_ON_STARTUP.toLowerCase() === 'true';
@@ -153,6 +153,7 @@ async function initializeDatabase() {
       }
     } else {
       console.log('⏭️ Skipping template seeding on startup (SEED_TEMPLATES_ON_STARTUP not set to true)');
+      console.log('💡 Tip: Set SEED_TEMPLATES_ON_STARTUP=true in .env to auto-sync backend template changes');
     }
     console.log('✅ MongoDB Atlas ping successful');
     
