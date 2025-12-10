@@ -19,14 +19,12 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { convertDocxToPdfLight } from '../utils/docxToPdfLight';
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
-import { convertDocxToPdfExact } from '../utils/docxToPdfExact';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { useNavigate } from 'react-router-dom';
-import { track, trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
+import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -447,11 +445,13 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // AM   -> lawrence.lewis@cloudfuze.com
   // ENT  -> anthony@cloudfuze.com
   // DEV  -> anushreddydasari@gmail.com
+  // DEV2 -> raya.durai@cloudfuze.com
   const TEAM_APPROVAL_EMAILS: Record<string, string> = {
     SMB: 'chitradip.saha@cloudfuze.com',
     AM: 'lawrence.lewis@cloudfuze.com',
     ENT: 'anthony@cloudfuze.com', // Update if Enterprise owner changes
     DEV: 'anushreddydasari@gmail.com',
+    DEV2: 'raya.durai@cloudfuze.com',
   };
 
   // Helper function to get team approval email based on selection
@@ -1415,7 +1415,7 @@ Total Price: {{total price}}`;
           clientEmail: clientInfo.clientEmail || '',
           company: clientInfo.company || 'Unknown Company',
           templateName: selectedTemplate?.name || 'Agreement',
-          generatedDate: new Date(),
+          generatedDate: new Date().toISOString(),
           quoteId: quoteId,
           metadata: {
             totalCost: calculation?.totalCost || 0,
@@ -1610,19 +1610,19 @@ Total Price: {{total price}}`;
         fileSize: pdfBlob.size,
         clientName: clientInfo.clientName || 'Unknown',
         clientEmail: clientInfo.clientEmail || '',
-        company: clientInfo.company || 'Unknown Company',
-        templateName: selectedTemplate?.name || 'Agreement',
-        generatedDate: new Date(),
-        quoteId: quoteId,
-        metadata: {
-          totalCost: calculation?.totalCost || 0,
-          duration: configuration?.duration || 0,
-          migrationType: configuration?.migrationType || 'Messaging',
-          numberOfUsers: configuration?.numberOfUsers || 0
-        }
-      };
-      
-      const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
+          company: clientInfo.company || 'Unknown Company',
+          templateName: selectedTemplate?.name || 'Agreement',
+          generatedDate: new Date().toISOString(),
+          quoteId: quoteId,
+          metadata: {
+            totalCost: calculation?.totalCost || 0,
+            duration: configuration?.duration || 0,
+            migrationType: configuration?.migrationType || 'Messaging',
+            numberOfUsers: configuration?.numberOfUsers || 0
+          }
+        };
+        
+        const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       console.log('✅ PDF saved to MongoDB for workflow:', documentId);
 
       // Resolve Team Approval group from UI selection
@@ -3505,7 +3505,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             clientEmail: clientEmail,
             company: finalCompanyName,
             templateName: selectedTemplate.name,
-            generatedDate: new Date(),
+            generatedDate: new Date().toISOString(),
             quoteId: quoteId,
             metadata: {
               totalCost: finalCalculation.totalCost,
@@ -5081,6 +5081,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <option value="AM">AM ({TEAM_APPROVAL_EMAILS.AM})</option>
                     <option value="ENT">ENT ({TEAM_APPROVAL_EMAILS.ENT})</option>
                     <option value="DEV">DEV ({TEAM_APPROVAL_EMAILS.DEV})</option>
+                    <option value="DEV2">DEV2 ({TEAM_APPROVAL_EMAILS.DEV2})</option>
                   </select>
                 </div>
                 
