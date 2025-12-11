@@ -112,6 +112,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     const combinationLabels: Record<string, string> = {
       'dropbox-to-microsoft': 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'dropbox-to-google': 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)',
+      'dropbox-to-box': 'DROPBOX TO BOX',
+      'dropbox-to-egnyte': 'DROPBOX TO EGNYTE',
       'box-to-box': 'BOX TO BOX',
       'box-to-microsoft': 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'box-to-google': 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)',
@@ -1037,6 +1039,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         const contentCombinations = [
                           { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                           { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
+                          { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
                           { value: 'box-to-box', label: 'BOX TO BOX' },
                           { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                           { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
@@ -1096,6 +1100,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           const contentCombinations = [
                             { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                             { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                            { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
+                            { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
                             { value: 'box-to-box', label: 'BOX TO BOX' },
                             { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                             { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },

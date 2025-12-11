@@ -76,6 +76,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                             combination === 'dropbox-to-onedrive' ||
                             combination === 'dropbox-to-google' ||
                             combination === 'dropbox-to-microsoft' ||
+                            combination === 'dropbox-to-box' ||
+                            combination === 'dropbox-to-egnyte' ||
                             combination === 'box-to-box' ||
                             combination === 'box-to-google-mydrive' ||
                             combination === 'box-to-google-sharedrive' ||

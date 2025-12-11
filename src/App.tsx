@@ -1346,6 +1346,8 @@ function App() {
       const isDropboxToSharedDrive = name.includes('dropbox') && name.includes('sharedrive');
       const isDropboxToSharePoint = name.includes('dropbox') && name.includes('sharepoint');
       const isDropboxToOneDrive = name.includes('dropbox') && name.includes('onedrive');
+      const isDropboxToBox = name.includes('dropbox') && name.includes('box');
+      const isDropboxToEgnyte = name.includes('dropbox') && name.includes('egnyte');
       const isEgnyteToGoogleSharedDrive = name.includes('egnyte') && name.includes('google') && name.includes('sharedrive');
       const isEgnyteToSharePointOnline = name.includes('egnyte') && name.includes('sharepoint');
       const isEgnyteToGoogleMyDrive = name.includes('egnyte') && name.includes('mydrive');
@@ -1363,6 +1365,8 @@ function App() {
         (combination === 'dropbox-to-sharedrive' && isDropboxToSharedDrive) ||
         (combination === 'dropbox-to-sharepoint' && isDropboxToSharePoint) ||
         (combination === 'dropbox-to-onedrive' && isDropboxToOneDrive) ||
+        (combination === 'dropbox-to-box' && isDropboxToBox) ||
+        (combination === 'dropbox-to-egnyte' && isDropboxToEgnyte) ||
         (combination === 'egnyte-to-google-sharedrive' && isEgnyteToGoogleSharedDrive) ||
         (combination === 'egnyte-to-sharepoint-online' && isEgnyteToSharePointOnline) ||
         (combination === 'egnyte-to-google-mydrive' && isEgnyteToGoogleMyDrive) ||
@@ -1410,7 +1414,18 @@ function App() {
         planType: t?.planType 
       });
       
-      return (isSlackToTeams || isSlackToGoogleChat || isDropboxToMyDrive || isDropboxToSharedDrive || isDropboxToSharePoint || isDropboxToOneDrive) && matchesPlan && matchesCombination;
+      return (
+        (isSlackToTeams ||
+          isSlackToGoogleChat ||
+          isDropboxToMyDrive ||
+          isDropboxToSharedDrive ||
+          isDropboxToSharePoint ||
+          isDropboxToOneDrive ||
+          isDropboxToBox ||
+          isDropboxToEgnyte) &&
+        matchesPlan &&
+        matchesCombination
+      );
     });
 
     if (exactMatches.length > 0) {

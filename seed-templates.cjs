@@ -202,6 +202,48 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'dropbox', 'microsoft', 'content', 'migration', 'enterprise']
     },
+    // DROPBOX TO BOX templates (Standard & Advanced only)
+    {
+      name: 'DROPBOX TO BOX Standard',
+      description: 'Standard template for Dropbox to Box migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-box-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-box',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'box', 'content', 'migration']
+    },
+    {
+      name: 'DROPBOX TO BOX Advanced',
+      description: 'Advanced template for Dropbox to Box migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-box-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-box',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'box', 'content', 'migration', 'enterprise']
+    },
+    // DROPBOX TO EGNYTE templates (Standard & Advanced only)
+    {
+      name: 'DROPBOX TO EGNYTE Standard',
+      description: 'Standard template for Dropbox to Egnyte migration - suitable for medium to large projects',
+      fileName: 'dropbox-to-egnyte-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-egnyte',
+      planType: 'standard',
+      keywords: ['standard', 'dropbox', 'egnyte', 'content', 'migration']
+    },
+    {
+      name: 'DROPBOX TO EGNYTE Advanced',
+      description: 'Advanced template for Dropbox to Egnyte migration - suitable for large enterprise projects',
+      fileName: 'dropbox-to-egnyte-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'dropbox-to-egnyte',
+      planType: 'advanced',
+      keywords: ['advanced', 'dropbox', 'egnyte', 'content', 'migration', 'enterprise']
+    },
     // BOX TO BOX templates (Standard & Advanced only)
     {
       name: 'BOX TO BOX Standard',
