@@ -7,7 +7,7 @@ interface ManagerApprovalDashboardProps {
 }
 
 const ManagerApprovalDashboard: React.FC<ManagerApprovalDashboardProps> = ({ 
-  managerEmail = 'anushreddydasari@gmail.com'
+  managerEmail = 'cpq.zenop.ai.technical@cloudfuze.com'
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);

@@ -164,6 +164,12 @@ async function initializeDatabase() {
     await usersCollection.createIndex({ created_at: -1 });
     console.log('✅ Users collection ready with indexes');
 
+    // Create daily_logins collection with proper indexes
+    const dailyLoginsCollection = db.collection('daily_logins');
+    await dailyLoginsCollection.createIndex({ date: 1 }, { unique: true });
+    await dailyLoginsCollection.createIndex({ date: -1 });
+    console.log('✅ Daily logins collection ready with indexes');
+
     // Ensure collections exist
     const collections = ['signature_forms', 'quotes', 'templates', 'pricing_tiers'];
     for (const collectionName of collections) {
@@ -198,6 +204,73 @@ function generateDocumentId(clientName = 'UnknownClient', company = 'UnknownComp
   const timestamp = Date.now().toString().slice(-5);
 
   return `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
+}
+
+// Helper function to track daily user logins
+async function trackDailyLogin(userId, loginMethod = 'email', userEmail = null) {
+  try {
+    if (!db) {
+      console.warn('⚠️ Cannot track daily login: Database not available');
+      return;
+    }
+
+    // Get user email if not provided
+    let email = userEmail;
+    if (!email) {
+      const user = await db.collection('users').findOne({ id: userId });
+      if (user) {
+        email = user.email;
+      } else {
+        email = 'unknown@example.com';
+      }
+    }
+
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date();
+    const dateString = today.toISOString().split('T')[0]; // e.g., "2024-01-15"
+
+    const dailyLoginsCollection = db.collection('daily_logins');
+
+    // Find or create today's login record
+    const todayRecord = await dailyLoginsCollection.findOne({ date: dateString });
+
+    if (todayRecord) {
+      // Update existing record - add user ID and email if not already present
+      if (!todayRecord.user_ids.includes(userId)) {
+        await dailyLoginsCollection.updateOne(
+          { date: dateString },
+          {
+            $addToSet: { 
+              user_ids: userId,
+              user_emails: email // Store email alongside user ID
+            },
+            $set: {
+              count: todayRecord.user_ids.length + 1,
+              updated_at: new Date()
+            }
+          }
+        );
+        console.log(`✅ Tracked daily login for user ${userId} (${email}) on ${dateString}`);
+      } else {
+        console.log(`ℹ️ User ${userId} (${email}) already logged in today (${dateString})`);
+      }
+    } else {
+      // Create new record for today
+      await dailyLoginsCollection.insertOne({
+        date: dateString,
+        user_ids: [userId],
+        user_emails: [email], // Store email alongside user ID
+        count: 1,
+        login_methods: [loginMethod],
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+      console.log(`✅ Created daily login record for ${dateString} with user ${userId} (${email})`);
+    }
+  } catch (error) {
+    console.error('❌ Error tracking daily login:', error);
+    // Don't throw - login should still succeed even if tracking fails
+  }
 }
 
 // Initialize database on startup
@@ -535,6 +608,21 @@ async function sendEmail(to, subject, html, attachments = []) {
     return { success: true, data: result };
   } catch (error) {
     console.error('❌ Email send error:', error);
+    
+    // Check if it's a bounce/suppression error
+    if (error.response) {
+      const errorBody = error.response.body;
+      if (errorBody && Array.isArray(errorBody.errors)) {
+        errorBody.errors.forEach(err => {
+          if (err.message && (err.message.includes('bounce') || err.message.includes('suppression') || err.message.includes('invalid'))) {
+            console.error('🚨 BOUNCE/SUPPRESSION ERROR:', err.message);
+            console.error('📧 Email address may be on suppression list:', to);
+            console.error('💡 ACTION REQUIRED: Remove', to, 'from SendGrid suppression list at https://app.sendgrid.com/suppressions/bounces');
+          }
+        });
+      }
+    }
+    
     return { success: false, error: error };
   }
 }
@@ -865,6 +953,9 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Track daily login
+    await trackDailyLogin(user.id, 'email', user.email);
+
     // Return user without password
     const { password: _, ...userWithoutPassword } = user;
 
@@ -986,6 +1077,9 @@ app.post('/api/auth/microsoft', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Track daily login
+    await trackDailyLogin(user.id, 'microsoft', user.email);
+
     // Return user without password
     const { password: _, ...userWithoutPassword } = user;
 
@@ -1000,6 +1094,106 @@ app.post('/api/auth/microsoft', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to process Microsoft authentication',
+      error: error.message
+    });
+  }
+});
+
+// Get daily login statistics
+app.get('/api/auth/daily-logins', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot retrieve login statistics without database connection'
+      });
+    }
+
+    const { startDate, endDate, limit = 30 } = req.query;
+    
+    const dailyLoginsCollection = db.collection('daily_logins');
+    let query = {};
+
+    // Filter by date range if provided
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = startDate;
+      if (endDate) query.date.$lte = endDate;
+    }
+
+    // Get daily login records, sorted by date (newest first)
+    const records = await dailyLoginsCollection
+      .find(query)
+      .sort({ date: -1 })
+      .limit(parseInt(limit))
+      .toArray();
+
+    // Get user details for each login record
+    const usersCollection = db.collection('users');
+    const recordsWithUserDetails = await Promise.all(
+      records.map(async (record) => {
+        // Use stored emails if available, otherwise fetch from users collection
+        const userEmails = record.user_emails || [];
+        const userDetails = await Promise.all(
+          record.user_ids.map(async (userId, index) => {
+            // Try to get email from stored array first
+            const storedEmail = userEmails[index] || null;
+            
+            // Fetch user details for additional info
+            const user = await usersCollection.findOne({ id: userId });
+            return user ? {
+              id: user.id,
+              email: storedEmail || user.email,
+              name: user.name || 'N/A',
+              provider: user.provider || 'email'
+            } : { 
+              id: userId, 
+              email: storedEmail || 'Unknown', 
+              name: 'Unknown User', 
+              provider: 'N/A' 
+            };
+          })
+        );
+        return {
+          date: record.date,
+          count: record.count,
+          user_ids: record.user_ids,
+          user_emails: record.user_emails || [],
+          users: userDetails,
+          created_at: record.created_at,
+          updated_at: record.updated_at
+        };
+      })
+    );
+
+    // Calculate total statistics
+    const totalLogins = records.reduce((sum, record) => sum + record.count, 0);
+    const uniqueUsers = new Set();
+    records.forEach(record => {
+      record.user_ids.forEach(userId => uniqueUsers.add(userId));
+    });
+
+    res.json({
+      success: true,
+      data: {
+        records: recordsWithUserDetails,
+        summary: {
+          total_days: records.length,
+          total_logins: totalLogins,
+          unique_users: uniqueUsers.size,
+          date_range: {
+            start: records.length > 0 ? records[records.length - 1].date : null,
+            end: records.length > 0 ? records[0].date : null
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching daily login statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve login statistics',
       error: error.message
     });
   }
@@ -2459,6 +2653,105 @@ app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
   }
 });
 
+// API endpoint to check SendGrid suppression status for email addresses
+app.post('/api/email/check-suppression', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { emails } = req.body;
+    if (!emails || !Array.isArray(emails)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an array of email addresses in the "emails" field'
+      });
+    }
+
+    const results = [];
+    const sendgridApiKey = process.env.SENDGRID_API_KEY;
+
+    for (const email of emails) {
+      try {
+        // Check bounces
+        const bounceResponse = await axios.get(
+          `https://api.sendgrid.com/v3/suppression/bounces/${encodeURIComponent(email)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${sendgridApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        results.push({
+          email: email,
+          status: 'on_bounce_list',
+          details: bounceResponse.data
+        });
+      } catch (bounceError) {
+        if (bounceError.response?.status === 404) {
+          // Not on bounce list, check invalid emails
+          try {
+            const invalidResponse = await axios.get(
+              `https://api.sendgrid.com/v3/suppression/invalid_emails/${encodeURIComponent(email)}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${sendgridApiKey}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            results.push({
+              email: email,
+              status: 'on_invalid_list',
+              details: invalidResponse.data
+            });
+          } catch (invalidError) {
+            if (invalidError.response?.status === 404) {
+              results.push({
+                email: email,
+                status: 'not_suppressed',
+                message: 'Email is not on any suppression list'
+              });
+            } else {
+              results.push({
+                email: email,
+                status: 'error',
+                error: invalidError.message
+              });
+            }
+          }
+        } else {
+          results.push({
+            email: email,
+            status: 'error',
+            error: bounceError.message
+          });
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      results: results,
+      instructions: {
+        remove_from_bounces: 'Go to https://app.sendgrid.com/suppressions/bounces and remove the email addresses',
+        remove_from_invalid: 'Go to https://app.sendgrid.com/suppressions/invalid_emails and remove the email addresses'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error checking suppression status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to check suppression status',
+      error: error.message
+    });
+  }
+});
+
 // API endpoint for sending approval workflow emails
 // Sequential email sending - Manager only
 app.post('/api/send-manager-email', async (req, res) => {
@@ -2471,7 +2764,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     }
 
     const { managerEmail, workflowData } = req.body;
-    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'anush.dasari@cloudfuze.com';
+    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'cpq.zenop.ai.technical@cloudfuze.com';
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
     console.log('Manager:', resolvedManagerEmail);
@@ -2644,7 +2937,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     }
 
     const { ceoEmail, workflowData } = req.body;
-    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'raya.durai@cloudfuze.com';
+    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'cpq.zenop.ai.legal@cloudfuze.com';
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');
     console.log('CEO:', resolvedCeoEmail);
@@ -2819,7 +3112,7 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     }
 
     const { dealDeskEmail, workflowData } = req.body;
-    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'anushreddydasari@gmail.com';
+    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'salesops@cloudfuze.com';
     
     console.log('📧 Sending notification email to Deal Desk (after client approval)...');
     console.log('Deal Desk:', resolvedDealDeskEmail);
