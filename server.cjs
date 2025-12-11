@@ -163,6 +163,12 @@ async function initializeDatabase() {
     await usersCollection.createIndex({ created_at: -1 });
     console.log('✅ Users collection ready with indexes');
 
+    // Create daily_logins collection with proper indexes
+    const dailyLoginsCollection = db.collection('daily_logins');
+    await dailyLoginsCollection.createIndex({ date: 1 }, { unique: true });
+    await dailyLoginsCollection.createIndex({ date: -1 });
+    console.log('✅ Daily logins collection ready with indexes');
+
     // Ensure collections exist
     const collections = ['signature_forms', 'quotes', 'templates', 'pricing_tiers'];
     for (const collectionName of collections) {
@@ -197,6 +203,73 @@ function generateDocumentId(clientName = 'UnknownClient', company = 'UnknownComp
   const timestamp = Date.now().toString().slice(-5);
 
   return `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
+}
+
+// Helper function to track daily user logins
+async function trackDailyLogin(userId, loginMethod = 'email', userEmail = null) {
+  try {
+    if (!db) {
+      console.warn('⚠️ Cannot track daily login: Database not available');
+      return;
+    }
+
+    // Get user email if not provided
+    let email = userEmail;
+    if (!email) {
+      const user = await db.collection('users').findOne({ id: userId });
+      if (user) {
+        email = user.email;
+      } else {
+        email = 'unknown@example.com';
+      }
+    }
+
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date();
+    const dateString = today.toISOString().split('T')[0]; // e.g., "2024-01-15"
+
+    const dailyLoginsCollection = db.collection('daily_logins');
+
+    // Find or create today's login record
+    const todayRecord = await dailyLoginsCollection.findOne({ date: dateString });
+
+    if (todayRecord) {
+      // Update existing record - add user ID and email if not already present
+      if (!todayRecord.user_ids.includes(userId)) {
+        await dailyLoginsCollection.updateOne(
+          { date: dateString },
+          {
+            $addToSet: { 
+              user_ids: userId,
+              user_emails: email // Store email alongside user ID
+            },
+            $set: {
+              count: todayRecord.user_ids.length + 1,
+              updated_at: new Date()
+            }
+          }
+        );
+        console.log(`✅ Tracked daily login for user ${userId} (${email}) on ${dateString}`);
+      } else {
+        console.log(`ℹ️ User ${userId} (${email}) already logged in today (${dateString})`);
+      }
+    } else {
+      // Create new record for today
+      await dailyLoginsCollection.insertOne({
+        date: dateString,
+        user_ids: [userId],
+        user_emails: [email], // Store email alongside user ID
+        count: 1,
+        login_methods: [loginMethod],
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+      console.log(`✅ Created daily login record for ${dateString} with user ${userId} (${email})`);
+    }
+  } catch (error) {
+    console.error('❌ Error tracking daily login:', error);
+    // Don't throw - login should still succeed even if tracking fails
+  }
 }
 
 // Initialize database on startup
@@ -879,6 +952,9 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Track daily login
+    await trackDailyLogin(user.id, 'email', user.email);
+
     // Return user without password
     const { password: _, ...userWithoutPassword } = user;
 
@@ -1000,6 +1076,9 @@ app.post('/api/auth/microsoft', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Track daily login
+    await trackDailyLogin(user.id, 'microsoft', user.email);
+
     // Return user without password
     const { password: _, ...userWithoutPassword } = user;
 
@@ -1014,6 +1093,106 @@ app.post('/api/auth/microsoft', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to process Microsoft authentication',
+      error: error.message
+    });
+  }
+});
+
+// Get daily login statistics
+app.get('/api/auth/daily-logins', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot retrieve login statistics without database connection'
+      });
+    }
+
+    const { startDate, endDate, limit = 30 } = req.query;
+    
+    const dailyLoginsCollection = db.collection('daily_logins');
+    let query = {};
+
+    // Filter by date range if provided
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = startDate;
+      if (endDate) query.date.$lte = endDate;
+    }
+
+    // Get daily login records, sorted by date (newest first)
+    const records = await dailyLoginsCollection
+      .find(query)
+      .sort({ date: -1 })
+      .limit(parseInt(limit))
+      .toArray();
+
+    // Get user details for each login record
+    const usersCollection = db.collection('users');
+    const recordsWithUserDetails = await Promise.all(
+      records.map(async (record) => {
+        // Use stored emails if available, otherwise fetch from users collection
+        const userEmails = record.user_emails || [];
+        const userDetails = await Promise.all(
+          record.user_ids.map(async (userId, index) => {
+            // Try to get email from stored array first
+            const storedEmail = userEmails[index] || null;
+            
+            // Fetch user details for additional info
+            const user = await usersCollection.findOne({ id: userId });
+            return user ? {
+              id: user.id,
+              email: storedEmail || user.email,
+              name: user.name || 'N/A',
+              provider: user.provider || 'email'
+            } : { 
+              id: userId, 
+              email: storedEmail || 'Unknown', 
+              name: 'Unknown User', 
+              provider: 'N/A' 
+            };
+          })
+        );
+        return {
+          date: record.date,
+          count: record.count,
+          user_ids: record.user_ids,
+          user_emails: record.user_emails || [],
+          users: userDetails,
+          created_at: record.created_at,
+          updated_at: record.updated_at
+        };
+      })
+    );
+
+    // Calculate total statistics
+    const totalLogins = records.reduce((sum, record) => sum + record.count, 0);
+    const uniqueUsers = new Set();
+    records.forEach(record => {
+      record.user_ids.forEach(userId => uniqueUsers.add(userId));
+    });
+
+    res.json({
+      success: true,
+      data: {
+        records: recordsWithUserDetails,
+        summary: {
+          total_days: records.length,
+          total_logins: totalLogins,
+          unique_users: uniqueUsers.size,
+          date_range: {
+            start: records.length > 0 ? records[records.length - 1].date : null,
+            end: records.length > 0 ? records[0].date : null
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching daily login statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve login statistics',
       error: error.message
     });
   }
