@@ -119,6 +119,7 @@ interface QuoteGeneratorProps {
     clientEmail: string;
     company: string;
   } | null;
+  selectedExhibits?: string[];
 }
 
 interface ClientInfo {
@@ -138,6 +139,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   hubspotState,
   onSelectHubSpotContact,
   companyInfo,
+  selectedExhibits = [],
   selectedTemplate,
   onClientInfoChange,
   dealData,
@@ -916,7 +918,7 @@ Quote ID: ${quoteData.id}
           '{{data_size_gb}}': (dataSizeGB ?? 0).toString(),
           
           // Pricing breakdown - all costs
-          '{{users_cost}}': formatCurrency(userCost || 0),
+          '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
           '{{user_cost}}': formatCurrency(userCost || 0),
           '{{userCost}}': formatCurrency(userCost || 0),
           '{{price_data}}': formatCurrency(dataCost),
@@ -1037,7 +1039,46 @@ Quote ID: ${quoteData.id}
         const result = await DocxTemplateProcessor.processDocxTemplate(selectedTemplate.file as File, templateData);
         if (result.success && result.processedDocx) {
           agreementBlob = result.processedDocx;
-          setProcessedAgreement(result.processedDocx);
+          
+          // Merge selected exhibits ONLY for Multi combination migration type
+          if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+            console.log('📎 Fetching and merging selected exhibits for Multi combination email...', selectedExhibits);
+            
+            try {
+              // Fetch all exhibit files
+              const exhibitBlobs: Blob[] = [];
+              
+              for (const exhibitId of selectedExhibits) {
+                console.log(`📎 Fetching exhibit: ${exhibitId}`);
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
+                
+                if (response.ok) {
+                  const blob = await response.blob();
+                  exhibitBlobs.push(blob);
+                  console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
+                } else {
+                  console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
+                }
+              }
+              
+              if (exhibitBlobs.length > 0) {
+                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into email document...`);
+                const { mergeDocxFiles } = await import('../utils/docxMerger');
+                
+                agreementBlob = await mergeDocxFiles(agreementBlob, exhibitBlobs);
+                
+                console.log('✅ Exhibits merged successfully for email!', {
+                  totalExhibits: exhibitBlobs.length,
+                  finalSize: agreementBlob.size
+                });
+              }
+            } catch (mergeError) {
+              console.error('❌ Error merging exhibits for email:', mergeError);
+              // Continue with main document without exhibits
+            }
+          }
+          
+          setProcessedAgreement(agreementBlob);
         } else {
           alert('Failed to generate the agreement. Please try again.');
           setIsEmailingAgreement(false);
@@ -2801,7 +2842,7 @@ Total Price: {{total price}}`;
           })(),
           
           // Pricing breakdown - all costs
-          '{{users_cost}}': formatCurrency(userCost || 0),
+          '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
           '{{user_cost}}': formatCurrency(userCost || 0),
           '{{userCost}}': formatCurrency(userCost || 0),
           '{{price_data}}': formatCurrency(dataCost),
@@ -3205,6 +3246,45 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             console.log('📊 Tokens replaced:', result.tokensReplaced || 0);
           console.log('📄 Processed DOCX size:', result.processedDocx.size, 'bytes');
           console.log('📄 Processed DOCX type:', result.processedDocx.type);
+          
+          // Merge selected exhibits ONLY for Multi combination migration type
+          if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+            console.log('📎 Fetching and merging selected exhibits for Multi combination...', selectedExhibits);
+            
+            try {
+              // Fetch all exhibit files
+              const exhibitBlobs: Blob[] = [];
+              
+              for (const exhibitId of selectedExhibits) {
+                console.log(`📎 Fetching exhibit: ${exhibitId}`);
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
+                
+                if (response.ok) {
+                  const blob = await response.blob();
+                  exhibitBlobs.push(blob);
+                  console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
+                } else {
+                  console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
+                }
+              }
+              
+              if (exhibitBlobs.length > 0) {
+                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into document...`);
+                const { mergeDocxFiles } = await import('../utils/docxMerger');
+                
+                processedDocument = await mergeDocxFiles(processedDocument, exhibitBlobs);
+                
+                console.log('✅ Exhibits merged successfully!', {
+                  totalExhibits: exhibitBlobs.length,
+                  finalSize: processedDocument.size
+                });
+              }
+            } catch (mergeError) {
+              console.error('❌ Error merging exhibits:', mergeError);
+              // Don't fail the whole generation, just warn the user
+              alert('⚠️ Warning: Some exhibits could not be attached to the document. The main document was generated successfully.');
+            }
+          }
         } else {
           console.error('❌ DOCX processing failed:', result.error);
           throw new Error(result.error || 'Failed to process DOCX template');

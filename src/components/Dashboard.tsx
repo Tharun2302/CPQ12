@@ -68,6 +68,8 @@ interface DashboardProps {
   handleUseDealData: (dealData: any) => void;
   handleSignatureFormComplete: (signatureData: any, approvalStatus: string, comments: string) => void;
   getCurrentQuoteData: () => any;
+  selectedExhibits: string[];
+  onExhibitsChange: (exhibitIds: string[]) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -120,7 +122,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   refreshDealData,
   handleUseDealData: originalHandleUseDealData,
   handleSignatureFormComplete,
-  getCurrentQuoteData
+  getCurrentQuoteData,
+  selectedExhibits,
+  onExhibitsChange
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -402,8 +406,10 @@ const Dashboard: React.FC<DashboardProps> = ({
               templates={templates}
               selectedTemplate={selectedTemplate}
               onTemplateSelect={handleTemplateSelect}
+              selectedExhibits={selectedExhibits}
+              onExhibitsChange={onExhibitsChange}
             />
-            
+
             {showPricing && calculations.length > 0 && (
               <PricingComparison
                 calculations={calculations}
@@ -491,6 +497,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             onClientInfoChange={handleClientInfoChange}
             dealData={activeDealData}
             configureContactInfo={configureContactInfo}
+            selectedExhibits={selectedExhibits}
           />
         );
 

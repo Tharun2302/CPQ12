@@ -69,56 +69,71 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       return calc.tier.name === 'Advanced';
     }
     
-    // For Content migration: hide Basic plan for specific combinations
-    if (configuration?.migrationType === 'Content') {
-      const combination = configuration?.combination;
-      const hideBasicPlan = combination === 'dropbox-to-sharepoint' || 
-                            combination === 'dropbox-to-onedrive' ||
-                            combination === 'dropbox-to-google' ||
-                            combination === 'dropbox-to-microsoft' ||
-                            combination === 'dropbox-to-box' ||
-                            combination === 'dropbox-to-egnyte' ||
-                            combination === 'box-to-box' ||
-                            combination === 'box-to-google-mydrive' ||
-                            combination === 'box-to-google-sharedrive' ||
-                            combination === 'box-to-onedrive' ||
-                            combination === 'box-to-microsoft' ||
-                            combination === 'box-to-google' ||
-                            combination === 'google-sharedrive-to-egnyte' ||
-                            combination === 'google-sharedrive-to-google-sharedrive' ||
-                            combination === 'google-sharedrive-to-onedrive' ||
-                            combination === 'google-sharedrive-to-sharepoint' ||
-                            combination === 'google-mydrive-to-dropbox' ||
-                            combination === 'google-mydrive-to-egnyte' ||
-                            combination === 'google-mydrive-to-onedrive' ||
-                            combination === 'google-mydrive-to-sharepoint' ||
-                            combination === 'google-mydrive-to-google-sharedrive' ||
-                            combination === 'google-mydrive-to-google-mydrive' ||
-                            combination === 'sharefile-to-google-mydrive' ||
-                            combination === 'sharefile-to-google-sharedrive' ||
-                            combination === 'sharefile-to-onedrive' ||
-                            combination === 'sharefile-to-sharepoint' ||
-                            combination === 'sharefile-to-sharefile' ||
-                            combination === 'egnyte-to-google-sharedrive' ||
-                            combination === 'egnyte-to-sharepoint-online' ||
-                            combination === 'egnyte-to-google-mydrive' ||
-                            combination === 'egnyte-to-onedrive' ||
-                            combination === 'nfs-to-google' ||
-                            combination === 'egnyte-to-google' ||
-                            combination === 'egnyte-to-microsoft' ||
-                            combination === 'nfs-to-microsoft';
-      
-      // Hide Basic plan for specific combinations (SharePoint, OneDrive, all Box combinations, and all Google SharedDrive combinations)
-      if (hideBasicPlan && calc.tier.name === 'Basic') {
-        return false;
-      }
-      
-      // Show all 3 plans (Basic, Standard, Advanced) for other Content combinations
-      return calc.tier.name === 'Basic' || calc.tier.name === 'Standard' || calc.tier.name === 'Advanced';
+    // Filter plans based on combination value (works for Content, Multi combination, and Messaging)
+    const combination = configuration?.combination;
+    
+    // Define which combinations should hide Basic plan
+    const hideBasicPlan = combination === 'dropbox-to-sharepoint' || 
+                          combination === 'dropbox-to-onedrive' ||
+                          combination === 'dropbox-to-google' ||
+                          combination === 'dropbox-to-microsoft' ||
+                          combination === 'dropbox-to-box' ||
+                          combination === 'dropbox-to-egnyte' ||
+                          combination === 'box-to-box' ||
+                          combination === 'box-to-dropbox' ||
+                          combination === 'box-to-google-mydrive' ||
+                          combination === 'box-to-google-sharedrive' ||
+                          combination === 'box-to-onedrive' ||
+                          combination === 'box-to-microsoft' ||
+                          combination === 'box-to-google' ||
+                          combination === 'google-sharedrive-to-egnyte' ||
+                          combination === 'google-sharedrive-to-google-sharedrive' ||
+                          combination === 'google-sharedrive-to-onedrive' ||
+                          combination === 'google-sharedrive-to-sharepoint' ||
+                          combination === 'google-mydrive-to-dropbox' ||
+                          combination === 'google-mydrive-to-egnyte' ||
+                          combination === 'google-mydrive-to-onedrive' ||
+                          combination === 'google-mydrive-to-sharepoint' ||
+                          combination === 'google-mydrive-to-google-sharedrive' ||
+                          combination === 'google-mydrive-to-google-mydrive' ||
+                          combination === 'sharefile-to-google-mydrive' ||
+                          combination === 'sharefile-to-google-sharedrive' ||
+                          combination === 'sharefile-to-onedrive' ||
+                          combination === 'sharefile-to-sharepoint' ||
+                          combination === 'sharefile-to-sharefile' ||
+                          combination === 'egnyte-to-google-sharedrive' ||
+                          combination === 'egnyte-to-sharepoint-online' ||
+                          combination === 'egnyte-to-google-mydrive' ||
+                          combination === 'egnyte-to-onedrive' ||
+                          combination === 'nfs-to-google' ||
+                          combination === 'egnyte-to-google' ||
+                          combination === 'egnyte-to-microsoft' ||
+                          combination === 'nfs-to-microsoft';
+    
+    // Hide Standard plan for specific combinations (only Basic and Advanced available)
+    const hideStandardPlan = combination === 'box-to-aws-s3';
+    
+    // Check if this is a messaging combination
+    const isMessagingCombination = combination === 'slack-to-teams' || 
+                                   combination === 'slack-to-google-chat';
+    
+    // Hide Basic plan for specific combinations
+    if (hideBasicPlan && calc.tier.name === 'Basic') {
+      return false;
     }
     
-    // For Messaging migration: show only 2 plans (Basic, Advanced)
-    return calc.tier.name === 'Basic' || calc.tier.name === 'Advanced';
+    // Hide Standard plan for specific combinations
+    if (hideStandardPlan && calc.tier.name === 'Standard') {
+      return false;
+    }
+    
+    // For Messaging combinations: show only 2 plans (Basic, Advanced)
+    if (isMessagingCombination) {
+      return calc.tier.name === 'Basic' || calc.tier.name === 'Advanced';
+    }
+    
+    // For Content combinations and others: show all 3 plans (Basic, Standard, Advanced)
+    return calc.tier.name === 'Basic' || calc.tier.name === 'Standard' || calc.tier.name === 'Advanced';
   });
 
   // Helper function to apply discount calculations

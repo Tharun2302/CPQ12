@@ -265,6 +265,48 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'box', 'content', 'migration', 'enterprise']
     },
+    // BOX TO DROPBOX templates (Standard & Advanced only)
+    {
+      name: 'BOX TO DROPBOX Standard',
+      description: 'Standard template for Box to Dropbox migration - suitable for medium to large projects',
+      fileName: 'box-to-dropbox-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-dropbox',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'dropbox', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO DROPBOX Advanced',
+      description: 'Advanced template for Box to Dropbox migration - suitable for large enterprise projects',
+      fileName: 'box-to-dropbox-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-dropbox',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'dropbox', 'content', 'migration', 'enterprise']
+    },
+    // BOX TO AWS S3 templates (Basic & Advanced only)
+    {
+      name: 'BOX TO AWS S3 Basic',
+      description: 'Basic template for Box to AWS S3 migration - suitable for small to medium projects',
+      fileName: 'box-to-aws-s3-basic.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-aws-s3',
+      planType: 'basic',
+      keywords: ['basic', 'box', 'aws', 's3', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO AWS S3 Advanced',
+      description: 'Advanced template for Box to AWS S3 migration - suitable for large enterprise projects',
+      fileName: 'box-to-aws-s3-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-aws-s3',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'aws', 's3', 'content', 'migration', 'enterprise']
+    },
     // BOX TO GOOGLE MYDRIVE templates (Standard & Advanced only)
     {
       name: 'BOX TO GOOGLE MYDRIVE Standard',
@@ -873,6 +915,17 @@ async function seedDefaultTemplates(db) {
       combination: 'overage-agreement',
       planType: 'overage',
       keywords: ['overage', 'agreement', 'content']
+    },
+    // MULTI COMBINATION - Universal template for Multi combination migration type
+    {
+      name: 'Multi Combination',
+      description: 'Universal template for Multi combination migrations (supports all combinations)',
+      fileName: 'multi combiantion.docx',
+      isDefault: false,
+      category: 'multi',
+      combination: 'multi-combination',
+      planType: 'multi',
+      keywords: ['multi', 'combination', 'universal', 'all']
     }
   ];
 

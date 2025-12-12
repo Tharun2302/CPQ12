@@ -34,6 +34,7 @@ function App() {
   const [selectedTier, setSelectedTier] = useState<PricingCalculation | null>(null);
   const [showPricing, setShowPricing] = useState(false);
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(PRICING_TIERS);
+  const [selectedExhibits, setSelectedExhibits] = useState<string[]>([]);
 
   // Initialize Microsoft Clarity (production only) - Defer to improve LCP
   useEffect(() => {
@@ -1187,10 +1188,11 @@ function App() {
       
       // Only reset pricing state if core configuration fields have changed
       // Don't reset for date-only changes
-      // CRITICAL FIX: Allow overage agreement even with 0 users
+      // CRITICAL FIX: Allow overage agreement and multi combination even with 0 users
       const hasCoreConfig = configuration.migrationType && (
         configuration.numberOfUsers > 0 || 
-        configuration.combination === 'overage-agreement'
+        configuration.combination === 'overage-agreement' ||
+        configuration.migrationType === 'Multi combination'
       );
       
       if (hasCoreConfig) {
@@ -1225,6 +1227,13 @@ function App() {
     if (migrationTypeChanged) {
       console.log('🔄 Migration type changed, resetting pricing display');
       setShowPricing(false);
+      
+      // Clear exhibits if switching away from Multi combination
+      if (config.migrationType !== 'Multi combination') {
+        console.log('🔄 Migration type changed from Multi combination, clearing exhibits');
+        setSelectedExhibits([]);
+        localStorage.removeItem('cpq_selected_exhibits');
+      }
     }
     
     // If combination changed, trigger template re-selection
@@ -1257,6 +1266,27 @@ function App() {
     setShowPricing(true);
   };
 
+  // Exhibit change handler
+  const handleExhibitsChange = useCallback((exhibitIds: string[]) => {
+    setSelectedExhibits(exhibitIds);
+    localStorage.setItem('cpq_selected_exhibits', JSON.stringify(exhibitIds));
+    console.log('📎 Exhibits selection changed:', exhibitIds);
+  }, []);
+
+  // Restore exhibits from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('cpq_selected_exhibits');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setSelectedExhibits(parsed);
+        console.log('♻️ Restored selected exhibits:', parsed);
+      } catch (e) {
+        console.error('Error parsing saved exhibits:', e);
+      }
+    }
+  }, []);
+
   // Auto-select a template based on chosen tier and configuration
   const autoSelectTemplateForPlan = (tierName: string, config?: ConfigurationData): any | null => {
     if (!templates || templates.length === 0) return null;
@@ -1268,6 +1298,31 @@ function App() {
     console.log('🔍 Auto-selecting template for:', { tierName: safeTier, migration, combination, availableTemplates: templates.length });
     console.log('🔍 Full config object:', config);
     console.log('🔍 Available templates:', templates.map(t => ({ name: t.name, planType: t.planType, combination: t.combination, category: t.category })));
+
+    // PRIORITY -1: Special handling for MULTI COMBINATION migration type
+    if (config?.migrationType === 'Multi combination') {
+      console.log('🎯 MULTI COMBINATION migration type detected - selecting universal template');
+      const multiMatches = templates.filter(t => {
+        const templateCombination = (t?.combination || '').toLowerCase();
+        const matchesMulti = templateCombination === 'multi-combination';
+        
+        console.log('🎯 Multi Combination matching:', {
+          templateName: t?.name,
+          templateCombination,
+          matchesMulti
+        });
+        
+        return matchesMulti;
+      });
+      
+      if (multiMatches.length > 0) {
+        console.log('✅ Found MULTI COMBINATION template:', multiMatches[0].name);
+        return multiMatches[0];
+      } else {
+        console.log('❌ No MULTI COMBINATION template found');
+        return null;
+      }
+    }
 
     // PRIORITY 0: Special handling for OVERAGE AGREEMENT (must check BEFORE planType matching)
     if (combination === 'overage-agreement') {
@@ -1348,6 +1403,8 @@ function App() {
       const isDropboxToOneDrive = name.includes('dropbox') && name.includes('onedrive');
       const isDropboxToBox = name.includes('dropbox') && name.includes('box');
       const isDropboxToEgnyte = name.includes('dropbox') && name.includes('egnyte');
+      const isBoxToDropbox = name.includes('box') && name.includes('dropbox');
+      const isBoxToAwsS3 = name.includes('box') && name.includes('aws') && name.includes('s3');
       const isEgnyteToGoogleSharedDrive = name.includes('egnyte') && name.includes('google') && name.includes('sharedrive');
       const isEgnyteToSharePointOnline = name.includes('egnyte') && name.includes('sharepoint');
       const isEgnyteToGoogleMyDrive = name.includes('egnyte') && name.includes('mydrive');
@@ -1373,6 +1430,8 @@ function App() {
         (combination === 'dropbox-to-google' && name.includes('dropbox') && name.includes('google') && !name.includes('mydrive') && !name.includes('sharedrive')) ||
         (combination === 'dropbox-to-microsoft' && name.includes('dropbox') && name.includes('microsoft')) ||
         (combination === 'box-to-box' && name.includes('box') && name.includes('box')) ||
+        (combination === 'box-to-dropbox' && isBoxToDropbox) ||
+        (combination === 'box-to-aws-s3' && isBoxToAwsS3) ||
         (combination === 'box-to-google-mydrive' && name.includes('box') && name.includes('google') && name.includes('mydrive')) ||
         (combination === 'box-to-google-sharedrive' && name.includes('box') && name.includes('google') && name.includes('sharedrive')) ||
         (combination === 'box-to-onedrive' && name.includes('box') && name.includes('onedrive') && !name.includes('dropbox')) ||
@@ -1422,7 +1481,9 @@ function App() {
           isDropboxToSharePoint ||
           isDropboxToOneDrive ||
           isDropboxToBox ||
-          isDropboxToEgnyte) &&
+          isDropboxToEgnyte ||
+          isBoxToDropbox ||
+          isBoxToAwsS3) &&
         matchesPlan &&
         matchesCombination
       );
@@ -1874,9 +1935,11 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                     handleSignatureFormComplete={handleSignatureFormComplete}
-                     getCurrentQuoteData={getCurrentQuoteData}
-                   />
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                    selectedExhibits={selectedExhibits}
+                    onExhibitsChange={handleExhibitsChange}
+                  />
                  </ProtectedRoute>
                }
              />
@@ -1934,9 +1997,11 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                     handleSignatureFormComplete={handleSignatureFormComplete}
-                     getCurrentQuoteData={getCurrentQuoteData}
-                   />
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                    selectedExhibits={selectedExhibits}
+                    onExhibitsChange={handleExhibitsChange}
+                  />
                  </ProtectedRoute>
                }
              />
@@ -1994,9 +2059,11 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                     handleSignatureFormComplete={handleSignatureFormComplete}
-                     getCurrentQuoteData={getCurrentQuoteData}
-                   />
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                    selectedExhibits={selectedExhibits}
+                    onExhibitsChange={handleExhibitsChange}
+                  />
                  </ProtectedRoute>
                }
              />
@@ -2054,9 +2121,11 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                     handleSignatureFormComplete={handleSignatureFormComplete}
-                     getCurrentQuoteData={getCurrentQuoteData}
-                   />
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                    selectedExhibits={selectedExhibits}
+                    onExhibitsChange={handleExhibitsChange}
+                  />
                  </ProtectedRoute>
                }
              />
@@ -2114,9 +2183,11 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                     handleSignatureFormComplete={handleSignatureFormComplete}
-                     getCurrentQuoteData={getCurrentQuoteData}
-                   />
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                    selectedExhibits={selectedExhibits}
+                    onExhibitsChange={handleExhibitsChange}
+                  />
                  </ProtectedRoute>
                }
              />
@@ -2174,9 +2245,11 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                     handleSignatureFormComplete={handleSignatureFormComplete}
-                     getCurrentQuoteData={getCurrentQuoteData}
-                   />
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                    selectedExhibits={selectedExhibits}
+                    onExhibitsChange={handleExhibitsChange}
+                  />
                  </ProtectedRoute>
                }
              />

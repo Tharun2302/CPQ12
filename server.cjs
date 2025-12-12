@@ -147,12 +147,17 @@ async function initializeDatabase() {
     if (shouldSeedTemplates) {
       try {
         const { seedDefaultTemplates } = require('./seed-templates.cjs');
+        const { seedDefaultExhibits } = require('./seed-exhibits.cjs');
+        
+        console.log('🌱 Seeding templates and exhibits...');
         await seedDefaultTemplates(db);
+        await seedDefaultExhibits(db);
+        console.log('✅ Seeding complete');
       } catch (error) {
-        console.log('⚠️ Template seeding skipped due to error:', error.message);
+        console.log('⚠️ Template/exhibit seeding skipped due to error:', error.message);
       }
     } else {
-      console.log('⏭️ Skipping template seeding on startup (SEED_TEMPLATES_ON_STARTUP not set to true)');
+      console.log('⏭️ Skipping template/exhibit seeding on startup (SEED_TEMPLATES_ON_STARTUP not set to true)');
       console.log('💡 Tip: Set SEED_TEMPLATES_ON_STARTUP=true in .env to auto-sync backend template changes');
     }
     console.log('✅ MongoDB Atlas ping successful');
@@ -171,7 +176,7 @@ async function initializeDatabase() {
     console.log('✅ Daily logins collection ready with indexes');
 
     // Ensure collections exist
-    const collections = ['signature_forms', 'quotes', 'templates', 'pricing_tiers'];
+    const collections = ['signature_forms', 'quotes', 'templates', 'pricing_tiers', 'exhibits'];
     for (const collectionName of collections) {
       try {
         await db.createCollection(collectionName);
@@ -1806,6 +1811,114 @@ app.get('/api/templates/:id/file', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to fetch template file',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
+// EXHIBITS API ENDPOINTS
+// ============================================
+
+// Get all exhibits (with optional filters)
+app.get('/api/exhibits', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available'
+      });
+    }
+
+    const { combination, category } = req.query;
+    
+    console.log('📎 Fetching exhibits from database...');
+    console.log('   Filters:', { combination, category });
+
+    const query = {};
+    
+    // Filter by category if provided
+    if (category) {
+      query.category = category;
+    }
+
+    // Fetch all exhibits (without fileData for listing)
+    const exhibitsCursor = db.collection('exhibits')
+      .find(query, {
+        projection: {
+          fileData: 0, // Exclude large binary data
+        }
+      })
+      .sort({ displayOrder: 1, name: 1 });
+
+    let exhibits = await exhibitsCursor.toArray();
+
+    // Filter by combination on the backend
+    if (combination) {
+      exhibits = exhibits.filter(exhibit => 
+        exhibit.combinations.includes('all') || 
+        exhibit.combinations.includes(combination)
+      );
+    }
+
+    console.log(`✅ Fetched ${exhibits.length} exhibits for combination: ${combination}`);
+
+    res.json({
+      success: true,
+      exhibits,
+      count: exhibits.length
+    });
+  } catch (error) {
+    console.error('❌ Error fetching exhibits:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch exhibits',
+      details: error.message 
+    });
+  }
+});
+
+// Get single exhibit file by ID
+app.get('/api/exhibits/:id/file', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+
+    console.log(`📎 Fetching exhibit file: ${id}`);
+
+    const exhibit = await db.collection('exhibits').findOne({
+      _id: new ObjectId(id)
+    });
+
+    if (!exhibit) {
+      return res.status(404).json({
+        success: false,
+        error: 'Exhibit not found'
+      });
+    }
+
+    // Convert base64 to buffer
+    const fileBuffer = Buffer.from(exhibit.fileData, 'base64');
+
+    res.setHeader('Content-Type', exhibit.fileType);
+    res.setHeader('Content-Disposition', `attachment; filename="${exhibit.fileName}"`);
+    res.setHeader('Content-Length', fileBuffer.length);
+    
+    console.log(`✅ Exhibit file sent: ${exhibit.fileName}`);
+    res.send(fileBuffer);
+
+  } catch (error) {
+    console.error('❌ Error fetching exhibit file:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch exhibit file',
       details: error.message 
     });
   }

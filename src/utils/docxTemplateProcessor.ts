@@ -943,14 +943,15 @@ export class DocxTemplateProcessor {
       '{{usersCost}}': userCost,
       
       // Per-user cost variations - fixed to match pricing display
-      '{{per_user_cost}}': (data as any)['{{per_user_cost}}'] || ((data as any)['{{users_cost}}'] ? 
-        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / parseInt(userCount)).toFixed(2) : '0.00'),
-      '{{per_user_monthly_cost}}': (data as any)['{{per_user_monthly_cost}}'] || ((data as any)['{{users_cost}}'] ? 
-        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
-      '{{user_rate}}': (data as any)['{{user_rate}}'] || ((data as any)['{{users_cost}}'] ? 
-        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / parseInt(userCount)).toFixed(2) : '0.00'),
-      '{{monthly_user_rate}}': (data as any)['{{monthly_user_rate}}'] || ((data as any)['{{users_cost}}'] ? 
-        (parseFloat(((data as any)['{{users_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
+      // NOTE: Use {{user_cost}} (not {{users_cost}}) because {{users_cost}} now includes data cost
+      '{{per_user_cost}}': (data as any)['{{per_user_cost}}'] || ((data as any)['{{user_cost}}'] ? 
+        (parseFloat(((data as any)['{{user_cost}}'] as string).replace(/[$,]/g, '')) / parseInt(userCount)).toFixed(2) : '0.00'),
+      '{{per_user_monthly_cost}}': (data as any)['{{per_user_monthly_cost}}'] || ((data as any)['{{user_cost}}'] ? 
+        (parseFloat(((data as any)['{{user_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
+      '{{user_rate}}': (data as any)['{{user_rate}}'] || ((data as any)['{{user_cost}}'] ? 
+        (parseFloat(((data as any)['{{user_cost}}'] as string).replace(/[$,]/g, '')) / parseInt(userCount)).toFixed(2) : '0.00'),
+      '{{monthly_user_rate}}': (data as any)['{{monthly_user_rate}}'] || ((data as any)['{{user_cost}}'] ? 
+        (parseFloat(((data as any)['{{user_cost}}'] as string).replace(/[$,]/g, '')) / (parseInt(userCount) * parseInt(duration))).toFixed(2) : '0.00'),
       
       // Duration variations
       '{{Duration of months}}': duration,

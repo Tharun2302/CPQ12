@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
+import ExhibitSelector from './ExhibitSelector';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
   onSubmit: () => void;
+  selectedExhibits: string[];
+  onExhibitsChange: (exhibitIds: string[]) => void;
   dealData?: {
     dealId?: string;
     dealName?: string;
@@ -24,6 +27,8 @@ interface ConfigurationFormProps {
 const ConfigurationForm: React.FC<ConfigurationFormProps> = ({ 
   onConfigurationChange, 
   onSubmit, 
+  selectedExhibits,
+  onExhibitsChange,
   dealData, 
   onContactInfoChange,
   templates = [],
@@ -115,6 +120,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'dropbox-to-box': 'DROPBOX TO BOX',
       'dropbox-to-egnyte': 'DROPBOX TO EGNYTE',
       'box-to-box': 'BOX TO BOX',
+      'box-to-dropbox': 'BOX TO DROPBOX',
+      'box-to-aws-s3': 'BOX TO AWS S3',
       'box-to-microsoft': 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'box-to-google': 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)',
       'google-sharedrive-to-egnyte': 'GOOGLE SHARED DRIVE TO EGNYTE',
@@ -296,10 +303,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   useEffect(() => {
     if (contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) {
       const parentContactInfo = {
-        clientName: contactInfo.clientName,
-        clientEmail: contactInfo.clientEmail,
-        company: contactInfo.company,
-        companyName2: contactInfo.companyName2 || contactInfo.company
+        clientName: contactInfo.clientName || '',
+        clientEmail: contactInfo.clientEmail || '',
+        company: contactInfo.company || '',
+        companyName2: contactInfo.companyName2 || contactInfo.company || ''
       };
       console.log('✅ ConfigurationForm: Syncing contact info to parent (user edited or deal data):', parentContactInfo);
       
@@ -446,7 +453,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     
     // Also notify parent component
     if (onContactInfoChange) {
-      onContactInfoChange(newContactInfo);
+      onContactInfoChange({
+        clientName: newContactInfo.clientName || '',
+        clientEmail: newContactInfo.clientEmail || '',
+        company: newContactInfo.company || '',
+        companyName2: newContactInfo.companyName2 || newContactInfo.company || ''
+      });
     }
   };
 
@@ -507,7 +519,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       return;
     }
     
-    if (!config.combination) {
+    // Skip combination check for Multi combination migration type
+    if (!config.combination && config.migrationType !== 'Multi combination') {
       alert('Please select a combination');
       return;
     }
@@ -569,12 +582,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     
     // Messages is REQUIRED for Messaging (must be > 0). Prevent pricing if missing/zero.
     if (config.migrationType === 'Messaging' && config.combination !== 'overage-agreement') {
-      if (config.messages === undefined || config.messages === null || config.messages <= 0) {
+      const messages = config.messages ?? 0;
+      if (messages <= 0) {
         if (!fieldTouched.messages) {
           alert('Please enter the number of messages for Messaging migration');
           return;
         }
-        if (config.messages <= 0) {
+        if (messages <= 0) {
           alert('Please enter the number of messages (minimum 1)');
           return;
         }
@@ -709,10 +723,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     // Notify parent component
                     if (onContactInfoChange) {
                       onContactInfoChange({
-                        clientName: newContactInfo.clientName,
-                        clientEmail: newContactInfo.clientEmail,
-                        company: newContactInfo.company,
-                        companyName2: newContactInfo.companyName2 || newContactInfo.company
+                        clientName: newContactInfo.clientName || '',
+                        clientEmail: newContactInfo.clientEmail || '',
+                        company: newContactInfo.company || '',
+                        companyName2: newContactInfo.companyName2 || newContactInfo.company || ''
                       });
                     }
                   }}
@@ -778,10 +792,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     // Notify parent component
                     if (onContactInfoChange) {
                       onContactInfoChange({
-                        clientName: newContactInfo.clientName,
-                        clientEmail: newContactInfo.clientEmail,
-                        company: newContactInfo.company,
-                        companyName2: newContactInfo.companyName2 || newContactInfo.company
+                        clientName: newContactInfo.clientName || '',
+                        clientEmail: newContactInfo.clientEmail || '',
+                        company: newContactInfo.company || '',
+                        companyName2: newContactInfo.companyName2 || newContactInfo.company || ''
                       });
                     }
                   }}
@@ -848,10 +862,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     // Notify parent component
                     if (onContactInfoChange) {
                       onContactInfoChange({
-                        clientName: newContactInfo.clientName,
-                        clientEmail: newContactInfo.clientEmail,
-                        company: newContactInfo.company,
-                        companyName2: newContactInfo.companyName2 || newContactInfo.company
+                        clientName: newContactInfo.clientName || '',
+                        clientEmail: newContactInfo.clientEmail || '',
+                        company: newContactInfo.company || '',
+                        companyName2: newContactInfo.companyName2 || newContactInfo.company || ''
                       });
                     }
                   }}
@@ -912,7 +926,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               <select
                 value={config.migrationType}
                 onChange={(e) => {
-                  const newMigrationType = e.target.value as 'Messaging' | 'Content' | 'Overage Agreement';
+                  const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Overage Agreement';
                   console.log(`🔄 Migration type changing from "${config.migrationType}" to "${newMigrationType}"`);
                   
                   // Create new config with updated migration type and cleared combination
@@ -942,6 +956,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
               >
                 <option value="">Select Migration Type</option>
+                <option value="Multi combination">Multi combination</option>
                 <option value="Messaging">Messaging</option>
                 <option value="Content">Content</option>
                 <option value="Overage Agreement">Overage</option>
@@ -949,8 +964,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           </div>
 
-          {/* Template Selection - Show when migration type is selected */}
-          {config.migrationType && (
+          {/* Template Selection - Show when migration type is selected (except Multi combination) */}
+          {config.migrationType && config.migrationType !== 'Multi combination' && (
             <div data-section="template-selection" className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-lg border border-purple-200 p-8">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -1019,6 +1034,51 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       }}
                     >
                       <option value="">Select Combination</option>
+                      {/* Multi combination - shows all combinations */}
+                      {config.migrationType === 'Multi combination' && (() => {
+                        const allCombinations = [
+                          // Messaging
+                          { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
+                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
+                          // Content
+                          { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
+                          { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
+                          { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
+                          { value: 'box-to-box', label: 'BOX TO BOX' },
+                          { value: 'box-to-dropbox', label: 'BOX TO DROPBOX' },
+                          { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
+                          { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
+                          { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
+                          { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
+                          { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
+                          { value: 'google-sharedrive-to-sharepoint', label: 'GOOGLE SHARED DRIVE TO SHAREPOINT' },
+                          { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
+                          { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
+                          { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
+                          { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
+                          { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
+                          { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
+                          { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
+                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
+                          { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
+                          { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
+                          { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
+                          { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
+                          { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
+                        ];
+                        
+                        const filtered = allCombinations.filter(combo => 
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
+                        
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
                       {/* Messaging combinations */}
                       {config.migrationType === 'Messaging' && (() => {
                         const messagingCombinations = [
@@ -1042,6 +1102,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
                           { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
                           { value: 'box-to-box', label: 'BOX TO BOX' },
+                          { value: 'box-to-dropbox', label: 'BOX TO DROPBOX' },
+                          { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
                           { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                           { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                           { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
@@ -1103,6 +1165,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
                             { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
                             { value: 'box-to-box', label: 'BOX TO BOX' },
+                            { value: 'box-to-dropbox', label: 'BOX TO DROPBOX' },
+                            { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
                             { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                             { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                             { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
@@ -1128,9 +1192,18 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                        const overageCombinations = [
                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                        ];
+                       const multiCombinations = [
+                         // Messaging
+                         { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
+                         { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
+                         // Content
+                         ...contentCombinations
+                       ];
 
                           let allCombinations: { value: string; label: string }[] = [];
-                          if (config.migrationType === 'Messaging') {
+                          if (config.migrationType === 'Multi combination') {
+                            allCombinations = multiCombinations;
+                          } else if (config.migrationType === 'Messaging') {
                             allCombinations = messagingCombinations;
                           } else if (config.migrationType === 'Content') {
                             allCombinations = contentCombinations;
@@ -1181,8 +1254,19 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
+          {/* Exhibits selection - ONLY show for Multi combination migration type */}
+          {config.migrationType === 'Multi combination' && (
+            <div data-section="exhibits-selection">
+              <ExhibitSelector
+                combination={config.combination || 'multi-combination'}
+                selectedExhibits={selectedExhibits}
+                onExhibitsChange={onExhibitsChange}
+              />
+            </div>
+          )}
+
           {/* Other Configuration Fields - Conditional Rendering */}
-          {config.migrationType && config.combination && (
+          {config.migrationType && (config.combination || config.migrationType === 'Multi combination') && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
@@ -1314,8 +1398,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             )}
 
-                {/* Data Size - Show for Content, Hide for Messaging and overage agreement */}
-                {config.migrationType === 'Content' && config.combination !== 'overage-agreement' && (
+                {/* Data Size - Show for Content and Multi combination, Hide for Messaging and overage agreement */}
+                {(config.migrationType === 'Content' || config.migrationType === 'Multi combination') && config.combination !== 'overage-agreement' && (
                   <div className="group md:col-span-2">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
@@ -1401,8 +1485,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
                 </div>
 
-                {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
-                {config.migrationType === 'Messaging' && config.combination !== 'overage-agreement' && (
+                {/* Messages Field - Show for Messaging and Multi combination, Hide for Content and overage agreement */}
+                {(config.migrationType === 'Messaging' || config.migrationType === 'Multi combination') && config.combination !== 'overage-agreement' && (
                   <div className="group">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
@@ -1432,8 +1516,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Calculate Pricing Button - Show only after combination is selected */}
-          {config.migrationType && config.combination && (
+          {/* Calculate Pricing Button - Show after combination is selected, or for Multi combination type */}
+          {config.migrationType && (config.combination || config.migrationType === 'Multi combination') && (
             <>
               <button
                 type="submit"
