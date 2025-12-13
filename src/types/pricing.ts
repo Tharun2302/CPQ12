@@ -41,6 +41,21 @@ export interface ConfigurationData {
   startDate?: string;
   endDate?: string;
   combination?: string;
+  // Multi combination specific configs
+  messagingConfig?: {
+    numberOfUsers: number;
+    instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
+    numberOfInstances: number;
+    duration: number;
+    messages: number;
+  };
+  contentConfig?: {
+    numberOfUsers: number;
+    instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
+    numberOfInstances: number;
+    duration: number;
+    dataSizeGB: number;
+  };
 }
 
 export interface PricingCalculation {
@@ -50,6 +65,21 @@ export interface PricingCalculation {
   instanceCost: number;
   totalCost: number;
   tier: PricingTier;
+  // Multi combination separate calculations
+  messagingCalculation?: {
+    userCost: number;
+    dataCost: number;
+    migrationCost: number;
+    instanceCost: number;
+    totalCost: number;
+  };
+  contentCalculation?: {
+    userCost: number;
+    dataCost: number;
+    migrationCost: number;
+    instanceCost: number;
+    totalCost: number;
+  };
 }
 
 export interface DealData {

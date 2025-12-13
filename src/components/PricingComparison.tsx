@@ -254,8 +254,82 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               </div>
 
               <div className="space-y-4 mb-8">
-                {/* For OVERAGE AGREEMENT: Show special message + instance cost only */}
-                {configuration?.combination === 'overage-agreement' ? (
+                {/* For MULTI COMBINATION: Show separate Messaging + Content breakdowns */}
+                {configuration?.migrationType === 'Multi combination' && (calc.messagingCalculation || calc.contentCalculation) ? (
+                  <>
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
+                      <p className="text-sm text-purple-800 font-bold text-center">
+                        🔀 Multi Combination Pricing Breakdown
+                      </p>
+                    </div>
+
+                    {/* Messaging Section */}
+                    {calc.messagingCalculation && (
+                      <div className="border-2 border-teal-200 bg-teal-50/50 rounded-lg p-4 mb-4">
+                        <h4 className="font-bold text-teal-900 mb-3 flex items-center gap-2">
+                          <span className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs">M</span>
+                          Messaging Migration
+                        </h4>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-700">User Cost:</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.userCost)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-700">Migration Cost:</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.migrationCost)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-700">Instance Cost:</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.instanceCost)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm bg-teal-100 rounded p-2 mt-2">
+                            <span className="font-bold text-teal-900">Messaging Total:</span>
+                            <span className="font-bold text-teal-900">{formatCurrency(calc.messagingCalculation.totalCost)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Content Section */}
+                    {calc.contentCalculation && (
+                      <div className="border-2 border-indigo-200 bg-indigo-50/50 rounded-lg p-4 mb-4">
+                        <h4 className="font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                          <span className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white text-xs">C</span>
+                          Content Migration
+                        </h4>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-700">User Cost:</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.userCost)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-700">Data Cost:</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.dataCost)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-700">Migration Cost:</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.migrationCost)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-700">Instance Cost:</span>
+                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.instanceCost)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm bg-indigo-100 rounded p-2 mt-2">
+                            <span className="font-bold text-indigo-900">Content Total:</span>
+                            <span className="font-bold text-indigo-900">{formatCurrency(calc.contentCalculation.totalCost)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Combined Total */}
+                    <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
+                      <span className="font-bold text-purple-900">Combined Total:</span>
+                      <span className="font-bold text-2xl text-purple-900">{formatCurrency(calc.totalCost)}</span>
+                    </div>
+                  </>
+                ) : configuration?.combination === 'overage-agreement' ? (
                   <>
                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
                       <p className="text-sm text-purple-800 font-medium text-center">

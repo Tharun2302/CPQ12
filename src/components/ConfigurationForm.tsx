@@ -43,7 +43,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     migrationType: '' as any, // Start with empty to hide other fields
     dataSizeGB: 0,
     messages: 0,
-    combination: ''
+    combination: '',
+    messagingConfig: undefined,
+    contentConfig: undefined
   });
 
   // Contact information state - start with undefined so fields can fall back to dealData initially
@@ -76,6 +78,64 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     dataSize: false,
     messages: false
   });
+
+  // State to track which exhibit categories are selected (for Multi combination)
+  const [selectedExhibitCategories, setSelectedExhibitCategories] = useState<{
+    hasMessaging: boolean;
+    hasContent: boolean;
+    hasEmail: boolean;
+  }>({ hasMessaging: false, hasContent: false, hasEmail: false });
+
+  // Dynamically detect which exhibit categories are selected (for Multi combination)
+  useEffect(() => {
+    const fetchExhibitsAndCategorize = async () => {
+      if (config.migrationType !== 'Multi combination' || selectedExhibits.length === 0) {
+        setSelectedExhibitCategories({ hasMessaging: false, hasContent: false, hasEmail: false });
+        return;
+      }
+
+      try {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.exhibits) {
+            const exhibits = data.exhibits;
+            
+            let hasMessaging = false;
+            let hasContent = false;
+            let hasEmail = false;
+            
+            selectedExhibits.forEach(exhibitId => {
+              const exhibit = exhibits.find((ex: any) => ex._id === exhibitId);
+              if (exhibit) {
+                const category = (exhibit.category || 'content').toLowerCase();
+                if (category === 'messaging' || category === 'message') {
+                  hasMessaging = true;
+                } else if (category === 'content') {
+                  hasContent = true;
+                } else if (category === 'email') {
+                  hasEmail = true;
+                }
+              }
+            });
+            
+            setSelectedExhibitCategories({ hasMessaging, hasContent, hasEmail });
+            console.log('📊 Selected exhibit categories:', { hasMessaging, hasContent, hasEmail });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching exhibits for categorization:', error);
+      }
+    };
+
+    fetchExhibitsAndCategorize();
+  }, [config.migrationType, selectedExhibits]);
+
+  // Propagate config changes to parent whenever config state changes
+  useEffect(() => {
+    onConfigurationChange(config);
+  }, [config]);
   
   // Contact information validation state
   const [contactValidationErrors, setContactValidationErrors] = useState({
@@ -175,6 +235,52 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     cleaned = cleaned.replace(/\d+$/g, ''); // Remove any remaining trailing digits
     return cleaned;
   };
+
+  // Detect exhibit categories when exhibits change (for Multi combination)
+  useEffect(() => {
+    if (config.migrationType !== 'Multi combination' || selectedExhibits.length === 0) {
+      setSelectedExhibitCategories({ hasMessaging: false, hasContent: false, hasEmail: false });
+      return;
+    }
+
+    // Fetch exhibit details to determine categories
+    const fetchExhibitCategories = async () => {
+      try {
+        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.exhibits) {
+            const exhibits = data.exhibits;
+            const selectedExhibitsData = exhibits.filter((ex: any) => selectedExhibits.includes(ex._id));
+            
+            const hasMessaging = selectedExhibitsData.some((ex: any) => 
+              (ex.category || 'content').toLowerCase() === 'messaging' || 
+              (ex.category || 'content').toLowerCase() === 'message'
+            );
+            const hasContent = selectedExhibitsData.some((ex: any) => 
+              (ex.category || 'content').toLowerCase() === 'content'
+            );
+            const hasEmail = selectedExhibitsData.some((ex: any) => 
+              (ex.category || 'content').toLowerCase() === 'email'
+            );
+
+            setSelectedExhibitCategories({ hasMessaging, hasContent, hasEmail });
+            console.log('📊 Selected exhibit categories:', { hasMessaging, hasContent, hasEmail });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching exhibit categories:', error);
+      }
+    };
+
+    fetchExhibitCategories();
+  }, [selectedExhibits, config.migrationType]);
+
+  // Propagate config changes including multi configs
+  useEffect(() => {
+    onConfigurationChange(config);
+  }, [config.messagingConfig, config.contentConfig]);
 
   // Initialize contact info from deal data
   useEffect(() => {
@@ -519,8 +625,44 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       return;
     }
     
+    // Multi combination validation
+    if (config.migrationType === 'Multi combination') {
+      // Require at least one Message or Content exhibit
+      if (!selectedExhibitCategories.hasMessaging && !selectedExhibitCategories.hasContent) {
+        alert('Please select at least one Message or Content exhibit to proceed.');
+        return;
+      }
+      
+      // Validate Messaging section if present
+      if (selectedExhibitCategories.hasMessaging) {
+        if (!config.messagingConfig || config.messagingConfig.numberOfUsers <= 0) {
+          alert('Please enter number of users for Messaging configuration');
+          return;
+        }
+        if (!config.messagingConfig.duration || config.messagingConfig.duration <= 0) {
+          alert('Please enter duration for Messaging configuration');
+          return;
+        }
+      }
+      
+      // Validate Content section if present
+      if (selectedExhibitCategories.hasContent) {
+        if (!config.contentConfig || config.contentConfig.numberOfUsers <= 0) {
+          alert('Please enter number of users for Content configuration');
+          return;
+        }
+        if (!config.contentConfig.dataSizeGB || config.contentConfig.dataSizeGB <= 0) {
+          alert('Please enter data size for Content configuration');
+          return;
+        }
+        if (!config.contentConfig.duration || config.contentConfig.duration <= 0) {
+          alert('Please enter duration for Content configuration');
+          return;
+        }
+      }
+    }
     // Skip combination check for Multi combination migration type
-    if (!config.combination && config.migrationType !== 'Multi combination') {
+    else if (!config.combination) {
       alert('Please select a combination');
       return;
     }
@@ -1265,8 +1407,353 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Other Configuration Fields - Conditional Rendering */}
-          {config.migrationType && (config.combination || config.migrationType === 'Multi combination') && (
+          {/* MULTI COMBINATION: Show separate sections for Messaging and Content */}
+          {config.migrationType === 'Multi combination' && selectedExhibits.length > 0 && (
+            <>
+              {/* Show warning if only Email exhibits selected */}
+              {!selectedExhibitCategories.hasMessaging && !selectedExhibitCategories.hasContent && selectedExhibitCategories.hasEmail && (
+                <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 mb-8">
+                  <p className="text-yellow-800 text-center font-semibold">
+                    ⚠️ Select at least one Message or Content exhibit to configure pricing.
+                  </p>
+                  <p className="text-yellow-700 text-center text-sm mt-2">
+                    Email exhibits will be included as attachments, but pricing requires Messaging or Content migrations.
+                  </p>
+                </div>
+              )}
+
+              {/* Messaging Project Configuration Section */}
+              {selectedExhibitCategories.hasMessaging && (
+                <div data-section="messaging-configuration" className="bg-gradient-to-br from-teal-50 via-cyan-50 to-blue-50 rounded-2xl shadow-2xl border-2 border-teal-200 p-8 backdrop-blur-sm mb-8">
+                  <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <MessageSquare className="w-8 h-8 text-white" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Messaging Project Configuration</h3>
+                    <p className="text-gray-600">Configure your messaging migration requirements</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Messaging: Number of Users */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Users className="w-4 h-4 text-white" />
+                        </div>
+                        Number of Users
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.messagingConfig?.numberOfUsers || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            messagingConfig: {
+                              ...(prev.messagingConfig || { instanceType: 'Small', numberOfInstances: 0, duration: 0, messages: 0 }),
+                              numberOfUsers: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                        placeholder="Enter number of users"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Messaging: Instance Type */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Server className="w-4 h-4 text-white" />
+                        </div>
+                        Instance Type
+                      </label>
+                      <select
+                        value={config.messagingConfig?.instanceType || 'Small'}
+                        onChange={(e) => {
+                          setConfig(prev => ({
+                            ...prev,
+                            messagingConfig: {
+                              ...(prev.messagingConfig || { numberOfUsers: 0, numberOfInstances: 0, duration: 0, messages: 0 }),
+                              instanceType: e.target.value as any
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                      >
+                        <option value="Small">Small</option>
+                        <option value="Standard">Standard</option>
+                        <option value="Large">Large</option>
+                        <option value="Extra Large">Extra Large</option>
+                      </select>
+                    </div>
+
+                    {/* Messaging: Number of Instances */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Server className="w-4 h-4 text-white" />
+                        </div>
+                        Number of Instances
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.messagingConfig?.numberOfInstances || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            messagingConfig: {
+                              ...(prev.messagingConfig || { numberOfUsers: 0, instanceType: 'Small', duration: 0, messages: 0 }),
+                              numberOfInstances: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                        placeholder="Enter number of instances"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Messaging: Duration */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Clock className="w-4 h-4 text-white" />
+                        </div>
+                        Duration (Months)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={config.messagingConfig?.duration || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            messagingConfig: {
+                              ...(prev.messagingConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, messages: 0 }),
+                              duration: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                        placeholder="Enter duration"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Messaging: Messages (required) */}
+                    <div className="group md:col-span-2">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <MessageSquare className="w-4 h-4 text-white" />
+                        </div>
+                        Messages
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.messagingConfig?.messages || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            messagingConfig: {
+                              ...(prev.messagingConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, duration: 0 }),
+                              messages: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                        placeholder="Enter number of messages"
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">Number of messages for the messaging migration.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Content Project Configuration Section */}
+              {selectedExhibitCategories.hasContent && (
+                <div data-section="content-configuration" className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-2xl shadow-2xl border-2 border-indigo-200 p-8 backdrop-blur-sm mb-8">
+                  <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Database className="w-8 h-8 text-white" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Content Project Configuration</h3>
+                    <p className="text-gray-600">Configure your content migration requirements</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Content: Number of Users */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Users className="w-4 h-4 text-white" />
+                        </div>
+                        Number of Users
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.contentConfig?.numberOfUsers || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            contentConfig: {
+                              ...(prev.contentConfig || { instanceType: 'Small', numberOfInstances: 0, duration: 0, dataSizeGB: 0 }),
+                              numberOfUsers: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
+                        placeholder="Enter number of users"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Content: Instance Type */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Server className="w-4 h-4 text-white" />
+                        </div>
+                        Instance Type
+                      </label>
+                      <select
+                        value={config.contentConfig?.instanceType || 'Small'}
+                        onChange={(e) => {
+                          setConfig(prev => ({
+                            ...prev,
+                            contentConfig: {
+                              ...(prev.contentConfig || { numberOfUsers: 0, numberOfInstances: 0, duration: 0, dataSizeGB: 0 }),
+                              instanceType: e.target.value as any
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
+                      >
+                        <option value="Small">Small</option>
+                        <option value="Standard">Standard</option>
+                        <option value="Large">Large</option>
+                        <option value="Extra Large">Extra Large</option>
+                      </select>
+                    </div>
+
+                    {/* Content: Number of Instances */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Server className="w-4 h-4 text-white" />
+                        </div>
+                        Number of Instances
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.contentConfig?.numberOfInstances || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            contentConfig: {
+                              ...(prev.contentConfig || { numberOfUsers: 0, instanceType: 'Small', duration: 0, dataSizeGB: 0 }),
+                              numberOfInstances: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
+                        placeholder="Enter number of instances"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Content: Duration */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Clock className="w-4 h-4 text-white" />
+                        </div>
+                        Duration (Months)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={config.contentConfig?.duration || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            contentConfig: {
+                              ...(prev.contentConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, dataSizeGB: 0 }),
+                              duration: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
+                        placeholder="Enter duration"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Content: Data Size (required) */}
+                    <div className="group md:col-span-2">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Database className="w-4 h-4 text-white" />
+                        </div>
+                        Data Size (GB)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.contentConfig?.dataSizeGB || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            contentConfig: {
+                              ...(prev.contentConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, duration: 0 }),
+                              dataSizeGB: numValue
+                            }
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
+                        placeholder="Enter data size in GB"
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">Total data size for the content migration.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* OTHER MIGRATION TYPES: Standard single configuration */}
+          {config.migrationType && config.migrationType !== 'Multi combination' && (config.combination || config.migrationType === 'Multi combination') && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
@@ -1516,8 +2003,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Calculate Pricing Button - Show after combination is selected, or for Multi combination type */}
-          {config.migrationType && (config.combination || config.migrationType === 'Multi combination') && (
+          {/* Calculate Pricing Button */}
+          {/* For Multi combination: show if at least one section is active */}
+          {/* For other types: show after combination is selected */}
+          {config.migrationType && (
+            config.migrationType === 'Multi combination' 
+              ? (selectedExhibitCategories.hasMessaging || selectedExhibitCategories.hasContent)
+              : config.combination
+          ) && (
             <>
               <button
                 type="submit"
