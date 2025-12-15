@@ -290,7 +290,8 @@ This is an automated message from your approval system.
   generateApprovalLink(role: 'Manager' | 'CEO', workflowId: string, token?: string): string {
     // Use window.location.origin for browser compatibility
     const baseUrl = window.location.origin;
-    const rolePath = role === 'Manager' ? 'manager-approval' : 'ceo-approval';
+    // Updated paths: Manager -> Technical Team, CEO -> Legal Team
+    const rolePath = role === 'Manager' ? 'technical-approval' : 'legal-approval';
     
     if (token) {
       return `${baseUrl}/${rolePath}?token=${token}&workflow=${workflowId}`;
