@@ -15,14 +15,24 @@ async function seedDefaultExhibits(db) {
   const defaultExhibits = [
     // Messaging exhibits
     {
-      name: 'Slack to Teams Basic Plan',
-      description: 'Basic plan documentation for Slack to Teams migration',
-      fileName: 'exhibit-slack-to-teams-basic-plan.docx',
+      name: 'Slack to Teams Basic Plan - Included Features',
+      description: 'Documentation for features included in Slack to Teams Basic Plan migration',
+      fileName: 'slack-to-teams-basic-plan-included.docx',
       combinations: ['slack-to-teams'],
       category: 'messaging',
       isRequired: false,
       displayOrder: 1,
-      keywords: ['slack', 'teams', 'messaging', 'basic']
+      keywords: ['slack', 'teams', 'messaging', 'basic', 'included', 'features']
+    },
+    {
+      name: 'Slack to Teams Basic Plan - Not Included Features',
+      description: 'Documentation for features not included in Slack to Teams Basic Plan migration',
+      fileName: 'slack-to-teams-basic-plan-notincluded.docx',
+      combinations: ['slack-to-teams'],
+      category: 'messaging',
+      isRequired: false,
+      displayOrder: 2,
+      keywords: ['slack', 'teams', 'messaging', 'basic', 'not included', 'features', 'limitations']
     },
     // Google MyDrive to MyDrive exhibits
     {
@@ -36,6 +46,48 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 1,
       keywords: ['google', 'mydrive', 'compliance', 'security']
+    },
+    // ShareFile to Google Shared Drive exhibits
+    {
+      name: 'ShareFile to Google Shared Drive Advanced Plan - Included Features',
+      description: 'Documentation for features included in ShareFile to Google Shared Drive Advanced Plan migration',
+      fileName: 'sharefile-to-google-sharedrive-advanced-plan-included.docx',
+      combinations: ['sharefile-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 1,
+      keywords: ['sharefile', 'google', 'sharedrive', 'advanced', 'included', 'features']
+    },
+    {
+      name: 'ShareFile to Google Shared Drive Advanced Plan - Not Included Features',
+      description: 'Documentation for features not included in ShareFile to Google Shared Drive Advanced Plan migration',
+      fileName: 'sharefile-to-google-sharedrive-advanced-plan-notincluded.docx',
+      combinations: ['sharefile-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 2,
+      keywords: ['sharefile', 'google', 'sharedrive', 'advanced', 'not included', 'features', 'limitations']
+    },
+    // OneDrive to OneDrive exhibits
+    {
+      name: 'OneDrive to OneDrive Standard Plan - Included Features',
+      description: 'Documentation for features included in OneDrive to OneDrive Standard Plan migration',
+      fileName: 'OneDrive to OneDrive Standard Plan - Included Features.docx',
+      combinations: ['onedrive-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 1,
+      keywords: ['onedrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'OneDrive to OneDrive Standard Plan - Not Included Features',
+      description: 'Documentation for features not included in OneDrive to OneDrive Standard Plan migration',
+      fileName: 'onedrive-to-onedrive-standard-plan-notincluded.docx.docx',
+      combinations: ['onedrive-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 2,
+      keywords: ['onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // NFS to Google MyDrive exhibits
     {

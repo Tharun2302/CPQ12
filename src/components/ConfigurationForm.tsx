@@ -667,72 +667,75 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       return;
     }
     
-    // Require users field to be entered (0 allowed, but check value first, then touch status)
-    if (config.combination !== 'overage-agreement') {
-      // If value exists and is valid, accept it (even if not touched - e.g., loaded from sessionStorage)
-      if (config.numberOfUsers === undefined || config.numberOfUsers === null) {
-        // Value is missing - check if field was touched
-        if (!fieldTouched.users) {
-          alert('Please enter the number of users');
+    // For single migration types, validate base fields; Multi combination uses per-section validation above.
+    if (config.migrationType !== 'Multi combination') {
+      // Require users field to be entered (0 allowed, but check value first, then touch status)
+      if (config.combination !== 'overage-agreement') {
+        // If value exists and is valid, accept it (even if not touched - e.g., loaded from sessionStorage)
+        if (config.numberOfUsers === undefined || config.numberOfUsers === null) {
+          // Value is missing - check if field was touched
+          if (!fieldTouched.users) {
+            alert('Please enter the number of users');
+            return;
+          }
+        }
+        // Check if value is negative
+        if (config.numberOfUsers < 0) {
+          alert('Please enter the number of users (minimum 0)');
           return;
         }
       }
-      // Check if value is negative
-      if (config.numberOfUsers < 0) {
-        alert('Please enter the number of users (minimum 0)');
-        return;
-      }
-    }
-    
-    // Check instances: if value exists and is valid, accept it; otherwise check touch status
-    if (config.numberOfInstances === undefined || config.numberOfInstances === null || config.numberOfInstances < 1) {
-      if (!fieldTouched.instances) {
-        alert('Please enter the number of instances (minimum 1)');
-        return;
-      }
-      if (config.numberOfInstances < 1) {
-        alert('Please enter the number of instances (minimum 1)');
-        return;
-      }
-    }
-    
-    // Check duration: if value exists and is valid, accept it; otherwise check touch status
-    if (config.duration === undefined || config.duration === null || config.duration < 1) {
-      if (!fieldTouched.duration) {
-        alert('Please enter project duration in months');
-        return;
-      }
-      if (config.duration < 1) {
-        alert('Please enter project duration (minimum 1 month)');
-        return;
-      }
-    }
-    
-    // Data size is REQUIRED for Content (must be > 0). Prevent pricing if missing/zero.
-    if (config.migrationType === 'Content' && config.combination !== 'overage-agreement') {
-      if (config.dataSizeGB === undefined || config.dataSizeGB === null || config.dataSizeGB <= 0) {
-        if (!fieldTouched.dataSize) {
-          alert('Please enter data size in GB for Content migration');
+      
+      // Check instances: if value exists and is valid, accept it; otherwise check touch status
+      if (config.numberOfInstances === undefined || config.numberOfInstances === null || config.numberOfInstances < 1) {
+        if (!fieldTouched.instances) {
+          alert('Please enter the number of instances (minimum 1)');
           return;
         }
-        if (config.dataSizeGB <= 0) {
-          alert('Please enter data size in GB for Content migration (minimum 1 GB)');
+        if (config.numberOfInstances < 1) {
+          alert('Please enter the number of instances (minimum 1)');
           return;
         }
       }
-    }
-    
-    // Messages is REQUIRED for Messaging (must be > 0). Prevent pricing if missing/zero.
-    if (config.migrationType === 'Messaging' && config.combination !== 'overage-agreement') {
-      const messages = config.messages ?? 0;
-      if (messages <= 0) {
-        if (!fieldTouched.messages) {
-          alert('Please enter the number of messages for Messaging migration');
+      
+      // Check duration: if value exists and is valid, accept it; otherwise check touch status
+      if (config.duration === undefined || config.duration === null || config.duration < 1) {
+        if (!fieldTouched.duration) {
+          alert('Please enter project duration in months');
           return;
         }
+        if (config.duration < 1) {
+          alert('Please enter project duration (minimum 1 month)');
+          return;
+        }
+      }
+      
+      // Data size is REQUIRED for Content (must be > 0). Prevent pricing if missing/zero.
+      if (config.migrationType === 'Content' && config.combination !== 'overage-agreement') {
+        if (config.dataSizeGB === undefined || config.dataSizeGB === null || config.dataSizeGB <= 0) {
+          if (!fieldTouched.dataSize) {
+            alert('Please enter data size in GB for Content migration');
+            return;
+          }
+          if (config.dataSizeGB <= 0) {
+            alert('Please enter data size in GB for Content migration (minimum 1 GB)');
+            return;
+          }
+        }
+      }
+      
+      // Messages is REQUIRED for Messaging (must be > 0). Prevent pricing if missing/zero.
+      if (config.migrationType === 'Messaging' && config.combination !== 'overage-agreement') {
+        const messages = config.messages ?? 0;
         if (messages <= 0) {
-          alert('Please enter the number of messages (minimum 1)');
-          return;
+          if (!fieldTouched.messages) {
+            alert('Please enter the number of messages for Messaging migration');
+            return;
+          }
+          if (messages <= 0) {
+            alert('Please enter the number of messages (minimum 1)');
+            return;
+          }
         }
       }
     }

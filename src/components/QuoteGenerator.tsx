@@ -1048,13 +1048,88 @@ Quote ID: ${quoteData.id}
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
               
-              for (const exhibitId of selectedExhibits) {
+              // Sort exhibits: Included first, then Not Included
+              // Within each group: sort by category (messaging first, then content) and displayOrder
+              const sortExhibits = async (ids: string[]) => {
+                try {
+                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+                  if (!metaResp.ok) return ids;
+                  const metaData = await metaResp.json();
+                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
+                  
+                  // Separate into Included and Not Included
+                  const included: Array<{id: string, exhibit: any}> = [];
+                  const notIncluded: Array<{id: string, exhibit: any}> = [];
+                  
+                  ids.forEach((id) => {
+                    const ex = lookup.get(id) as any;
+                    if (!ex) return;
+                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                    const isNotIncluded = text.includes('not included');
+                    if (isNotIncluded) {
+                      notIncluded.push({ id, exhibit: ex });
+                    } else {
+                      included.push({ id, exhibit: ex });
+                    }
+                  });
+                  
+                  // Sort within each group: category (messaging first, then content), then displayOrder
+                  const categoryOrder = (cat: string) => {
+                    const normalized = (cat || 'content').toLowerCase();
+                    if (normalized === 'messaging' || normalized === 'message') return 1;
+                    if (normalized === 'content') return 2;
+                    return 3; // email or others
+                  };
+                  
+                  included.sort((a, b) => {
+                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                    if (catDiff !== 0) return catDiff;
+                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                  });
+                  
+                  notIncluded.sort((a, b) => {
+                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                    if (catDiff !== 0) return catDiff;
+                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                  });
+                  
+                  // Return: All Included first, then All Not Included
+                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+                } catch {
+                  return ids;
+                }
+              };
+
+              const sortedExhibits = await sortExhibits(selectedExhibits);
+
+              // Fetch exhibit metadata for grouping
+              const exhibitMetadata: Array<{ name: string; category?: string }> = [];
+              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+              let allExhibits: any[] = [];
+              if (metaResp.ok) {
+                const metaData = await metaResp.json();
+                if (metaData.success && metaData.exhibits) {
+                  allExhibits = metaData.exhibits;
+                }
+              }
+
+              for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
                 
                 if (response.ok) {
                   const blob = await response.blob();
                   exhibitBlobs.push(blob);
+                  
+                  // Get exhibit metadata
+                  const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                  if (exhibit) {
+                    exhibitMetadata.push({
+                      name: exhibit.name || '',
+                      category: exhibit.category || ''
+                    });
+                  }
+                  
                   console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
                 } else {
                   console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
@@ -1065,7 +1140,7 @@ Quote ID: ${quoteData.id}
                 console.log(`📎 Merging ${exhibitBlobs.length} exhibits into email document...`);
                 const { mergeDocxFiles } = await import('../utils/docxMerger');
                 
-                agreementBlob = await mergeDocxFiles(agreementBlob, exhibitBlobs);
+                agreementBlob = await mergeDocxFiles(agreementBlob, exhibitBlobs, exhibitMetadata);
                 
                 console.log('✅ Exhibits merged successfully for email!', {
                   totalExhibits: exhibitBlobs.length,
@@ -2960,6 +3035,101 @@ Total Price: {{total price}}`;
           '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
         };
         
+        // For Multi combination: Determine migration names from selected exhibits
+        if (configuration?.migrationType === 'Multi combination' && selectedExhibits && selectedExhibits.length > 0) {
+          try {
+            console.log('🔍 Fetching exhibit details to determine migration names...');
+            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            if (exhibitResponse.ok) {
+              const exhibitData = await exhibitResponse.json();
+              if (exhibitData.success && exhibitData.exhibits) {
+                const exhibits = exhibitData.exhibits;
+                
+                // Helper function to get combination label
+                const getCombinationLabel = (combinationValue: string): string => {
+                  const labels: Record<string, string> = {
+                    'slack-to-teams': 'SLACK TO TEAMS',
+                    'slack-to-google-chat': 'SLACK TO GOOGLE CHAT',
+                    'sharefile-to-google-sharedrive': 'SHAREFILE TO GOOGLE SHARED DRIVE',
+                    'sharefile-to-google-mydrive': 'SHAREFILE TO GOOGLE MYDRIVE',
+                    'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
+                    'sharefile-to-sharepoint': 'SHAREFILE TO SHAREPOINT',
+                    'sharefile-to-sharefile': 'SHAREFILE TO SHAREFILE',
+                    'google-mydrive-to-google-mydrive': 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE',
+                    'google-mydrive-to-google-sharedrive': 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE',
+                    'google-sharedrive-to-onedrive': 'GOOGLE SHARED DRIVE TO ONEDRIVE',
+                    'google-sharedrive-to-sharepoint': 'GOOGLE SHARED DRIVE TO SHAREPOINT',
+                    'google-sharedrive-to-google-sharedrive': 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE',
+                    'box-to-google-mydrive': 'BOX TO GOOGLE MYDRIVE',
+                    'box-to-google-sharedrive': 'BOX TO GOOGLE SHARED DRIVE',
+                    'box-to-onedrive': 'BOX TO ONEDRIVE',
+                    'box-to-sharepoint': 'BOX TO SHAREPOINT',
+                    'dropbox-to-google-mydrive': 'DROPBOX TO GOOGLE MYDRIVE',
+                    'dropbox-to-google-sharedrive': 'DROPBOX TO GOOGLE SHARED DRIVE',
+                    'dropbox-to-onedrive': 'DROPBOX TO ONEDRIVE',
+                    'dropbox-to-sharepoint': 'DROPBOX TO SHAREPOINT',
+                    'egnyte-to-google': 'EGNYTE TO GOOGLE',
+                    'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT',
+                    'nfs-to-google': 'NFS TO GOOGLE',
+                    'nfs-to-microsoft': 'NFS TO MICROSOFT',
+                    'overage-agreement': 'OVERAGE AGREEMENT'
+                  };
+                  return labels[combinationValue.toLowerCase()] || combinationValue.toUpperCase();
+                };
+                
+                let messagingMigrationName = '';
+                let contentMigrationName = '';
+                
+                // Check each selected exhibit
+                for (const exhibitId of selectedExhibits) {
+                  const exhibit = exhibits.find((ex: any) => ex._id === exhibitId);
+                  if (exhibit) {
+                    const category = (exhibit.category || 'content').toLowerCase();
+                    const combinations = exhibit.combinations || [];
+                    
+                    // Find the first non-'all' combination
+                    const combination = combinations.find((c: string) => c !== 'all');
+                    
+                    if (combination) {
+                      const label = getCombinationLabel(combination);
+                      
+                      if ((category === 'messaging' || category === 'message') && !messagingMigrationName) {
+                        messagingMigrationName = label;
+                      } else if (category === 'content' && !contentMigrationName) {
+                        contentMigrationName = label;
+                      }
+                    }
+                  }
+                }
+                
+                // Add migration name tokens to templateData
+                templateData['{{messaging_migration_name}}'] = messagingMigrationName || '';
+                templateData['{{content_migration_name}}'] = contentMigrationName || '';
+                templateData['{{messagingMigrationName}}'] = messagingMigrationName || '';
+                templateData['{{contentMigrationName}}'] = contentMigrationName || '';
+                
+                console.log('✅ Migration names determined:', {
+                  messaging: messagingMigrationName,
+                  content: contentMigrationName
+                });
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error determining migration names from exhibits:', error);
+            // Set empty values as fallback
+            templateData['{{messaging_migration_name}}'] = '';
+            templateData['{{content_migration_name}}'] = '';
+            templateData['{{messagingMigrationName}}'] = '';
+            templateData['{{contentMigrationName}}'] = '';
+          }
+        } else {
+          // For non-multi-combination, set empty values
+          templateData['{{messaging_migration_name}}'] = '';
+          templateData['{{content_migration_name}}'] = '';
+          templateData['{{messagingMigrationName}}'] = '';
+          templateData['{{contentMigrationName}}'] = '';
+        }
+        
         console.log('🔍 TEMPLATE DATA CREATED:');
         console.log('  Template data keys:', Object.keys(templateData));
         console.log('  Template data values:', Object.values(templateData));
@@ -3255,13 +3425,88 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
               
-              for (const exhibitId of selectedExhibits) {
+              // Sort exhibits: Included first, then Not Included
+              // Within each group: sort by category (messaging first, then content) and displayOrder
+              const sortExhibits = async (ids: string[]) => {
+                try {
+                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+                  if (!metaResp.ok) return ids;
+                  const metaData = await metaResp.json();
+                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
+                  
+                  // Separate into Included and Not Included
+                  const included: Array<{id: string, exhibit: any}> = [];
+                  const notIncluded: Array<{id: string, exhibit: any}> = [];
+                  
+                  ids.forEach((id) => {
+                    const ex = lookup.get(id) as any;
+                    if (!ex) return;
+                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                    const isNotIncluded = text.includes('not included');
+                    if (isNotIncluded) {
+                      notIncluded.push({ id, exhibit: ex });
+                    } else {
+                      included.push({ id, exhibit: ex });
+                    }
+                  });
+                  
+                  // Sort within each group: category (messaging first, then content), then displayOrder
+                  const categoryOrder = (cat: string) => {
+                    const normalized = (cat || 'content').toLowerCase();
+                    if (normalized === 'messaging' || normalized === 'message') return 1;
+                    if (normalized === 'content') return 2;
+                    return 3; // email or others
+                  };
+                  
+                  included.sort((a, b) => {
+                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                    if (catDiff !== 0) return catDiff;
+                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                  });
+                  
+                  notIncluded.sort((a, b) => {
+                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                    if (catDiff !== 0) return catDiff;
+                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                  });
+                  
+                  // Return: All Included first, then All Not Included
+                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+                } catch {
+                  return ids;
+                }
+              };
+
+              const sortedExhibits = await sortExhibits(selectedExhibits);
+
+              // Fetch exhibit metadata for grouping
+              const exhibitMetadata: Array<{ name: string; category?: string }> = [];
+              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+              let allExhibits: any[] = [];
+              if (metaResp.ok) {
+                const metaData = await metaResp.json();
+                if (metaData.success && metaData.exhibits) {
+                  allExhibits = metaData.exhibits;
+                }
+              }
+
+              for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
                 
                 if (response.ok) {
                   const blob = await response.blob();
                   exhibitBlobs.push(blob);
+                  
+                  // Get exhibit metadata
+                  const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                  if (exhibit) {
+                    exhibitMetadata.push({
+                      name: exhibit.name || '',
+                      category: exhibit.category || ''
+                    });
+                  }
+                  
                   console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
                 } else {
                   console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
@@ -3272,7 +3517,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 console.log(`📎 Merging ${exhibitBlobs.length} exhibits into document...`);
                 const { mergeDocxFiles } = await import('../utils/docxMerger');
                 
-                processedDocument = await mergeDocxFiles(processedDocument, exhibitBlobs);
+                processedDocument = await mergeDocxFiles(processedDocument, exhibitBlobs, exhibitMetadata);
                 
                 console.log('✅ Exhibits merged successfully!', {
                   totalExhibits: exhibitBlobs.length,
