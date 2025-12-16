@@ -856,7 +856,8 @@ Quote ID: ${quoteData.id}
         const companyName = (configureContactInfo?.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Your Company');
         const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '' || companyName === 'Demo Company Inc.') ? 'Your Company' : companyName;
         // Multi combination: top-level fields may be empty; prefer section-specific config
-        const isMultiCombination = configuration?.migrationType === 'Multi combination';
+        const normalizedMigrationType = (configuration?.migrationType || '').toString().trim().toLowerCase();
+        const isMultiCombination = normalizedMigrationType === 'multi combination';
         const userCount =
           (isMultiCombination
             ? (configuration?.contentConfig?.numberOfUsers ?? configuration?.messagingConfig?.numberOfUsers)
@@ -872,10 +873,15 @@ Quote ID: ${quoteData.id}
         const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
         // For DOC preview/email tokens: show both durations when in Multi combination mode
         // (template text usually already contains the word "Months", so we don't append it here).
-        const durationDisplayForTemplate =
-          isMultiCombination && contentDurationMonths > 0 && messagingDurationMonths > 0
-            ? `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`
-            : duration.toString();
+        const durationDisplayForTemplate = (() => {
+          if (!isMultiCombination) return duration.toString();
+          if (contentDurationMonths > 0 && messagingDurationMonths > 0) {
+            return `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`;
+          }
+          if (contentDurationMonths > 0) return `${contentDurationMonths} (Content)`;
+          if (messagingDurationMonths > 0) return `${messagingDurationMonths} (Messaging)`;
+          return duration.toString();
+        })();
         const migrationType = configuration?.migrationType || 'Content';
         const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
         const clientEmail = clientInfo.clientEmail || dealData?.contactEmail || 'contact@email.com';
@@ -908,7 +914,7 @@ Quote ID: ${quoteData.id}
         let messagingMigrationName = '';
         let contentMigrationName = '';
         
-        if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+        if (selectedExhibits && selectedExhibits.length > 0 && isMultiCombination) {
           try {
             console.log('📎 Fetching exhibit metadata to generate migration names...');
             const exhibitsResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
@@ -1256,7 +1262,7 @@ Quote ID: ${quoteData.id}
           agreementBlob = result.processedDocx;
           
           // Merge selected exhibits ONLY for Multi combination migration type
-          if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+          if (selectedExhibits && selectedExhibits.length > 0 && isMultiCombination) {
             console.log('📎 Fetching and merging selected exhibits for Multi combination email...', selectedExhibits);
             
             try {
@@ -2800,7 +2806,8 @@ Total Price: {{total price}}`;
         }
         console.log('  Final finalCompanyName:', finalCompanyName);
         // Multi combination: top-level fields may be empty; prefer section-specific config
-        const isMultiCombination = quoteData.configuration?.migrationType === 'Multi combination';
+        const normalizedMigrationType = (quoteData.configuration?.migrationType || '').toString().trim().toLowerCase();
+        const isMultiCombination = normalizedMigrationType === 'multi combination';
         const userCount =
           (isMultiCombination
             ? (quoteData.configuration?.contentConfig?.numberOfUsers ?? quoteData.configuration?.messagingConfig?.numberOfUsers)
@@ -2816,10 +2823,15 @@ Total Price: {{total price}}`;
         const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
         // For DOC preview tokens: show both durations when in Multi combination mode
         // (template text usually already contains the word "Months", so we don't append it here).
-        const durationDisplayForTemplate =
-          isMultiCombination && contentDurationMonths > 0 && messagingDurationMonths > 0
-            ? `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`
-            : duration.toString();
+        const durationDisplayForTemplate = (() => {
+          if (!isMultiCombination) return duration.toString();
+          if (contentDurationMonths > 0 && messagingDurationMonths > 0) {
+            return `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`;
+          }
+          if (contentDurationMonths > 0) return `${contentDurationMonths} (Content)`;
+          if (messagingDurationMonths > 0) return `${messagingDurationMonths} (Messaging)`;
+          return duration.toString();
+        })();
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
         const clientEmail = quoteData.clientEmail || clientInfo.clientEmail || 'demo@example.com';
@@ -2961,7 +2973,7 @@ Total Price: {{total price}}`;
         let messagingMigrationName = '';
         let contentMigrationName = '';
         
-        if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+        if (selectedExhibits && selectedExhibits.length > 0 && isMultiCombination) {
           try {
             console.log('📎 Fetching exhibit metadata to generate migration names (download)...');
             const exhibitsResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
@@ -3656,7 +3668,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.log('📄 Processed DOCX type:', result.processedDocx.type);
           
           // Merge selected exhibits ONLY for Multi combination migration type
-          if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+          if (selectedExhibits && selectedExhibits.length > 0 && isMultiCombination) {
             console.log('📎 Fetching and merging selected exhibits for Multi combination...', selectedExhibits);
             
             try {
