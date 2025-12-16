@@ -3130,6 +3130,181 @@ Total Price: {{total price}}`;
           templateData['{{contentMigrationName}}'] = '';
         }
         
+        // Add Multi combination specific tokens (content_* and messaging_*)
+        if (configuration?.migrationType === 'Multi combination') {
+          // Extract messaging config and calculation
+          const messagingConfig = configuration.messagingConfig;
+          const messagingCalc = (calculation || safeCalculation)?.messagingCalculation;
+          
+          // Extract content config and calculation
+          const contentConfig = configuration.contentConfig;
+          const contentCalc = (calculation || safeCalculation)?.contentCalculation;
+          
+          // Messaging tokens
+          if (messagingConfig) {
+            templateData['{{messaging_users_count}}'] = (messagingConfig.numberOfUsers || 0).toString();
+            templateData['{{messagingUsersCount}}'] = (messagingConfig.numberOfUsers || 0).toString();
+            templateData['{{messaging_number_of_users}}'] = (messagingConfig.numberOfUsers || 0).toString();
+            templateData['{{messaging_number_of_instances}}'] = (messagingConfig.numberOfInstances || 0).toString();
+            templateData['{{messagingNumberOfInstances}}'] = (messagingConfig.numberOfInstances || 0).toString();
+            templateData['{{messaging_instance_type}}'] = messagingConfig.instanceType || 'Standard';
+            templateData['{{messagingInstanceType}}'] = messagingConfig.instanceType || 'Standard';
+            templateData['{{messaging_duration}}'] = (messagingConfig.duration || 0).toString();
+            templateData['{{messagingDuration}}'] = (messagingConfig.duration || 0).toString();
+            templateData['{{messaging_messages}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{messagingMessages}}'] = (messagingConfig.messages || 0).toString();
+          } else {
+            templateData['{{messaging_users_count}}'] = '0';
+            templateData['{{messagingUsersCount}}'] = '0';
+            templateData['{{messaging_number_of_users}}'] = '0';
+            templateData['{{messaging_number_of_instances}}'] = '0';
+            templateData['{{messagingNumberOfInstances}}'] = '0';
+            templateData['{{messaging_instance_type}}'] = '';
+            templateData['{{messagingInstanceType}}'] = '';
+            templateData['{{messaging_duration}}'] = '0';
+            templateData['{{messagingDuration}}'] = '0';
+            templateData['{{messaging_messages}}'] = '0';
+            templateData['{{messagingMessages}}'] = '0';
+          }
+          
+          if (messagingCalc) {
+            templateData['{{messaging_migration_cost}}'] = formatCurrency(messagingCalc.migrationCost || 0);
+            templateData['{{messagingMigrationCost}}'] = formatCurrency(messagingCalc.migrationCost || 0);
+            templateData['{{messaging_user_cost}}'] = formatCurrency(messagingCalc.userCost || 0);
+            templateData['{{messagingUserCost}}'] = formatCurrency(messagingCalc.userCost || 0);
+            templateData['{{messaging_data_cost}}'] = formatCurrency(messagingCalc.dataCost || 0);
+            templateData['{{messagingDataCost}}'] = formatCurrency(messagingCalc.dataCost || 0);
+            templateData['{{messaging_instance_cost}}'] = formatCurrency(messagingCalc.instanceCost || 0);
+            templateData['{{messagingInstanceCost}}'] = formatCurrency(messagingCalc.instanceCost || 0);
+            templateData['{{messaging_total_cost}}'] = formatCurrency(messagingCalc.totalCost || 0);
+            templateData['{{messagingTotalCost}}'] = formatCurrency(messagingCalc.totalCost || 0);
+          } else {
+            templateData['{{messaging_migration_cost}}'] = formatCurrency(0);
+            templateData['{{messagingMigrationCost}}'] = formatCurrency(0);
+            templateData['{{messaging_user_cost}}'] = formatCurrency(0);
+            templateData['{{messagingUserCost}}'] = formatCurrency(0);
+            templateData['{{messaging_data_cost}}'] = formatCurrency(0);
+            templateData['{{messagingDataCost}}'] = formatCurrency(0);
+            templateData['{{messaging_instance_cost}}'] = formatCurrency(0);
+            templateData['{{messagingInstanceCost}}'] = formatCurrency(0);
+            templateData['{{messaging_total_cost}}'] = formatCurrency(0);
+            templateData['{{messagingTotalCost}}'] = formatCurrency(0);
+          }
+          
+          // Content tokens
+          if (contentConfig) {
+            templateData['{{content_users_count}}'] = (contentConfig.numberOfUsers || 0).toString();
+            templateData['{{contentUsersCount}}'] = (contentConfig.numberOfUsers || 0).toString();
+            templateData['{{content_number_of_users}}'] = (contentConfig.numberOfUsers || 0).toString();
+            templateData['{{content_number_of_instances}}'] = (contentConfig.numberOfInstances || 0).toString();
+            templateData['{{contentNumberOfInstances}}'] = (contentConfig.numberOfInstances || 0).toString();
+            templateData['{{content_instance_type}}'] = contentConfig.instanceType || 'Standard';
+            templateData['{{contentInstanceType}}'] = contentConfig.instanceType || 'Standard';
+            templateData['{{content_duration}}'] = (contentConfig.duration || 0).toString();
+            templateData['{{contentDuration}}'] = (contentConfig.duration || 0).toString();
+            templateData['{{content_data_size}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{contentDataSize}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{content_data_size_gb}}'] = (contentConfig.dataSizeGB || 0).toString();
+          } else {
+            templateData['{{content_users_count}}'] = '0';
+            templateData['{{contentUsersCount}}'] = '0';
+            templateData['{{content_number_of_users}}'] = '0';
+            templateData['{{content_number_of_instances}}'] = '0';
+            templateData['{{contentNumberOfInstances}}'] = '0';
+            templateData['{{content_instance_type}}'] = '';
+            templateData['{{contentInstanceType}}'] = '';
+            templateData['{{content_duration}}'] = '0';
+            templateData['{{contentDuration}}'] = '0';
+            templateData['{{content_data_size}}'] = '0';
+            templateData['{{contentDataSize}}'] = '0';
+            templateData['{{content_data_size_gb}}'] = '0';
+          }
+          
+          if (contentCalc) {
+            templateData['{{content_migration_cost}}'] = formatCurrency(contentCalc.migrationCost || 0);
+            templateData['{{contentMigrationCost}}'] = formatCurrency(contentCalc.migrationCost || 0);
+            templateData['{{content_user_cost}}'] = formatCurrency(contentCalc.userCost || 0);
+            templateData['{{contentUserCost}}'] = formatCurrency(contentCalc.userCost || 0);
+            templateData['{{content_data_cost}}'] = formatCurrency(contentCalc.dataCost || 0);
+            templateData['{{contentDataCost}}'] = formatCurrency(contentCalc.dataCost || 0);
+            templateData['{{content_instance_cost}}'] = formatCurrency(contentCalc.instanceCost || 0);
+            templateData['{{contentInstanceCost}}'] = formatCurrency(contentCalc.instanceCost || 0);
+            templateData['{{content_total_cost}}'] = formatCurrency(contentCalc.totalCost || 0);
+            templateData['{{contentTotalCost}}'] = formatCurrency(contentCalc.totalCost || 0);
+          } else {
+            templateData['{{content_migration_cost}}'] = formatCurrency(0);
+            templateData['{{contentMigrationCost}}'] = formatCurrency(0);
+            templateData['{{content_user_cost}}'] = formatCurrency(0);
+            templateData['{{contentUserCost}}'] = formatCurrency(0);
+            templateData['{{content_data_cost}}'] = formatCurrency(0);
+            templateData['{{contentDataCost}}'] = formatCurrency(0);
+            templateData['{{content_instance_cost}}'] = formatCurrency(0);
+            templateData['{{contentInstanceCost}}'] = formatCurrency(0);
+            templateData['{{content_total_cost}}'] = formatCurrency(0);
+            templateData['{{contentTotalCost}}'] = formatCurrency(0);
+          }
+          
+          console.log('✅ Added Multi combination tokens:', {
+            messaging: {
+              users: templateData['{{messaging_users_count}}'],
+              instances: templateData['{{messaging_number_of_instances}}'],
+              instanceType: templateData['{{messaging_instance_type}}'],
+              migrationCost: templateData['{{messaging_migration_cost}}']
+            },
+            content: {
+              users: templateData['{{content_users_count}}'],
+              instances: templateData['{{content_number_of_instances}}'],
+              instanceType: templateData['{{content_instance_type}}'],
+              migrationCost: templateData['{{content_migration_cost}}']
+            }
+          });
+        } else {
+          // For non-Multi combination, set empty values for these tokens
+          templateData['{{messaging_users_count}}'] = '';
+          templateData['{{messagingUsersCount}}'] = '';
+          templateData['{{messaging_number_of_users}}'] = '';
+          templateData['{{messaging_number_of_instances}}'] = '';
+          templateData['{{messagingNumberOfInstances}}'] = '';
+          templateData['{{messaging_instance_type}}'] = '';
+          templateData['{{messagingInstanceType}}'] = '';
+          templateData['{{messaging_duration}}'] = '';
+          templateData['{{messagingDuration}}'] = '';
+          templateData['{{messaging_messages}}'] = '';
+          templateData['{{messagingMessages}}'] = '';
+          templateData['{{messaging_migration_cost}}'] = '';
+          templateData['{{messagingMigrationCost}}'] = '';
+          templateData['{{messaging_user_cost}}'] = '';
+          templateData['{{messagingUserCost}}'] = '';
+          templateData['{{messaging_data_cost}}'] = '';
+          templateData['{{messagingDataCost}}'] = '';
+          templateData['{{messaging_instance_cost}}'] = '';
+          templateData['{{messagingInstanceCost}}'] = '';
+          templateData['{{messaging_total_cost}}'] = '';
+          templateData['{{messagingTotalCost}}'] = '';
+          templateData['{{content_users_count}}'] = '';
+          templateData['{{contentUsersCount}}'] = '';
+          templateData['{{content_number_of_users}}'] = '';
+          templateData['{{content_number_of_instances}}'] = '';
+          templateData['{{contentNumberOfInstances}}'] = '';
+          templateData['{{content_instance_type}}'] = '';
+          templateData['{{contentInstanceType}}'] = '';
+          templateData['{{content_duration}}'] = '';
+          templateData['{{contentDuration}}'] = '';
+          templateData['{{content_data_size}}'] = '';
+          templateData['{{contentDataSize}}'] = '';
+          templateData['{{content_data_size_gb}}'] = '';
+          templateData['{{content_migration_cost}}'] = '';
+          templateData['{{contentMigrationCost}}'] = '';
+          templateData['{{content_user_cost}}'] = '';
+          templateData['{{contentUserCost}}'] = '';
+          templateData['{{content_data_cost}}'] = '';
+          templateData['{{contentDataCost}}'] = '';
+          templateData['{{content_instance_cost}}'] = '';
+          templateData['{{contentInstanceCost}}'] = '';
+          templateData['{{content_total_cost}}'] = '';
+          templateData['{{contentTotalCost}}'] = '';
+        }
+        
         console.log('🔍 TEMPLATE DATA CREATED:');
         console.log('  Template data keys:', Object.keys(templateData));
         console.log('  Template data values:', Object.values(templateData));
