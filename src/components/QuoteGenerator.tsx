@@ -963,6 +963,10 @@ Quote ID: ${quoteData.id}
           }
         }
         
+        // For end-date calculations, use the *actual* computed duration (multi-combination uses max of both sections).
+        // If no valid duration is provided, keep end-date tokens as 'N/A' (do not default to 1 month here).
+        const durationMonthsForDate = (durationCandidate && durationCandidate > 0) ? durationCandidate : 0;
+
         const templateData: Record<string, string> = {
           // Core company and client information
           '{{Company Name}}': finalCompanyName,
@@ -1130,10 +1134,10 @@ Quote ID: ${quoteData.id}
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -1149,10 +1153,10 @@ Quote ID: ${quoteData.id}
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -1168,10 +1172,10 @@ Quote ID: ${quoteData.id}
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -1187,10 +1191,10 @@ Quote ID: ${quoteData.id}
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -1256,22 +1260,27 @@ Quote ID: ${quoteData.id}
               if (metadataResponse.ok) {
                 const metadataData = await metadataResponse.json();
                 if (metadataData.success && metadataData.exhibits) {
-                  const exhibitsMap = new Map(metadataData.exhibits.map((ex: any) => [ex._id, ex]));
+                  const exhibitsMap = new Map<string, any>();
+                  (metadataData.exhibits as any[]).forEach((ex: any) => exhibitsMap.set(ex._id, ex));
                   
                   // Sort exhibits: included → excluded → general
                   const typeOrder = { included: 1, excluded: 2, general: 3 };
                   sortedExhibitIds = [...selectedExhibits].sort((a, b) => {
-                    const exhibitA = exhibitsMap.get(a);
-                    const exhibitB = exhibitsMap.get(b);
+                    const exhibitA = exhibitsMap.get(a) as any;
+                    const exhibitB = exhibitsMap.get(b) as any;
                     const orderA = typeOrder[exhibitA?.exhibitType as keyof typeof typeOrder] || 3;
                     const orderB = typeOrder[exhibitB?.exhibitType as keyof typeof typeOrder] || 3;
-                    return orderA - orderB;
+                    const typeDiff = orderA - orderB;
+                    if (typeDiff !== 0) return typeDiff;
+                    const displayA = exhibitA?.displayOrder ?? 0;
+                    const displayB = exhibitB?.displayOrder ?? 0;
+                    return displayA - displayB;
                   });
                   
                   console.log('✅ Exhibits sorted by type:', {
                     original: selectedExhibits,
                     sorted: sortedExhibitIds,
-                    order: sortedExhibitIds.map(id => exhibitsMap.get(id)?.exhibitType || 'general')
+                    order: sortedExhibitIds.map(id => (exhibitsMap.get(id) as any)?.exhibitType || 'general')
                   });
                 }
               }
@@ -2684,6 +2693,8 @@ Total Price: {{total price}}`;
           duration: finalConfiguration.duration,
           migrationType: finalConfiguration.migrationType,
           dataSizeGB: finalConfiguration.dataSizeGB,
+          // Optional fields (some code paths read these for template tokens)
+          messages: (finalConfiguration as any).messages,
           startDate: finalConfiguration.startDate,
           endDate: finalConfiguration.endDate,
           // Multi combination configs (if present)
@@ -2868,12 +2879,10 @@ Total Price: {{total price}}`;
             : undefined) ??
             quoteData.configuration?.instanceType) ??
           'Standard';
-        const numberOfInstances =
-          (quoteData.configuration?.migrationType === 'Multi combination'
-            ? Math.max(quoteData.configuration?.contentConfig?.numberOfInstances ?? 0, quoteData.configuration?.messagingConfig?.numberOfInstances ?? 0)
-            : 0) ||
-          quoteData.configuration?.numberOfInstances ||
-          1;
+        const numberOfInstancesCandidate = isMultiCombination
+          ? Math.max(quoteData.configuration?.contentConfig?.numberOfInstances ?? 0, quoteData.configuration?.messagingConfig?.numberOfInstances ?? 0)
+          : quoteData.configuration?.numberOfInstances;
+        const numberOfInstances = (numberOfInstancesCandidate && numberOfInstancesCandidate > 0 ? numberOfInstancesCandidate : 1);
         const dataSizeGB =
           (quoteData.configuration?.migrationType === 'Multi combination'
             ? (quoteData.configuration?.contentConfig?.dataSizeGB ?? 0)
@@ -2999,6 +3008,10 @@ Total Price: {{total price}}`;
           }
         }
         
+        // For end-date calculations, use the *actual* computed duration (multi-combination uses max of both sections).
+        // If no valid duration is provided, keep end-date tokens as 'N/A' (do not default to 1 month here).
+        const durationMonthsForDate = (durationCandidate && durationCandidate > 0) ? durationCandidate : 0;
+
         const templateData: Record<string, string> = {
           // Core company and client information
           '{{Company Name}}': finalCompanyName || 'Your Company',
@@ -3086,18 +3099,17 @@ Total Price: {{total price}}`;
             
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            const duration = configuration?.duration;
             
             console.log('🔍 End_date calculation:');
             console.log('  Project Start Date:', startDate);
-            console.log('  Duration (months):', duration);
+            console.log('  Duration (months):', durationMonthsForDate);
             
             if (!startDate) {
               console.log('  No start date found, returning N/A');
               return 'N/A';
             }
             
-            if (!duration || duration <= 0) {
+            if (!durationMonthsForDate || durationMonthsForDate <= 0) {
               console.log('  No valid duration found, returning N/A');
             return 'N/A';
             }
@@ -3110,7 +3122,7 @@ Total Price: {{total price}}`;
               }
               
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               
               console.log('  Calculated End Date:', endDate.toISOString().split('T')[0]);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
@@ -3130,10 +3142,10 @@ Total Price: {{total price}}`;
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -3149,10 +3161,10 @@ Total Price: {{total price}}`;
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -3168,10 +3180,10 @@ Total Price: {{total price}}`;
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -3187,10 +3199,10 @@ Total Price: {{total price}}`;
             }
             // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            if (startDate && durationMonthsForDate && durationMonthsForDate > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + durationMonthsForDate);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -3296,96 +3308,6 @@ Total Price: {{total price}}`;
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
-          
-          // Project dates (start and end)
-          '{{project_start_date}}': (() => {
-            const startDate = configuration?.startDate;
-            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
-          })(),
-          '{{start_date}}': (() => {
-            const startDate = configuration?.startDate;
-            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
-          })(),
-          '{{startDate}}': (() => {
-            const startDate = configuration?.startDate;
-            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
-          })(),
-          '{{end_date}}': (() => {
-            // Priority 1: Use Effective Date from clientInfo if available
-            if (clientInfo.effectiveDate) {
-              return formatDateMMDDYYYY(clientInfo.effectiveDate);
-            }
-            // Priority 2: Use endDate from configuration if available
-            if (configuration?.endDate) {
-              return formatDateMMDDYYYY(configuration.endDate);
-            }
-            // Priority 3: Calculate end date from Project Start Date + duration
-            const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
-              const startDateObj = new Date(startDate);
-              const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
-              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
-            }
-            return 'N/A';
-          })(),
-          '{{enddate}}': (() => {
-            // Priority 1: Use Effective Date from clientInfo if available
-            if (clientInfo.effectiveDate) {
-              return formatDateMMDDYYYY(clientInfo.effectiveDate);
-            }
-            // Priority 2: Use endDate from configuration if available
-            if (configuration?.endDate) {
-              return formatDateMMDDYYYY(configuration.endDate);
-            }
-            // Priority 3: Calculate end date from Project Start Date + duration
-            const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
-              const startDateObj = new Date(startDate);
-              const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
-              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
-            }
-            return 'N/A';
-          })(),
-          '{{project_end_date}}': (() => {
-            // Priority 1: Use Effective Date from clientInfo if available
-            if (clientInfo.effectiveDate) {
-              return formatDateMMDDYYYY(clientInfo.effectiveDate);
-            }
-            // Priority 2: Use endDate from configuration if available
-            if (configuration?.endDate) {
-              return formatDateMMDDYYYY(configuration.endDate);
-            }
-            // Priority 3: Calculate end date from Project Start Date + duration
-            const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
-              const startDateObj = new Date(startDate);
-              const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
-              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
-            }
-            return 'N/A';
-          })(),
-          '{{project_end}}': (() => {
-            // Priority 1: Use Effective Date from clientInfo if available
-            if (clientInfo.effectiveDate) {
-              return formatDateMMDDYYYY(clientInfo.effectiveDate);
-            }
-            // Priority 2: Use endDate from configuration if available
-            if (configuration?.endDate) {
-              return formatDateMMDDYYYY(configuration.endDate);
-            }
-            // Priority 3: Calculate end date from Project Start Date + duration
-            const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
-              const startDateObj = new Date(startDate);
-              const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
-              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
-            }
-            return 'N/A';
-          })(),
           
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -3730,22 +3652,27 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               if (metadataResponse.ok) {
                 const metadataData = await metadataResponse.json();
                 if (metadataData.success && metadataData.exhibits) {
-                  const exhibitsMap = new Map(metadataData.exhibits.map((ex: any) => [ex._id, ex]));
+                  const exhibitsMap = new Map<string, any>();
+                  (metadataData.exhibits as any[]).forEach((ex: any) => exhibitsMap.set(ex._id, ex));
                   
                   // Sort exhibits: included → excluded → general
                   const typeOrder = { included: 1, excluded: 2, general: 3 };
                   sortedExhibitIds = [...selectedExhibits].sort((a, b) => {
-                    const exhibitA = exhibitsMap.get(a);
-                    const exhibitB = exhibitsMap.get(b);
+                    const exhibitA = exhibitsMap.get(a) as any;
+                    const exhibitB = exhibitsMap.get(b) as any;
                     const orderA = typeOrder[exhibitA?.exhibitType as keyof typeof typeOrder] || 3;
                     const orderB = typeOrder[exhibitB?.exhibitType as keyof typeof typeOrder] || 3;
-                    return orderA - orderB;
+                    const typeDiff = orderA - orderB;
+                    if (typeDiff !== 0) return typeDiff;
+                    const displayA = exhibitA?.displayOrder ?? 0;
+                    const displayB = exhibitB?.displayOrder ?? 0;
+                    return displayA - displayB;
                   });
                   
                   console.log('✅ Exhibits sorted by type:', {
                     original: selectedExhibits,
                     sorted: sortedExhibitIds,
-                    order: sortedExhibitIds.map(id => exhibitsMap.get(id)?.exhibitType || 'general')
+                    order: sortedExhibitIds.map(id => (exhibitsMap.get(id) as any)?.exhibitType || 'general')
                   });
                 }
               }
