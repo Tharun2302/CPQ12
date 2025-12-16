@@ -57,6 +57,18 @@ export interface DocxTemplateData {
   '{{number_of_instances}}'?: string;
   '{{instances}}'?: string;
   
+  // Multi combination: dynamic migration names (driven by selected exhibits)
+  '{{content_migration_name}}'?: string;
+  '{{messaging_migration_name}}'?: string;
+  '{{content_migration_cost}}'?: string;
+  '{{messaging_migration_cost}}'?: string;
+  '{{content_users_count}}'?: string;
+  '{{messaging_users_count}}'?: string;
+  '{{content_number_of_instances}}'?: string;
+  '{{messaging_number_of_instances}}'?: string;
+  '{{content_instance_type}}'?: string;
+  '{{messaging_instance_type}}'?: string;
+  
   // Legacy fields for backward compatibility
   company?: string;
   clientName?: string;
@@ -245,6 +257,44 @@ export class DocxTemplateProcessor {
         console.warn('⚠️ Unable to auto-fix malformed placeholders:', autoFixErr);
       }
 
+      // Word often injects proofing markers (spellcheck/grammar) like <w:proofErr>
+      // around placeholder text. Those markers can split "{{token}}" across runs,
+      // causing Docxtemplater to miss the tag entirely (you then see the raw
+      // {{Start_date}}/{{End_date}} in the generated document).
+      //
+      // Fix: strip proofErr markers from all word/*.xml parts (document, headers, footers).
+      try {
+        const proofErrOpen = /<w:proofErr\b[^>]*>/g;
+        const proofErrClose = /<\/w:proofErr>/g;
+        const proofErrSelfClosing = /<w:proofErr\b[^>]*\/>/g;
+
+        let cleanedParts = 0;
+        for (const fileName of Object.keys(zip.files)) {
+          if (!fileName.startsWith('word/') || !fileName.endsWith('.xml')) continue;
+          const file = zip.files[fileName];
+          if (!file) continue;
+          const xml = file.asText?.();
+          if (!xml || (typeof xml !== 'string')) continue;
+          if (!xml.includes('proofErr')) continue;
+
+          const cleaned = xml
+            .replace(proofErrSelfClosing, '')
+            .replace(proofErrOpen, '')
+            .replace(proofErrClose, '');
+
+          if (cleaned !== xml) {
+            zip.file(fileName, cleaned);
+            cleanedParts++;
+          }
+        }
+
+        if (cleanedParts > 0) {
+          console.log(`🧽 Stripped <w:proofErr> markers from ${cleanedParts} DOCX XML parts.`);
+        }
+      } catch (proofingErr) {
+        console.warn('⚠️ Unable to strip proofing markers:', proofingErr);
+      }
+
       // For now, let's always try to process the template first
       // The fallback will be triggered if processing fails
       console.log('🔄 Attempting to process template with Docxtemplater...');
@@ -253,6 +303,7 @@ export class DocxTemplateProcessor {
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
+        nullGetter: () => '', // Return empty string for null/undefined values
         delimiters: {
           start: '{{',
           end: '}}'
@@ -1084,6 +1135,18 @@ export class DocxTemplateProcessor {
       
       // Per-data cost tokens
       '{{per_data_cost}}': (data as any)['{{per_data_cost}}'] || '$0.00',
+
+      // Multi combination: dynamic migration names
+      '{{content_migration_name}}': (data as any)['{{content_migration_name}}'] || '',
+      '{{messaging_migration_name}}': (data as any)['{{messaging_migration_name}}'] || '',
+      '{{content_migration_cost}}': (data as any)['{{content_migration_cost}}'] || '',
+      '{{messaging_migration_cost}}': (data as any)['{{messaging_migration_cost}}'] || '',
+      '{{content_users_count}}': (data as any)['{{content_users_count}}'] || '',
+      '{{messaging_users_count}}': (data as any)['{{messaging_users_count}}'] || '',
+      '{{content_number_of_instances}}': (data as any)['{{content_number_of_instances}}'] || '',
+      '{{messaging_number_of_instances}}': (data as any)['{{messaging_number_of_instances}}'] || '',
+      '{{content_instance_type}}': (data as any)['{{content_instance_type}}'] || '',
+      '{{messaging_instance_type}}': (data as any)['{{messaging_instance_type}}'] || '',
       
       // Legacy support (for backward compatibility)
       company: companyName,

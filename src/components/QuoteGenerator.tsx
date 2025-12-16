@@ -855,11 +855,19 @@ Quote ID: ${quoteData.id}
 
         const companyName = (configureContactInfo?.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Your Company');
         const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '' || companyName === 'Demo Company Inc.') ? 'Your Company' : companyName;
-        const userCount = configuration?.numberOfUsers || 1;
+        // Multi combination: top-level fields may be empty; prefer section-specific config
+        const isMultiCombination = configuration?.migrationType === 'Multi combination';
+        const userCount =
+          (isMultiCombination
+            ? (configuration?.contentConfig?.numberOfUsers ?? configuration?.messagingConfig?.numberOfUsers)
+            : configuration?.numberOfUsers) ?? 1;
         const userCost = calculation?.userCost ?? safeCalculation.userCost;
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
         const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
-        const duration = configuration?.duration || 1;
+        const durationCandidate = isMultiCombination
+          ? Math.max(configuration?.contentConfig?.duration ?? 0, configuration?.messagingConfig?.duration ?? 0)
+          : configuration?.duration;
+        const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
         const migrationType = configuration?.migrationType || 'Content';
         const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
         const clientEmail = clientInfo.clientEmail || dealData?.contactEmail || 'contact@email.com';
@@ -868,9 +876,15 @@ Quote ID: ${quoteData.id}
         const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
         const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
         const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
-        const instanceType = configuration?.instanceType || 'Standard';
-        const numberOfInstances = configuration?.numberOfInstances || 1;
-        const dataSizeGB = configuration?.dataSizeGB ?? 0;
+        const instanceType =
+          (isMultiCombination
+            ? (configuration?.contentConfig?.instanceType ?? configuration?.messagingConfig?.instanceType)
+            : configuration?.instanceType) ?? 'Standard';
+        const numberOfInstancesCandidate = isMultiCombination
+          ? Math.max(configuration?.contentConfig?.numberOfInstances ?? 0, configuration?.messagingConfig?.numberOfInstances ?? 0)
+          : configuration?.numberOfInstances;
+        const numberOfInstances = (numberOfInstancesCandidate && numberOfInstancesCandidate > 0 ? numberOfInstancesCandidate : 1);
+        const dataSizeGB = (isMultiCombination ? configuration?.contentConfig?.dataSizeGB : configuration?.dataSizeGB) ?? 0;
         
         // Debug: Log data size for email function
         console.log('🔍 EMAIL FUNCTION - DATA SIZE DEBUG:');
@@ -881,6 +895,73 @@ Quote ID: ${quoteData.id}
         // Calculate discount for this function scope
         const localDiscountPercent = clientInfo.discount ?? 0;
         const localDiscountAmount = localDiscountPercent > 0 ? totalCost * (localDiscountPercent / 100) : 0;
+        
+        // Fetch selected exhibits to generate migration names
+        let messagingMigrationName = '';
+        let contentMigrationName = '';
+        
+        if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+          try {
+            console.log('📎 Fetching exhibit metadata to generate migration names...');
+            const exhibitsResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            
+            if (exhibitsResponse.ok) {
+              const exhibitsData = await exhibitsResponse.json();
+              if (exhibitsData.success && exhibitsData.exhibits) {
+                const allExhibits = exhibitsData.exhibits;
+                const selectedExhibitObjects = allExhibits.filter((ex: any) => selectedExhibits.includes(ex._id));
+                
+                // Separate by category
+                const messagingExhibits = selectedExhibitObjects.filter((ex: any) => 
+                  (ex.category || '').toLowerCase() === 'messaging' || (ex.category || '').toLowerCase() === 'message'
+                );
+                const contentExhibits = selectedExhibitObjects.filter((ex: any) => 
+                  (ex.category || '').toLowerCase() === 'content'
+                );
+                
+                // Generate messaging migration name from combinations
+                if (messagingExhibits.length > 0) {
+                  const messagingCombinations = messagingExhibits[0].combinations || [];
+                  if (messagingCombinations.length > 0) {
+                    const combo = messagingCombinations[0];
+                    // Convert combination ID to readable name (e.g., 'slack-to-teams' -> 'Slack to Teams')
+                    messagingMigrationName = combo
+                      .split('-')
+                      .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ');
+                  } else {
+                    messagingMigrationName = messagingExhibits[0].name || 'Messaging Migration';
+                  }
+                }
+                
+                // Generate content migration name from combinations
+                if (contentExhibits.length > 0) {
+                  const contentCombinations = contentExhibits[0].combinations || [];
+                  if (contentCombinations.length > 0 && contentCombinations[0] !== 'all') {
+                    const combo = contentCombinations[0];
+                    // Convert combination ID to readable name
+                    contentMigrationName = combo
+                      .split('-')
+                      .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ');
+                  } else {
+                    contentMigrationName = contentExhibits[0].name || 'Content Migration';
+                  }
+                }
+                
+                console.log('✅ Generated migration names:', {
+                  messaging: messagingMigrationName,
+                  content: contentMigrationName
+                });
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error fetching exhibits for migration names:', error);
+            // Use defaults if fetch fails
+            messagingMigrationName = 'Messaging Migration';
+            contentMigrationName = 'Content Migration';
+          }
+        }
         
         const templateData: Record<string, string> = {
           // Core company and client information
@@ -899,6 +980,13 @@ Quote ID: ${quoteData.id}
           '{{userscount}}': (userCount || 1).toString(),
           '{{users}}': (userCount || 1).toString(),
           '{{number_of_users}}': (userCount || 1).toString(),
+          // Multi-combination row-specific values (use these in the two rows)
+          '{{content_users_count}}': (isMultiCombination ? (configuration?.contentConfig?.numberOfUsers || 0) : (userCount || 1)).toString(),
+          '{{messaging_users_count}}': (isMultiCombination ? (configuration?.messagingConfig?.numberOfUsers || 0) : (userCount || 1)).toString(),
+          '{{content_number_of_instances}}': (isMultiCombination ? (configuration?.contentConfig?.numberOfInstances || 0) : (numberOfInstances || 1)).toString(),
+          '{{messaging_number_of_instances}}': (isMultiCombination ? (configuration?.messagingConfig?.numberOfInstances || 0) : (numberOfInstances || 1)).toString(),
+          '{{content_instance_type}}': (isMultiCombination ? (configuration?.contentConfig?.instanceType || instanceType) : instanceType).toString(),
+          '{{messaging_instance_type}}': (isMultiCombination ? (configuration?.messagingConfig?.instanceType || instanceType) : instanceType).toString(),
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
           '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(instanceType)),
@@ -919,6 +1007,27 @@ Quote ID: ${quoteData.id}
           
           // Pricing breakdown - all costs
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
+          // Multi combination row pricing (use these in the two Price(USD) cells)
+          '{{content_migration_cost}}': (() => {
+            const val = calculation?.contentCalculation?.totalCost;
+            console.log('🔍 content_migration_cost calculation:', {
+              hasCalculation: !!calculation,
+              hasContentCalculation: !!calculation?.contentCalculation,
+              totalCost: val,
+              formatted: (val === undefined || val === null) ? '' : formatCurrency(val)
+            });
+            return (val === undefined || val === null) ? '' : formatCurrency(val);
+          })(),
+          '{{messaging_migration_cost}}': (() => {
+            const val = calculation?.messagingCalculation?.totalCost;
+            console.log('🔍 messaging_migration_cost calculation:', {
+              hasCalculation: !!calculation,
+              hasMessagingCalculation: !!calculation?.messagingCalculation,
+              totalCost: val,
+              formatted: (val === undefined || val === null) ? '' : formatCurrency(val)
+            });
+            return (val === undefined || val === null) ? '' : formatCurrency(val);
+          })(),
           '{{user_cost}}': formatCurrency(userCost || 0),
           '{{userCost}}': formatCurrency(userCost || 0),
           '{{price_data}}': formatCurrency(dataCost),
@@ -997,6 +1106,96 @@ Quote ID: ${quoteData.id}
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           
+          // Project dates (start and end)
+          '{{project_start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{startDate}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{end_date}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{enddate}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end_date}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
           '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -1014,18 +1213,18 @@ Quote ID: ${quoteData.id}
           '{{deal_stage}}': dealData?.stage || 'N/A',
           '{{dealStage}}': dealData?.stage || 'N/A',
           
-          // Messages from configuration
-          '{{messages}}': (configuration?.messages || 0).toString(),
-          '{{message}}': (configuration?.messages || 0).toString(),
-          '{{message_count}}': (configuration?.messages || 0).toString(),
-          '{{notes}}': (configuration?.messages || 0).toString(),
-          '{{additional_notes}}': (configuration?.messages || 0).toString(),
-          '{{additionalNotes}}': (configuration?.messages || 0).toString(),
-          '{{custom_message}}': (configuration?.messages || 0).toString(),
-          '{{customMessage}}': (configuration?.messages || 0).toString(),
-          '{{number_of_messages}}': (configuration?.messages || 0).toString(),
-          '{{numberOfMessages}}': (configuration?.messages || 0).toString(),
-          '{{messages_count}}': (configuration?.messages || 0).toString(),
+          // Messages from configuration (Multi-combination: pull from messagingConfig)
+          '{{messages}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{message}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{message_count}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{notes}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{additional_notes}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{additionalNotes}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{custom_message}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{customMessage}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{number_of_messages}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{numberOfMessages}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
+          '{{messages_count}}': (isMultiCombination ? (configuration?.messagingConfig?.messages || 0) : (configuration?.messages || 0)).toString(),
           
           // Additional metadata
           '{{template_name}}': selectedTemplate?.name || 'Default Template',
@@ -1033,7 +1232,11 @@ Quote ID: ${quoteData.id}
           '{{agreement_id}}': `AGR-${Date.now().toString().slice(-8)}`,
           '{{agreementId}}': `AGR-${Date.now().toString().slice(-8)}`,
           '{{quote_id}}': `QTE-${Date.now().toString().slice(-8)}`,
-          '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
+          '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`,
+          
+          // Multi combination: Dynamic migration names based on selected exhibits
+          '{{messaging_migration_name}}': messagingMigrationName || '',
+          '{{content_migration_name}}': contentMigrationName || ''
         };
 
         const result = await DocxTemplateProcessor.processDocxTemplate(selectedTemplate.file as File, templateData);
@@ -1045,10 +1248,38 @@ Quote ID: ${quoteData.id}
             console.log('📎 Fetching and merging selected exhibits for Multi combination email...', selectedExhibits);
             
             try {
-              // Fetch all exhibit files
+              // Step 1: Fetch all exhibits metadata to get exhibitType for sorting
+              console.log('📎 Fetching exhibit metadata for sorting...');
+              const metadataResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+              let sortedExhibitIds = selectedExhibits;
+              
+              if (metadataResponse.ok) {
+                const metadataData = await metadataResponse.json();
+                if (metadataData.success && metadataData.exhibits) {
+                  const exhibitsMap = new Map(metadataData.exhibits.map((ex: any) => [ex._id, ex]));
+                  
+                  // Sort exhibits: included → excluded → general
+                  const typeOrder = { included: 1, excluded: 2, general: 3 };
+                  sortedExhibitIds = [...selectedExhibits].sort((a, b) => {
+                    const exhibitA = exhibitsMap.get(a);
+                    const exhibitB = exhibitsMap.get(b);
+                    const orderA = typeOrder[exhibitA?.exhibitType as keyof typeof typeOrder] || 3;
+                    const orderB = typeOrder[exhibitB?.exhibitType as keyof typeof typeOrder] || 3;
+                    return orderA - orderB;
+                  });
+                  
+                  console.log('✅ Exhibits sorted by type:', {
+                    original: selectedExhibits,
+                    sorted: sortedExhibitIds,
+                    order: sortedExhibitIds.map(id => exhibitsMap.get(id)?.exhibitType || 'general')
+                  });
+                }
+              }
+              
+              // Step 2: Fetch exhibit files in sorted order
               const exhibitBlobs: Blob[] = [];
               
-              for (const exhibitId of selectedExhibits) {
+              for (const exhibitId of sortedExhibitIds) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
                 
@@ -1062,7 +1293,7 @@ Quote ID: ${quoteData.id}
               }
               
               if (exhibitBlobs.length > 0) {
-                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into email document...`);
+                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into email document (Included → Excluded → General)...`);
                 const { mergeDocxFiles } = await import('../utils/docxMerger');
                 
                 agreementBlob = await mergeDocxFiles(agreementBlob, exhibitBlobs);
@@ -2454,7 +2685,10 @@ Total Price: {{total price}}`;
           migrationType: finalConfiguration.migrationType,
           dataSizeGB: finalConfiguration.dataSizeGB,
           startDate: finalConfiguration.startDate,
-          endDate: finalConfiguration.endDate
+          endDate: finalConfiguration.endDate,
+          // Multi combination configs (if present)
+          messagingConfig: finalConfiguration.messagingConfig,
+          contentConfig: finalConfiguration.contentConfig
         },
         calculation: {
           userCost: finalCalculation.userCost,
@@ -2462,7 +2696,10 @@ Total Price: {{total price}}`;
           migrationCost: finalCalculation.migrationCost,
           instanceCost: finalCalculation.instanceCost,
           totalCost: finalCalculation.totalCost,
-          tier: finalCalculation.tier
+          tier: finalCalculation.tier,
+          // Multi combination breakdown (if present)
+          contentCalculation: finalCalculation.contentCalculation,
+          messagingCalculation: finalCalculation.messagingCalculation
         },
         costs: {
           userCost: finalCalculation.userCost,
@@ -2543,11 +2780,19 @@ Total Price: {{total price}}`;
           finalCompanyName = 'Demo Company Inc.';
         }
         console.log('  Final finalCompanyName:', finalCompanyName);
-        const userCount = quoteData.configuration?.numberOfUsers || 1;
+        // Multi combination: top-level fields may be empty; prefer section-specific config
+        const isMultiCombination = quoteData.configuration?.migrationType === 'Multi combination';
+        const userCount =
+          (isMultiCombination
+            ? (quoteData.configuration?.contentConfig?.numberOfUsers ?? quoteData.configuration?.messagingConfig?.numberOfUsers)
+            : quoteData.configuration?.numberOfUsers) ?? 1;
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
         const totalCost = quoteData.calculation?.totalCost || 0;
-        const duration = quoteData.configuration?.duration || 1;
+        const durationCandidate = isMultiCombination
+          ? Math.max(quoteData.configuration?.contentConfig?.duration ?? 0, quoteData.configuration?.messagingConfig?.duration ?? 0)
+          : quoteData.configuration?.duration;
+        const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
         const clientEmail = quoteData.clientEmail || clientInfo.clientEmail || 'demo@example.com';
@@ -2617,9 +2862,25 @@ Total Price: {{total price}}`;
         const dataCost = quoteData.calculation?.dataCost || 0;
         const instanceCost = quoteData.calculation?.instanceCost || 0;
         const tierName = quoteData.calculation?.tier?.name || 'Advanced';
-        const instanceType = quoteData.configuration?.instanceType || 'Standard';
-        const numberOfInstances = quoteData.configuration?.numberOfInstances || 1;
-        const dataSizeGB = quoteData.configuration?.dataSizeGB ?? configuration?.dataSizeGB ?? 0;
+        const instanceType =
+          ((quoteData.configuration?.migrationType === 'Multi combination'
+            ? (quoteData.configuration?.contentConfig?.instanceType ?? quoteData.configuration?.messagingConfig?.instanceType)
+            : undefined) ??
+            quoteData.configuration?.instanceType) ??
+          'Standard';
+        const numberOfInstances =
+          (quoteData.configuration?.migrationType === 'Multi combination'
+            ? Math.max(quoteData.configuration?.contentConfig?.numberOfInstances ?? 0, quoteData.configuration?.messagingConfig?.numberOfInstances ?? 0)
+            : 0) ||
+          quoteData.configuration?.numberOfInstances ||
+          1;
+        const dataSizeGB =
+          (quoteData.configuration?.migrationType === 'Multi combination'
+            ? (quoteData.configuration?.contentConfig?.dataSizeGB ?? 0)
+            : undefined) ??
+          quoteData.configuration?.dataSizeGB ??
+          configuration?.dataSizeGB ??
+          0;
         
         // CRITICAL: Recalculate discount based on the local totalCost value
         // This ensures discount is calculated correctly for the template preview
@@ -2671,6 +2932,73 @@ Total Price: {{total price}}`;
         console.log('  Full configuration object:', configuration);
         console.log('  Full clientInfo object:', clientInfo);
         
+        // Fetch selected exhibits to generate migration names (for download)
+        let messagingMigrationName = '';
+        let contentMigrationName = '';
+        
+        if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
+          try {
+            console.log('📎 Fetching exhibit metadata to generate migration names (download)...');
+            const exhibitsResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            
+            if (exhibitsResponse.ok) {
+              const exhibitsData = await exhibitsResponse.json();
+              if (exhibitsData.success && exhibitsData.exhibits) {
+                const allExhibits = exhibitsData.exhibits;
+                const selectedExhibitObjects = allExhibits.filter((ex: any) => selectedExhibits.includes(ex._id));
+                
+                // Separate by category
+                const messagingExhibits = selectedExhibitObjects.filter((ex: any) => 
+                  (ex.category || '').toLowerCase() === 'messaging' || (ex.category || '').toLowerCase() === 'message'
+                );
+                const contentExhibits = selectedExhibitObjects.filter((ex: any) => 
+                  (ex.category || '').toLowerCase() === 'content'
+                );
+                
+                // Generate messaging migration name from combinations
+                if (messagingExhibits.length > 0) {
+                  const messagingCombinations = messagingExhibits[0].combinations || [];
+                  if (messagingCombinations.length > 0) {
+                    const combo = messagingCombinations[0];
+                    // Convert combination ID to readable name (e.g., 'slack-to-teams' -> 'Slack to Teams')
+                    messagingMigrationName = combo
+                      .split('-')
+                      .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ');
+                  } else {
+                    messagingMigrationName = messagingExhibits[0].name || 'Messaging Migration';
+                  }
+                }
+                
+                // Generate content migration name from combinations
+                if (contentExhibits.length > 0) {
+                  const contentCombinations = contentExhibits[0].combinations || [];
+                  if (contentCombinations.length > 0 && contentCombinations[0] !== 'all') {
+                    const combo = contentCombinations[0];
+                    // Convert combination ID to readable name
+                    contentMigrationName = combo
+                      .split('-')
+                      .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ');
+                  } else {
+                    contentMigrationName = contentExhibits[0].name || 'Content Migration';
+                  }
+                }
+                
+                console.log('✅ Generated migration names (download):', {
+                  messaging: messagingMigrationName,
+                  content: contentMigrationName
+                });
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error fetching exhibits for migration names (download):', error);
+            // Use defaults if fetch fails
+            messagingMigrationName = 'Messaging Migration';
+            contentMigrationName = 'Content Migration';
+          }
+        }
+        
         const templateData: Record<string, string> = {
           // Core company and client information
           '{{Company Name}}': finalCompanyName || 'Your Company',
@@ -2688,6 +3016,13 @@ Total Price: {{total price}}`;
           '{{userscount}}': (userCount || 1).toString(),
           '{{users}}': (userCount || 1).toString(),
           '{{number_of_users}}': (userCount || 1).toString(),
+          // Multi-combination row-specific values (use these in the two rows)
+          '{{content_users_count}}': (isMultiCombination ? (quoteData.configuration?.contentConfig?.numberOfUsers || 0) : (userCount || 1)).toString(),
+          '{{messaging_users_count}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.numberOfUsers || 0) : (userCount || 1)).toString(),
+          '{{content_number_of_instances}}': (isMultiCombination ? (quoteData.configuration?.contentConfig?.numberOfInstances || 0) : (numberOfInstances || 1)).toString(),
+          '{{messaging_number_of_instances}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.numberOfInstances || 0) : (numberOfInstances || 1)).toString(),
+          '{{content_instance_type}}': (isMultiCombination ? (quoteData.configuration?.contentConfig?.instanceType || instanceType) : instanceType).toString(),
+          '{{messaging_instance_type}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.instanceType || instanceType) : instanceType).toString(),
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
           '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(instanceType)),
@@ -2785,10 +3120,15 @@ Total Price: {{total price}}`;
             }
           })(),
           '{{end_date}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Calculate end date from Project Start Date + duration
+            // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
             if (startDate && configuration?.duration && configuration.duration > 0) {
               const startDateObj = new Date(startDate);
@@ -2799,10 +3139,15 @@ Total Price: {{total price}}`;
             return 'N/A';
           })(),
           '{{enddate}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Calculate end date from Project Start Date + duration
+            // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
             if (startDate && configuration?.duration && configuration.duration > 0) {
               const startDateObj = new Date(startDate);
@@ -2813,10 +3158,15 @@ Total Price: {{total price}}`;
             return 'N/A';
           })(),
           '{{project_end_date}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Calculate end date from Project Start Date + duration
+            // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
             if (startDate && configuration?.duration && configuration.duration > 0) {
               const startDateObj = new Date(startDate);
@@ -2827,10 +3177,15 @@ Total Price: {{total price}}`;
             return 'N/A';
           })(),
           '{{project_end}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
             if (configuration?.endDate) {
               return formatDateMMDDYYYY(configuration.endDate);
             }
-            // Calculate end date from Project Start Date + duration
+            // Priority 3: Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
             if (startDate && configuration?.duration && configuration.duration > 0) {
               const startDateObj = new Date(startDate);
@@ -2843,6 +3198,27 @@ Total Price: {{total price}}`;
           
           // Pricing breakdown - all costs
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
+          // Multi combination row pricing (use these in the two Price(USD) cells)
+          '{{content_migration_cost}}': (() => {
+            const val = quoteData.calculation?.contentCalculation?.totalCost;
+            console.log('🔍 content_migration_cost calculation (download):', {
+              hasCalculation: !!quoteData.calculation,
+              hasContentCalculation: !!quoteData.calculation?.contentCalculation,
+              totalCost: val,
+              formatted: (val === undefined || val === null) ? '' : formatCurrency(val)
+            });
+            return (val === undefined || val === null) ? '' : formatCurrency(val);
+          })(),
+          '{{messaging_migration_cost}}': (() => {
+            const val = quoteData.calculation?.messagingCalculation?.totalCost;
+            console.log('🔍 messaging_migration_cost calculation (download):', {
+              hasCalculation: !!quoteData.calculation,
+              hasMessagingCalculation: !!quoteData.calculation?.messagingCalculation,
+              totalCost: val,
+              formatted: (val === undefined || val === null) ? '' : formatCurrency(val)
+            });
+            return (val === undefined || val === null) ? '' : formatCurrency(val);
+          })(),
           '{{user_cost}}': formatCurrency(userCost || 0),
           '{{userCost}}': formatCurrency(userCost || 0),
           '{{price_data}}': formatCurrency(dataCost),
@@ -2921,6 +3297,96 @@ Total Price: {{total price}}`;
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           
+          // Project dates (start and end)
+          '{{project_start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{startDate}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{end_date}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{enddate}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end_date}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end}}': (() => {
+            // Priority 1: Use Effective Date from clientInfo if available
+            if (clientInfo.effectiveDate) {
+              return formatDateMMDDYYYY(clientInfo.effectiveDate);
+            }
+            // Priority 2: Use endDate from configuration if available
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Priority 3: Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            if (startDate && configuration?.duration && configuration.duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
           '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -2938,18 +3404,18 @@ Total Price: {{total price}}`;
           '{{deal_stage}}': dealData?.stage || 'N/A',
           '{{dealStage}}': dealData?.stage || 'N/A',
           
-          // Messages from configuration
-          '{{messages}}': (configuration?.messages || 0).toString(),
-          '{{message}}': (configuration?.messages || 0).toString(),
-          '{{message_count}}': (configuration?.messages || 0).toString(),
-          '{{notes}}': (configuration?.messages || 0).toString(),
-          '{{additional_notes}}': (configuration?.messages || 0).toString(),
-          '{{additionalNotes}}': (configuration?.messages || 0).toString(),
-          '{{custom_message}}': (configuration?.messages || 0).toString(),
-          '{{customMessage}}': (configuration?.messages || 0).toString(),
-          '{{number_of_messages}}': (configuration?.messages || 0).toString(),
-          '{{numberOfMessages}}': (configuration?.messages || 0).toString(),
-          '{{messages_count}}': (configuration?.messages || 0).toString(),
+          // Messages from configuration (Multi-combination: pull from messagingConfig)
+          '{{messages}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{message}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{message_count}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{notes}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{additional_notes}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{additionalNotes}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{custom_message}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{customMessage}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{number_of_messages}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{numberOfMessages}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
+          '{{messages_count}}': (isMultiCombination ? (quoteData.configuration?.messagingConfig?.messages || 0) : (quoteData.configuration?.messages || 0)).toString(),
           
           // Additional metadata
           '{{template_name}}': selectedTemplate?.name || 'Default Template',
@@ -2957,7 +3423,11 @@ Total Price: {{total price}}`;
           '{{agreement_id}}': `AGR-${Date.now().toString().slice(-8)}`,
           '{{agreementId}}': `AGR-${Date.now().toString().slice(-8)}`,
           '{{quote_id}}': `QTE-${Date.now().toString().slice(-8)}`,
-          '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
+          '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`,
+          
+          // Multi combination: Dynamic migration names based on selected exhibits
+          '{{messaging_migration_name}}': messagingMigrationName || '',
+          '{{content_migration_name}}': contentMigrationName || ''
         };
         
         console.log('🔍 TEMPLATE DATA CREATED:');
@@ -3252,10 +3722,38 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             console.log('📎 Fetching and merging selected exhibits for Multi combination...', selectedExhibits);
             
             try {
-              // Fetch all exhibit files
+              // Step 1: Fetch all exhibits metadata to get exhibitType for sorting
+              console.log('📎 Fetching exhibit metadata for sorting...');
+              const metadataResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+              let sortedExhibitIds = selectedExhibits;
+              
+              if (metadataResponse.ok) {
+                const metadataData = await metadataResponse.json();
+                if (metadataData.success && metadataData.exhibits) {
+                  const exhibitsMap = new Map(metadataData.exhibits.map((ex: any) => [ex._id, ex]));
+                  
+                  // Sort exhibits: included → excluded → general
+                  const typeOrder = { included: 1, excluded: 2, general: 3 };
+                  sortedExhibitIds = [...selectedExhibits].sort((a, b) => {
+                    const exhibitA = exhibitsMap.get(a);
+                    const exhibitB = exhibitsMap.get(b);
+                    const orderA = typeOrder[exhibitA?.exhibitType as keyof typeof typeOrder] || 3;
+                    const orderB = typeOrder[exhibitB?.exhibitType as keyof typeof typeOrder] || 3;
+                    return orderA - orderB;
+                  });
+                  
+                  console.log('✅ Exhibits sorted by type:', {
+                    original: selectedExhibits,
+                    sorted: sortedExhibitIds,
+                    order: sortedExhibitIds.map(id => exhibitsMap.get(id)?.exhibitType || 'general')
+                  });
+                }
+              }
+              
+              // Step 2: Fetch exhibit files in sorted order
               const exhibitBlobs: Blob[] = [];
               
-              for (const exhibitId of selectedExhibits) {
+              for (const exhibitId of sortedExhibitIds) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
                 
@@ -3269,7 +3767,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               }
               
               if (exhibitBlobs.length > 0) {
-                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into document...`);
+                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into document (Included → Excluded → General)...`);
                 const { mergeDocxFiles } = await import('../utils/docxMerger');
                 
                 processedDocument = await mergeDocxFiles(processedDocument, exhibitBlobs);

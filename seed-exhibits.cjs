@@ -79,6 +79,29 @@ async function seedDefaultExhibits(db) {
       displayOrder: 4,
       keywords: ['structure', 'files', 'folders']
     },
+    // ShareFile to Google Shared Drive exhibits (Included + Excluded)
+    {
+      name: 'ShareFile to Google Shared Drive - Included Features',
+      description: 'Features included in ShareFile to Google Shared Drive Advanced Plan migration',
+      fileName: 'exhibit-sharefile-to-sharedrive-advanced-included.docx',
+      combinations: ['sharefile-to-google-sharedrive'],
+      category: 'content',
+      exhibitType: 'included',
+      isRequired: false,
+      displayOrder: 1,
+      keywords: ['sharefile', 'google', 'sharedrive', 'included', 'features', 'advanced']
+    },
+    {
+      name: 'ShareFile to Google Shared Drive - Not Included Features',
+      description: 'Features NOT included in ShareFile to Google Shared Drive Advanced Plan migration',
+      fileName: 'exhibit-sharefile-to-sharedrive-advanced-not-included.docx',
+      combinations: ['sharefile-to-google-sharedrive'],
+      category: 'content',
+      exhibitType: 'excluded',
+      isRequired: false,
+      displayOrder: 2,
+      keywords: ['sharefile', 'google', 'sharedrive', 'excluded', 'not-included', 'features', 'advanced']
+    },
     // General exhibits (available for all combinations)
     {
       name: 'Data Privacy Agreement',
@@ -157,7 +180,7 @@ async function seedDefaultExhibits(db) {
         // Update if file is newer OR metadata changed (combinations/category/name/etc).
         const existingModified = existing.updatedAt || existing.createdAt || new Date(0);
         const metadataChanged = (() => {
-          const keysToCompare = ['name', 'description', 'fileName', 'category', 'isRequired', 'displayOrder', 'keywords', 'combinations'];
+          const keysToCompare = ['name', 'description', 'fileName', 'category', 'isRequired', 'displayOrder', 'keywords', 'combinations', 'exhibitType'];
           for (const key of keysToCompare) {
             const a = existing[key];
             const b = exhibit[key];

@@ -920,8 +920,8 @@ async function seedDefaultTemplates(db) {
     {
       name: 'Multi Combination',
       description: 'Universal template for Multi combination migrations (supports all combinations)',
-      fileName: 'multi combiantion.docx',
-      isDefault: false,
+      fileName: 'Multi Combination.docx',
+      isDefault: true,
       category: 'multi',
       combination: 'multi-combination',
       planType: 'multi',

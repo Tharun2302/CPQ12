@@ -9,6 +9,7 @@ interface Exhibit {
   fileName: string;
   combinations: string[];
   category?: string;
+  exhibitType?: 'included' | 'excluded' | 'general';
   isRequired: boolean;
   displayOrder: number;
 }
@@ -206,6 +207,16 @@ function CategoryColumn({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="font-semibold text-gray-900 text-sm">{exhibit.name}</div>
+                      {exhibit.exhibitType === 'included' && (
+                        <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                          ✓ Included
+                        </span>
+                      )}
+                      {exhibit.exhibitType === 'excluded' && (
+                        <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+                          ⊗ Not Included
+                        </span>
+                      )}
                       {isRequired && (
                         <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
                           Required
