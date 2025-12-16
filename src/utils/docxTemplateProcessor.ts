@@ -919,13 +919,58 @@ export class DocxTemplateProcessor {
     const startDate = (data as any)['{{Start_date}}'] || (data as any).configuration?.startDate || '';
     let endDate = (data as any)['{{End_date}}'] || (data as any).configuration?.endDate || '';
     
-    // CRITICAL: Fallback calculation for end date if not provided (for hidden field scenario)
-    if (!endDate && startDate && (data as any).configuration?.duration && (data as any).configuration.duration > 0) {
-      const startDateObj = new Date(startDate);
-      const endDateObj = new Date(startDateObj);
-      endDateObj.setMonth(endDateObj.getMonth() + (data as any).configuration.duration);
-      endDate = endDateObj.toISOString().split('T')[0];
-      console.log(`🔧 DOCX PROCESSOR: Calculated end date fallback: ${endDate} (Start: ${startDate}, Duration: ${(data as any).configuration.duration} months)`);
+    // CRITICAL: Fallback calculation for end date if not provided or is "N/A" (for hidden field scenario)
+    // Check if endDate is empty, "N/A", or invalid, and calculate from startDate + duration
+    const needsEndDateCalculation = !endDate || 
+                                    endDate === 'N/A' || 
+                                    endDate === 'undefined' || 
+                                    endDate === 'null' || 
+                                    endDate.trim() === '';
+    
+    if (needsEndDateCalculation) {
+      // Try to get duration from multiple sources
+      const duration = (data as any).configuration?.duration || 
+                      (data as any)['{{Duration_of_months}}'] || 
+                      (data as any)['{{Duration of months}}'] || 
+                      (data as any)['{{duration_months}}'] || 
+                      0;
+      
+      console.log('🔧 DOCX PROCESSOR: End date is missing/invalid, attempting calculation...');
+      console.log('  Start date:', startDate);
+      console.log('  Duration:', duration);
+      console.log('  Configuration duration:', (data as any).configuration?.duration);
+      
+      if (startDate && duration && duration > 0) {
+        try {
+          // Handle both formatted dates (MM/DD/YYYY) and ISO dates (YYYY-MM-DD)
+          let startDateObj: Date;
+          if (startDate.includes('/')) {
+            // MM/DD/YYYY format
+            const [month, day, year] = startDate.split('/');
+            startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          } else if (startDate.includes('-')) {
+            // YYYY-MM-DD format
+            startDateObj = new Date(startDate + 'T00:00:00');
+          } else {
+            startDateObj = new Date(startDate);
+          }
+          
+          if (!isNaN(startDateObj.getTime())) {
+            const endDateObj = new Date(startDateObj);
+            endDateObj.setMonth(endDateObj.getMonth() + parseInt(duration.toString()));
+            endDate = endDateObj.toISOString().split('T')[0];
+            console.log(`✅ DOCX PROCESSOR: Calculated end date: ${endDate} (Start: ${startDate}, Duration: ${duration} months)`);
+          } else {
+            console.warn('⚠️ DOCX PROCESSOR: Invalid start date format, cannot calculate end date');
+          }
+        } catch (error) {
+          console.error('❌ DOCX PROCESSOR: Error calculating end date:', error);
+        }
+      } else {
+        console.warn('⚠️ DOCX PROCESSOR: Cannot calculate end date - missing startDate or duration');
+        console.warn('  startDate:', startDate);
+        console.warn('  duration:', duration);
+      }
     }
     
     console.log('🔍 DOCX PROCESSOR EXTRACTED VALUES:');
@@ -1105,11 +1150,14 @@ export class DocxTemplateProcessor {
       '{{startdate}}': this.formatDateMMDDYYYY(startDate),
       '{{project_start_date}}': this.formatDateMMDDYYYY(startDate),
       '{{project_start}}': this.formatDateMMDDYYYY(startDate),
-      '{{End_date}}': this.formatDateMMDDYYYY(endDate),
-      '{{end_date}}': this.formatDateMMDDYYYY(endDate),
-      '{{enddate}}': this.formatDateMMDDYYYY(endDate),
-      '{{project_end_date}}': this.formatDateMMDDYYYY(endDate),
-      '{{project_end}}': this.formatDateMMDDYYYY(endDate),
+      '{{End_date}}': endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A',
+      '{{end_date}}': endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A',
+      '{{enddate}}': endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A',
+      '{{project_end_date}}': endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A',
+      '{{project_end}}': endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A',
+      // Also add space version for compatibility
+      '{{End date}}': endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A',
+      '{{end date}}': endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A',
       
       // Additional common tokens
       '{{price_data}}': data['{{price_data}}'] || '$0.00',

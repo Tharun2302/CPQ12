@@ -2827,57 +2827,92 @@ Total Price: {{total price}}`;
           
           // End date - calculate from Project Start Date + duration
           '{{End_date}}': (() => {
-            if (configuration?.endDate) {
+            // First check if endDate is explicitly provided
+            if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
               console.log('🔍 End_date using provided endDate:', configuration.endDate);
-              return formatDateMMDDYYYY(configuration.endDate);
+              const formatted = formatDateMMDDYYYY(configuration.endDate);
+              console.log('  Formatted endDate:', formatted);
+              return formatted;
             }
             
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
             const duration = configuration?.duration;
             
-            console.log('🔍 End_date calculation:');
+            console.log('🔍 End_date calculation (no explicit endDate provided):');
             console.log('  Project Start Date:', startDate);
             console.log('  Duration (months):', duration);
+            console.log('  Configuration object:', configuration);
             
-            if (!startDate) {
-              console.log('  No start date found, returning N/A');
+            if (!startDate || startDate === 'N/A' || startDate.trim() === '') {
+              console.warn('  ⚠️ No start date found, returning N/A');
               return 'N/A';
             }
             
             if (!duration || duration <= 0) {
-              console.log('  No valid duration found, returning N/A');
-            return 'N/A';
+              console.warn('  ⚠️ No valid duration found, returning N/A');
+              return 'N/A';
             }
             
             try {
-              const startDateObj = new Date(startDate);
+              // Handle different date formats
+              let startDateObj: Date;
+              if (startDate.includes('/')) {
+                // MM/DD/YYYY format
+                const [month, day, year] = startDate.split('/');
+                startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+              } else if (startDate.includes('-')) {
+                // YYYY-MM-DD format
+                startDateObj = new Date(startDate + 'T00:00:00');
+              } else {
+                startDateObj = new Date(startDate);
+              }
+              
               if (isNaN(startDateObj.getTime())) {
-                console.log('  Invalid start date, returning N/A');
+                console.error('  ❌ Invalid start date format:', startDate);
                 return 'N/A';
               }
               
               const endDate = new Date(startDateObj);
               endDate.setMonth(endDate.getMonth() + duration);
               
-              console.log('  Calculated End Date:', endDate.toISOString().split('T')[0]);
-              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+              const endDateISO = endDate.toISOString().split('T')[0];
+              console.log('  ✅ Calculated End Date (ISO):', endDateISO);
+              const formatted = formatDateMMDDYYYY(endDateISO);
+              console.log('  ✅ Formatted End Date:', formatted);
+              return formatted;
             } catch (error) {
-              console.error('Error calculating end date:', error);
+              console.error('  ❌ Error calculating end date:', error);
               return 'N/A';
             }
           })(),
           '{{end_date}}': (() => {
-            if (configuration?.endDate) {
+            // Use the same logic as End_date
+            if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
               return formatDateMMDDYYYY(configuration.endDate);
             }
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
-              const startDateObj = new Date(startDate);
-              const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
-              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            const duration = configuration?.duration;
+            if (startDate && duration && duration > 0) {
+              try {
+                let startDateObj: Date;
+                if (startDate.includes('/')) {
+                  const [month, day, year] = startDate.split('/');
+                  startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                } else if (startDate.includes('-')) {
+                  startDateObj = new Date(startDate + 'T00:00:00');
+                } else {
+                  startDateObj = new Date(startDate);
+                }
+                if (!isNaN(startDateObj.getTime())) {
+                  const endDate = new Date(startDateObj);
+                  endDate.setMonth(endDate.getMonth() + duration);
+                  return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+                }
+              } catch (error) {
+                console.error('Error calculating end_date:', error);
+              }
             }
             return 'N/A';
           })(),
@@ -2910,16 +2945,32 @@ Total Price: {{total price}}`;
             return 'N/A';
           })(),
           '{{project_end}}': (() => {
-            if (configuration?.endDate) {
+            // Use the same logic as End_date
+            if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
               return formatDateMMDDYYYY(configuration.endDate);
             }
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
-              const startDateObj = new Date(startDate);
-              const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
-              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            const duration = configuration?.duration;
+            if (startDate && duration && duration > 0) {
+              try {
+                let startDateObj: Date;
+                if (startDate.includes('/')) {
+                  const [month, day, year] = startDate.split('/');
+                  startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                } else if (startDate.includes('-')) {
+                  startDateObj = new Date(startDate + 'T00:00:00');
+                } else {
+                  startDateObj = new Date(startDate);
+                }
+                if (!isNaN(startDateObj.getTime())) {
+                  const endDate = new Date(startDateObj);
+                  endDate.setMonth(endDate.getMonth() + duration);
+                  return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+                }
+              } catch (error) {
+                console.error('Error calculating project_end:', error);
+              }
             }
             return 'N/A';
           })(),
@@ -3044,6 +3095,40 @@ Total Price: {{total price}}`;
           '{{quote_id}}': `QTE-${Date.now().toString().slice(-8)}`,
           '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
         };
+        
+        // Calculate end date value once for reuse in space versions
+        const calculatedEndDate = (() => {
+          if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
+            return formatDateMMDDYYYY(configuration.endDate);
+          }
+          const startDate = configuration?.startDate;
+          const duration = configuration?.duration;
+          if (startDate && duration && duration > 0) {
+            try {
+              let startDateObj: Date;
+              if (startDate.includes('/')) {
+                const [month, day, year] = startDate.split('/');
+                startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+              } else if (startDate.includes('-')) {
+                startDateObj = new Date(startDate + 'T00:00:00');
+              } else {
+                startDateObj = new Date(startDate);
+              }
+              if (!isNaN(startDateObj.getTime())) {
+                const endDate = new Date(startDateObj);
+                endDate.setMonth(endDate.getMonth() + duration);
+                return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+              }
+            } catch (error) {
+              console.error('Error calculating end date for space versions:', error);
+            }
+          }
+          return 'N/A';
+        })();
+        
+        // Add space versions for compatibility
+        templateData['{{End date}}'] = calculatedEndDate;
+        templateData['{{end date}}'] = calculatedEndDate;
         
         // For Multi combination: Determine migration names from selected exhibits
         if (configuration?.migrationType === 'Multi combination' && selectedExhibits && selectedExhibits.length > 0) {
