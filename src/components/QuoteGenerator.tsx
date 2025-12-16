@@ -873,14 +873,12 @@ Quote ID: ${quoteData.id}
         const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
         // For DOC preview/email tokens: show both durations when in Multi combination mode
         // (template text usually already contains the word "Months", so we don't append it here).
+        // For the template token {{Duration_of_months}} in Multi combination mode:
+        // user wants BOTH durations added (e.g., 12 + 9 => 21).
         const durationDisplayForTemplate = (() => {
           if (!isMultiCombination) return duration.toString();
-          if (contentDurationMonths > 0 && messagingDurationMonths > 0) {
-            return `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`;
-          }
-          if (contentDurationMonths > 0) return `${contentDurationMonths} (Content)`;
-          if (messagingDurationMonths > 0) return `${messagingDurationMonths} (Messaging)`;
-          return duration.toString();
+          const total = (contentDurationMonths > 0 ? contentDurationMonths : 0) + (messagingDurationMonths > 0 ? messagingDurationMonths : 0);
+          return total > 0 ? total.toString() : duration.toString();
         })();
         const migrationType = configuration?.migrationType || 'Content';
         const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
@@ -2823,14 +2821,12 @@ Total Price: {{total price}}`;
         const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
         // For DOC preview tokens: show both durations when in Multi combination mode
         // (template text usually already contains the word "Months", so we don't append it here).
+        // For the template token {{Duration_of_months}} in Multi combination mode:
+        // user wants BOTH durations added (e.g., 12 + 9 => 21).
         const durationDisplayForTemplate = (() => {
           if (!isMultiCombination) return duration.toString();
-          if (contentDurationMonths > 0 && messagingDurationMonths > 0) {
-            return `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`;
-          }
-          if (contentDurationMonths > 0) return `${contentDurationMonths} (Content)`;
-          if (messagingDurationMonths > 0) return `${messagingDurationMonths} (Messaging)`;
-          return duration.toString();
+          const total = (contentDurationMonths > 0 ? contentDurationMonths : 0) + (messagingDurationMonths > 0 ? messagingDurationMonths : 0);
+          return total > 0 ? total.toString() : duration.toString();
         })();
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
