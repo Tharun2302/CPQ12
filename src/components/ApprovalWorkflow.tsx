@@ -20,16 +20,28 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [formData, setFormData] = useState({
     documentType: 'PDF Agreement',
     documentId: '',
+    teamSelection: 'SMB',
     role1Email: 'cpq.zenop.ai.technical@cloudfuze.com',
-    role2Email: 'cpq.zenop.ai.legal@cloudfuze.com'
+    role2Email: 'cpq.zenop.ai.legal@cloudfuze.com',
+    role4Email: 'salesops@cloudfuze.com'
   });
 
+  // Team Approval emails mapping
+  const TEAM_APPROVAL_EMAILS: Record<string, string> = {
+    SMB: 'chitradip.saha@cloudfuze.com',
+    AM: 'lawrence.lewis@cloudfuze.com',
+    ENT: 'anthony@cloudfuze.com',
+    DEV: 'anushreddydasari@gmail.com',
+    DEV2: 'raya.durai@cloudfuze.com',
+  };
+
+  // Helper function to get team approval email
+  const getTeamApprovalEmail = (team: string): string => {
+    const key = (team || '').toUpperCase();
+    return TEAM_APPROVAL_EMAILS[key] || '';
+  };
+
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
-  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
-  const [selectedDocument, setSelectedDocument] = useState<any>(null);
-  const [showPreview, setShowPreview] = useState(false);
-  const [pdfPreviewData, setPdfPreviewData] = useState<string | null>(null);
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -45,7 +57,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     if (state?.documentId) {
       setFormData(prev => ({
         ...prev,
-        documentId: state.documentId
+        documentId: state.documentId || ''
       }));
     }
   }, [location.state]);
@@ -176,53 +188,74 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         selectedDoc?.amount ??
         0;
 
+      // Get Team Approval email from selection
+      const teamEmail = getTeamApprovalEmail(formData.teamSelection);
+      if (!teamEmail) {
+        alert('Please select a valid Team Approval group.');
+        return;
+      }
+
       const newWorkflow = await createWorkflow({
         documentId: effectiveDocumentId,
         documentType: formData.documentType,
         clientName,
         amount,
-        totalSteps: 2,
+        totalSteps: 4,
         workflowSteps: [
           {
             step: 1,
+            role: 'Team Approval',
+            email: teamEmail,
+            status: 'pending',
+            group: formData.teamSelection,
+            comments: ''
+          },
+          {
+            step: 2,
             role: 'Technical Team',
             email: formData.role1Email,
             status: 'pending'
           },
           {
-            step: 2,
+            step: 3,
             role: 'Legal Team',
             email: formData.role2Email,
+            status: 'pending'
+          },
+          {
+            step: 4,
+            role: 'Deal Desk',
+            email: formData.role4Email,
             status: 'pending'
           }
         ]
       });
 
       if (newWorkflow) {
-        // After creating the workflow, send the first email to the Technical Team only
+        // After creating the workflow, send the first email to Team Approval
         try {
           const backendUrl = BACKEND_URL || 'http://localhost:3001';
-          const managerEmail = formData.role1Email;
 
-          console.log('📧 Sending Technical Team email for manual workflow...', {
-            managerEmail,
+          console.log('📧 Sending Team Approval email for manual workflow...', {
+            teamEmail,
             workflowId: newWorkflow.id,
             documentId: effectiveDocumentId
           });
 
-          const response = await fetch(`${backendUrl}/api/send-manager-email`, {
+          const response = await fetch(`${backendUrl}/api/send-team-email`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              managerEmail,
+              teamEmail,
               workflowData: {
                 documentId: effectiveDocumentId,
                 documentType: formData.documentType,
                 clientName,
                 amount,
-                workflowId: newWorkflow.id
+                workflowId: newWorkflow.id,
+                teamGroup: formData.teamSelection
               }
             })
           });
@@ -241,13 +274,13 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
           }
 
           if (result?.success) {
-            alert('✅ Approval workflow started.\n📧 Technical Team has been notified for first approval.');
+            alert(`✅ Approval workflow started.\n📧 Team Approval (${formData.teamSelection}) has been notified for first approval.`);
           } else {
-            alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
+            alert('✅ Workflow created but Team Approval email failed.\nPlease notify Team Approval manually.');
           }
         } catch (emailError) {
-          console.error('❌ Error sending Technical Team email for manual workflow:', emailError);
-          alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
+          console.error('❌ Error sending Team Approval email for manual workflow:', emailError);
+          alert('✅ Workflow created but Team Approval email failed.\nPlease notify Team Approval manually.');
         }
       } else {
         alert('Approval workflow could not be created. Please try again.');
@@ -372,6 +405,31 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 document using the file selector above.
               </p>
 
+              {/* Team Approval Selection */}
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+                <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-purple-600" />
+                  Team Approval Group
+                </h3>
+                <p className="text-xs text-gray-600 mb-4">Select the Team Approval group for first approval</p>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-2">
+                    Team Approval Group
+                  </label>
+                  <select
+                    value={formData.teamSelection}
+                    onChange={(e) => setFormData(prev => ({ ...prev, teamSelection: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                  >
+                    <option value="SMB">SMB ({TEAM_APPROVAL_EMAILS.SMB})</option>
+                    <option value="AM">AM ({TEAM_APPROVAL_EMAILS.AM})</option>
+                    <option value="ENT">ENT ({TEAM_APPROVAL_EMAILS.ENT})</option>
+                    <option value="DEV">DEV ({TEAM_APPROVAL_EMAILS.DEV})</option>
+                    <option value="DEV2">DEV2 ({TEAM_APPROVAL_EMAILS.DEV2})</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Approval Roles Section */}
               <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
                 <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
@@ -395,30 +453,46 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                         placeholder="technical@company.com"
                       />
                     </div>
-            </div>
+                  </div>
 
                   {/* Legal Team Email */}
-            <div>
+                  <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2">
                       Legal Team Email
-              </label>
-              <div className="relative">
+                    </label>
+                    <div className="relative">
                       <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="email"
+                      <input
+                        type="email"
                         value={formData.role2Email}
                         onChange={(e) => setFormData(prev => ({ ...prev, role2Email: e.target.value }))}
                         className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
                         placeholder="legal@company.com"
-                />
+                      />
+                    </div>
                   </div>
-            </div>
-                  
+
+                  {/* Deal Desk Email */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">
+                      Deal Desk Email
+                    </label>
+                    <div className="relative">
+                      <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="email"
+                        value={formData.role4Email}
+                        onChange={(e) => setFormData(prev => ({ ...prev, role4Email: e.target.value }))}
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
+                        placeholder="dealdesk@company.com"
+                      />
+                    </div>
+                  </div>
                 </div>
-            </div>
+              </div>
               
               <p className="text-sm text-gray-500">
-                Emails for the approval workflow roles. Each role will receive the document and can approve or deny it.
+                Workflow order: Team Approval → Technical Team → Legal Team → Deal Desk. Each role will receive the document and can approve or deny it.
               </p>
 
               {/* Start Workflow Button */}

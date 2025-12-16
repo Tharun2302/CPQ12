@@ -5699,7 +5699,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <Workflow className="w-5 h-5 text-blue-600" />
-                  Start Manual Approval Workflow
+                  Start Approval Workflow
                 </h3>
                 <button
                   onClick={() => setShowApprovalModal(false)}
@@ -5763,7 +5763,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   ) : (
                     <>
                       <Workflow className="w-4 h-4" />
-                      Start Manual Approval Workflow
+                      Start Approval Workflow
                     </>
                   )}
                 </button>
