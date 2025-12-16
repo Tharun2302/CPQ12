@@ -2765,13 +2765,21 @@ Total Price: {{total price}}`;
           '{{number_of_users}}': (userCount || 1).toString(),
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
+          '{{instance type}}': instanceType, // Space version
           '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(instanceType)),
+          '{{instance_type cost}}': formatCurrency(getInstanceTypeCost(instanceType)), // Space version
+          '{{instance..cost}}': formatCurrency(instanceCost), // Handle double-dot typo
+          '{{instance_cost}}': formatCurrency(instanceCost),
+          '{{instanceCost}}': formatCurrency(instanceCost),
+          '{{instance cost}}': formatCurrency(instanceCost), // Space version
           '{{instance_users}}': numberOfInstances.toString(),
           '{{number_of_instances}}': numberOfInstances.toString(),
+          '{{number of instances}}': numberOfInstances.toString(), // Space version
           '{{numberOfInstances}}': numberOfInstances.toString(),
           '{{instances}}': numberOfInstances.toString(),
           '{{Duration of months}}': (duration || 1).toString(),
           '{{Duration_of_months}}': (duration || 1).toString(),
+          '{{Duration of months}}': (duration || 1).toString(), // Space version (duplicate for clarity)
           '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
           '{{duration_months}}': (duration || 1).toString(),
           '{{duration}}': (duration || 1).toString(),
@@ -2962,9 +2970,11 @@ Total Price: {{total price}}`;
           // Discount information - hide discount tokens when discount is 0
         // CRITICAL: Use local discount variables calculated from local totalCost
         '{{discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
-        '{{discount_percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '', // Space version
           '{{discount_percentage}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
-        '{{discount_amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount_amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '', // Space version
           '{{discountAmount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
           '{{discount_text}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `Discount (${localDiscountPercent}%)` : '',
           '{{discount_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
@@ -3140,19 +3150,37 @@ Total Price: {{total price}}`;
           const contentConfig = configuration.contentConfig;
           const contentCalc = (calculation || safeCalculation)?.contentCalculation;
           
+          // Debug: Log the calculation structure
+          console.log('🔍 Multi combination calculation structure:', {
+            calculation: calculation,
+            safeCalculation: safeCalculation,
+            messagingCalc: messagingCalc,
+            contentCalc: contentCalc,
+            messagingConfig: messagingConfig,
+            contentConfig: contentConfig
+          });
+          
           // Messaging tokens
           if (messagingConfig) {
             templateData['{{messaging_users_count}}'] = (messagingConfig.numberOfUsers || 0).toString();
             templateData['{{messagingUsersCount}}'] = (messagingConfig.numberOfUsers || 0).toString();
             templateData['{{messaging_number_of_users}}'] = (messagingConfig.numberOfUsers || 0).toString();
+            templateData['{{messaging number of users}}'] = (messagingConfig.numberOfUsers || 0).toString(); // Space version
             templateData['{{messaging_number_of_instances}}'] = (messagingConfig.numberOfInstances || 0).toString();
+            templateData['{{messaging number of instances}}'] = (messagingConfig.numberOfInstances || 0).toString(); // Space version
             templateData['{{messagingNumberOfInstances}}'] = (messagingConfig.numberOfInstances || 0).toString();
             templateData['{{messaging_instance_type}}'] = messagingConfig.instanceType || 'Standard';
+            templateData['{{messaging instance type}}'] = messagingConfig.instanceType || 'Standard'; // Space version
             templateData['{{messagingInstanceType}}'] = messagingConfig.instanceType || 'Standard';
             templateData['{{messaging_duration}}'] = (messagingConfig.duration || 0).toString();
             templateData['{{messagingDuration}}'] = (messagingConfig.duration || 0).toString();
             templateData['{{messaging_messages}}'] = (messagingConfig.messages || 0).toString();
             templateData['{{messagingMessages}}'] = (messagingConfig.messages || 0).toString();
+            // Also map general message_count to messaging_messages for Multi combination
+            templateData['{{message_count}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{messages}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{number_of_messages}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{messages_count}}'] = (messagingConfig.messages || 0).toString();
           } else {
             templateData['{{messaging_users_count}}'] = '0';
             templateData['{{messagingUsersCount}}'] = '0';
@@ -3165,9 +3193,14 @@ Total Price: {{total price}}`;
             templateData['{{messagingDuration}}'] = '0';
             templateData['{{messaging_messages}}'] = '0';
             templateData['{{messagingMessages}}'] = '0';
+            templateData['{{message_count}}'] = '0';
+            templateData['{{messages}}'] = '0';
+            templateData['{{number_of_messages}}'] = '0';
+            templateData['{{messages_count}}'] = '0';
           }
           
           if (messagingCalc) {
+            console.log('✅ Messaging calculation found:', messagingCalc);
             templateData['{{messaging_migration_cost}}'] = formatCurrency(messagingCalc.migrationCost || 0);
             templateData['{{messagingMigrationCost}}'] = formatCurrency(messagingCalc.migrationCost || 0);
             templateData['{{messaging_user_cost}}'] = formatCurrency(messagingCalc.userCost || 0);
@@ -3179,6 +3212,7 @@ Total Price: {{total price}}`;
             templateData['{{messaging_total_cost}}'] = formatCurrency(messagingCalc.totalCost || 0);
             templateData['{{messagingTotalCost}}'] = formatCurrency(messagingCalc.totalCost || 0);
           } else {
+            console.warn('⚠️ Messaging calculation not found, setting to $0.00');
             templateData['{{messaging_migration_cost}}'] = formatCurrency(0);
             templateData['{{messagingMigrationCost}}'] = formatCurrency(0);
             templateData['{{messaging_user_cost}}'] = formatCurrency(0);
@@ -3196,15 +3230,22 @@ Total Price: {{total price}}`;
             templateData['{{content_users_count}}'] = (contentConfig.numberOfUsers || 0).toString();
             templateData['{{contentUsersCount}}'] = (contentConfig.numberOfUsers || 0).toString();
             templateData['{{content_number_of_users}}'] = (contentConfig.numberOfUsers || 0).toString();
+            templateData['{{content number of users}}'] = (contentConfig.numberOfUsers || 0).toString(); // Space version
             templateData['{{content_number_of_instances}}'] = (contentConfig.numberOfInstances || 0).toString();
+            templateData['{{content number of instances}}'] = (contentConfig.numberOfInstances || 0).toString(); // Space version
             templateData['{{contentNumberOfInstances}}'] = (contentConfig.numberOfInstances || 0).toString();
             templateData['{{content_instance_type}}'] = contentConfig.instanceType || 'Standard';
+            templateData['{{content instance type}}'] = contentConfig.instanceType || 'Standard'; // Space version
             templateData['{{contentInstanceType}}'] = contentConfig.instanceType || 'Standard';
             templateData['{{content_duration}}'] = (contentConfig.duration || 0).toString();
             templateData['{{contentDuration}}'] = (contentConfig.duration || 0).toString();
             templateData['{{content_data_size}}'] = (contentConfig.dataSizeGB || 0).toString();
             templateData['{{contentDataSize}}'] = (contentConfig.dataSizeGB || 0).toString();
             templateData['{{content_data_size_gb}}'] = (contentConfig.dataSizeGB || 0).toString();
+            // Also map general data_size to content_data_size for Multi combination
+            templateData['{{data_size}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{dataSizeGB}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{data_size_gb}}'] = (contentConfig.dataSizeGB || 0).toString();
           } else {
             templateData['{{content_users_count}}'] = '0';
             templateData['{{contentUsersCount}}'] = '0';
@@ -3218,9 +3259,13 @@ Total Price: {{total price}}`;
             templateData['{{content_data_size}}'] = '0';
             templateData['{{contentDataSize}}'] = '0';
             templateData['{{content_data_size_gb}}'] = '0';
+            templateData['{{data_size}}'] = '0';
+            templateData['{{dataSizeGB}}'] = '0';
+            templateData['{{data_size_gb}}'] = '0';
           }
           
           if (contentCalc) {
+            console.log('✅ Content calculation found:', contentCalc);
             templateData['{{content_migration_cost}}'] = formatCurrency(contentCalc.migrationCost || 0);
             templateData['{{contentMigrationCost}}'] = formatCurrency(contentCalc.migrationCost || 0);
             templateData['{{content_user_cost}}'] = formatCurrency(contentCalc.userCost || 0);
@@ -3232,6 +3277,7 @@ Total Price: {{total price}}`;
             templateData['{{content_total_cost}}'] = formatCurrency(contentCalc.totalCost || 0);
             templateData['{{contentTotalCost}}'] = formatCurrency(contentCalc.totalCost || 0);
           } else {
+            console.warn('⚠️ Content calculation not found, setting to $0.00');
             templateData['{{content_migration_cost}}'] = formatCurrency(0);
             templateData['{{contentMigrationCost}}'] = formatCurrency(0);
             templateData['{{content_user_cost}}'] = formatCurrency(0);
@@ -3344,6 +3390,67 @@ Total Price: {{total price}}`;
         console.log('  {{Payment_Terms}}:', templateData['{{Payment_Terms}}']);
         console.log('  {{paymentTerms}}:', templateData['{{paymentTerms}}']);
         
+        // CRITICAL: Final pass to ensure NO undefined values in templateData
+        Object.keys(templateData).forEach(key => {
+          const value = templateData[key];
+          if (value === undefined || value === null || String(value).toLowerCase() === 'undefined') {
+            console.warn(`⚠️ Found undefined/null value for token ${key}, setting fallback`);
+            const lower = key.toLowerCase();
+            if (lower.includes('cost') || lower.includes('price')) {
+              templateData[key] = '$0.00';
+            } else if (lower.includes('count') || lower.includes('number') || lower.includes('size') || lower.includes('users') || lower.includes('messages')) {
+              templateData[key] = '0';
+            } else if (lower.includes('duration') || lower.includes('month')) {
+              templateData[key] = '1';
+            } else if (lower.includes('migration') && !lower.includes('cost') && !lower.includes('price')) {
+              templateData[key] = migrationType || 'Content';
+            } else if (lower.includes('company')) {
+              templateData[key] = finalCompanyName || 'Your Company';
+            } else if (lower.includes('client') || (lower.includes('name') && !lower.includes('company'))) {
+              templateData[key] = clientName || 'Contact Name';
+            } else if (lower.includes('email')) {
+              templateData[key] = clientEmail || 'contact@email.com';
+            } else if (lower.includes('date')) {
+              templateData[key] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
+            } else if (lower.includes('discount')) {
+              templateData[key] = ''; // Keep discount empty if not applicable
+            } else {
+              templateData[key] = '';
+            }
+          }
+        });
+        
+        // Add migration description tokens for better template support
+        const migrationDescription = (() => {
+          if (configuration?.migrationType === 'Multi combination') {
+            const messagingName = templateData['{{messaging_migration_name}}'] || '';
+            const contentName = templateData['{{content_migration_name}}'] || '';
+            if (messagingName && contentName) {
+              return `${contentName} | ${messagingName}`;
+            } else if (messagingName) {
+              return messagingName;
+            } else if (contentName) {
+              return contentName;
+            }
+          }
+          return migrationType || 'Content';
+        })();
+        
+        templateData['{{migration_description}}'] = migrationDescription;
+        templateData['{{migrationDescription}}'] = migrationDescription;
+        templateData['{{migration_description_text}}'] = migrationDescription;
+        
+        // Add user description tokens
+        const userDescription = `Up to ${userCount || 1} Users`;
+        templateData['{{user_description}}'] = userDescription;
+        templateData['{{userDescription}}'] = userDescription;
+        templateData['{{users_description}}'] = userDescription;
+        
+        // Add data size description tokens
+        const dataDescription = dataSizeGB > 0 ? `${dataSizeGB} GBs` : '0 GBs';
+        templateData['{{data_description}}'] = dataDescription;
+        templateData['{{dataDescription}}'] = dataDescription;
+        
         console.log('📋 Template data for DOCX processing:', templateData);
         
         // Debug: Check each token value individually
@@ -3384,10 +3491,20 @@ Total Price: {{total price}}`;
         console.log('  formatCurrency(0):', formatCurrency(0));
         console.log('  formatCurrency(300):', formatCurrency(300));
         
-        // CRITICAL: Final validation - ensure NO undefined values
-        const undefinedTokens = Object.entries(templateData).filter(([, value]) => 
-          value === undefined || value === null || value === 'undefined' || value === ''
-        );
+        // CRITICAL: Final validation - ensure NO undefined values (including string "undefined")
+        const undefinedTokens = Object.entries(templateData).filter(([key, value]) => {
+          if (value === undefined || value === null) return true;
+          const strValue = String(value).trim();
+          if (strValue === '' || strValue.toLowerCase() === 'undefined' || strValue === 'null') {
+            // Skip discount-related tokens - they should remain empty if not applicable
+            const lower = key.toLowerCase();
+            if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount')) {
+              return false; // Don't flag discount tokens as undefined
+            }
+            return true;
+          }
+          return false;
+        });
         
         if (undefinedTokens.length > 0) {
           console.error('❌ CRITICAL: Found undefined/null/empty tokens:', undefinedTokens);
@@ -3395,24 +3512,29 @@ Total Price: {{total price}}`;
           // Fix any remaining undefined values
           undefinedTokens.forEach(([key, value]) => {
             console.log(`🔧 Fixing undefined token: ${key} = ${value}`);
-            if (key.toLowerCase().includes('company')) {
-              templateData[key] = 'Demo Company Inc.';
-            } else if (key.toLowerCase().includes('user') && key.toLowerCase().includes('count')) {
-              templateData[key] = '1';
-            } else if (key.toLowerCase().includes('cost') || key.toLowerCase().includes('price')) {
+            const lower = key.toLowerCase();
+            if (lower.includes('company')) {
+              templateData[key] = finalCompanyName || 'Your Company';
+            } else if (lower.includes('user') && (lower.includes('count') || lower.includes('number'))) {
+              templateData[key] = (userCount || 1).toString();
+            } else if (lower.includes('cost') || lower.includes('price')) {
               templateData[key] = '$0.00';
-            } else if (key.toLowerCase().includes('duration') || key.toLowerCase().includes('month')) {
-              templateData[key] = '1';
-            } else if (key.toLowerCase().includes('migration') && !key.toLowerCase().includes('cost')) {
-              templateData[key] = 'Content';
-            } else if (key.toLowerCase().includes('client') || key.toLowerCase().includes('name')) {
-              templateData[key] = 'Demo Client';
-            } else if (key.toLowerCase().includes('email')) {
-              templateData[key] = 'demo@example.com';
-            } else if (key.toLowerCase().includes('date')) {
-              templateData[key] = new Date().toLocaleDateString();
+            } else if (lower.includes('duration') || lower.includes('month')) {
+              templateData[key] = (duration || 1).toString();
+            } else if (lower.includes('migration') && !lower.includes('cost') && !lower.includes('price')) {
+              templateData[key] = migrationType || 'Content';
+            } else if (lower.includes('client') || (lower.includes('name') && !lower.includes('company'))) {
+              templateData[key] = clientName || 'Contact Name';
+            } else if (lower.includes('email')) {
+              templateData[key] = clientEmail || 'contact@email.com';
+            } else if (lower.includes('date')) {
+              templateData[key] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
+            } else if (lower.includes('data') && (lower.includes('size') || lower.includes('gb'))) {
+              templateData[key] = (dataSizeGB || 0).toString();
+            } else if (lower.includes('instance') && (lower.includes('count') || lower.includes('number'))) {
+              templateData[key] = (numberOfInstances || 1).toString();
             } else {
-              templateData[key] = 'N/A';
+              templateData[key] = '';
             }
           });
           

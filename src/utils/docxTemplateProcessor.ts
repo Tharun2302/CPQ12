@@ -345,12 +345,43 @@ export class DocxTemplateProcessor {
         'total price': processedData['{{total price}}'] || processedData['{{total_price}}'] || processedData['{{prices}}'] || '$0.00',
         'total_price': processedData['{{total_price}}'] || processedData['{{total price}}'] || processedData['{{prices}}'] || '$0.00',
         'price_migration': processedData['{{price_migration}}'] || processedData['{{migration_price}}'] || '$0.00',
-        'instance_cost': processedData['{{instance_cost}}'] || processedData['{{instanceCost}}'] || '$0.00',
+        'instance_cost': processedData['{{instance_cost}}'] || processedData['{{instance..cost}}'] || processedData['{{instance cost}}'] || processedData['{{instanceCost}}'] || '$0.00',
+        'instance..cost': processedData['{{instance..cost}}'] || processedData['{{instance_cost}}'] || processedData['{{instance cost}}'] || '$0.00', // Handle double-dot typo
+        'instance cost': processedData['{{instance cost}}'] || processedData['{{instance_cost}}'] || processedData['{{instance..cost}}'] || '$0.00', // Space version
         'per_user_cost': processedData['{{per_user_cost}}'] || processedData['{{per_user_monthly_cost}}'] || '$0.00',
         'data_size': processedData['{{data_size}}'] || processedData['{{dataSizeGB}}'] || processedData['{{data_size_gb}}'] || '0',
         'dataSizeGB': processedData['{{dataSizeGB}}'] || processedData['{{data_size}}'] || processedData['{{data_size_gb}}'] || '0',
         'data_size_gb': processedData['{{data_size_gb}}'] || processedData['{{data_size}}'] || processedData['{{dataSizeGB}}'] || '0',
-        'per_data_cost': processedData['{{per_data_cost}}'] || '$0.00'
+        'per_data_cost': processedData['{{per_data_cost}}'] || '$0.00',
+        // Multi combination - Content tokens with spaces
+        'content number of instances': processedData['{{content number of instances}}'] || processedData['{{content_number_of_instances}}'] || '0',
+        'content instance type': processedData['{{content instance type}}'] || processedData['{{content_instance_type}}'] || 'Standard',
+        // Multi combination - Messaging tokens with spaces
+        'messaging number of instances': processedData['{{messaging number of instances}}'] || processedData['{{messaging_number_of_instances}}'] || '0',
+        'messaging instance type': processedData['{{messaging instance type}}'] || processedData['{{messaging_instance_type}}'] || 'Standard',
+        // Discount tokens with spaces
+        'discount percent': processedData['{{discount percent}}'] || processedData['{{discount_percent}}'] || '',
+        'discount amount': processedData['{{discount amount}}'] || processedData['{{discount_amount}}'] || '',
+        // Multi combination - Content tokens
+        'content_migration_name': processedData['{{content_migration_name}}'] || processedData['{{contentMigrationName}}'] || '',
+        'contentMigrationName': processedData['{{contentMigrationName}}'] || processedData['{{content_migration_name}}'] || '',
+        'content_users_count': processedData['{{content_users_count}}'] || processedData['{{contentUsersCount}}'] || processedData['{{content_number_of_users}}'] || '0',
+        'contentUsersCount': processedData['{{contentUsersCount}}'] || processedData['{{content_users_count}}'] || '0',
+        'content_data_size': processedData['{{content_data_size}}'] || processedData['{{contentDataSize}}'] || processedData['{{content_data_size_gb}}'] || '0',
+        'contentDataSize': processedData['{{contentDataSize}}'] || processedData['{{content_data_size}}'] || '0',
+        'content_migration_cost': processedData['{{content_migration_cost}}'] || processedData['{{contentMigrationCost}}'] || '$0.00',
+        'contentMigrationCost': processedData['{{contentMigrationCost}}'] || processedData['{{content_migration_cost}}'] || '$0.00',
+        // Multi combination - Messaging tokens
+        'messaging_migration_name': processedData['{{messaging_migration_name}}'] || processedData['{{messagingMigrationName}}'] || '',
+        'messagingMigrationName': processedData['{{messagingMigrationName}}'] || processedData['{{messaging_migration_name}}'] || '',
+        'messaging_users_count': processedData['{{messaging_users_count}}'] || processedData['{{messagingUsersCount}}'] || processedData['{{messaging_number_of_users}}'] || '0',
+        'messagingUsersCount': processedData['{{messagingUsersCount}}'] || processedData['{{messaging_users_count}}'] || '0',
+        'messaging_messages': processedData['{{messaging_messages}}'] || processedData['{{messagingMessages}}'] || '0',
+        'messagingMessages': processedData['{{messagingMessages}}'] || processedData['{{messaging_messages}}'] || '0',
+        'messaging_migration_cost': processedData['{{messaging_migration_cost}}'] || processedData['{{messagingMigrationCost}}'] || '$0.00',
+        'messagingMigrationCost': processedData['{{messagingMigrationCost}}'] || processedData['{{messaging_migration_cost}}'] || '$0.00',
+        // Message count token (for backward compatibility)
+        'message_count': processedData['{{message_count}}'] || processedData['{{messaging_messages}}'] || processedData['{{messages}}'] || '0'
       };
       
       // Add common tokens to docxtemplater data
@@ -464,6 +495,25 @@ export class DocxTemplateProcessor {
             finalCleanText.indexOf('undefined') + 100
           ));
           
+          // CRITICAL: Remove "undefined" strings from the document XML
+          console.log('🔧 Attempting to remove "undefined" strings from document...');
+          const zipAfter = doc.getZip();
+          const xmlPath = 'word/document.xml';
+          let documentXml = zipAfter.file(xmlPath)?.asText() || '';
+          
+          // Replace "undefined" with empty string or appropriate fallback
+          // This handles cases where tokens weren't replaced properly
+          const originalXml = documentXml;
+          documentXml = documentXml.replace(/undefined/gi, '');
+          
+          // Also remove any remaining {{}} tokens that weren't replaced
+          documentXml = documentXml.replace(/\{\{[^}]+\}\}/g, '');
+          
+          if (documentXml !== originalXml) {
+            zipAfter.file(xmlPath, documentXml);
+            console.log('✅ Removed "undefined" strings and unreplaced tokens from document');
+          }
+          
           // CRITICAL: Check if company name tokens are still present
           const remainingCompanyTokens = finalCleanText.match(/\{\{[^}]*[Cc]ompany[^}]*\}\}/g);
           if (remainingCompanyTokens) {
@@ -510,8 +560,25 @@ export class DocxTemplateProcessor {
         return this.createFallbackDocument(templateData);
       }
       
+      // CRITICAL: Final cleanup - remove any "undefined" strings from the document before generating
+      const finalZip = doc.getZip();
+      const finalXmlPath = 'word/document.xml';
+      let finalDocumentXml = finalZip.file(finalXmlPath)?.asText() || '';
+      const originalFinalXml = finalDocumentXml;
+      
+      // Remove "undefined" strings (case-insensitive)
+      finalDocumentXml = finalDocumentXml.replace(/undefined/gi, '');
+      
+      // Remove any remaining unreplaced tokens
+      finalDocumentXml = finalDocumentXml.replace(/\{\{[^}]+\}\}/g, '');
+      
+      if (finalDocumentXml !== originalFinalXml) {
+        finalZip.file(finalXmlPath, finalDocumentXml);
+        console.log('✅ Final cleanup: Removed "undefined" strings and unreplaced tokens');
+      }
+      
       // Generate output from Docxtemplater
-      let buffer = doc.getZip().generate({
+      let buffer = finalZip.generate({
         type: 'blob',
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       });
@@ -538,6 +605,28 @@ export class DocxTemplateProcessor {
         if (finalDocumentXml) {
           const finalCleanText = this.extractTextFromDocxXml(finalDocumentXml);
           console.log('🔍 Final document text preview:', finalCleanText.substring(0, 500) + '...');
+          
+          // CRITICAL: Check for and remove "undefined" strings
+          if (finalCleanText.toLowerCase().includes('undefined')) {
+            console.warn('⚠️ Found "undefined" in final document, performing cleanup...');
+            let cleanedXml = finalDocumentXml;
+            
+            // Remove "undefined" strings (case-insensitive)
+            cleanedXml = cleanedXml.replace(/undefined/gi, '');
+            
+            // Remove any remaining unreplaced tokens
+            cleanedXml = cleanedXml.replace(/\{\{[^}]+\}\}/g, '');
+            
+            if (cleanedXml !== finalDocumentXml) {
+              finalZip.file('word/document.xml', cleanedXml);
+              // Regenerate buffer with cleaned XML
+              buffer = finalZip.generate({
+                type: 'blob',
+                mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              });
+              console.log('✅ Cleaned "undefined" strings from final document');
+            }
+          }
           
           // Check if any {{}} tokens remain
           const remainingTokens = finalCleanText.match(/\{\{[^}]+\}\}/g);
@@ -956,6 +1045,7 @@ export class DocxTemplateProcessor {
       // Duration variations
       '{{Duration of months}}': duration,
       '{{Duration_of_months}}': duration,  // CRITICAL: Underscore version found in template
+      '{{Duration of months}}': duration, // Space version (duplicate for clarity)
       '{{Suration_of_months}}': duration,  // Handle typo version
       '{{duration_months}}': duration,
       '{{duration}}': duration,
@@ -1043,8 +1133,10 @@ export class DocxTemplateProcessor {
       
       // Discount tokens - hide when discount is 0
       '{{discount}}': (data as any)['{{discount}}'] || '',
-      '{{discount_percent}}': (data as any)['{{discount_percent}}'] || '',
-      '{{discount_amount}}': (data as any)['{{discount_amount}}'] || '',
+      '{{discount_percent}}': (data as any)['{{discount_percent}}'] || (data as any)['{{discount percent}}'] || '',
+      '{{discount percent}}': (data as any)['{{discount percent}}'] || (data as any)['{{discount_percent}}'] || '', // Space version
+      '{{discount_amount}}': (data as any)['{{discount_amount}}'] || (data as any)['{{discount amount}}'] || '',
+      '{{discount amount}}': (data as any)['{{discount amount}}'] || (data as any)['{{discount_amount}}'] || '', // Space version
       '{{discount_text}}': (data as any)['{{discount_text}}'] || '',
       '{{discount_line}}': (data as any)['{{discount_line}}'] || '',
       '{{discount_row}}': (data as any)['{{discount_row}}'] || '',
@@ -1066,21 +1158,78 @@ export class DocxTemplateProcessor {
       
       // Instance tokens
       '{{instance_users}}': this.numberToWords(parseInt((data as any)['{{instance_users}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instances}}'] || '1')),
-      '{{instance_type}}': (data as any)['{{instance_type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard',
-      '{{instanceType}}': (data as any)['{{instanceType}}'] || (data as any)['{{instance_type}}'] || data.instanceType || 'Standard',
-      '{{instance_type_cost}}': (data as any)['{{instance_type_cost}}'] || (() => {
+      '{{instance_type}}': (data as any)['{{instance_type}}'] || (data as any)['{{instance type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard',
+      '{{instance type}}': (data as any)['{{instance type}}'] || (data as any)['{{instance_type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard', // Space version
+      '{{instanceType}}': (data as any)['{{instanceType}}'] || (data as any)['{{instance_type}}'] || (data as any)['{{instance type}}'] || data.instanceType || 'Standard',
+      '{{instance_type_cost}}': (data as any)['{{instance_type_cost}}'] || (data as any)['{{instance_type cost}}'] || (data as any)['{{instance..cost}}'] || (data as any)['{{instance_cost}}'] || (() => {
         const { getInstanceTypeCost, formatCurrency } = require('./pricing');
-        const instanceType = (data as any)['{{instance_type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard';
+        const instanceType = (data as any)['{{instance_type}}'] || (data as any)['{{instance type}}'] || (data as any)['{{instanceType}}'] || data.instanceType || 'Standard';
         return formatCurrency(getInstanceTypeCost(instanceType));
       })(),
+      '{{instance_type cost}}': (data as any)['{{instance_type cost}}'] || (data as any)['{{instance_type_cost}}'] || (data as any)['{{instance..cost}}'] || (data as any)['{{instance_cost}}'] || '$0.00', // Space version
+      '{{instance..cost}}': (data as any)['{{instance..cost}}'] || (data as any)['{{instance_cost}}'] || (data as any)['{{instance_type_cost}}'] || '$0.00', // Handle double-dot typo
+      '{{instance_cost}}': (data as any)['{{instance_cost}}'] || (data as any)['{{instance..cost}}'] || (data as any)['{{instance_type_cost}}'] || '$0.00',
+      '{{instance cost}}': (data as any)['{{instance cost}}'] || (data as any)['{{instance_cost}}'] || (data as any)['{{instance..cost}}'] || '$0.00', // Space version
       '{{numberOfInstances}}': (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || (data as any)['{{instances}}'] || '1',
-      '{{number_of_instances}}': (data as any)['{{number_of_instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
+      '{{number_of_instances}}': (data as any)['{{number_of_instances}}'] || (data as any)['{{number of instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
+      '{{number of instances}}': (data as any)['{{number of instances}}'] || (data as any)['{{number_of_instances}}'] || (data as any)['{{numberOfInstances}}'] || '1', // Space version
       '{{instances}}': (data as any)['{{instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
       
       // Data size tokens
       '{{data_size}}': (data as any)['{{data_size}}'] || (data as any)['{{dataSizeGB}}'] || (data as any)['{{data_size_gb}}'] || '0',
       '{{dataSizeGB}}': (data as any)['{{dataSizeGB}}'] || (data as any)['{{data_size}}'] || (data as any)['{{data_size_gb}}'] || '0',
       '{{data_size_gb}}': (data as any)['{{data_size_gb}}'] || (data as any)['{{data_size}}'] || (data as any)['{{dataSizeGB}}'] || '0',
+      
+      // Multi combination - Content tokens
+      '{{content_migration_name}}': (data as any)['{{content_migration_name}}'] || (data as any)['{{contentMigrationName}}'] || '',
+      '{{contentMigrationName}}': (data as any)['{{contentMigrationName}}'] || (data as any)['{{content_migration_name}}'] || '',
+      '{{content_users_count}}': (data as any)['{{content_users_count}}'] || (data as any)['{{contentUsersCount}}'] || (data as any)['{{content_number_of_users}}'] || (data as any)['{{content number of users}}'] || '0',
+      '{{contentUsersCount}}': (data as any)['{{contentUsersCount}}'] || (data as any)['{{content_users_count}}'] || (data as any)['{{content_number_of_users}}'] || '0',
+      '{{content_number_of_users}}': (data as any)['{{content_number_of_users}}'] || (data as any)['{{content number of users}}'] || (data as any)['{{content_users_count}}'] || '0',
+      '{{content number of users}}': (data as any)['{{content number of users}}'] || (data as any)['{{content_number_of_users}}'] || (data as any)['{{content_users_count}}'] || '0', // Space version
+      '{{content_number_of_instances}}': (data as any)['{{content_number_of_instances}}'] || (data as any)['{{content number of instances}}'] || '0',
+      '{{content number of instances}}': (data as any)['{{content number of instances}}'] || (data as any)['{{content_number_of_instances}}'] || '0', // Space version
+      '{{content_instance_type}}': (data as any)['{{content_instance_type}}'] || (data as any)['{{content instance type}}'] || (data as any)['{{contentInstanceType}}'] || 'Standard',
+      '{{content instance type}}': (data as any)['{{content instance type}}'] || (data as any)['{{content_instance_type}}'] || (data as any)['{{contentInstanceType}}'] || 'Standard', // Space version
+      '{{contentInstanceType}}': (data as any)['{{contentInstanceType}}'] || (data as any)['{{content_instance_type}}'] || (data as any)['{{content instance type}}'] || 'Standard',
+      '{{content_data_size}}': (data as any)['{{content_data_size}}'] || (data as any)['{{contentDataSize}}'] || (data as any)['{{content_data_size_gb}}'] || '0',
+      '{{contentDataSize}}': (data as any)['{{contentDataSize}}'] || (data as any)['{{content_data_size}}'] || (data as any)['{{content_data_size_gb}}'] || '0',
+      '{{content_data_size_gb}}': (data as any)['{{content_data_size_gb}}'] || (data as any)['{{content_data_size}}'] || '0',
+      '{{content_migration_cost}}': (data as any)['{{content_migration_cost}}'] || (data as any)['{{contentMigrationCost}}'] || '$0.00',
+      '{{contentMigrationCost}}': (data as any)['{{contentMigrationCost}}'] || (data as any)['{{content_migration_cost}}'] || '$0.00',
+      '{{content_user_cost}}': (data as any)['{{content_user_cost}}'] || (data as any)['{{contentUserCost}}'] || '$0.00',
+      '{{contentUserCost}}': (data as any)['{{contentUserCost}}'] || (data as any)['{{content_user_cost}}'] || '$0.00',
+      '{{content_data_cost}}': (data as any)['{{content_data_cost}}'] || (data as any)['{{contentDataCost}}'] || '$0.00',
+      '{{contentDataCost}}': (data as any)['{{contentDataCost}}'] || (data as any)['{{content_data_cost}}'] || '$0.00',
+      '{{content_instance_cost}}': (data as any)['{{content_instance_cost}}'] || (data as any)['{{contentInstanceCost}}'] || '$0.00',
+      '{{contentInstanceCost}}': (data as any)['{{contentInstanceCost}}'] || (data as any)['{{content_instance_cost}}'] || '$0.00',
+      '{{content_total_cost}}': (data as any)['{{content_total_cost}}'] || (data as any)['{{contentTotalCost}}'] || '$0.00',
+      '{{contentTotalCost}}': (data as any)['{{contentTotalCost}}'] || (data as any)['{{content_total_cost}}'] || '$0.00',
+      
+      // Multi combination - Messaging tokens
+      '{{messaging_migration_name}}': (data as any)['{{messaging_migration_name}}'] || (data as any)['{{messagingMigrationName}}'] || '',
+      '{{messagingMigrationName}}': (data as any)['{{messagingMigrationName}}'] || (data as any)['{{messaging_migration_name}}'] || '',
+      '{{messaging_users_count}}': (data as any)['{{messaging_users_count}}'] || (data as any)['{{messagingUsersCount}}'] || (data as any)['{{messaging_number_of_users}}'] || (data as any)['{{messaging number of users}}'] || '0',
+      '{{messagingUsersCount}}': (data as any)['{{messagingUsersCount}}'] || (data as any)['{{messaging_users_count}}'] || (data as any)['{{messaging_number_of_users}}'] || '0',
+      '{{messaging_number_of_users}}': (data as any)['{{messaging_number_of_users}}'] || (data as any)['{{messaging number of users}}'] || (data as any)['{{messaging_users_count}}'] || '0',
+      '{{messaging number of users}}': (data as any)['{{messaging number of users}}'] || (data as any)['{{messaging_number_of_users}}'] || (data as any)['{{messaging_users_count}}'] || '0', // Space version
+      '{{messaging_number_of_instances}}': (data as any)['{{messaging_number_of_instances}}'] || (data as any)['{{messaging number of instances}}'] || '0',
+      '{{messaging number of instances}}': (data as any)['{{messaging number of instances}}'] || (data as any)['{{messaging_number_of_instances}}'] || '0', // Space version
+      '{{messaging_instance_type}}': (data as any)['{{messaging_instance_type}}'] || (data as any)['{{messaging instance type}}'] || (data as any)['{{messagingInstanceType}}'] || 'Standard',
+      '{{messaging instance type}}': (data as any)['{{messaging instance type}}'] || (data as any)['{{messaging_instance_type}}'] || (data as any)['{{messagingInstanceType}}'] || 'Standard', // Space version
+      '{{messagingInstanceType}}': (data as any)['{{messagingInstanceType}}'] || (data as any)['{{messaging_instance_type}}'] || (data as any)['{{messaging instance type}}'] || 'Standard',
+      '{{messaging_messages}}': (data as any)['{{messaging_messages}}'] || (data as any)['{{messagingMessages}}'] || '0',
+      '{{messagingMessages}}': (data as any)['{{messagingMessages}}'] || (data as any)['{{messaging_messages}}'] || '0',
+      '{{messaging_migration_cost}}': (data as any)['{{messaging_migration_cost}}'] || (data as any)['{{messagingMigrationCost}}'] || '$0.00',
+      '{{messagingMigrationCost}}': (data as any)['{{messagingMigrationCost}}'] || (data as any)['{{messaging_migration_cost}}'] || '$0.00',
+      '{{messaging_user_cost}}': (data as any)['{{messaging_user_cost}}'] || (data as any)['{{messagingUserCost}}'] || '$0.00',
+      '{{messagingUserCost}}': (data as any)['{{messagingUserCost}}'] || (data as any)['{{messaging_user_cost}}'] || '$0.00',
+      '{{messaging_data_cost}}': (data as any)['{{messaging_data_cost}}'] || (data as any)['{{messagingDataCost}}'] || '$0.00',
+      '{{messagingDataCost}}': (data as any)['{{messagingDataCost}}'] || (data as any)['{{messaging_data_cost}}'] || '$0.00',
+      '{{messaging_instance_cost}}': (data as any)['{{messaging_instance_cost}}'] || (data as any)['{{messagingInstanceCost}}'] || '$0.00',
+      '{{messagingInstanceCost}}': (data as any)['{{messagingInstanceCost}}'] || (data as any)['{{messaging_instance_cost}}'] || '$0.00',
+      '{{messaging_total_cost}}': (data as any)['{{messaging_total_cost}}'] || (data as any)['{{messagingTotalCost}}'] || '$0.00',
+      '{{messagingTotalCost}}': (data as any)['{{messagingTotalCost}}'] || (data as any)['{{messaging_total_cost}}'] || '$0.00',
       
       // Per-data cost tokens
       '{{per_data_cost}}': (data as any)['{{per_data_cost}}'] || '$0.00',
@@ -1132,45 +1281,66 @@ export class DocxTemplateProcessor {
       console.log(`  ${status} ${token}: ${value}`);
     });
     
-    // CRITICAL: Final validation - ensure NO undefined values
-    const undefinedKeys = Object.keys(processedData).filter(key => 
-      processedData[key] === undefined || processedData[key] === null || processedData[key] === ''
-    );
-    
-    if (undefinedKeys.length > 0) {
-      console.error('❌ DOCX PROCESSOR: Found undefined/null/empty values for keys:', undefinedKeys);
+      // CRITICAL: Final validation - ensure NO undefined values
+      const undefinedKeys = Object.keys(processedData).filter(key => 
+        processedData[key] === undefined || processedData[key] === null || processedData[key] === '' || String(processedData[key]).toLowerCase() === 'undefined'
+      );
       
-      // Replace with intelligent fallbacks
-      undefinedKeys.forEach(key => {
-        // Never force-fill discount-related tokens; keep them empty so rows can be removed
-        const lower = key.toLowerCase();
-        if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount') || lower.includes('if_discount')) {
-          processedData[key] = '';
-          return;
-        }
-        if (key.toLowerCase().includes('company')) {
-          processedData[key] = 'Demo Company Inc.';
-        } else if (key.toLowerCase().includes('user') && key.toLowerCase().includes('count')) {
-          processedData[key] = '1';
-        } else if (key.toLowerCase().includes('cost') || key.toLowerCase().includes('price')) {
-          processedData[key] = '$0.00';
-        } else if (key.toLowerCase().includes('duration') || key.toLowerCase().includes('month')) {
-          processedData[key] = '1';
-        } else if (key.toLowerCase().includes('migration') && !key.toLowerCase().includes('cost')) {
-          processedData[key] = 'Content';
-        } else if (key.toLowerCase().includes('client') || key.toLowerCase().includes('name')) {
-          processedData[key] = 'Demo Client';
-        } else if (key.toLowerCase().includes('email')) {
-          processedData[key] = 'demo@example.com';
-        } else if (key.toLowerCase().includes('date')) {
-          processedData[key] = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-        } else {
-          processedData[key] = 'N/A';
+      if (undefinedKeys.length > 0) {
+        console.error('❌ DOCX PROCESSOR: Found undefined/null/empty values for keys:', undefinedKeys);
+        
+        // Replace with intelligent fallbacks
+        undefinedKeys.forEach(key => {
+          // Never force-fill discount-related tokens; keep them empty so rows can be removed
+          const lower = key.toLowerCase();
+          if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount') || lower.includes('if_discount')) {
+            processedData[key] = '';
+            return;
+          }
+          if (key.toLowerCase().includes('company')) {
+            processedData[key] = 'Demo Company Inc.';
+          } else if (key.toLowerCase().includes('user') && key.toLowerCase().includes('count')) {
+            processedData[key] = '1';
+          } else if (key.toLowerCase().includes('cost') || key.toLowerCase().includes('price')) {
+            processedData[key] = '$0.00';
+          } else if (key.toLowerCase().includes('duration') || key.toLowerCase().includes('month')) {
+            processedData[key] = '1';
+          } else if (key.toLowerCase().includes('migration') && !key.toLowerCase().includes('cost') && !key.toLowerCase().includes('price')) {
+            processedData[key] = 'Content';
+          } else if (key.toLowerCase().includes('client') || key.toLowerCase().includes('name')) {
+            processedData[key] = 'Demo Client';
+          } else if (key.toLowerCase().includes('email')) {
+            processedData[key] = 'demo@example.com';
+          } else if (key.toLowerCase().includes('date')) {
+            processedData[key] = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+          } else if (key.toLowerCase().includes('data') && key.toLowerCase().includes('size')) {
+            processedData[key] = '0';
+          } else if (key.toLowerCase().includes('instance')) {
+            processedData[key] = '1';
+          } else {
+            processedData[key] = 'N/A';
+          }
+        });
+        
+        console.log('🔧 DOCX PROCESSOR: Fixed undefined values:', undefinedKeys);
+      }
+      
+      // CRITICAL: Additional pass to ensure no values are the string "undefined"
+      Object.keys(processedData).forEach(key => {
+        if (String(processedData[key]).toLowerCase() === 'undefined') {
+          console.warn(`⚠️ Found string "undefined" for key ${key}, replacing with fallback`);
+          const lower = key.toLowerCase();
+          if (lower.includes('cost') || lower.includes('price')) {
+            processedData[key] = '$0.00';
+          } else if (lower.includes('count') || lower.includes('number') || lower.includes('size')) {
+            processedData[key] = '0';
+          } else if (lower.includes('duration') || lower.includes('month')) {
+            processedData[key] = '1';
+          } else {
+            processedData[key] = '';
+          }
         }
       });
-      
-      console.log('🔧 DOCX PROCESSOR: Fixed undefined values:', undefinedKeys);
-    }
     
     // Final validation
     const finalUndefinedKeys = Object.keys(processedData).filter(key => 
