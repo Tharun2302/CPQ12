@@ -864,10 +864,18 @@ Quote ID: ${quoteData.id}
         const userCost = calculation?.userCost ?? safeCalculation.userCost;
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
         const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
+        const contentDurationMonths = isMultiCombination ? (configuration?.contentConfig?.duration ?? 0) : 0;
+        const messagingDurationMonths = isMultiCombination ? (configuration?.messagingConfig?.duration ?? 0) : 0;
         const durationCandidate = isMultiCombination
-          ? Math.max(configuration?.contentConfig?.duration ?? 0, configuration?.messagingConfig?.duration ?? 0)
+          ? Math.max(contentDurationMonths, messagingDurationMonths)
           : configuration?.duration;
         const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
+        // For DOC preview/email tokens: show both durations when in Multi combination mode
+        // (template text usually already contains the word "Months", so we don't append it here).
+        const durationDisplayForTemplate =
+          isMultiCombination && contentDurationMonths > 0 && messagingDurationMonths > 0
+            ? `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`
+            : duration.toString();
         const migrationType = configuration?.migrationType || 'Content';
         const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
         const clientEmail = clientInfo.clientEmail || dealData?.contactEmail || 'contact@email.com';
@@ -997,8 +1005,8 @@ Quote ID: ${quoteData.id}
           '{{number_of_instances}}': numberOfInstances.toString(),
           '{{numberOfInstances}}': numberOfInstances.toString(),
           '{{instances}}': numberOfInstances.toString(),
-          '{{Duration of months}}': (duration || 1).toString(),
-          '{{Duration_of_months}}': (duration || 1).toString(),
+          '{{Duration of months}}': durationDisplayForTemplate,
+          '{{Duration_of_months}}': durationDisplayForTemplate,
           '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
           '{{duration_months}}': (duration || 1).toString(),
           '{{duration}}': (duration || 1).toString(),
@@ -2800,10 +2808,18 @@ Total Price: {{total price}}`;
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
         const totalCost = quoteData.calculation?.totalCost || 0;
+        const contentDurationMonths = isMultiCombination ? (quoteData.configuration?.contentConfig?.duration ?? 0) : 0;
+        const messagingDurationMonths = isMultiCombination ? (quoteData.configuration?.messagingConfig?.duration ?? 0) : 0;
         const durationCandidate = isMultiCombination
-          ? Math.max(quoteData.configuration?.contentConfig?.duration ?? 0, quoteData.configuration?.messagingConfig?.duration ?? 0)
+          ? Math.max(contentDurationMonths, messagingDurationMonths)
           : quoteData.configuration?.duration;
         const duration = (durationCandidate && durationCandidate > 0 ? durationCandidate : 1);
+        // For DOC preview tokens: show both durations when in Multi combination mode
+        // (template text usually already contains the word "Months", so we don't append it here).
+        const durationDisplayForTemplate =
+          isMultiCombination && contentDurationMonths > 0 && messagingDurationMonths > 0
+            ? `${contentDurationMonths} (Content) / ${messagingDurationMonths} (Messaging)`
+            : duration.toString();
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
         const clientEmail = quoteData.clientEmail || clientInfo.clientEmail || 'demo@example.com';
@@ -3043,8 +3059,8 @@ Total Price: {{total price}}`;
           '{{number_of_instances}}': numberOfInstances.toString(),
           '{{numberOfInstances}}': numberOfInstances.toString(),
           '{{instances}}': numberOfInstances.toString(),
-          '{{Duration of months}}': (duration || 1).toString(),
-          '{{Duration_of_months}}': (duration || 1).toString(),
+          '{{Duration of months}}': durationDisplayForTemplate,
+          '{{Duration_of_months}}': durationDisplayForTemplate,
           '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
           '{{duration_months}}': (duration || 1).toString(),
           '{{duration}}': (duration || 1).toString(),
