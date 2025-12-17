@@ -35,7 +35,7 @@ export interface ConfigurationData {
   instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
   numberOfInstances: number;
   duration: number;
-  migrationType: 'Multi combination' | 'Messaging' | 'Content' | 'Overage Agreement';
+  migrationType: 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
   dataSizeGB: number;
   messages?: number;
   startDate?: string;

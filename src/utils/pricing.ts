@@ -314,6 +314,135 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
     tier
   };
 }
+
+// Helper function to calculate Email pricing
+function calculateEmailPricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
+  const getInstanceTypeCost = (instanceType: string): number => {
+    switch (instanceType) {
+      case 'Small': return 500;
+      case 'Standard': return 1000;
+      case 'Large': return 2000;
+      case 'Extra Large': return 5000;
+      default: return 500;
+    }
+  };
+
+  const getInstanceCost = (instanceType: string, duration: number): number => {
+    const baseCost = getInstanceTypeCost(instanceType);
+    return baseCost * duration;
+  };
+
+  // Messaging lookup tables (reused for Email managed migration cost calculation)
+  const perUserCostLookupByPlan: Record<string, { threshold: number; value: number }[]> = {
+    basic: [
+      { threshold: 100, value: 18 },
+      { threshold: 250, value: 15 },
+      { threshold: 500, value: 12 },
+      { threshold: 1000, value: 10 },
+      { threshold: 2500, value: 8 },
+      { threshold: 5000, value: 6 },
+      { threshold: 10000, value: 4 },
+      { threshold: 25000, value: 3 },
+      { threshold: 50000, value: 3 },
+      { threshold: Infinity, value: 3 }
+    ],
+    standard: [
+      { threshold: 100, value: 22 },
+      { threshold: 250, value: 20 },
+      { threshold: 500, value: 18 },
+      { threshold: 1000, value: 15 },
+      { threshold: 2500, value: 12 },
+      { threshold: 5000, value: 10 },
+      { threshold: 10000, value: 8 },
+      { threshold: 25000, value: 6 },
+      { threshold: 50000, value: 4 },
+      { threshold: Infinity, value: 3 }
+    ],
+    advanced: [
+      { threshold: 100, value: 34 },
+      { threshold: 250, value: 32 },
+      { threshold: 500, value: 30 },
+      { threshold: 1000, value: 28 },
+      { threshold: 2500, value: 24 },
+      { threshold: 5000, value: 18 },
+      { threshold: 10000, value: 12 },
+      { threshold: 25000, value: 10 },
+      { threshold: 50000, value: 8 },
+      { threshold: Infinity, value: 6 }
+    ]
+  };
+
+  const getManagedMigrationLookupValue = (userCount: number, planKey: 'basic' | 'standard' | 'advanced'): number => {
+    const lookupArray = perUserCostLookupByPlan[planKey];
+    for (let i = 0; i < lookupArray.length; i++) {
+      if (userCount <= lookupArray[i].threshold) {
+        return lookupArray[i].value;
+      }
+    }
+    return lookupArray[lookupArray.length - 1].value;
+  };
+
+  const planKey = tier.name.toLowerCase() as 'basic' | 'standard' | 'advanced';
+  
+  // Per user cost: $15 if < 500 users, $20 if >= 500 users (same for all plans)
+  const perUserCost = config.numberOfUsers < 500 ? 15 : 20;
+  const userCost = perUserCost * config.numberOfUsers;
+  
+  // Data cost = 0 (always)
+  const dataCost = 0;
+  
+  // Managed migration cost: Uses Messaging lookup tables with floors
+  const lookupValue = getManagedMigrationLookupValue(config.numberOfUsers, planKey);
+  const s38 = (lookupValue * config.numberOfUsers) / 4;
+  const floor = planKey === 'advanced' ? 800 : (planKey === 'standard' ? 600 : 400);
+  const migrationCost = Math.max(floor, s38);
+  
+  // Instance cost
+  const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
+  
+  // Total cost
+  let totalCost = userCost + dataCost + instanceCost + migrationCost;
+  
+  // Apply $2500 minimum by adjusting user cost only
+  const MINIMUM_TOTAL = 2500;
+  let adjustedUserCost = userCost;
+  
+  if (totalCost < MINIMUM_TOTAL) {
+    const deficit = MINIMUM_TOTAL - totalCost;
+    adjustedUserCost = userCost + deficit;
+    totalCost = MINIMUM_TOTAL;
+    
+    console.log('💰 Applied $2500 minimum to Email plan:', {
+      plan: tier.name,
+      originalTotal: userCost + dataCost + instanceCost + migrationCost,
+      originalUserCost: userCost,
+      deficit,
+      adjustedUserCost,
+      finalTotal: MINIMUM_TOTAL,
+      unchangedCosts: { dataCost, migrationCost, instanceCost }
+    });
+  }
+
+  console.log('📊 Email Migration Calculation:', {
+    tier: tier.name,
+    perUserCost,
+    numberOfUsers: config.numberOfUsers,
+    userCost: adjustedUserCost,
+    dataCost,
+    migrationCost,
+    instanceCost,
+    totalCost
+  });
+
+  return {
+    userCost: adjustedUserCost,
+    dataCost,
+    migrationCost,
+    instanceCost,
+    totalCost,
+    tier
+  };
+}
  
 export function calculatePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
   // Get base instance type cost (without duration multiplier)
@@ -455,6 +584,11 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
   // CONTENT MIGRATION CALCULATIONS
   if (config.migrationType === 'Content') {
     return calculateContentPricing(config, tier);
+  }
+ 
+  // EMAIL MIGRATION CALCULATIONS
+  if (config.migrationType === 'Email') {
+    return calculateEmailPricing(config, tier);
   }
  
   // Fallback for any other migration types (kept for completeness)

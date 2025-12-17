@@ -1071,7 +1071,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               <select
                 value={config.migrationType}
                 onChange={(e) => {
-                  const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Overage Agreement';
+                  const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
                   console.log(`🔄 Migration type changing from "${config.migrationType}" to "${newMigrationType}"`);
                   
                   // Create new config with updated migration type and cleared combination
@@ -1104,6 +1104,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 <option value="Multi combination">Multi combination</option>
                 <option value="Messaging">Messaging</option>
                 <option value="Content">Content</option>
+                <option value="Email">Email</option>
                 <option value="Overage Agreement">Overage</option>
               </select>
             </div>
@@ -1280,6 +1281,23 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           <option key={combo.value} value={combo.value}>{combo.label}</option>
                         ));
                       })()}
+                      {/* Email combinations */}
+                      {config.migrationType === 'Email' && (() => {
+                        const emailCombinations = [
+                          { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK/EXCHANGE' },
+                          { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL' },
+                          { value: 'exchange-to-gmail', label: 'EXCHANGE TO GMAIL' },
+                          { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL' }
+                        ];
+                        
+                        const filtered = emailCombinations.filter(combo => 
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
+                        
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
                       {/* Overage Agreement migration type - show only overage agreement combination */}
                       {config.migrationType === 'Overage Agreement' && (() => {
                         const overageCombinations = [
@@ -1352,6 +1370,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             allCombinations = messagingCombinations;
                           } else if (config.migrationType === 'Content') {
                             allCombinations = contentCombinations;
+                          } else if (config.migrationType === 'Email') {
+                            const emailCombinations = [
+                              { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK/EXCHANGE' },
+                              { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL' },
+                              { value: 'exchange-to-gmail', label: 'EXCHANGE TO GMAIL' },
+                              { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL' }
+                            ];
+                            allCombinations = emailCombinations;
                           } else if (config.migrationType === 'Overage Agreement') {
                             allCombinations = overageCombinations;
                           }
