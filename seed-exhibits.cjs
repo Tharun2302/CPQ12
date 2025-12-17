@@ -34,6 +34,27 @@ async function seedDefaultExhibits(db) {
       displayOrder: 2,
       keywords: ['slack', 'teams', 'messaging', 'basic', 'not included', 'features', 'limitations']
     },
+    // Email exhibits
+    {
+      name: 'Outlook to Gmail - Included Features',
+      description: 'Documentation for features included in Outlook to Gmail migration',
+      fileName: 'Outlook to Gmail - Included.docx',
+      combinations: ['outlook-to-gmail', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 1,
+      keywords: ['outlook', 'gmail', 'email', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Outlook to Gmail - Not Included Features',
+      description: 'Documentation for features not included in Outlook to Gmail migration',
+      fileName: 'Outlook to Gmail - Not Included.docx',
+      combinations: ['outlook-to-gmail', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 2,
+      keywords: ['outlook', 'gmail', 'email', 'not included', 'features', 'limitations']
+    },
     // Google MyDrive to MyDrive exhibits
     {
       name: 'Google MyDrive Compliance',
@@ -171,8 +192,7 @@ async function seedDefaultExhibits(db) {
 
   // Check if directory exists
   if (!fs.existsSync(exhibitsDir)) {
-    console.warn(`⚠️ Exhibits directory not found: ${exhibitsDir}`);
-    console.log('📁 Creating backend-exhibits directory...');
+    // Silently create directory if it doesn't exist (backend-exhibits may have been removed)
     fs.mkdirSync(exhibitsDir, { recursive: true });
   }
 
@@ -182,7 +202,7 @@ async function seedDefaultExhibits(db) {
 
       // Check if file exists
       if (!fs.existsSync(filePath)) {
-        console.warn(`⚠️ File not found: ${filePath}, skipping...`);
+        // Silently skip missing files (backend-exhibits directory may not exist)
         skippedCount++;
         continue;
       }
