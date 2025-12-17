@@ -3874,25 +3874,37 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
+                
+                // Get exhibit metadata FIRST (before fetching file)
+                const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                if (!exhibit) {
+                  console.warn(`⚠️ Exhibit ${exhibitId} not found in metadata, skipping`);
+                  continue;
+                }
+                
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
                 
                 if (response.ok) {
                   const blob = await response.blob();
+                  
+                  // Add both blob and metadata together to ensure they match
                   exhibitBlobs.push(blob);
-                  
-                  // Get exhibit metadata
-                  const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
-                  if (exhibit) {
-                    exhibitMetadata.push({
-                      name: exhibit.name || '',
-                      category: exhibit.category || ''
-                    });
-                  }
-                  
-                  console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
+                  exhibitMetadata.push({
+                    name: exhibit.name || '',
+                    category: exhibit.category || ''
+                  });
+                  console.log(`✅ Fetched exhibit ${exhibitId}: "${exhibit.name}" (${blob.size} bytes)`);
                 } else {
                   console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
                 }
+              }
+              
+              // Verify metadata matches blobs
+              if (exhibitBlobs.length !== exhibitMetadata.length) {
+                console.error(`❌ Mismatch: ${exhibitBlobs.length} blobs but ${exhibitMetadata.length} metadata entries!`);
+              } else {
+                console.log(`✅ Verified: ${exhibitBlobs.length} exhibits with matching metadata`);
+                console.log('📋 Exhibit order:', exhibitMetadata.map((m, i) => `${i + 1}. ${m.name}`));
               }
               
               if (exhibitBlobs.length > 0) {
