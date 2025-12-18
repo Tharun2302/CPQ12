@@ -25,6 +25,14 @@ export interface TemplatesResponse {
 
 class TemplateService {
   private baseUrl = import.meta.env.VITE_BACKEND_URL ? `${import.meta.env.VITE_BACKEND_URL}/api` : 'http://localhost:3001/api';
+  
+  private formatFileSize(bytes: number): string {
+    if (!bytes || bytes <= 0) return 'Unknown';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  }
 
   // Upload template to database
   async uploadTemplate(file: File, name?: string, description?: string, isDefault: boolean = false): Promise<TemplateUploadResponse> {
@@ -328,6 +336,7 @@ class TemplateService {
         fileName: dbTemplate.fileName,
         fileType: dbTemplate.fileType,
         fileSize: dbTemplate.fileSize,
+        size: this.formatFileSize(dbTemplate.fileSize),
         isDefault: dbTemplate.isDefault,
         uploadDate: new Date(dbTemplate.createdAt),
         content: null, // Will be extracted when needed

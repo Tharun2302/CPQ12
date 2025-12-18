@@ -26,7 +26,9 @@ try {
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+// IMPORTANT: dotenv values are strings. If PORT is provided as a string (e.g. "3001"),
+// Node can treat it as a named pipe instead of a TCP port. Always coerce to number.
+const PORT = Number.parseInt(process.env.PORT, 10) || 3001;
 
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({

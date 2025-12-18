@@ -8,6 +8,7 @@ import {
   QuotePDFResult
 } from './quotePDFGenerator';
 import { saveAs } from 'file-saver';
+import { getEffectiveDurationMonths } from './configDuration';
 
 /**
  * Integration helper for using quote PDF generator in React components
@@ -124,7 +125,7 @@ export class QuotePDFGeneratorIntegration {
           numberOfUsers: quoteData.configuration?.numberOfUsers || 0,
           instanceType: quoteData.configuration?.instanceType || 'Standard',
           numberOfInstances: quoteData.configuration?.numberOfInstances || 1,
-          duration: quoteData.configuration?.duration || 1,
+          duration: getEffectiveDurationMonths(quoteData.configuration) || 1,
           migrationType: quoteData.configuration?.migrationType || 'Email',
           dataSizeGB: quoteData.configuration?.dataSizeGB || 0
         },

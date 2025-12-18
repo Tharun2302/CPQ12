@@ -52,8 +52,8 @@ interface Template {
   description: string;
   file: File | null; // Original PDF file (can be null if lazy-loaded)
   wordFile?: File; // Converted Word file
-  size: string;
-  uploadDate: Date;
+  size?: string;
+  uploadDate: Date | string;
   isDefault: boolean;
   content?: string; // Extracted template content
   loadFile?: () => Promise<File | null>; // Lazy file loader from backend
@@ -225,6 +225,8 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
             const restoredTemplates = cached.templates.map((t: any) => ({
               ...t,
               uploadDate: t.uploadDate ? new Date(t.uploadDate) : new Date(t.createdAt || Date.now()),
+              // Backfill display fields if cache entry is older
+              size: t.size || (typeof t.fileSize === 'number' ? formatFileSize(t.fileSize) : undefined),
               content: null,
               file: null,
               loadFile: createLoadFile(t.id, t.fileName, t.fileType)
@@ -463,6 +465,31 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const toValidDate = (value: unknown): Date | null => {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value as any);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const getTemplatePrimaryTypeLabel = (template: Template): string => {
+    const ft = ((template.fileType || template.file?.type || '') as string).toLowerCase();
+    if (ft === 'pdf' || ft.includes('pdf')) return 'PDF';
+    if (ft === 'docx' || ft.includes('wordprocessingml') || ft.includes('msword') || ft.includes('doc')) return 'DOCX';
+    if (ft.includes('rtf')) return 'RTF';
+    return 'File';
+  };
+
+  const getTemplatePrimarySizeText = (template: Template): string => {
+    // Prefer explicit display field, then backend metadata, then loaded File size.
+    if (template.size && String(template.size).trim()) return String(template.size);
+    const bytes =
+      typeof template.fileSize === 'number'
+        ? template.fileSize
+        : template.file?.size;
+    if (typeof bytes === 'number' && bytes > 0) return formatFileSize(bytes);
+    return 'Unknown';
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2062,8 +2089,8 @@ The client will receive an email with the processed template and a link to compl
               {/* Template Details */}
               <div className="space-y-2 text-sm text-gray-500 mb-4">
                 <div className="flex justify-between">
-                  <span>PDF Size:</span>
-                  <span className="font-medium">{template.size}</span>
+                  <span>{getTemplatePrimaryTypeLabel(template)} Size:</span>
+                  <span className="font-medium">{getTemplatePrimarySizeText(template)}</span>
                 </div>
                 {template.wordFile && (
                   <div className="flex justify-between">
@@ -2074,13 +2101,21 @@ The client will receive an email with the processed template and a link to compl
                 <div className="flex justify-between">
                   <span>Uploaded:</span>
                   <span className="font-medium">
-                    {template.uploadDate.toLocaleDateString()}
+                    {(toValidDate(template.uploadDate) || new Date()).toLocaleDateString()}
                   </span>
                 </div>
                                  <div className="flex justify-between">
                    <span>Formats:</span>
                    <span className="font-medium">
-                     PDF{template.wordFile ? ' + RTF' : ''}
+                     {(() => {
+                       const ft = ((template.fileType || template.file?.type || '') as string).toLowerCase();
+                       if (ft.includes('pdf')) return 'PDF';
+                       if (ft.includes('wordprocessingml') || ft.includes('docx') || ft.includes('msword')) return 'DOCX';
+                       if (ft.includes('rtf')) return 'RTF';
+                       // Upload flow may have both
+                       if (template.wordFile) return 'PDF + RTF';
+                       return 'Unknown';
+                     })()}
                    </span>
                  </div>
               </div>

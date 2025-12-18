@@ -9,6 +9,7 @@ import {
   QuoteData
 } from './pdfOrchestrator';
 import { saveAs } from 'file-saver';
+import { getEffectiveDurationMonths } from './configDuration';
 
 /**
  * Integration helper for using PDF orchestrator in React components
@@ -351,7 +352,7 @@ export class PDFOrchestratorIntegration {
           numberOfUsers: quoteData.configuration?.numberOfUsers || 0,
           instanceType: quoteData.configuration?.instanceType || 'Standard',
           numberOfInstances: quoteData.configuration?.numberOfInstances || 1,
-          duration: quoteData.configuration?.duration || 1,
+          duration: getEffectiveDurationMonths(quoteData.configuration) || 1,
           migrationType: quoteData.configuration?.migrationType || 'Email',
           dataSizeGB: quoteData.configuration?.dataSizeGB || 0
         },

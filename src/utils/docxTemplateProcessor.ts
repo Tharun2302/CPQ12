@@ -571,6 +571,25 @@ export class DocxTemplateProcessor {
       
       // Remove any remaining unreplaced tokens
       finalDocumentXml = finalDocumentXml.replace(/\{\{[^}]+\}\}/g, '');
+
+      // CRITICAL: If the template still contains a hardcoded "$1.00 per GB" (or "$1 per GB")
+      // in the Payment Notes / Overage Charges section, overwrite it with the dynamically
+      // calculated per-GB value that the UI computed ({{per_data_cost}}).
+      //
+      // This makes the generated agreement consistent even if the DOCX template wasn't updated.
+      try {
+        const dynamicPerDataCost = String((processedData as any)?.['{{per_data_cost}}'] || '').trim();
+        if (dynamicPerDataCost) {
+          const beforeOveragePatch = finalDocumentXml;
+          // Match common hardcoded variants (case-insensitive), keep rest of sentence intact.
+          finalDocumentXml = finalDocumentXml.replace(/\$?\s*1(?:\.00)?\s*per\s*GB\.?/gi, `${dynamicPerDataCost} per GB`);
+          if (finalDocumentXml !== beforeOveragePatch) {
+            console.log('✅ Overage per-GB patched in DOCX (replaced hardcoded "$1.00 per GB") with:', dynamicPerDataCost);
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Unable to patch hardcoded overage per-GB text:', err);
+      }
       
       if (finalDocumentXml !== originalFinalXml) {
         finalZip.file(finalXmlPath, finalDocumentXml);

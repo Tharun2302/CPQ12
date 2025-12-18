@@ -3,6 +3,7 @@ import { ConfigurationData } from '../types/pricing';
 import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
+import { getEffectiveDurationMonths } from '../utils/configDuration';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -136,6 +137,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   useEffect(() => {
     onConfigurationChange(config);
   }, [config]);
+
+  // For Multi combination, keep the top-level duration in sync so all downstream
+  // quote generators/templates don't fall back to "1 month".
+  useEffect(() => {
+    if (config.migrationType !== 'Multi combination') return;
+
+    const effective = getEffectiveDurationMonths(config);
+    if (effective > 0 && config.duration !== effective) {
+      setConfig(prev => ({ ...prev, duration: effective }));
+    }
+  }, [config.migrationType, config.messagingConfig?.duration, config.contentConfig?.duration, config.duration]);
   
   // Contact information validation state
   const [contactValidationErrors, setContactValidationErrors] = useState({

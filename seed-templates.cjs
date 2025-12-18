@@ -13,6 +13,12 @@ async function seedDefaultTemplates(db) {
 
   console.log('🌱 Starting template seeding process...');
   console.log('⚡ Performance mode: Metadata-only seeding for speed');
+  // By default, don't spam logs for missing optional template files.
+  // If you want to see missing-template warnings, set:
+  //   SEED_LOG_MISSING_TEMPLATES=true
+  const logMissingTemplates =
+    process.env.SEED_LOG_MISSING_TEMPLATES &&
+    process.env.SEED_LOG_MISSING_TEMPLATES.toLowerCase() === 'true';
 
   // Define default templates structure (Messaging + Content)
   const defaultTemplates = [
@@ -920,7 +926,7 @@ async function seedDefaultTemplates(db) {
     {
       name: 'Multi Combination',
       description: 'Universal template for Multi combination migrations (supports all combinations)',
-      fileName: 'multi combiantion.docx',
+      fileName: 'MultiCombinations.docx',
       isDefault: false,
       category: 'multi',
       combination: 'multi-combination',
@@ -951,8 +957,10 @@ async function seedDefaultTemplates(db) {
       
       // Check if file exists
       if (!fs.existsSync(filePath)) {
-        console.log(`⚠️ Template file not found: ${template.fileName}`);
-        console.log(`   Expected at: ${filePath}`);
+        if (logMissingTemplates) {
+          console.log(`⚠️ Template file not found: ${template.fileName}`);
+          console.log(`   Expected at: ${filePath}`);
+        }
         continue;
       }
 

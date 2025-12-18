@@ -1,6 +1,7 @@
 import { PDFDocument, PDFPage, rgb, StandardFonts } from 'pdf-lib';
 import { Quote } from '../types/pricing';
 import { formatCurrency } from './pricing';
+import { getEffectiveDurationMonths, formatMonths } from './configDuration';
 
 /**
  * Extracts content from uploaded template files (PDF, Word, HTML)
@@ -596,6 +597,8 @@ const drawQuoteContentOnPage = async (
   const projectRightCol = pageWidth / 2;
   const projectCenterCol = (projectLeftCol + projectRightCol) / 2;
   let currentY = projectStartY - 30;
+
+  const effectiveDurationMonths = getEffectiveDurationMonths(quote.configuration) || 1;
   
   // First row
   page.drawText(sanitizeText(`Migration Type: ${quote.configuration.migrationType}`), {
@@ -632,7 +635,7 @@ const drawQuoteContentOnPage = async (
     color: rgb(0, 0, 0),
   });
   
-  page.drawText(sanitizeText(`Duration: ${quote.configuration.duration} months`), {
+  page.drawText(sanitizeText(`Duration: ${effectiveDurationMonths} months`), {
     x: projectCenterCol,
     y: currentY,
     size: 12,
@@ -893,7 +896,7 @@ const drawQuoteContentOnPage = async (
     color: rgb(0.95, 0.97, 1.0),
   });
   
-  page.drawText(sanitizeText(`Valid for ${numberToWord(quote.configuration.duration)} Month${quote.configuration.duration > 1 ? 's' : ''}`), {
+  page.drawText(sanitizeText(`Valid for ${numberToWord(effectiveDurationMonths)} Month${effectiveDurationMonths > 1 ? 's' : ''}`), {
     x: col4X,
     y: tableY - 5,
     size: 9,
@@ -1544,7 +1547,8 @@ const overlaySowSpecificContent = async (
     color: rgb(0, 0, 0),
   });
   
-  page.drawText(sanitizeText(`Valid for ${numberToWord(quote.configuration.duration)} Month${quote.configuration.duration > 1 ? 's' : ''}`), {
+  const effectiveDurationMonths = getEffectiveDurationMonths(quote.configuration) || 1;
+  page.drawText(sanitizeText(`Valid for ${numberToWord(effectiveDurationMonths)} Month${effectiveDurationMonths > 1 ? 's' : ''}`), {
     x: col2X + 5,
     y: totalY - 12,
     size: 9,
@@ -1656,6 +1660,7 @@ export const createTemplatePreviewHTML = async (
       month: 'long', 
       day: 'numeric' 
     });
+    const effectiveDurationMonths = getEffectiveDurationMonths(quote.configuration) || 1;
 
     // Helper function to format currency
     const formatCurrency = (amount: number): string => {
@@ -1675,8 +1680,10 @@ export const createTemplatePreviewHTML = async (
       '{{userscount}}': quote.configuration.numberOfUsers.toString(),
       '{{price_migration}}': formatCurrency(quote.calculation.migrationCost),
       '{{price_data}}': formatCurrency(quote.calculation.userCost + quote.calculation.dataCost + quote.calculation.instanceCost),
-      '{{Duration of months}}': quote.configuration.duration.toString(),
+      '{{Duration of months}}': effectiveDurationMonths.toString(),
       '{{total price}}': formatCurrency(quote.calculation.totalCost),
+      '{{duration_validity_text}}': `Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
+      '{{instance_validity_text}}': `Instance Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
       
       // Additional mappings for compatibility
       '{{company_name}}': quote.company || 'Company Name',
@@ -1685,7 +1692,7 @@ export const createTemplatePreviewHTML = async (
       '{{prices}}': formatCurrency(quote.calculation.userCost + quote.calculation.dataCost + quote.calculation.instanceCost),
       '{{migration_price}}': formatCurrency(quote.calculation.migrationCost),
       '{{total_price}}': formatCurrency(quote.calculation.totalCost),
-      '{{duration_months}}': quote.configuration.duration.toString(),
+      '{{duration_months}}': effectiveDurationMonths.toString(),
       '{{client_name}}': quote.clientName,
       '{{client_email}}': quote.clientEmail,
       '{{quote_number}}': quoteNumber,
@@ -1896,7 +1903,7 @@ export const createTemplatePreviewHTML = async (
                 </tbody>
               </table>
               <div class="mt-4">
-                <p class="text-sm text-gray-600 mb-2">${replacePlaceholders('Valid for {{Duration of months}} Month')}</p>
+                <p class="text-sm text-gray-600 mb-2">Valid for ${formatMonths(effectiveDurationMonths)}</p>
                 <div class="text-right">
                   <p class="text-lg font-bold text-blue-600">${replacePlaceholders('Total Price: {{total price}}')}</p>
                 </div>
@@ -1994,6 +2001,7 @@ export const detectPlaceholders = async (templateFile: File): Promise<boolean> =
  * @returns Object with extracted values
  */
 const extractQuoteValues = (quote: Quote) => {
+  const effectiveDurationMonths = getEffectiveDurationMonths(quote.configuration) || 1;
   const values = {
     // Match exact placeholders from the template
     'Company Name': quote.company || 'Company Name',
@@ -2005,8 +2013,10 @@ const extractQuoteValues = (quote: Quote) => {
     'userscount': quote.configuration.numberOfUsers.toString(),
     'price_migration': formatCurrency(quote.calculation.migrationCost),
     'price_data': formatCurrency(quote.calculation.userCost + quote.calculation.dataCost + quote.calculation.instanceCost),
-    'Duration of months': quote.configuration.duration.toString(),
+    'Duration of months': effectiveDurationMonths.toString(),
     'total price': formatCurrency(quote.calculation.totalCost),
+    'duration_validity_text': `Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
+    'instance_validity_text': `Instance Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
     
     // Additional placeholders for compatibility
     company_name: quote.company || 'Company Name',
@@ -2015,7 +2025,7 @@ const extractQuoteValues = (quote: Quote) => {
     prices: formatCurrency(quote.calculation.userCost + quote.calculation.dataCost + quote.calculation.instanceCost),
     migration_price: formatCurrency(quote.calculation.migrationCost),
     total_price: formatCurrency(quote.calculation.totalCost),
-    duration_months: quote.configuration.duration.toString(),
+    duration_months: effectiveDurationMonths.toString(),
     client_name: quote.clientName,
     client_email: quote.clientEmail,
     quote_number: `CPQ-001`,
@@ -2269,7 +2279,7 @@ const replacePlaceholdersInExistingPage = async (
             numberOfUsers: quote.configuration.numberOfUsers || 1,
             instanceType: quote.configuration.instanceType || 'Standard',
             numberOfInstances: quote.configuration.numberOfInstances || 1,
-            duration: quote.configuration.duration || 1,
+            duration: (getEffectiveDurationMonths(quote.configuration) || 1),
             migrationType: quote.configuration.migrationType || 'Email',
             dataSizeGB: quote.configuration.dataSizeGB || 1
           },
@@ -3238,7 +3248,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
                 End-to-End Migration Assistance with 24*7<br>
                 Premium Support<br><br>
                 <hr style="border: none; border-top: 2px dashed #ccc; margin: 15px 0;">
-                <strong>Valid for Two Months</strong>
+                <strong>{{duration_validity_text}}</strong>
               </td>
               <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top;">
                 Managed Migration<br>One-Time
@@ -3254,7 +3264,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
               <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top;">
                 1 X Shared Instance in a High-End Enterprise Server<br><br>
                 <hr style="border: none; border-top: 2px dashed #ccc; margin: 15px 0;">
-                <strong>Instance Valid for One Month</strong>
+                <strong>{{instance_validity_text}}</strong>
               </td>
               <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top;">
                 Managed Migration<br>One-Time

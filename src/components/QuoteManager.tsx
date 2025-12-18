@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Quote } from '../types/pricing';
 import { formatCurrency } from '../utils/pricing';
+import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { 
   FileText, 
   Download, 
@@ -521,7 +522,10 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
           </tbody>
         </table>
         <div style="text-align: right; margin-top: 15px;">
-          <p style="margin: 5px 0; font-size: 12px; color: #6b7280;">Valid for ${numberToWord(quote.configuration.duration)} Month${quote.configuration.duration > 1 ? 's' : ''}</p>
+          <p style="margin: 5px 0; font-size: 12px; color: #6b7280;">Valid for ${(() => {
+            const d = getEffectiveDurationMonths(quote.configuration) || 1;
+            return `${numberToWord(d)} Month${d > 1 ? 's' : ''}`;
+          })()}</p>
           <p style="margin: 5px 0; font-size: 16px; font-weight: bold; color: #1e40af;">
             Total Price: ${formatCurrency(quote.calculation.totalCost)}
           </p>
@@ -921,7 +925,7 @@ Thank you for your interest in our services. Please find attached your quote #${
 Quote Summary:
 - Total Cost: ${formatCurrency(quote.calculation.totalCost)}
 - Plan: ${quote.selectedTier.name}
-- Duration: ${quote.configuration.duration} months
+- Duration: ${(getEffectiveDurationMonths(quote.configuration) || 1)} months
 
 Please review the attached quote and let us know if you have any questions or would like to proceed.
 
@@ -1519,7 +1523,7 @@ The client will receive an email with the PDF quote and a link to complete the d
                   </div>
                   <div>
                     <span className="text-gray-600">Duration:</span>
-                    <span className="font-medium ml-1">{quote.configuration.duration} months</span>
+                    <span className="font-medium ml-1">{(getEffectiveDurationMonths(quote.configuration) || 1)} months</span>
                   </div>
                 </div>
                 

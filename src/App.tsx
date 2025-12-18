@@ -1029,6 +1029,7 @@ function App() {
               isDefault: t.isDefault,
               fileName: t.fileName,
               fileType: t.fileType,
+              fileSize: t.fileSize,
               uploadDate: new Date(t.createdAt || t.uploadDate || Date.now()),
               content: null,
               file: null,

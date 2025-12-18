@@ -25,6 +25,7 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
+import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -859,7 +860,7 @@ Quote ID: ${quoteData.id}
         const userCost = calculation?.userCost ?? safeCalculation.userCost;
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
         const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
-        const duration = configuration?.duration || 1;
+        const duration = getEffectiveDurationMonths(configuration) || 1;
         const migrationType = configuration?.migrationType || 'Content';
         const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
         const clientEmail = clientInfo.clientEmail || dealData?.contactEmail || 'contact@email.com';
@@ -901,7 +902,16 @@ Quote ID: ${quoteData.id}
           '{{number_of_users}}': (userCount || 1).toString(),
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
-          '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(instanceType)),
+          // Instance type monthly cost (per server per month)
+          // Multi combination requirement: sum messaging + content base monthly rates.
+          '{{instance_type_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgType = configuration.messagingConfig?.instanceType || 'Small';
+              const contentType = configuration.contentConfig?.instanceType || 'Small';
+              return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+            }
+            return formatCurrency(getInstanceTypeCost(instanceType));
+          })(),
           '{{number_of_instances}}': numberOfInstances.toString(),
           '{{numberOfInstances}}': numberOfInstances.toString(),
           '{{instances}}': numberOfInstances.toString(),
@@ -910,6 +920,9 @@ Quote ID: ${quoteData.id}
           '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
           '{{duration_months}}': (duration || 1).toString(),
           '{{duration}}': (duration || 1).toString(),
+          // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
+          '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
@@ -932,16 +945,69 @@ Quote ID: ${quoteData.id}
           '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
           
-          // Per-user cost calculations - fixed to match pricing display
-          '{{per_user_cost}}': formatCurrency((userCost || 0) / (userCount || 1)),
-          '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
-          '{{user_rate}}': formatCurrency((userCost || 0) / (userCount || 1)),
-          '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          // Per-user cost calculations
+          // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
+          '{{per_user_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+            }
+            return formatCurrency((userCost || 0) / (userCount || 1));
+          })(),
+          '{{per_user_monthly_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
+          '{{user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+            }
+            return formatCurrency((userCost || 0) / (userCount || 1));
+          })(),
+          '{{monthly_user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
           
           // Per-data cost calculations - cost per GB
           '{{per_data_cost}}': (() => {
-            const safeDataSize = dataSizeGB ?? 0;
-            const safeDataCost = dataCost ?? 0;
+            // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
+            const isMulti = configuration?.migrationType === 'Multi combination';
+            const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
+            const safeDataCost = isMulti
+              ? (calculation?.contentCalculation?.dataCost ?? safeCalculation.contentCalculation?.dataCost ?? 0)
+              : (dataCost ?? 0);
             const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
             console.log('🔍 PER_DATA_COST CALCULATION (handleEmailAgreement):', {
               dataSizeGB: safeDataSize,
@@ -1316,13 +1382,28 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
     }
     
     if (onGenerateQuote) {
+      // CRITICAL: For Multi combination, ensure top-level duration is set to the sum of messaging + content
+      const finalConfiguration = { ...configuration };
+      if (configuration?.migrationType === 'Multi combination') {
+        const msgDuration = Number(configuration.messagingConfig?.duration || 0);
+        const contentDuration = Number(configuration.contentConfig?.duration || 0);
+        finalConfiguration.duration = msgDuration + contentDuration;
+        console.log('✅ Multi combination: Setting top-level duration =', finalConfiguration.duration, '(messaging:', msgDuration, '+ content:', contentDuration, ')');
+        console.log('✅ Multi combination: finalConfiguration includes nested configs:', {
+          hasMessagingConfig: !!finalConfiguration.messagingConfig,
+          hasContentConfig: !!finalConfiguration.contentConfig,
+          messagingConfig: finalConfiguration.messagingConfig,
+          contentConfig: finalConfiguration.contentConfig
+        });
+      }
+      
       // Create quote object with deal information including discount
       const quoteData: Quote = {
         id: `quote-001`,
         clientName: clientInfo.clientName,
         clientEmail: clientInfo.clientEmail,
         company: clientInfo.company,
-        configuration: configuration,
+        configuration: finalConfiguration,
         selectedTier: safeCalculation.tier,
         calculation: safeCalculation,
         status: 'draft' as const,
@@ -1396,14 +1477,36 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{Duration of months}}': quote.configuration.duration.toString(),
       '{{instance_users}}': quote.configuration.numberOfInstances.toString(),
       '{{instance_type}}': quote.configuration.instanceType || 'Standard',
-      '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(quote.configuration.instanceType || 'Standard')),
-      '{{per_user_cost}}': formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1)),
+      // Instance type monthly cost (per server per month)
+      // Multi combination requirement: sum messaging + content base monthly rates.
+      '{{instance_type_cost}}': (() => {
+        if (quote.configuration?.migrationType === 'Multi combination') {
+          const msgType = quote.configuration.messagingConfig?.instanceType || quote.configuration.instanceType || 'Small';
+          const contentType = quote.configuration.contentConfig?.instanceType || quote.configuration.instanceType || 'Small';
+          return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+        }
+        return formatCurrency(getInstanceTypeCost(quote.configuration.instanceType || 'Standard'));
+      })(),
+      '{{per_user_cost}}': (() => {
+        if (quote.configuration?.migrationType === 'Multi combination') {
+          const msgUsers = quote.configuration.messagingConfig?.numberOfUsers || 0;
+          const contentUsers = quote.configuration.contentConfig?.numberOfUsers || 0;
+          const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+          const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+          const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+          const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+          return formatCurrency(Math.max(msgPerUser, contentPerUser));
+        }
+        return formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1));
+      })(),
       '{{data_size}}': (quote.configuration.dataSizeGB ?? 0).toString(),
       '{{dataSizeGB}}': (quote.configuration.dataSizeGB ?? 0).toString(),
       '{{data_size_gb}}': (quote.configuration.dataSizeGB ?? 0).toString(),
       '{{per_data_cost}}': (() => {
-        const safeDataSize = quote.configuration.dataSizeGB ?? 0;
-        const safeDataCost = safeCalculation.dataCost ?? 0;
+        // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
+        const isMulti = quote.configuration?.migrationType === 'Multi combination';
+        const safeDataSize = isMulti ? (quote.configuration?.contentConfig?.dataSizeGB ?? 0) : (quote.configuration.dataSizeGB ?? 0);
+        const safeDataCost = isMulti ? (safeCalculation.contentCalculation?.dataCost ?? 0) : (safeCalculation.dataCost ?? 0);
         const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
         console.log('🔍 PER_DATA_COST CALCULATION (generatePlaceholderPreview):', {
           dataSizeGB: safeDataSize,
@@ -2240,7 +2343,7 @@ Total Price: {{total price}}`;
                   <div class="table-cell">Managed Migration Service</div>
                   <div class="table-cell">
                     <p>Fully Managed Migration | Dedicated Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support</p>
-                    <p><strong>Valid for ${configuration?.duration || 1} Month</strong></p>
+                    <p><strong>Valid for ${formatMonths(getEffectiveDurationMonths(configuration) || 1)}</strong></p>
                   </div>
                   <div class="table-cell">${formatCurrency(calculation?.migrationCost || 0)}</div>
                 </div>
@@ -2253,7 +2356,7 @@ Total Price: {{total price}}`;
               <p><strong>Contact Name:</strong> ${clientInfo.clientName}</p>
               <p><strong>Email:</strong> ${clientInfo.clientEmail}</p>
               <p><strong>Migration Type:</strong> ${configuration?.migrationType || 'Content'}</p>
-              <p><strong>Duration:</strong> ${configuration?.duration || 1} months</p>
+              <p><strong>Duration:</strong> ${(getEffectiveDurationMonths(configuration) || 1)} months</p>
               <p><strong>Data Size:</strong> ${configuration?.dataSizeGB || 0} GB</p>
             </div>
             
@@ -2508,7 +2611,14 @@ Total Price: {{total price}}`;
         migrationType: 'Content',
         dataSizeGB: 0
       };
-      const finalConfiguration = configuration || fallbackConfiguration;
+      // Clone to avoid mutating React state object
+      const finalConfiguration = { ...(configuration || fallbackConfiguration) } as any;
+      // Multi combination: ensure top-level duration is the sum (so downstream tokens never fall back)
+      if (finalConfiguration?.migrationType === 'Multi combination') {
+        const msgDuration = Number(finalConfiguration.messagingConfig?.duration || 0);
+        const contentDuration = Number(finalConfiguration.contentConfig?.duration || 0);
+        finalConfiguration.duration = msgDuration + contentDuration;
+      }
       console.log('🔍 FINAL CONFIGURATION BEING USED:', finalConfiguration);
       console.log('🔍 FINAL CONFIGURATION TYPE:', typeof finalConfiguration);
       console.log('🔍 FINAL CONFIGURATION KEYS:', Object.keys(finalConfiguration));
@@ -2529,7 +2639,10 @@ Total Price: {{total price}}`;
           migrationType: finalConfiguration.migrationType,
           dataSizeGB: finalConfiguration.dataSizeGB,
           startDate: finalConfiguration.startDate,
-          endDate: finalConfiguration.endDate
+          endDate: finalConfiguration.endDate,
+          // IMPORTANT: preserve nested configs for Multi combination
+          messagingConfig: finalConfiguration.messagingConfig,
+          contentConfig: finalConfiguration.contentConfig
         },
         calculation: {
           userCost: finalCalculation.userCost,
@@ -2622,10 +2735,19 @@ Total Price: {{total price}}`;
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
         const totalCost = quoteData.calculation?.totalCost || 0;
-        const duration = quoteData.configuration?.duration || 1;
+        const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
         const clientEmail = quoteData.clientEmail || clientInfo.clientEmail || 'demo@example.com';
+        
+        // CRITICAL DEBUG: Log duration calculation for Multi combination
+        console.log('🔍 AGREEMENT GENERATION - DURATION DEBUG:');
+        console.log('  quoteData.configuration.migrationType:', quoteData.configuration?.migrationType);
+        console.log('  quoteData.configuration.duration:', quoteData.configuration?.duration);
+        console.log('  quoteData.configuration.messagingConfig?.duration:', quoteData.configuration?.messagingConfig?.duration);
+        console.log('  quoteData.configuration.contentConfig?.duration:', quoteData.configuration?.contentConfig?.duration);
+        console.log('  getEffectiveDurationMonths result:', getEffectiveDurationMonths(quoteData.configuration));
+        console.log('  Final duration value being used:', duration);
         
         // CRITICAL: Debug extracted values
         console.log('🔍 EXTRACTED VALUES DEBUG:');
@@ -2766,8 +2888,25 @@ Total Price: {{total price}}`;
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
           '{{instance type}}': instanceType, // Space version
-          '{{instance_type_cost}}': formatCurrency(getInstanceTypeCost(instanceType)),
-          '{{instance_type cost}}': formatCurrency(getInstanceTypeCost(instanceType)), // Space version
+          // Instance type monthly cost (per server per month)
+          // Multi combination requirement: sum messaging + content base monthly rates.
+          '{{instance_type_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgType = configuration.messagingConfig?.instanceType || 'Small';
+              const contentType = configuration.contentConfig?.instanceType || 'Small';
+              return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+            }
+            return formatCurrency(getInstanceTypeCost(instanceType));
+          })(),
+          '{{instance_type cost}}': (() => {
+            // Space version - keep consistent with {{instance_type_cost}}
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgType = configuration.messagingConfig?.instanceType || 'Small';
+              const contentType = configuration.contentConfig?.instanceType || 'Small';
+              return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+            }
+            return formatCurrency(getInstanceTypeCost(instanceType));
+          })(), // Space version
           '{{instance..cost}}': formatCurrency(instanceCost), // Handle double-dot typo
           '{{instance_cost}}': formatCurrency(instanceCost),
           '{{instanceCost}}': formatCurrency(instanceCost),
@@ -2783,6 +2922,9 @@ Total Price: {{total price}}`;
           '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
           '{{duration_months}}': (duration || 1).toString(),
           '{{duration}}': (duration || 1).toString(),
+          // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
+          '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
@@ -2990,16 +3132,67 @@ Total Price: {{total price}}`;
           '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
           
-          // Per-user cost calculations - fixed to match pricing display
-          '{{per_user_cost}}': formatCurrency((userCost || 0) / (userCount || 1)),
-          '{{per_user_monthly_cost}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
-          '{{user_rate}}': formatCurrency((userCost || 0) / (userCount || 1)),
-          '{{monthly_user_rate}}': formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1))),
+          // Per-user cost calculations
+          // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
+          '{{per_user_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+            }
+            return formatCurrency((userCost || 0) / (userCount || 1));
+          })(),
+          '{{per_user_monthly_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
+          '{{user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+            }
+            return formatCurrency((userCost || 0) / (userCount || 1));
+          })(),
+          '{{monthly_user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
           
           // Per-data cost calculations - cost per GB
           '{{per_data_cost}}': (() => {
-            const safeDataSize = dataSizeGB ?? 0;
-            const safeDataCost = dataCost ?? 0;
+            // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
+            const isMulti = configuration?.migrationType === 'Multi combination';
+            const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
+            const safeDataCost = isMulti ? (safeCalculation.contentCalculation?.dataCost ?? 0) : (dataCost ?? 0);
             const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
             console.log('🔍 PER_DATA_COST CALCULATION (handleGenerateAgreement):', {
               dataSizeGB: safeDataSize,

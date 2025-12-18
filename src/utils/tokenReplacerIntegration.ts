@@ -9,6 +9,7 @@ import {
   TokenReplacement
 } from './tokenReplacer';
 import { saveAs } from 'file-saver';
+import { getEffectiveDurationMonths } from './configDuration';
 
 /**
  * Integration helper for using token replacement in React components
@@ -84,7 +85,7 @@ export class TokenReplacerIntegration {
           numberOfUsers: quoteData.configuration?.numberOfUsers || 0,
           instanceType: quoteData.configuration?.instanceType || 'Standard',
           numberOfInstances: quoteData.configuration?.numberOfInstances || 1,
-          duration: quoteData.configuration?.duration || 1,
+          duration: getEffectiveDurationMonths(quoteData.configuration) || 1,
           migrationType: quoteData.configuration?.migrationType || 'Email',
           dataSizeGB: quoteData.configuration?.dataSizeGB || 0
         },
