@@ -10,6 +10,7 @@ interface ConfigurationFormProps {
   onSubmit: () => void;
   selectedExhibits: string[];
   onExhibitsChange: (exhibitIds: string[]) => void;
+  selectedTier?: { tier: { name: string } } | null;
   dealData?: {
     dealId?: string;
     dealName?: string;
@@ -30,6 +31,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   onSubmit, 
   selectedExhibits,
   onExhibitsChange,
+  selectedTier,
   dealData, 
   onContactInfoChange,
   templates = [],
@@ -1069,7 +1071,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               <div className="w-16 h-16 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <ArrowRight className="w-8 h-8 text-white" />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Select Migration Type</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2 whitespace-nowrap">Select Migration Type</h3>
               <p className="text-gray-600">Choose your migration type to configure the project requirements</p>
             </div>
             
@@ -1444,6 +1446,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 combination={config.combination || 'multi-combination'}
                 selectedExhibits={selectedExhibits}
                 onExhibitsChange={onExhibitsChange}
+                selectedTier={selectedTier}
               />
             </div>
           )}

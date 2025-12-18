@@ -79,82 +79,41 @@ export async function mergeDocxFiles(
     if (exhibitMetadata && exhibitMetadata.length === exhibitDocxBlobs.length) {
       groupedExhibits = { included: [], notIncluded: [] };
       exhibitMetadata.forEach((meta, index) => {
-        const isNotIncluded = meta.name.toLowerCase().includes('not included');
+        const nameLower = meta.name.toLowerCase();
+        const isNotIncluded = nameLower.includes('not included') || 
+                              nameLower.includes('not include') ||
+                              nameLower.includes('notincluded');
         if (isNotIncluded) {
           groupedExhibits!.notIncluded.push(index);
+          console.log(`   📌 [${index}] "${meta.name}" → NOT INCLUDED`);
         } else {
           groupedExhibits!.included.push(index);
+          console.log(`   📌 [${index}] "${meta.name}" → INCLUDED`);
         }
       });
       console.log('📋 Grouped exhibits:', {
         included: groupedExhibits.included.length,
-        notIncluded: groupedExhibits.notIncluded.length
+        notIncluded: groupedExhibits.notIncluded.length,
+        includedIndices: groupedExhibits.included,
+        notIncludedIndices: groupedExhibits.notIncluded
+      });
+    } else {
+      console.warn('⚠️ Metadata length mismatch or missing:', {
+        metadataLength: exhibitMetadata?.length,
+        blobsLength: exhibitDocxBlobs.length
       });
     }
 
-    // Process exhibits in groups if grouping is available
-    if (groupedExhibits && (groupedExhibits.included.length > 0 || groupedExhibits.notIncluded.length > 0)) {
-      const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-      
-      // Process Included exhibits group
-      if (groupedExhibits.included.length > 0) {
-        // Add page break before the group (but not before title)
-        const pageBreak = mainDoc.createElementNS(ns, 'w:p');
-        const pageBreakRun = mainDoc.createElementNS(ns, 'w:r');
-        const br = mainDoc.createElementNS(ns, 'w:br');
-        br.setAttribute('w:type', 'page');
-        pageBreakRun.appendChild(br);
-        pageBreak.appendChild(pageBreakRun);
-        mainBody.insertBefore(pageBreak, mainBody.lastChild);
-        
-        // Add title for Included group (no page break after title)
-        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 1 - INCLUDED IN MIGRATION');
-        mainBody.insertBefore(titleP, mainBody.lastChild);
-        
-        // Merge all Included exhibits (they will come right after the title)
-        for (const index of groupedExhibits.included) {
-          console.log(`📎 Processing Included exhibit ${index + 1}...`);
-          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false); // false = no page break before exhibit
-        }
-      }
-      
-      // Process Not Included exhibits group
-      if (groupedExhibits.notIncluded.length > 0) {
-        // Add page break before the group (but not before title)
-        const pageBreak = mainDoc.createElementNS(ns, 'w:p');
-        const pageBreakRun = mainDoc.createElementNS(ns, 'w:r');
-        const br = mainDoc.createElementNS(ns, 'w:br');
-        br.setAttribute('w:type', 'page');
-        pageBreakRun.appendChild(br);
-        pageBreak.appendChild(pageBreakRun);
-        mainBody.insertBefore(pageBreak, mainBody.lastChild);
-        
-        // Add title for Not Included group (no page break after title)
-        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 2 - NOT INCLUDED IN MIGRATION');
-        mainBody.insertBefore(titleP, mainBody.lastChild);
-        
-        // Merge all Not Included exhibits (they will come right after the title)
-        for (const index of groupedExhibits.notIncluded) {
-          console.log(`📎 Processing Not Included exhibit ${index + 1}...`);
-          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false); // false = no page break before exhibit
-        }
-      }
-    } else {
-      // Fallback: Process exhibits in order without grouping
-      for (let i = 0; i < exhibitDocxBlobs.length; i++) {
-        console.log(`📎 Processing exhibit ${i + 1}/${exhibitDocxBlobs.length}...`);
-        await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[i], parser, true); // true = add page break
-      }
-    }
-    
-    // Helper function to merge a single exhibit
-    async function mergeExhibit(
+    // Helper function to merge a single exhibit (defined before use)
+    const mergeExhibit = async (
       mainDoc: Document,
       mainBody: Element,
       exhibitBlob: Blob,
       parser: DOMParser,
-      addPageBreak: boolean = true
-    ): Promise<void> {
+      addPageBreak: boolean = true,
+      skipFirstHeading: boolean = false,
+      isIncludedExhibit: boolean = false
+    ): Promise<void> => {
       const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
       
       const exhibitBuffer = await exhibitBlob.arrayBuffer();
@@ -187,10 +146,57 @@ export async function mergeDocxFiles(
 
       // Copy all children from exhibit body (except the last sectPr)
       const children = Array.from(exhibitBody.childNodes);
+      let skippedFirstHeading = false;
+      
       for (const child of children) {
         // Skip the final sectPr (section properties) - keep only main doc's sectPr
         if (child.nodeName === 'w:sectPr') {
           continue;
+        }
+        
+        // Check if this is a paragraph (heading or content)
+        if (child.nodeName === 'w:p' && child instanceof Element) {
+          const pElement = child as Element;
+          
+          // Get all text from this paragraph
+          const textNodes = pElement.getElementsByTagName('w:t');
+          let paragraphText = '';
+          for (let i = 0; i < textNodes.length; i++) {
+            paragraphText += (textNodes[i].textContent || '');
+          }
+          const lowerText = paragraphText.toLowerCase();
+          
+          // Check if this paragraph is a heading
+          const pStyle = pElement.getElementsByTagName('w:pStyle')[0];
+          const isHeading = pStyle && (
+            pStyle.getAttribute('w:val')?.toLowerCase().includes('heading') ||
+            pStyle.getAttribute('w:val')?.toLowerCase().includes('title')
+          );
+          
+          // For INCLUDED exhibits: Skip any headings/content that contain "NOT INCLUDED"
+          if (isIncludedExhibit && (isHeading || paragraphText.length > 50)) {
+            if (lowerText.includes('not included') || lowerText.includes('exhibit 2')) {
+              console.log(`   ⏭️  Skipping "NOT INCLUDED" content from included exhibit: ${paragraphText.substring(0, 50)}...`);
+              continue;
+            }
+          }
+          
+          // For NOT INCLUDED exhibits: Skip first heading (already handled by main header)
+          if (skipFirstHeading && !skippedFirstHeading) {
+            if (isHeading || lowerText.includes('not included') || lowerText.includes('exhibit 2')) {
+              console.log(`   ⏭️  Skipping first heading from exhibit (main "Exhibit 2" header already added)`);
+              skippedFirstHeading = true;
+              continue;
+            }
+          }
+          
+          // For NOT INCLUDED exhibits: Skip any headings/content that contain "INCLUDED"
+          if (!isIncludedExhibit && (isHeading || paragraphText.length > 50)) {
+            if (lowerText.includes('included') && !lowerText.includes('not included') && !lowerText.includes('exhibit 1')) {
+              console.log(`   ⏭️  Skipping "INCLUDED" content from not included exhibit: ${paragraphText.substring(0, 50)}...`);
+              continue;
+            }
+          }
         }
         
         // Import the node into the main document
@@ -199,6 +205,82 @@ export async function mergeDocxFiles(
       }
 
       console.log(`✅ Exhibit merged`);
+    };
+
+    // Process exhibits in groups if grouping is available
+    // ORDER: 1) All Included exhibits first, 2) Then "Exhibit 2" header, 3) Then all Not Included exhibits
+    console.log('🔍 Checking grouping conditions:', {
+      hasGroupedExhibits: !!groupedExhibits,
+      includedCount: groupedExhibits?.included.length || 0,
+      notIncludedCount: groupedExhibits?.notIncluded.length || 0
+    });
+    
+    if (groupedExhibits && (groupedExhibits.included.length > 0 || groupedExhibits.notIncluded.length > 0)) {
+      const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+      
+      console.log('✅ Using grouped exhibit processing');
+      
+      // STEP 1: Process ALL Included exhibits FIRST
+      if (groupedExhibits.included.length > 0) {
+        console.log(`📋 STEP 1: Processing ${groupedExhibits.included.length} Included exhibit(s)...`);
+        // Add page break before the group (but not before title)
+        const pageBreak = mainDoc.createElementNS(ns, 'w:p');
+        const pageBreakRun = mainDoc.createElementNS(ns, 'w:r');
+        const br = mainDoc.createElementNS(ns, 'w:br');
+        br.setAttribute('w:type', 'page');
+        pageBreakRun.appendChild(br);
+        pageBreak.appendChild(pageBreakRun);
+        mainBody.insertBefore(pageBreak, mainBody.lastChild);
+        
+        // Add title for Included group (no page break after title)
+        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 1 - INCLUDED IN MIGRATION');
+        mainBody.insertBefore(titleP, mainBody.lastChild);
+        
+        // Merge ALL Included exhibits (they will come right after the title)
+        // Pass isIncludedExhibit=true to filter out any "NOT INCLUDED" content
+        for (const index of groupedExhibits.included) {
+          console.log(`📎 Processing Included exhibit ${index + 1}...`);
+          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, false, true); // isIncludedExhibit=true
+        }
+        console.log(`✅ Completed all ${groupedExhibits.included.length} Included exhibits`);
+      }
+      
+      // STEP 2: AFTER all Included exhibits are done, add "Exhibit 2" header FIRST
+      // STEP 3: THEN process all Not Included exhibits (their tables will appear below the header)
+      if (groupedExhibits.notIncluded.length > 0) {
+        console.log(`📋 STEP 2 & 3: Processing ${groupedExhibits.notIncluded.length} Not Included exhibit(s)...`);
+        
+        // Add page break before the Not Included group (but not before title)
+        const pageBreak = mainDoc.createElementNS(ns, 'w:p');
+        const pageBreakRun = mainDoc.createElementNS(ns, 'w:r');
+        const br = mainDoc.createElementNS(ns, 'w:br');
+        br.setAttribute('w:type', 'page');
+        pageBreakRun.appendChild(br);
+        pageBreak.appendChild(pageBreakRun);
+        mainBody.insertBefore(pageBreak, mainBody.lastChild);
+        
+        // Add "Exhibit 2" header FIRST - before any not included tables
+        console.log('📌 Adding "Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES" header...');
+        const titleP = createExhibitTitleParagraph(mainDoc, 'Exhibit 2 - NOT INCLUDED IN MIGRATION FEATURES');
+        mainBody.insertBefore(titleP, mainBody.lastChild);
+        console.log('✅ "Exhibit 2" header added successfully');
+        
+        // Merge ALL Not Included exhibits (their content will appear BELOW the "Exhibit 2" header)
+        // Skip the first heading from each exhibit since we already have the main "Exhibit 2" header
+        // Pass isIncludedExhibit=false to filter out any "INCLUDED" content
+        for (const index of groupedExhibits.notIncluded) {
+          console.log(`📎 Processing Not Included exhibit ${index + 1}...`);
+          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, true, false); // skipFirstHeading=true, isIncludedExhibit=false
+        }
+        console.log(`✅ Completed all ${groupedExhibits.notIncluded.length} Not Included exhibits`);
+      }
+    } else {
+      // Fallback: Process exhibits in order without grouping
+      console.log('⚠️ No grouping available, processing exhibits in order without headers');
+      for (let i = 0; i < exhibitDocxBlobs.length; i++) {
+        console.log(`📎 Processing exhibit ${i + 1}/${exhibitDocxBlobs.length}...`);
+        await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[i], parser, true); // true = add page break
+      }
     }
 
     // Serialize the merged XML back

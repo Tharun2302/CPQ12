@@ -408,6 +408,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               onTemplateSelect={handleTemplateSelect}
               selectedExhibits={selectedExhibits}
               onExhibitsChange={onExhibitsChange}
+              selectedTier={selectedTier}
             />
 
             {showPricing && calculations.length > 0 && (

@@ -1623,13 +1623,21 @@ Total Price: {{total price}}`;
   // Handle PDF download from the generated agreement using document preview
   const handleDownloadAgreementPDF = async () => {
     try {
-    if (!processedAgreement) {
-      alert('No agreement available. Please generate an agreement first.');
-      return;
-    }
-      // Prefer server-side high-fidelity conversion
-      const { templateService } = await import('../utils/templateService');
-      const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      if (!processedAgreement) {
+        alert('No agreement available. Please generate an agreement first.');
+        return;
+      }
+
+      // If we already have a PDF (new flow), reuse it directly instead of converting again.
+      let pdfBlob: Blob;
+      if (processedAgreement.type === 'application/pdf') {
+        console.log('📄 Using existing PDF blob for download (no extra conversion).');
+        pdfBlob = processedAgreement;
+      } else {
+        // Fallback: Prefer server-side high-fidelity conversion from DOCX.
+        const { templateService } = await import('../utils/templateService');
+        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      }
       
       // Save PDF to MongoDB database
       try {
@@ -4067,25 +4075,37 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
+                
+                // Get exhibit metadata FIRST (before fetching file)
+                const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                if (!exhibit) {
+                  console.warn(`⚠️ Exhibit ${exhibitId} not found in metadata, skipping`);
+                  continue;
+                }
+                
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
                 
                 if (response.ok) {
                   const blob = await response.blob();
+                  
+                  // Add both blob and metadata together to ensure they match
                   exhibitBlobs.push(blob);
-                  
-                  // Get exhibit metadata
-                  const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
-                  if (exhibit) {
-                    exhibitMetadata.push({
-                      name: exhibit.name || '',
-                      category: exhibit.category || ''
-                    });
-                  }
-                  
-                  console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
+                  exhibitMetadata.push({
+                    name: exhibit.name || '',
+                    category: exhibit.category || ''
+                  });
+                  console.log(`✅ Fetched exhibit ${exhibitId}: "${exhibit.name}" (${blob.size} bytes)`);
                 } else {
                   console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
                 }
+              }
+              
+              // Verify metadata matches blobs
+              if (exhibitBlobs.length !== exhibitMetadata.length) {
+                console.error(`❌ Mismatch: ${exhibitBlobs.length} blobs but ${exhibitMetadata.length} metadata entries!`);
+              } else {
+                console.log(`✅ Verified: ${exhibitBlobs.length} exhibits with matching metadata`);
+                console.log('📋 Exhibit order:', exhibitMetadata.map((m, i) => `${i + 1}. ${m.name}`));
               }
               
               if (exhibitBlobs.length > 0) {
@@ -4154,9 +4174,31 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('✅ Agreement processed successfully');
         console.log('📄 Processed document size:', processedDocument.size, 'bytes');
         console.log('📄 Processed document type:', processedDocument.type);
-        
-        // Store the processed document for preview and download
+
+        // For DOCX, immediately convert to PDF so the inline preview
+        // looks exactly the same as the final downloaded PDF.
+        if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          try {
+            console.log('🔄 Converting DOCX agreement to PDF for preview...');
+            const { templateService } = await import('../utils/templateService');
+            const pdfBlob = await templateService.convertDocxToPdf(processedDocument);
+            console.log('✅ DOCX converted to PDF for preview. Size:', pdfBlob.size, 'bytes');
+            processedDocument = pdfBlob;
+          } catch (error) {
+            console.error('❌ Failed to convert DOCX to PDF for preview. Falling back to original blob.', error);
+          }
+        }
+
+        // Store the (now PDF) document for download handlers
         setProcessedAgreement(processedDocument);
+
+        // Always preview the same blob that will be downloaded
+        const previewUrl = URL.createObjectURL(processedDocument);
+        setPreviewUrl(previewUrl);
+        setShowInlinePreview(true);
+        setShowAgreementPreview(true);
+        console.log('🔗 Preview URL created for processed agreement (PDF-based):', previewUrl);
+        return;
         
         // For DOCX files render with docx-preview to match exact document formatting
         if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { FileText, Check, Info, Sparkles, ChevronDown, ChevronRight, Folder } from 'lucide-react';
+import { Check, Info, Sparkles, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface Exhibit {
@@ -17,12 +17,14 @@ interface ExhibitSelectorProps {
   combination: string;
   selectedExhibits: string[];
   onExhibitsChange: (exhibitIds: string[]) => void;
+  selectedTier?: { tier: { name: string } } | null;
 }
 
 const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   combination,
   selectedExhibits,
-  onExhibitsChange
+  onExhibitsChange,
+  selectedTier
 }) => {
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,16 +85,84 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   };
 
+  // Filter exhibits based on selected tier (Basic/Standard/Advanced)
+  const filteredExhibits = useMemo(() => {
+    if (!selectedTier?.tier?.name) {
+      // No tier selected, show all exhibits
+      return exhibits;
+    }
+
+    const tierName = selectedTier.tier.name.toLowerCase();
+    
+    // Filter exhibits to only show those matching the selected tier
+    return exhibits.filter(exhibit => {
+      const exhibitName = exhibit.name.toLowerCase();
+      
+      // For Slack to Teams exhibits, check if name contains the tier name
+      if (exhibitName.includes('slack to teams')) {
+        if (tierName === 'basic') {
+          return exhibitName.includes('basic');
+        } else if (tierName === 'standard') {
+          return exhibitName.includes('standard');
+        } else if (tierName === 'advanced') {
+          return exhibitName.includes('advanced');
+        }
+      }
+      
+      // For other exhibits (not plan-specific), show them all
+      return true;
+    });
+  }, [exhibits, selectedTier]);
+
+  // Auto-select only matching tier exhibits when tier changes
+  useEffect(() => {
+    if (!selectedTier?.tier?.name) {
+      return; // No tier selected, don't filter
+    }
+
+    const tierName = selectedTier.tier.name.toLowerCase();
+    
+    // Get all Slack to Teams exhibits (from original exhibits list, not filtered)
+    const slackExhibits = exhibits.filter(ex => 
+      ex.name.toLowerCase().includes('slack to teams')
+    );
+    
+    // Get matching tier exhibits
+    const matchingSlackExhibitIds = slackExhibits
+      .filter(ex => ex.name.toLowerCase().includes(tierName))
+      .map(ex => ex._id);
+
+    // Get non-Slack exhibits (should be kept)
+    const nonSlackExhibitIds = selectedExhibits.filter(id => {
+      const exhibit = exhibits.find(ex => ex._id === id);
+      return exhibit && !exhibit.name.toLowerCase().includes('slack to teams');
+    });
+
+    // Combine: matching Slack exhibits + non-Slack exhibits
+    const newSelection = [...new Set([...matchingSlackExhibitIds, ...nonSlackExhibitIds])];
+
+    // Only update if the selection would change
+    if (JSON.stringify(newSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
+      console.log('🔄 Auto-filtering exhibits for tier:', tierName, {
+        matchingSlackIds: matchingSlackExhibitIds,
+        nonSlackIds: nonSlackExhibitIds,
+        currentSelection: selectedExhibits,
+        newSelection
+      });
+      onExhibitsChange(newSelection);
+    }
+  }, [selectedTier, exhibits, selectedExhibits, onExhibitsChange]);
+
   const byCategory = useMemo(() => {
     const normalized = (ex: Exhibit) => (ex.category || 'content').toLowerCase();
-    const sorted = [...exhibits].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+    const sorted = [...filteredExhibits].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
 
     return {
       messaging: sorted.filter((e) => normalized(e) === 'messaging' || normalized(e) === 'message'),
       content: sorted.filter((e) => normalized(e) === 'content'),
       email: sorted.filter((e) => normalized(e) === 'email'),
     };
-  }, [exhibits]);
+  }, [filteredExhibits]);
 
   const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
     if (isRequired) return; // Cannot deselect required exhibits
@@ -104,19 +174,17 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   };
 
-  const hasAnyExhibits = exhibits.length > 0;
+  const hasAnyExhibits = filteredExhibits.length > 0;
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8">
-      <div className="text-center mb-6">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl shadow-lg mb-4">
-          <FileText className="w-8 h-8 text-white" />
+    <div className="flex justify-center">
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8 w-full max-w-6xl">
+        <div className="text-center mb-6">
+          <h3 className="text-2xl font-bold text-gray-900 mb-2">Select exhibits</h3>
+          <p className="text-gray-600">
+            Exhibits are additional documents (not combinations). Select what you want to append to the end of the agreement.
+          </p>
         </div>
-        <h3 className="text-2xl font-bold text-gray-900 mb-2">Select exhibits</h3>
-        <p className="text-gray-600">
-          Exhibits are additional documents (not combinations). Select what you want to append to the end of the agreement.
-        </p>
-      </div>
 
       <div className="mb-6 p-4 bg-purple-50 rounded-xl border border-purple-200 flex items-start gap-3">
         <Sparkles className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
@@ -156,6 +224,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           />
         </div>
       )}
+      </div>
     </div>
   );
 };
