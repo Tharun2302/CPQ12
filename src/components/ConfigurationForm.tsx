@@ -274,26 +274,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   useEffect(() => {
     if (config.migrationType !== 'Multi combination') return;
 
-    // Calculate effective duration from all per-exhibit configs
-    let maxDuration = 0;
-    if (config.messagingConfigs && config.messagingConfigs.length > 0) {
-      maxDuration = Math.max(maxDuration, ...config.messagingConfigs.map(c => c.duration || 0));
-    }
-    if (config.contentConfigs && config.contentConfigs.length > 0) {
-      maxDuration = Math.max(maxDuration, ...config.contentConfigs.map(c => c.duration || 0));
-    }
-    if (config.emailConfigs && config.emailConfigs.length > 0) {
-      maxDuration = Math.max(maxDuration, ...config.emailConfigs.map(c => c.duration || 0));
-    }
-    
-    // Fallback to old single configs for backward compatibility
-    if (maxDuration === 0) {
-      const effective = getEffectiveDurationMonths(config);
-      if (effective > 0 && config.duration !== effective) {
-        setConfig(prev => ({ ...prev, duration: effective }));
-      }
-    } else if (maxDuration > 0 && config.duration !== maxDuration) {
-      setConfig(prev => ({ ...prev, duration: maxDuration }));
+    // Use shared helper (Multi combination = summed duration across categories)
+    const effective = getEffectiveDurationMonths(config);
+    if (effective > 0 && config.duration !== effective) {
+      setConfig(prev => ({ ...prev, duration: effective }));
     }
   }, [config.migrationType, config.messagingConfigs, config.contentConfigs, config.emailConfigs, config.messagingConfig?.duration, config.contentConfig?.duration, config.duration]);
   

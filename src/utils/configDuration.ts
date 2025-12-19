@@ -7,8 +7,9 @@ import type { ConfigurationData } from '../types/pricing';
  * `messagingConfig/contentConfig` OR the newer `messagingConfigs/contentConfigs` arrays),
  * and sometimes in top-level `duration`.
  *
- * We use the MAX duration across nested configs (messaging/content), falling back to top-level
- * if nested durations are missing.
+ * For Multi combination, we SUM durations across categories (Messaging + Content [+ Email]),
+ * using the maximum duration within each category. Falls back to top-level duration if nested
+ * durations are missing.
  */
 export function getEffectiveDurationMonths(configuration?: ConfigurationData | null): number {
   if (!configuration) return 0;
@@ -16,25 +17,30 @@ export function getEffectiveDurationMonths(configuration?: ConfigurationData | n
   const top = Number(configuration.duration || 0);
   if (configuration.migrationType !== 'Multi combination') return top;
 
-  const durations: number[] = [];
-
-  // Legacy shape
-  durations.push(Number(configuration.messagingConfig?.duration || 0));
-  durations.push(Number(configuration.contentConfig?.duration || 0));
+  const msgDurations: number[] = [Number(configuration.messagingConfig?.duration || 0)];
+  const contentDurations: number[] = [Number(configuration.contentConfig?.duration || 0)];
+  const emailDurations: number[] = [];
 
   // Newer shape (arrays)
   for (const cfg of configuration.messagingConfigs || []) {
-    durations.push(Number(cfg?.duration || 0));
+    msgDurations.push(Number(cfg?.duration || 0));
   }
   for (const cfg of configuration.contentConfigs || []) {
-    durations.push(Number(cfg?.duration || 0));
+    contentDurations.push(Number(cfg?.duration || 0));
+  }
+  for (const cfg of configuration.emailConfigs || []) {
+    emailDurations.push(Number(cfg?.duration || 0));
   }
 
-  const nestedMax = Math.max(0, ...durations);
+  const msgMax = Math.max(0, ...msgDurations);
+  const contentMax = Math.max(0, ...contentDurations);
+  const emailMax = Math.max(0, ...emailDurations);
+
+  const nestedSum = msgMax + contentMax + emailMax;
 
   // For Multi combination:
-  // If nested configs exist, use their max duration; otherwise use top-level duration.
-  return nestedMax > 0 ? nestedMax : top;
+  // If nested configs exist, use their sum; otherwise use top-level duration.
+  return nestedSum > 0 ? nestedSum : top;
 }
 
 export function formatMonths(durationMonths: number): string {
