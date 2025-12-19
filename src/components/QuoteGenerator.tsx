@@ -3597,6 +3597,82 @@ Total Price: {{total price}}`;
             templateData['{{contentTotalCost}}'] = formatCurrency(0);
           }
           
+          // Add exhibit description and price tokens for Multi combination
+          // Build exhibit descriptions and prices from combination breakdowns
+          const exhibitDescriptions: string[] = [];
+          const exhibitPrices: string[] = [];
+          
+          // Get combination breakdowns from calculation
+          const messagingBreakdowns = (calculation || safeCalculation)?.messagingCombinationBreakdowns || [];
+          const contentBreakdowns = (calculation || safeCalculation)?.contentCombinationBreakdowns || [];
+          const emailBreakdowns = (calculation || safeCalculation)?.emailCombinationBreakdowns || [];
+          
+          // Add messaging exhibits
+          messagingBreakdowns.forEach(breakdown => {
+            exhibitDescriptions.push(`Messaging Migration - ${breakdown.combinationName}`);
+            exhibitPrices.push(formatCurrency(breakdown.totalCost || 0));
+          });
+          
+          // Add content exhibits
+          contentBreakdowns.forEach(breakdown => {
+            exhibitDescriptions.push(`Content Migration - ${breakdown.combinationName}`);
+            exhibitPrices.push(formatCurrency(breakdown.totalCost || 0));
+          });
+          
+          // Add email exhibits
+          emailBreakdowns.forEach(breakdown => {
+            exhibitDescriptions.push(`Email Migration - ${breakdown.combinationName}`);
+            exhibitPrices.push(formatCurrency(breakdown.totalCost || 0));
+          });
+          
+          // If no breakdowns available, try to build from configs
+          if (exhibitDescriptions.length === 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const messagingConfigs = (configuration as any)?.messagingConfigs || [];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const contentConfigs = (configuration as any)?.contentConfigs || [];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const emailConfigs = (configuration as any)?.emailConfigs || [];
+            
+            messagingConfigs.forEach((cfg: any) => {
+              exhibitDescriptions.push(`Messaging Migration - ${cfg.exhibitName || 'Messaging'}`);
+              // Use messaging calculation total if available
+              const msgTotal = messagingCalc?.totalCost || 0;
+              exhibitPrices.push(formatCurrency(msgTotal / messagingConfigs.length || 0));
+            });
+            
+            contentConfigs.forEach((cfg: any) => {
+              exhibitDescriptions.push(`Content Migration - ${cfg.exhibitName || 'Content'}`);
+              // Use content calculation total if available
+              const contentTotal = contentCalc?.totalCost || 0;
+              exhibitPrices.push(formatCurrency(contentTotal / contentConfigs.length || 0));
+            });
+            
+            emailConfigs.forEach((cfg: any) => {
+              exhibitDescriptions.push(`Email Migration - ${cfg.exhibitName || 'Email'}`);
+              exhibitPrices.push(formatCurrency(0)); // Email pricing not calculated separately
+            });
+          }
+          
+          // Set exhibit tokens (comma-separated lists or single values)
+          // Use migration type as fallback since migrationDescription is defined later
+          const fallbackDesc = migrationType || 'Migration Service';
+          const fallbackPrice = formatCurrency((calculation || safeCalculation)?.totalCost || 0);
+          
+          templateData['{{exhibitDesc}}'] = exhibitDescriptions.length > 0 
+            ? exhibitDescriptions.join('; ') 
+            : fallbackDesc;
+          templateData['{{exhibitPrice}}'] = exhibitPrices.length > 0 
+            ? exhibitPrices.join('; ') 
+            : fallbackPrice;
+          
+          console.log('✅ Added exhibit tokens:', {
+            exhibitDesc: templateData['{{exhibitDesc}}'],
+            exhibitPrice: templateData['{{exhibitPrice}}'],
+            descriptions: exhibitDescriptions,
+            prices: exhibitPrices
+          });
+          
           console.log('✅ Added Multi combination tokens:', {
             messaging: {
               users: templateData['{{messaging_users_count}}'],
@@ -3656,6 +3732,10 @@ Total Price: {{total price}}`;
           templateData['{{contentInstanceCost}}'] = '';
           templateData['{{content_total_cost}}'] = '';
           templateData['{{contentTotalCost}}'] = '';
+          
+          // For non-Multi combination, set exhibit tokens to single migration description and total price
+          templateData['{{exhibitDesc}}'] = migrationType || 'Migration Service';
+          templateData['{{exhibitPrice}}'] = formatCurrency((calculation || safeCalculation)?.totalCost || 0);
         }
         
         console.log('🔍 TEMPLATE DATA CREATED:');
@@ -3721,6 +3801,10 @@ Total Price: {{total price}}`;
               templateData[key] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
             } else if (lower.includes('discount')) {
               templateData[key] = ''; // Keep discount empty if not applicable
+            } else if (lower.includes('exhibitdesc') || lower.includes('exhibit_desc')) {
+              templateData[key] = migrationType || 'Migration Service';
+            } else if (lower.includes('exhibitprice') || lower.includes('exhibit_price')) {
+              templateData[key] = formatCurrency((calculation || safeCalculation)?.totalCost || 0);
             } else {
               templateData[key] = '';
             }
@@ -3746,6 +3830,14 @@ Total Price: {{total price}}`;
         templateData['{{migration_description}}'] = migrationDescription;
         templateData['{{migrationDescription}}'] = migrationDescription;
         templateData['{{migration_description_text}}'] = migrationDescription;
+        
+        // Update exhibit tokens with final migrationDescription (if not already set for Multi combination)
+        if (!templateData['{{exhibitDesc}}'] || templateData['{{exhibitDesc}}'] === 'Migration Service') {
+          templateData['{{exhibitDesc}}'] = migrationDescription;
+        }
+        if (!templateData['{{exhibitPrice}}'] || templateData['{{exhibitPrice}}'] === '$0.00') {
+          templateData['{{exhibitPrice}}'] = formatCurrency((calculation || safeCalculation)?.totalCost || 0);
+        }
         
         // Add user description tokens
         const userDescription = `Up to ${userCount || 1} Users`;
