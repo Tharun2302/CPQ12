@@ -3429,11 +3429,19 @@ Total Price: {{total price}}`;
         // Add Multi combination specific tokens (content_* and messaging_*)
         if (configuration?.migrationType === 'Multi combination') {
           // Extract messaging config and calculation
-          const messagingConfig = configuration.messagingConfig;
+          // NOTE: newer UI stores Multi-combo values in messagingConfigs/contentConfigs arrays.
+          // Keep backward compatibility with older shape (messagingConfig/contentConfig).
+          const messagingConfig =
+            configuration.messagingConfig ??
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ((configuration as any).messagingConfigs?.[0] ?? undefined);
           const messagingCalc = (calculation || safeCalculation)?.messagingCalculation;
           
           // Extract content config and calculation
-          const contentConfig = configuration.contentConfig;
+          const contentConfig =
+            configuration.contentConfig ??
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ((configuration as any).contentConfigs?.[0] ?? undefined);
           const contentCalc = (calculation || safeCalculation)?.contentCalculation;
           
           // Debug: Log the calculation structure
@@ -3443,7 +3451,11 @@ Total Price: {{total price}}`;
             messagingCalc: messagingCalc,
             contentCalc: contentCalc,
             messagingConfig: messagingConfig,
-            contentConfig: contentConfig
+            contentConfig: contentConfig,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            messagingConfigsCount: ((configuration as any).messagingConfigs || []).length,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            contentConfigsCount: ((configuration as any).contentConfigs || []).length
           });
           
           // Messaging tokens
