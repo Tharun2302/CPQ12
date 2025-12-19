@@ -467,13 +467,59 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     return baseCost * duration;
   };
 
-  // MULTI COMBINATION: Calculate Messaging + Content separately, then sum
+  // MULTI COMBINATION: Calculate Messaging + Content (+ Email) separately, then sum
+  // Now supports per-exhibit configs: loop over arrays and sum results
   if (config.migrationType === 'Multi combination') {
-    let messagingCalculation, contentCalculation;
+    let messagingCalculation, contentCalculation, emailCalculation;
     let totalCombined = 0;
 
-    // Calculate Messaging if config exists
-    if (config.messagingConfig) {
+    // Calculate Messaging - loop over per-exhibit configs
+    let messagingCombinationBreakdowns: PricingCalculation['messagingCombinationBreakdowns'] = [];
+    if (config.messagingConfigs && config.messagingConfigs.length > 0) {
+      const perExhibitResults = config.messagingConfigs.map(exCfg => {
+        const msgConfig: ConfigurationData = {
+          numberOfUsers: exCfg.numberOfUsers,
+          instanceType: exCfg.instanceType,
+          numberOfInstances: exCfg.numberOfInstances,
+          duration: exCfg.duration,
+          migrationType: 'Messaging',
+          dataSizeGB: 0,
+          messages: exCfg.messages,
+          combination: 'multi-combination-messaging'
+        };
+        const result = calculateMessagingPricing(msgConfig, tier);
+        return { combinationName: exCfg.exhibitName, ...result };
+      });
+
+      // Store per-combination breakdowns for UI display
+      messagingCombinationBreakdowns = perExhibitResults.map(r => ({
+        combinationName: r.combinationName,
+        userCost: r.userCost,
+        dataCost: r.dataCost,
+        migrationCost: r.migrationCost,
+        instanceCost: r.instanceCost,
+        totalCost: r.totalCost,
+      }));
+
+      messagingCalculation = perExhibitResults.reduce(
+        (acc, r) => ({
+          userCost: acc.userCost + r.userCost,
+          dataCost: acc.dataCost + r.dataCost,
+          migrationCost: acc.migrationCost + r.migrationCost,
+          instanceCost: acc.instanceCost + r.instanceCost,
+          totalCost: acc.totalCost + r.totalCost,
+        }),
+        { userCost: 0, dataCost: 0, migrationCost: 0, instanceCost: 0, totalCost: 0 }
+      );
+      totalCombined += messagingCalculation.totalCost;
+      
+      console.log('📊 Multi combination - Messaging calculation (per-combination):', {
+        combinationCount: config.messagingConfigs.length,
+        perCombination: messagingCombinationBreakdowns,
+        combined: messagingCalculation
+      });
+    } else if (config.messagingConfig) {
+      // Fallback to single config for backward compatibility
       const msgConfig: ConfigurationData = {
         numberOfUsers: config.messagingConfig.numberOfUsers,
         instanceType: config.messagingConfig.instanceType,
@@ -495,11 +541,56 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       };
       totalCombined += msgResult.totalCost;
       
-      console.log('📊 Multi combination - Messaging calculation:', messagingCalculation);
+      console.log('📊 Multi combination - Messaging calculation (single config fallback):', messagingCalculation);
     }
 
-    // Calculate Content if config exists
-    if (config.contentConfig) {
+    // Calculate Content - loop over per-exhibit configs
+    let contentCombinationBreakdowns: PricingCalculation['contentCombinationBreakdowns'] = [];
+    if (config.contentConfigs && config.contentConfigs.length > 0) {
+      const perExhibitResults = config.contentConfigs.map((exCfg) => {
+        const contentConfigData: ConfigurationData = {
+          numberOfUsers: exCfg.numberOfUsers,
+          instanceType: exCfg.instanceType,
+          numberOfInstances: exCfg.numberOfInstances,
+          duration: exCfg.duration,
+          migrationType: 'Content',
+          dataSizeGB: exCfg.dataSizeGB,
+          messages: 0,
+          combination: 'multi-combination-content'
+        };
+        const result = calculateContentPricing(contentConfigData, tier);
+        return { combinationName: exCfg.exhibitName, ...result };
+      });
+
+      // Store per-combination breakdowns for UI display
+      contentCombinationBreakdowns = perExhibitResults.map(r => ({
+        combinationName: r.combinationName,
+        userCost: r.userCost,
+        dataCost: r.dataCost,
+        migrationCost: r.migrationCost,
+        instanceCost: r.instanceCost,
+        totalCost: r.totalCost,
+      }));
+
+      contentCalculation = perExhibitResults.reduce(
+        (acc, r) => ({
+          userCost: acc.userCost + r.userCost,
+          dataCost: acc.dataCost + r.dataCost,
+          migrationCost: acc.migrationCost + r.migrationCost,
+          instanceCost: acc.instanceCost + r.instanceCost,
+          totalCost: acc.totalCost + r.totalCost,
+        }),
+        { userCost: 0, dataCost: 0, migrationCost: 0, instanceCost: 0, totalCost: 0 }
+      );
+      totalCombined += contentCalculation.totalCost;
+      
+      console.log('📊 Multi combination - Content calculation (per-combination):', {
+        combinationCount: config.contentConfigs.length,
+        perCombination: contentCombinationBreakdowns,
+        combined: contentCalculation
+      });
+    } else if (config.contentConfig) {
+      // Fallback to single config for backward compatibility
       const contentConfigData: ConfigurationData = {
         numberOfUsers: config.contentConfig.numberOfUsers,
         instanceType: config.contentConfig.instanceType,
@@ -521,14 +612,73 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       };
       totalCombined += contentResult.totalCost;
       
-      console.log('📊 Multi combination - Content calculation:', contentCalculation);
+      console.log('📊 Multi combination - Content calculation (single config fallback):', contentCalculation);
+    }
+
+    // Calculate Email - loop over per-exhibit configs
+    let emailCombinationBreakdowns: PricingCalculation['emailCombinationBreakdowns'] = [];
+    if (config.emailConfigs && config.emailConfigs.length > 0) {
+      const perExhibitResults = config.emailConfigs.map(exCfg => {
+        const emailConfigData: ConfigurationData = {
+          numberOfUsers: exCfg.numberOfUsers,
+          instanceType: exCfg.instanceType,
+          numberOfInstances: exCfg.numberOfInstances,
+          duration: exCfg.duration,
+          migrationType: 'Email',
+          dataSizeGB: 0,
+          messages: exCfg.messages,
+          combination: 'multi-combination-email'
+        };
+        const result = calculateEmailPricing(emailConfigData, tier);
+        return { combinationName: exCfg.exhibitName, ...result };
+      });
+
+      // Store per-combination breakdowns for UI display
+      emailCombinationBreakdowns = perExhibitResults.map(r => ({
+        combinationName: r.combinationName,
+        userCost: r.userCost,
+        dataCost: r.dataCost,
+        migrationCost: r.migrationCost,
+        instanceCost: r.instanceCost,
+        totalCost: r.totalCost,
+      }));
+
+      emailCalculation = perExhibitResults.reduce(
+        (acc, r) => ({
+          userCost: acc.userCost + r.userCost,
+          dataCost: acc.dataCost + r.dataCost,
+          migrationCost: acc.migrationCost + r.migrationCost,
+          instanceCost: acc.instanceCost + r.instanceCost,
+          totalCost: acc.totalCost + r.totalCost,
+        }),
+        { userCost: 0, dataCost: 0, migrationCost: 0, instanceCost: 0, totalCost: 0 }
+      );
+      totalCombined += emailCalculation.totalCost;
+      
+      console.log('📊 Multi combination - Email calculation (per-combination):', {
+        combinationCount: config.emailConfigs.length,
+        perCombination: emailCombinationBreakdowns,
+        combined: emailCalculation
+      });
     }
 
     // Return combined result
-    const combinedUserCost = (messagingCalculation?.userCost || 0) + (contentCalculation?.userCost || 0);
-    const combinedDataCost = (messagingCalculation?.dataCost || 0) + (contentCalculation?.dataCost || 0);
-    const combinedMigrationCost = (messagingCalculation?.migrationCost || 0) + (contentCalculation?.migrationCost || 0);
-    const combinedInstanceCost = (messagingCalculation?.instanceCost || 0) + (contentCalculation?.instanceCost || 0);
+    const combinedUserCost =
+      (messagingCalculation?.userCost || 0) +
+      (contentCalculation?.userCost || 0) +
+      (emailCalculation?.userCost || 0);
+    const combinedDataCost =
+      (messagingCalculation?.dataCost || 0) +
+      (contentCalculation?.dataCost || 0) +
+      (emailCalculation?.dataCost || 0);
+    const combinedMigrationCost =
+      (messagingCalculation?.migrationCost || 0) +
+      (contentCalculation?.migrationCost || 0) +
+      (emailCalculation?.migrationCost || 0);
+    const combinedInstanceCost =
+      (messagingCalculation?.instanceCost || 0) +
+      (contentCalculation?.instanceCost || 0) +
+      (emailCalculation?.instanceCost || 0);
 
     console.log('📊 Multi combination - Combined total:', totalCombined);
 
@@ -540,7 +690,12 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       totalCost: totalCombined,
       tier,
       messagingCalculation,
-      contentCalculation
+      contentCalculation,
+      emailCalculation,
+      // Per-combination breakdowns for individual display
+      messagingCombinationBreakdowns,
+      contentCombinationBreakdowns,
+      emailCombinationBreakdowns
     };
   }
 
