@@ -775,6 +775,74 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
 export function calculateAllTiers(config: ConfigurationData, tiers: PricingTier[] = PRICING_TIERS): PricingCalculation[] {
   return tiers.map(tier => calculatePricing(config, tier));
 }
+
+/**
+ * Calculate pricing for a single combination with a specific tier
+ * Used for per-combination plan selection in Multi combination scenarios
+ */
+export function calculateCombinationPricing(
+  combinationName: string,
+  combinationType: 'messaging' | 'content' | 'email',
+  config: ConfigurationData,
+  tier: PricingTier
+): {
+  combinationName: string;
+  userCost: number;
+  dataCost: number;
+  migrationCost: number;
+  instanceCost: number;
+  totalCost: number;
+} {
+  let result: PricingCalculation;
+
+  if (combinationType === 'messaging') {
+    const msgConfig: ConfigurationData = {
+      numberOfUsers: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.numberOfUsers || 0,
+      instanceType: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.instanceType || 'Standard',
+      numberOfInstances: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.numberOfInstances || 0,
+      duration: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.duration || 0,
+      migrationType: 'Messaging',
+      dataSizeGB: 0,
+      messages: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.messages || 0,
+      combination: 'multi-combination-messaging'
+    };
+    result = calculateMessagingPricing(msgConfig, tier);
+  } else if (combinationType === 'content') {
+    const contentConfig: ConfigurationData = {
+      numberOfUsers: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.numberOfUsers || 0,
+      instanceType: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.instanceType || 'Standard',
+      numberOfInstances: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.numberOfInstances || 0,
+      duration: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.duration || 0,
+      migrationType: 'Content',
+      dataSizeGB: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.dataSizeGB || 0,
+      messages: 0,
+      combination: 'multi-combination-content'
+    };
+    result = calculateContentPricing(contentConfig, tier);
+  } else {
+    // email
+    const emailConfig: ConfigurationData = {
+      numberOfUsers: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.numberOfUsers || 0,
+      instanceType: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.instanceType || 'Standard',
+      numberOfInstances: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.numberOfInstances || 0,
+      duration: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.duration || 0,
+      migrationType: 'Email',
+      dataSizeGB: 0,
+      messages: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.messages || 0,
+      combination: 'multi-combination-email'
+    };
+    result = calculateEmailPricing(emailConfig, tier);
+  }
+
+  return {
+    combinationName,
+    userCost: result.userCost,
+    dataCost: result.dataCost,
+    migrationCost: result.migrationCost,
+    instanceCost: result.instanceCost,
+    totalCost: result.totalCost,
+  };
+}
  
 export function getRecommendedTier(calculations: PricingCalculation[]): PricingCalculation {
   // Logic: Recommend Standard if total cost is reasonable, Basic for small projects, Advanced for large
