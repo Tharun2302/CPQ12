@@ -95,6 +95,26 @@ async function seedDefaultExhibits(db) {
       displayOrder: 2,
       keywords: ['outlook', 'gmail', 'email', 'not included', 'features', 'limitations']
     },
+    {
+      name: 'Outlook to Outlook - Included Features',
+      description: 'Documentation for features included in Outlook to Outlook migration',
+      fileName: 'Outlook to Outlook - Included.docx',
+      combinations: ['outlook-to-outlook', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 3,
+      keywords: ['outlook', 'email', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Outlook to Outlook - Not Included Features',
+      description: 'Documentation for features not included in Outlook to Outlook migration',
+      fileName: 'Outlook to Outlook - Not Included.docx',
+      combinations: ['outlook-to-outlook', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 4,
+      keywords: ['outlook', 'email', 'not included', 'features', 'limitations']
+    },
     // ShareFile to Google Shared Drive exhibits
     {
       name: 'ShareFile to Google Shared Drive Advanced Plan - Included Features',
@@ -115,6 +135,174 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 2,
       keywords: ['sharefile', 'google', 'sharedrive', 'advanced', 'not included', 'features', 'limitations']
+    },
+    // Dropbox to Google Shared Drive (Standard) exhibits
+    {
+      name: 'Dropbox to Google Shared Drive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to Google Shared Drive Standard Plan migration',
+      fileName: 'Dropbox to Google Shared Drive Standard Plan - Standard Include.docx',
+      combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 3,
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Google Shared Drive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to Google Shared Drive Standard Plan migration',
+      fileName: 'Dropbox to Google Shared Drive Standard Plan - Standard Not Include.docx',
+      combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 4,
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to Google Shared Drive (Advanced) exhibits
+    {
+      name: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Dropbox to Google Shared Drive Advanced Plan migration',
+      fileName: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Include.docx',
+      combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 5,
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Dropbox to Google Shared Drive Advanced Plan migration',
+      fileName: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 6,
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to Box (Advanced) exhibits
+    {
+      name: 'Dropbox to Box Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Dropbox to Box Advanced Plan migration',
+      fileName: 'Dropbox to Box Advanced Plan - Included Features.docx',
+      combinations: ['dropbox-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 3,
+      keywords: ['dropbox', 'box', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Box Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Dropbox to Box Advanced Plan migration',
+      fileName: 'Dropbox to Box Advanced Plan - Not Included Features.docx',
+      combinations: ['dropbox-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 4,
+      keywords: ['dropbox', 'box', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to Box (Standard) exhibits
+    {
+      name: 'Dropbox to Box Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to Box Standard Plan migration',
+      fileName: 'Dropbox to Box Standard Plan - Standard Include.docx',
+      combinations: ['dropbox-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 5,
+      keywords: ['dropbox', 'box', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Box Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to Box Standard Plan migration',
+      fileName: 'Dropbox to Box Standard Plan - Standard Not Include.docx',
+      combinations: ['dropbox-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 6,
+      keywords: ['dropbox', 'box', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to Egnyte (Standard) exhibits
+    {
+      name: 'Dropbox to Egnyte Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to Egnyte Standard Plan migration',
+      fileName: 'Dropbox to Egnyte Standard Plan - Standard Include.docx',
+      combinations: ['dropbox-to-egnyte', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 7,
+      keywords: ['dropbox', 'egnyte', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Egnyte Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to Egnyte Standard Plan migration',
+      fileName: 'Dropbox to Egnyte Standard Plan - Standard Not Include.docx',
+      combinations: ['dropbox-to-egnyte', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 8,
+      keywords: ['dropbox', 'egnyte', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to Egnyte (Advanced) exhibits
+    {
+      name: 'Dropbox to Egnyte Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Dropbox to Egnyte Advanced Plan migration',
+      fileName: 'Dropbox to Egnyte Advanced Plan - Advanced Include.docx',
+      combinations: ['dropbox-to-egnyte', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 9,
+      keywords: ['dropbox', 'egnyte', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Egnyte Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Dropbox to Egnyte Advanced Plan migration',
+      fileName: 'Dropbox to Egnyte Advanced Plan - Advanced Not Include.docx',
+      combinations: ['dropbox-to-egnyte', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 10,
+      keywords: ['dropbox', 'egnyte', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to MyDrive (Advanced) exhibits
+    {
+      name: 'Dropbox to MyDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Dropbox to MyDrive Advanced Plan migration',
+      fileName: 'Dropbox to MyDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['dropbox-to-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 11,
+      keywords: ['dropbox', 'mydrive', 'google', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to MyDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Dropbox to MyDrive Advanced Plan migration',
+      fileName: 'Dropbox to MyDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['dropbox-to-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 12,
+      keywords: ['dropbox', 'mydrive', 'google', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to MyDrive (Standard) exhibits
+    {
+      name: 'Dropbox to MyDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to MyDrive Standard Plan migration',
+      fileName: 'Dropbox to MyDrive Standard Plan - Standard Include.docx',
+      combinations: ['dropbox-to-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 13,
+      keywords: ['dropbox', 'mydrive', 'google', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to MyDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to MyDrive Standard Plan migration',
+      fileName: 'Dropbox to MyDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['dropbox-to-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 14,
+      keywords: ['dropbox', 'mydrive', 'google', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // OneDrive to OneDrive exhibits
     {
