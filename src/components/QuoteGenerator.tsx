@@ -2622,11 +2622,13 @@ Total Price: {{total price}}`;
       };
       // Clone to avoid mutating React state object
       const finalConfiguration = { ...(configuration || fallbackConfiguration) } as any;
-      // Multi combination: ensure top-level duration is the sum (so downstream tokens never fall back)
+      // Multi combination: ensure top-level duration reflects the effective duration from nested configs
+      // (new UI stores per-exhibit durations in messagingConfigs/contentConfigs arrays).
       if (finalConfiguration?.migrationType === 'Multi combination') {
-        const msgDuration = Number(finalConfiguration.messagingConfig?.duration || 0);
-        const contentDuration = Number(finalConfiguration.contentConfig?.duration || 0);
-        finalConfiguration.duration = msgDuration + contentDuration;
+        const effectiveDuration = getEffectiveDurationMonths(finalConfiguration);
+        if (effectiveDuration > 0) {
+          finalConfiguration.duration = effectiveDuration;
+        }
       }
       console.log('🔍 FINAL CONFIGURATION BEING USED:', finalConfiguration);
       console.log('🔍 FINAL CONFIGURATION TYPE:', typeof finalConfiguration);
@@ -2651,7 +2653,11 @@ Total Price: {{total price}}`;
           endDate: finalConfiguration.endDate,
           // IMPORTANT: preserve nested configs for Multi combination
           messagingConfig: finalConfiguration.messagingConfig,
-          contentConfig: finalConfiguration.contentConfig
+          contentConfig: finalConfiguration.contentConfig,
+          // New UI shape: per-exhibit configs
+          messagingConfigs: finalConfiguration.messagingConfigs,
+          contentConfigs: finalConfiguration.contentConfigs,
+          emailConfigs: finalConfiguration.emailConfigs
         },
         calculation: {
           userCost: finalCalculation.userCost,
