@@ -39,13 +39,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   onTemplateSelect
 }) => {
   const [config, setConfig] = useState<ConfigurationData>({
-    numberOfUsers: 0,
+    numberOfUsers: 1,
     instanceType: 'Small',
-    numberOfInstances: 0,
-    duration: 0,
+    numberOfInstances: 1,
+    duration: 1,
     migrationType: '' as any, // Start with empty to hide other fields
-    dataSizeGB: 0,
-    messages: 0,
+    dataSizeGB: 1,
+    messages: 1,
     combination: '',
     messagingConfig: undefined,
     contentConfig: undefined
@@ -195,11 +195,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 existing || {
                   exhibitId: primaryExhibitId, // Store first exhibit ID, but display combination name
                   exhibitName: combinationName, // Display the combination name, not individual exhibit name
-                  numberOfUsers: config.messagingConfig?.numberOfUsers || 0,
+                  numberOfUsers: config.messagingConfig?.numberOfUsers || 1,
                   instanceType: config.messagingConfig?.instanceType || 'Small',
-                  numberOfInstances: config.messagingConfig?.numberOfInstances || 0,
-                  duration: config.messagingConfig?.duration || 0,
-                  messages: config.messagingConfig?.messages || 0,
+                  numberOfInstances: config.messagingConfig?.numberOfInstances || 1,
+                  duration: config.messagingConfig?.duration || 1,
+                  messages: config.messagingConfig?.messages || 1,
                 }
               );
             });
@@ -215,11 +215,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 existing || {
                   exhibitId: primaryExhibitId,
                   exhibitName: combinationName, // Display the combination name
-                  numberOfUsers: config.contentConfig?.numberOfUsers || 0,
+                  numberOfUsers: config.contentConfig?.numberOfUsers || 1,
                   instanceType: config.contentConfig?.instanceType || 'Small',
-                  numberOfInstances: config.contentConfig?.numberOfInstances || 0,
-                  duration: config.contentConfig?.duration || 0,
-                  dataSizeGB: config.contentConfig?.dataSizeGB || 0,
+                  numberOfInstances: config.contentConfig?.numberOfInstances || 1,
+                  duration: config.contentConfig?.duration || 1,
+                  dataSizeGB: config.contentConfig?.dataSizeGB || 1,
                 }
               );
             });
@@ -235,11 +235,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 existing || {
                   exhibitId: primaryExhibitId,
                   exhibitName: combinationName, // Display the combination name
-                  numberOfUsers: 0,
+                  numberOfUsers: 1,
                   instanceType: 'Small',
-                  numberOfInstances: 0,
-                  duration: 0,
-                  messages: 0,
+                  numberOfInstances: 1,
+                  duration: 1,
+                  messages: 1,
                 }
               );
             });
@@ -457,13 +457,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         console.log('📋 Combination in parsed data:', parsed.combination);
         
         const merged = {
-          numberOfUsers: typeof parsed.numberOfUsers === 'number' ? parsed.numberOfUsers : 0,
+          numberOfUsers: typeof parsed.numberOfUsers === 'number' ? parsed.numberOfUsers : 1,
           instanceType: parsed.instanceType || 'Small',
-          numberOfInstances: typeof parsed.numberOfInstances === 'number' ? parsed.numberOfInstances : 0,
-          duration: typeof parsed.duration === 'number' ? parsed.duration : 0,
+          numberOfInstances: typeof parsed.numberOfInstances === 'number' ? parsed.numberOfInstances : 1,
+          duration: typeof parsed.duration === 'number' ? parsed.duration : 1,
           migrationType: parsed.migrationType || ('' as any),
-          dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 0,
-          messages: typeof parsed.messages === 'number' ? parsed.messages : 0,
+          dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 1,
+          messages: typeof parsed.messages === 'number' ? parsed.messages : 1,
           combination: parsed.combination || '' // Preserve previously selected combination
         } as ConfigurationData;
         
