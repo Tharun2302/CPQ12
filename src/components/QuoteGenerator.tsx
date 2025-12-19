@@ -1474,7 +1474,8 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{userscount}}': quote.configuration.numberOfUsers.toString(),
       '{{price_migration}}': formatCurrency(safeCalculation.migrationCost),
       '{{price_data}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
-      '{{Duration of months}}': quote.configuration.duration.toString(),
+      // Use effective duration (handles Multi combination + nested configs)
+      '{{Duration of months}}': (getEffectiveDurationMonths(quote.configuration) || 1).toString(),
       '{{instance_users}}': quote.configuration.numberOfInstances.toString(),
       '{{instance_type}}': quote.configuration.instanceType || 'Standard',
       // Instance type monthly cost (per server per month)
@@ -1533,7 +1534,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{prices}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
       '{{migration_price}}': formatCurrency(safeCalculation.migrationCost),
       '{{total_price}}': formatCurrency(safeCalculation.totalCost),
-      '{{duration_months}}': quote.configuration.duration.toString(),
+      '{{duration_months}}': (getEffectiveDurationMonths(quote.configuration) || 1).toString(),
       '{{client_name}}': quote.clientName,
       '{{client_email}}': quote.clientEmail,
       '{{quote_number}}': quoteNumber,
@@ -2987,7 +2988,7 @@ Total Price: {{total price}}`;
             
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            const duration = configuration?.duration;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
             
             console.log('🔍 End_date calculation (no explicit endDate provided):');
             console.log('  Project Start Date:', startDate);
@@ -3043,7 +3044,7 @@ Total Price: {{total price}}`;
             }
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            const duration = configuration?.duration;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
             if (startDate && duration && duration > 0) {
               try {
                 let startDateObj: Date;
@@ -3072,10 +3073,11 @@ Total Price: {{total price}}`;
             }
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            const duration = getEffectiveDurationMonths(configuration) || 0;
+            if (startDate && duration > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + duration);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -3086,10 +3088,11 @@ Total Price: {{total price}}`;
             }
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            if (startDate && configuration?.duration && configuration.duration > 0) {
+            const duration = getEffectiveDurationMonths(configuration) || 0;
+            if (startDate && duration > 0) {
               const startDateObj = new Date(startDate);
               const endDate = new Date(startDateObj);
-              endDate.setMonth(endDate.getMonth() + configuration.duration);
+              endDate.setMonth(endDate.getMonth() + duration);
               return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
             }
             return 'N/A';
@@ -3101,7 +3104,7 @@ Total Price: {{total price}}`;
             }
             // Calculate end date from Project Start Date + duration
             const startDate = configuration?.startDate;
-            const duration = configuration?.duration;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
             if (startDate && duration && duration > 0) {
               try {
                 let startDateObj: Date;
@@ -3303,7 +3306,7 @@ Total Price: {{total price}}`;
             return formatDateMMDDYYYY(configuration.endDate);
           }
           const startDate = configuration?.startDate;
-          const duration = configuration?.duration;
+          const duration = getEffectiveDurationMonths(configuration) || 0;
           if (startDate && duration && duration > 0) {
             try {
               let startDateObj: Date;
