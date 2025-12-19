@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ConfigurationData } from '../types/pricing';
-import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X } from 'lucide-react';
+import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
@@ -39,13 +39,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   onTemplateSelect
 }) => {
   const [config, setConfig] = useState<ConfigurationData>({
-    numberOfUsers: 0,
+    numberOfUsers: 1,
     instanceType: 'Small',
-    numberOfInstances: 0,
-    duration: 0,
+    numberOfInstances: 1,
+    duration: 1,
     migrationType: '' as any, // Start with empty to hide other fields
-    dataSizeGB: 0,
-    messages: 0,
+    dataSizeGB: 1,
+    messages: 1,
     combination: '',
     messagingConfig: undefined,
     contentConfig: undefined
@@ -109,22 +109,151 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             let hasContent = false;
             let hasEmail = false;
             
+            // Helper function to extract base combination name from exhibit name
+            // e.g., "OneDrive to OneDrive Standard Plan - Included Features" -> "OneDrive to OneDrive"
+            // e.g., "ShareFile to Google Shared Drive Advanced Plan - Included Features" -> "ShareFile to Google Shared Drive"
+            const extractCombinationName = (exhibitName: string): string => {
+              // Remove common suffixes like:
+              // - " Standard Plan - Included Features"
+              // - " Advanced Plan - Included Features"
+              // - " Basic Plan - Not Included Features"
+              // - " Plan - ..." (any plan type)
+              // - " - Included Features"
+              // - " - Not Included Features"
+              // - " - ..." (generic suffix)
+              const patterns = [
+                /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i, // Plan types with "- ..."
+                /\s+Plan\s*-\s*.*$/i, // Generic " Plan - ..."
+                /\s+-\s*Included\s+Features$/i, // " - Included Features"
+                /\s+-\s*Not\s+Included\s+Features$/i, // " - Not Included Features"
+                /\s+-\s*.*$/i, // Generic "- ..." suffix
+              ];
+              
+              let cleaned = exhibitName;
+              for (const pattern of patterns) {
+                cleaned = cleaned.replace(pattern, '');
+              }
+              
+              return cleaned.trim() || exhibitName;
+            };
+            
+            // Build per-combination config arrays (group exhibits by combination)
+            const messagingCombinationMap = new Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>();
+            const contentCombinationMap = new Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>();
+            const emailCombinationMap = new Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>();
+            
             selectedExhibits.forEach(exhibitId => {
               const exhibit = exhibits.find((ex: any) => ex._id === exhibitId);
               if (exhibit) {
-                const category = (exhibit.category || 'content').toLowerCase();
+                const rawCategory = (exhibit.category || 'content');
+                const category = rawCategory.toLowerCase();
+                const combinationName = extractCombinationName(exhibit.name || '');
+                
                 if (category === 'messaging' || category === 'message') {
                   hasMessaging = true;
+                  if (!messagingCombinationMap.has(combinationName)) {
+                    messagingCombinationMap.set(combinationName, { exhibitIds: [], exhibitName: combinationName, category });
+                  }
+                  messagingCombinationMap.get(combinationName)!.exhibitIds.push(exhibitId);
                 } else if (category === 'content') {
                   hasContent = true;
-                } else if (category === 'email') {
+                  if (!contentCombinationMap.has(combinationName)) {
+                    contentCombinationMap.set(combinationName, { exhibitIds: [], exhibitName: combinationName, category });
+                  }
+                  contentCombinationMap.get(combinationName)!.exhibitIds.push(exhibitId);
+                } else if (
+                  category === 'email' ||
+                  category === 'mail' ||
+                  category.includes('email') ||
+                  category.includes('mailbox') ||
+                  category.includes('outlook') ||
+                  category.includes('gmail')
+                ) {
                   hasEmail = true;
+                  if (!emailCombinationMap.has(combinationName)) {
+                    emailCombinationMap.set(combinationName, { exhibitIds: [], exhibitName: combinationName, category });
+                  }
+                  emailCombinationMap.get(combinationName)!.exhibitIds.push(exhibitId);
                 }
               }
             });
             
+            // Convert maps to config arrays (one config per combination, not per exhibit)
+            const newMessagingConfigs: ConfigurationData['messagingConfigs'] = [];
+            const newContentConfigs: ConfigurationData['contentConfigs'] = [];
+            const newEmailConfigs: ConfigurationData['emailConfigs'] = [];
+            
+            // Build messaging configs (one per combination)
+            messagingCombinationMap.forEach((group, combinationName) => {
+              // Use first exhibit ID as the primary ID, but store all IDs in the name or use combination name
+              const primaryExhibitId = group.exhibitIds[0];
+              const existing = (config.messagingConfigs || []).find(c => 
+                c.exhibitId === primaryExhibitId || c.exhibitName === combinationName
+              );
+              
+              newMessagingConfigs.push(
+                existing || {
+                  exhibitId: primaryExhibitId, // Store first exhibit ID, but display combination name
+                  exhibitName: combinationName, // Display the combination name, not individual exhibit name
+                  numberOfUsers: config.messagingConfig?.numberOfUsers || 1,
+                  instanceType: config.messagingConfig?.instanceType || 'Small',
+                  numberOfInstances: config.messagingConfig?.numberOfInstances || 1,
+                  duration: config.messagingConfig?.duration || 1,
+                  messages: config.messagingConfig?.messages || 1,
+                }
+              );
+            });
+            
+            // Build content configs (one per combination)
+            contentCombinationMap.forEach((group, combinationName) => {
+              const primaryExhibitId = group.exhibitIds[0];
+              const existing = (config.contentConfigs || []).find(c => 
+                c.exhibitId === primaryExhibitId || c.exhibitName === combinationName
+              );
+              
+              newContentConfigs.push(
+                existing || {
+                  exhibitId: primaryExhibitId,
+                  exhibitName: combinationName, // Display the combination name
+                  numberOfUsers: config.contentConfig?.numberOfUsers || 1,
+                  instanceType: config.contentConfig?.instanceType || 'Small',
+                  numberOfInstances: config.contentConfig?.numberOfInstances || 1,
+                  duration: config.contentConfig?.duration || 1,
+                  dataSizeGB: config.contentConfig?.dataSizeGB || 1,
+                }
+              );
+            });
+            
+            // Build email configs (one per combination)
+            emailCombinationMap.forEach((group, combinationName) => {
+              const primaryExhibitId = group.exhibitIds[0];
+              const existing = (config.emailConfigs || []).find(c => 
+                c.exhibitId === primaryExhibitId || c.exhibitName === combinationName
+              );
+              
+              newEmailConfigs.push(
+                existing || {
+                  exhibitId: primaryExhibitId,
+                  exhibitName: combinationName, // Display the combination name
+                  numberOfUsers: 1,
+                  instanceType: 'Small',
+                  numberOfInstances: 1,
+                  duration: 1,
+                  messages: 1,
+                }
+              );
+            });
+            
             setSelectedExhibitCategories({ hasMessaging, hasContent, hasEmail });
             console.log('📊 Selected exhibit categories:', { hasMessaging, hasContent, hasEmail });
+            
+            // Persist per-exhibit configs
+            setConfig(prev => ({
+              ...prev,
+              messagingConfigs: newMessagingConfigs,
+              contentConfigs: newContentConfigs,
+              emailConfigs: newEmailConfigs,
+            }));
           }
         }
       } catch (error) {
@@ -145,11 +274,28 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   useEffect(() => {
     if (config.migrationType !== 'Multi combination') return;
 
-    const effective = getEffectiveDurationMonths(config);
-    if (effective > 0 && config.duration !== effective) {
-      setConfig(prev => ({ ...prev, duration: effective }));
+    // Calculate effective duration from all per-exhibit configs
+    let maxDuration = 0;
+    if (config.messagingConfigs && config.messagingConfigs.length > 0) {
+      maxDuration = Math.max(maxDuration, ...config.messagingConfigs.map(c => c.duration || 0));
     }
-  }, [config.migrationType, config.messagingConfig?.duration, config.contentConfig?.duration, config.duration]);
+    if (config.contentConfigs && config.contentConfigs.length > 0) {
+      maxDuration = Math.max(maxDuration, ...config.contentConfigs.map(c => c.duration || 0));
+    }
+    if (config.emailConfigs && config.emailConfigs.length > 0) {
+      maxDuration = Math.max(maxDuration, ...config.emailConfigs.map(c => c.duration || 0));
+    }
+    
+    // Fallback to old single configs for backward compatibility
+    if (maxDuration === 0) {
+      const effective = getEffectiveDurationMonths(config);
+      if (effective > 0 && config.duration !== effective) {
+        setConfig(prev => ({ ...prev, duration: effective }));
+      }
+    } else if (maxDuration > 0 && config.duration !== maxDuration) {
+      setConfig(prev => ({ ...prev, duration: maxDuration }));
+    }
+  }, [config.migrationType, config.messagingConfigs, config.contentConfigs, config.emailConfigs, config.messagingConfig?.duration, config.contentConfig?.duration, config.duration]);
   
   // Contact information validation state
   const [contactValidationErrors, setContactValidationErrors] = useState({
@@ -311,13 +457,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         console.log('📋 Combination in parsed data:', parsed.combination);
         
         const merged = {
-          numberOfUsers: typeof parsed.numberOfUsers === 'number' ? parsed.numberOfUsers : 0,
+          numberOfUsers: typeof parsed.numberOfUsers === 'number' ? parsed.numberOfUsers : 1,
           instanceType: parsed.instanceType || 'Small',
-          numberOfInstances: typeof parsed.numberOfInstances === 'number' ? parsed.numberOfInstances : 0,
-          duration: typeof parsed.duration === 'number' ? parsed.duration : 0,
+          numberOfInstances: typeof parsed.numberOfInstances === 'number' ? parsed.numberOfInstances : 1,
+          duration: typeof parsed.duration === 'number' ? parsed.duration : 1,
           migrationType: parsed.migrationType || ('' as any),
-          dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 0,
-          messages: typeof parsed.messages === 'number' ? parsed.messages : 0,
+          dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 1,
+          messages: typeof parsed.messages === 'number' ? parsed.messages : 1,
           combination: parsed.combination || '' // Preserve previously selected combination
         } as ConfigurationData;
         
@@ -647,31 +793,85 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         return;
       }
       
-      // Validate Messaging section if present
+      // Validate Messaging section if present (check per-exhibit configs array)
       if (selectedExhibitCategories.hasMessaging) {
-        if (!config.messagingConfig || config.messagingConfig.numberOfUsers <= 0) {
-          alert('Please enter number of users for Messaging configuration');
-          return;
-        }
-        if (!config.messagingConfig.duration || config.messagingConfig.duration <= 0) {
-          alert('Please enter duration for Messaging configuration');
-          return;
+        const messagingConfigs = config.messagingConfigs || [];
+        if (messagingConfigs.length === 0) {
+          // Fallback to single config for backward compatibility
+          if (!config.messagingConfig || config.messagingConfig.numberOfUsers <= 0) {
+            alert('Please enter number of users for Messaging configuration');
+            return;
+          }
+          if (!config.messagingConfig.duration || config.messagingConfig.duration <= 0) {
+            alert('Please enter duration for Messaging configuration');
+            return;
+          }
+        } else {
+          // Validate each messaging config in the array
+          for (const msgCfg of messagingConfigs) {
+            if (!msgCfg.numberOfUsers || msgCfg.numberOfUsers <= 0) {
+              alert(`Please enter number of users for Messaging configuration: ${msgCfg.exhibitName}`);
+              return;
+            }
+            if (!msgCfg.duration || msgCfg.duration <= 0) {
+              alert(`Please enter duration for Messaging configuration: ${msgCfg.exhibitName}`);
+              return;
+            }
+          }
         }
       }
       
-      // Validate Content section if present
+      // Validate Content section if present (check per-exhibit configs array)
       if (selectedExhibitCategories.hasContent) {
-        if (!config.contentConfig || config.contentConfig.numberOfUsers <= 0) {
-          alert('Please enter number of users for Content configuration');
-          return;
+        const contentConfigs = config.contentConfigs || [];
+        if (contentConfigs.length === 0) {
+          // Fallback to single config for backward compatibility
+          if (!config.contentConfig || config.contentConfig.numberOfUsers <= 0) {
+            alert('Please enter number of users for Content configuration');
+            return;
+          }
+          if (!config.contentConfig.dataSizeGB || config.contentConfig.dataSizeGB <= 0) {
+            alert('Please enter data size for Content configuration');
+            return;
+          }
+          if (!config.contentConfig.duration || config.contentConfig.duration <= 0) {
+            alert('Please enter duration for Content configuration');
+            return;
+          }
+        } else {
+          // Validate each content config in the array
+          for (const contentCfg of contentConfigs) {
+            if (!contentCfg.numberOfUsers || contentCfg.numberOfUsers <= 0) {
+              alert(`Please enter number of users for Content configuration: ${contentCfg.exhibitName}`);
+              return;
+            }
+            if (!contentCfg.dataSizeGB || contentCfg.dataSizeGB <= 0) {
+              alert(`Please enter data size for Content configuration: ${contentCfg.exhibitName}`);
+              return;
+            }
+            if (!contentCfg.duration || contentCfg.duration <= 0) {
+              alert(`Please enter duration for Content configuration: ${contentCfg.exhibitName}`);
+              return;
+            }
+          }
         }
-        if (!config.contentConfig.dataSizeGB || config.contentConfig.dataSizeGB <= 0) {
-          alert('Please enter data size for Content configuration');
-          return;
-        }
-        if (!config.contentConfig.duration || config.contentConfig.duration <= 0) {
-          alert('Please enter duration for Content configuration');
-          return;
+      }
+      
+      // Validate Email section if present (check per-exhibit configs array)
+      if (selectedExhibitCategories.hasEmail) {
+        const emailConfigs = config.emailConfigs || [];
+        if (emailConfigs.length > 0) {
+          // Validate each email config in the array
+          for (const emailCfg of emailConfigs) {
+            if (!emailCfg.numberOfUsers || emailCfg.numberOfUsers <= 0) {
+              alert(`Please enter number of mailboxes for Email configuration: ${emailCfg.exhibitName}`);
+              return;
+            }
+            if (!emailCfg.duration || emailCfg.duration <= 0) {
+              alert(`Please enter duration for Email configuration: ${emailCfg.exhibitName}`);
+              return;
+            }
+          }
         }
       }
     }
@@ -1466,15 +1666,19 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </div>
               )}
 
-              {/* Messaging Project Configuration Section */}
-              {selectedExhibitCategories.hasMessaging && (
-                <div data-section="messaging-configuration" className="bg-gradient-to-br from-teal-50 via-cyan-50 to-blue-50 rounded-2xl shadow-2xl border-2 border-teal-200 p-8 backdrop-blur-sm mb-8">
+              {/* Messaging Project Configuration Section - one card per messaging exhibit */}
+              {selectedExhibitCategories.hasMessaging && (config.messagingConfigs || []).map((messagingCfg, messagingIndex) => (
+                <div
+                  key={messagingCfg.exhibitId}
+                  data-section={`messaging-configuration-${messagingCfg.exhibitId}`}
+                  className="bg-gradient-to-br from-teal-50 via-cyan-50 to-blue-50 rounded-2xl shadow-2xl border-2 border-teal-200 p-8 backdrop-blur-sm mb-8"
+                >
                   <div className="text-center mb-8">
                     <div className="w-16 h-16 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                       <MessageSquare className="w-8 h-8 text-white" />
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Messaging Project Configuration</h3>
-                    <p className="text-gray-600">Configure your messaging migration requirements</p>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Messaging Project Configuration – {messagingCfg.exhibitName}</h3>
+                    <p className="text-gray-600">Configure your messaging migration requirements for this exhibit</p>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1490,16 +1694,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="0"
                         step="1"
-                        value={config.messagingConfig?.numberOfUsers || ''}
+                        value={messagingCfg.numberOfUsers || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            messagingConfig: {
-                              ...(prev.messagingConfig || { instanceType: 'Small', numberOfInstances: 0, duration: 0, messages: 0 }),
-                              numberOfUsers: numValue
-                            }
+                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                              i === messagingIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
@@ -1517,14 +1720,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         Instance Type
                       </label>
                       <select
-                        value={config.messagingConfig?.instanceType || 'Small'}
+                        value={messagingCfg.instanceType || 'Small'}
                         onChange={(e) => {
+                          const value = e.target.value as any;
                           setConfig(prev => ({
                             ...prev,
-                            messagingConfig: {
-                              ...(prev.messagingConfig || { numberOfUsers: 0, numberOfInstances: 0, duration: 0, messages: 0 }),
-                              instanceType: e.target.value as any
-                            }
+                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                              i === messagingIndex ? { ...cfg, instanceType: value } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
@@ -1548,16 +1751,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="0"
                         step="1"
-                        value={config.messagingConfig?.numberOfInstances || ''}
+                        value={messagingCfg.numberOfInstances || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            messagingConfig: {
-                              ...(prev.messagingConfig || { numberOfUsers: 0, instanceType: 'Small', duration: 0, messages: 0 }),
-                              numberOfInstances: numValue
-                            }
+                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                              i === messagingIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
@@ -1578,16 +1780,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="1"
                         step="1"
-                        value={config.messagingConfig?.duration || ''}
+                        value={messagingCfg.duration || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            messagingConfig: {
-                              ...(prev.messagingConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, messages: 0 }),
-                              duration: numValue
-                            }
+                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                              i === messagingIndex ? { ...cfg, duration: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
@@ -1608,16 +1809,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="0"
                         step="1"
-                        value={config.messagingConfig?.messages || ''}
+                        value={messagingCfg.messages || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            messagingConfig: {
-                              ...(prev.messagingConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, duration: 0 }),
-                              messages: numValue
-                            }
+                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                              i === messagingIndex ? { ...cfg, messages: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
@@ -1628,17 +1828,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     </div>
                   </div>
                 </div>
-              )}
+              ))}
 
-              {/* Content Project Configuration Section */}
-              {selectedExhibitCategories.hasContent && (
-                <div data-section="content-configuration" className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-2xl shadow-2xl border-2 border-indigo-200 p-8 backdrop-blur-sm mb-8">
+              {/* Content Project Configuration Section - one card per content exhibit */}
+              {selectedExhibitCategories.hasContent && (config.contentConfigs || []).map((contentCfg, contentIndex) => (
+                <div
+                  key={contentCfg.exhibitId}
+                  data-section={`content-configuration-${contentCfg.exhibitId}`}
+                  className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-2xl shadow-2xl border-2 border-indigo-200 p-8 backdrop-blur-sm mb-8"
+                >
                   <div className="text-center mb-8">
                     <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                       <Database className="w-8 h-8 text-white" />
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Content Project Configuration</h3>
-                    <p className="text-gray-600">Configure your content migration requirements</p>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Content Project Configuration – {contentCfg.exhibitName}</h3>
+                    <p className="text-gray-600">Configure your content migration requirements for this exhibit</p>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1654,16 +1858,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="0"
                         step="1"
-                        value={config.contentConfig?.numberOfUsers || ''}
+                        value={contentCfg.numberOfUsers || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            contentConfig: {
-                              ...(prev.contentConfig || { instanceType: 'Small', numberOfInstances: 0, duration: 0, dataSizeGB: 0 }),
-                              numberOfUsers: numValue
-                            }
+                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                              i === contentIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
@@ -1681,14 +1884,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         Instance Type
                       </label>
                       <select
-                        value={config.contentConfig?.instanceType || 'Small'}
+                        value={contentCfg.instanceType || 'Small'}
                         onChange={(e) => {
+                          const value = e.target.value as any;
                           setConfig(prev => ({
                             ...prev,
-                            contentConfig: {
-                              ...(prev.contentConfig || { numberOfUsers: 0, numberOfInstances: 0, duration: 0, dataSizeGB: 0 }),
-                              instanceType: e.target.value as any
-                            }
+                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                              i === contentIndex ? { ...cfg, instanceType: value } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
@@ -1712,16 +1915,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="0"
                         step="1"
-                        value={config.contentConfig?.numberOfInstances || ''}
+                        value={contentCfg.numberOfInstances || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            contentConfig: {
-                              ...(prev.contentConfig || { numberOfUsers: 0, instanceType: 'Small', duration: 0, dataSizeGB: 0 }),
-                              numberOfInstances: numValue
-                            }
+                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                              i === contentIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
@@ -1742,16 +1944,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="1"
                         step="1"
-                        value={config.contentConfig?.duration || ''}
+                        value={contentCfg.duration || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            contentConfig: {
-                              ...(prev.contentConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, dataSizeGB: 0 }),
-                              duration: numValue
-                            }
+                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                              i === contentIndex ? { ...cfg, duration: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
@@ -1772,16 +1973,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         type="number"
                         min="0"
                         step="1"
-                        value={config.contentConfig?.dataSizeGB || ''}
+                        value={contentCfg.dataSizeGB || ''}
                         onChange={(e) => {
                           const value = e.target.value;
                           const numValue = value === '' ? 0 : parseInt(value) || 0;
                           setConfig(prev => ({
                             ...prev,
-                            contentConfig: {
-                              ...(prev.contentConfig || { numberOfUsers: 0, instanceType: 'Small', numberOfInstances: 0, duration: 0 }),
-                              dataSizeGB: numValue
-                            }
+                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                              i === contentIndex ? { ...cfg, dataSizeGB: numValue } : cfg
+                            ),
                           }));
                         }}
                         className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
@@ -1792,7 +1992,171 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     </div>
                   </div>
                 </div>
-              )}
+              ))}
+
+              {/* Email Project Configuration Section - one card per email exhibit */}
+              {selectedExhibitCategories.hasEmail && (config.emailConfigs || []).map((emailCfg, emailIndex) => (
+                <div
+                  key={emailCfg.exhibitId}
+                  data-section={`email-configuration-${emailCfg.exhibitId}`}
+                  className="bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 rounded-2xl shadow-2xl border-2 border-amber-200 p-8 backdrop-blur-sm mb-8"
+                >
+                  <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Mail className="w-8 h-8 text-white" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Email Project Configuration – {emailCfg.exhibitName}</h3>
+                    <p className="text-gray-600">Configure your email migration requirements for this exhibit</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Email: Number of Mailboxes */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Users className="w-4 h-4 text-white" />
+                        </div>
+                        Number of Mailboxes
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={emailCfg.numberOfUsers || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                              i === emailIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                            ),
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
+                        placeholder="Enter number of mailboxes"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Email: Instance Type */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Server className="w-4 h-4 text-white" />
+                        </div>
+                        Instance Type
+                      </label>
+                      <select
+                        value={emailCfg.instanceType || 'Small'}
+                        onChange={(e) => {
+                          const value = e.target.value as any;
+                          setConfig(prev => ({
+                            ...prev,
+                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                              i === emailIndex ? { ...cfg, instanceType: value } : cfg
+                            ),
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
+                      >
+                        <option value="Small">Small</option>
+                        <option value="Standard">Standard</option>
+                        <option value="Large">Large</option>
+                        <option value="Extra Large">Extra Large</option>
+                      </select>
+                    </div>
+
+                    {/* Email: Number of Instances */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Server className="w-4 h-4 text-white" />
+                        </div>
+                        Number of Instances
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={emailCfg.numberOfInstances || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                              i === emailIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                            ),
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
+                        placeholder="Enter number of instances"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Email: Duration */}
+                    <div className="group">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <Clock className="w-4 h-4 text-white" />
+                        </div>
+                        Duration (Months)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={emailCfg.duration || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                              i === emailIndex ? { ...cfg, duration: numValue } : cfg
+                            ),
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
+                        placeholder="Enter duration"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    {/* Email: Number of Emails (optional) */}
+                    <div className="group md:col-span-2">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-rose-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                          <MessageSquare className="w-4 h-4 text-white" />
+                        </div>
+                        Emails (optional)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={emailCfg.messages || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = value === '' ? 0 : parseInt(value) || 0;
+                          setConfig(prev => ({
+                            ...prev,
+                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                              i === emailIndex ? { ...cfg, messages: numValue } : cfg
+                            ),
+                          }));
+                        }}
+                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
+                        placeholder="Enter number of emails"
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">Number of emails involved in the email migration (optional).</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </>
           )}
 

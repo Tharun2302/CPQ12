@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { PricingCalculation, ConfigurationData } from '../types/pricing';
-import { formatCurrency } from '../utils/pricing';
+import React, { useState, useEffect, useMemo } from 'react';
+import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
+import { formatCurrency, PRICING_TIERS, calculateCombinationPricing } from '../utils/pricing';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -15,6 +15,104 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   configuration
 }) => {
   const [discount, setDiscount] = useState<number>(0);
+  
+  // Track selected tier per combination (key: combinationName, value: tier name)
+  const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>({});
+
+  // Initialize selected tiers with the current calculation tier (Standard by default)
+  useEffect(() => {
+    if (configuration?.migrationType === 'Multi combination' && calculations.length > 0) {
+      const defaultTier = calculations.find(c => c.tier.name === 'Standard')?.tier.name || 'Standard';
+      const initialTiers: Record<string, 'Basic' | 'Standard' | 'Advanced'> = {};
+      
+      // Initialize all combinations with Standard tier
+      calculations[0]?.messagingCombinationBreakdowns?.forEach(b => {
+        initialTiers[b.combinationName] = defaultTier;
+      });
+      calculations[0]?.contentCombinationBreakdowns?.forEach(b => {
+        initialTiers[b.combinationName] = defaultTier;
+      });
+      calculations[0]?.emailCombinationBreakdowns?.forEach(b => {
+        initialTiers[b.combinationName] = defaultTier;
+      });
+      
+      setSelectedTiersPerCombination(prev => {
+        // Only set if not already set (preserve user selections)
+        const updated = { ...prev };
+        Object.keys(initialTiers).forEach(key => {
+          if (!updated[key]) {
+            updated[key] = initialTiers[key];
+          }
+        });
+        return updated;
+      });
+    }
+  }, [calculations, configuration]);
+
+  // Calculate custom total based on selected tiers per combination
+  const customTotal = useMemo(() => {
+    if (!configuration || configuration.migrationType !== 'Multi combination') {
+      return null;
+    }
+
+    let total = 0;
+    
+    // Calculate messaging combinations
+    if (configuration.messagingConfigs && configuration.messagingConfigs.length > 0) {
+      configuration.messagingConfigs.forEach(cfg => {
+        const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
+        const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, tier);
+        total += pricing.totalCost;
+      });
+    }
+    
+    // Calculate content combinations
+    if (configuration.contentConfigs && configuration.contentConfigs.length > 0) {
+      configuration.contentConfigs.forEach(cfg => {
+        const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
+        const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, tier);
+        total += pricing.totalCost;
+      });
+    }
+    
+    // Calculate email combinations
+    if (configuration.emailConfigs && configuration.emailConfigs.length > 0) {
+      configuration.emailConfigs.forEach(cfg => {
+        const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
+        const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, tier);
+        total += pricing.totalCost;
+      });
+    }
+    
+    return total;
+  }, [configuration, selectedTiersPerCombination]);
+
+  // Get pricing for a specific combination with selected tier
+  const getCombinationPricing = (
+    combinationName: string,
+    combinationType: 'messaging' | 'content' | 'email',
+    defaultBreakdown: { userCost: number; dataCost: number; migrationCost: number; instanceCost: number; totalCost: number }
+  ) => {
+    if (!configuration || configuration.migrationType !== 'Multi combination') {
+      return defaultBreakdown;
+    }
+    
+    const selectedTierName = selectedTiersPerCombination[combinationName];
+    if (!selectedTierName) {
+      return defaultBreakdown;
+    }
+    
+    const tier = PRICING_TIERS.find(t => t.name === selectedTierName);
+    if (!tier) {
+      return defaultBreakdown;
+    }
+    
+    const pricing = calculateCombinationPricing(combinationName, combinationType, configuration, tier);
+    return pricing;
+  };
 
   // Read discount from sessionStorage (set in Configuration session)
   useEffect(() => {
@@ -263,71 +361,266 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       </p>
                     </div>
 
-                    {/* Messaging Section */}
+                    {/* Messaging Section - show individual combinations if available */}
                     {calc.messagingCalculation && (
-                      <div className="border-2 border-teal-200 bg-teal-50/50 rounded-lg p-4 mb-4">
-                        <h4 className="font-bold text-teal-900 mb-3 flex items-center gap-2">
-                          <span className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs">M</span>
-                          Messaging Migration
-                        </h4>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">User Cost:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.userCost)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">Migration Cost:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.migrationCost)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">Instance Cost:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.instanceCost)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm bg-teal-100 rounded p-2 mt-2">
-                            <span className="font-bold text-teal-900">Messaging Total:</span>
-                            <span className="font-bold text-teal-900">{formatCurrency(calc.messagingCalculation.totalCost)}</span>
+                      calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0 ? (
+                        // Show individual breakdowns for each combination
+                        calc.messagingCombinationBreakdowns.map((breakdown, idx) => {
+                          const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
+                          const pricing = getCombinationPricing(breakdown.combinationName, 'messaging', breakdown);
+                          
+                          return (
+                            <div key={idx} className="border-2 border-teal-200 bg-teal-50/50 rounded-lg p-4 mb-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-bold text-teal-900 flex items-center gap-2">
+                                  <span className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs">M</span>
+                                  Messaging Migration – {breakdown.combinationName}
+                                </h4>
+                                <select
+                                  value={selectedTier}
+                                  onChange={(e) => {
+                                    setSelectedTiersPerCombination(prev => ({
+                                      ...prev,
+                                      [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
+                                    }));
+                                  }}
+                                  className="px-3 py-1.5 border border-teal-300 rounded-lg bg-white text-sm font-medium text-teal-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                >
+                                  <option value="Basic">Basic Plan</option>
+                                  <option value="Standard">Standard Plan</option>
+                                  <option value="Advanced">Advanced Plan</option>
+                                </select>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">User Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">Migration Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">Instance Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm bg-teal-100 rounded p-2 mt-2">
+                                  <span className="font-bold text-teal-900">Messaging Total ({breakdown.combinationName}):</span>
+                                  <span className="font-bold text-teal-900">{formatCurrency(pricing.totalCost)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        // Fallback: show aggregated total if per-combination breakdowns not available
+                        <div className="border-2 border-teal-200 bg-teal-50/50 rounded-lg p-4 mb-4">
+                          <h4 className="font-bold text-teal-900 mb-3 flex items-center gap-2">
+                            <span className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs">M</span>
+                            Messaging Migration
+                          </h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">User Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.userCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">Migration Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.migrationCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">Instance Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.instanceCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm bg-teal-100 rounded p-2 mt-2">
+                              <span className="font-bold text-teal-900">Messaging Total:</span>
+                              <span className="font-bold text-teal-900">{formatCurrency(calc.messagingCalculation.totalCost)}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )
                     )}
 
-                    {/* Content Section */}
+                    {/* Content Section - show individual combinations if available */}
                     {calc.contentCalculation && (
-                      <div className="border-2 border-indigo-200 bg-indigo-50/50 rounded-lg p-4 mb-4">
-                        <h4 className="font-bold text-indigo-900 mb-3 flex items-center gap-2">
-                          <span className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white text-xs">C</span>
-                          Content Migration
-                        </h4>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">User Cost:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.userCost)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">Data Cost:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.dataCost)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">Migration Cost:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.migrationCost)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">Instance Cost:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.instanceCost)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm bg-indigo-100 rounded p-2 mt-2">
-                            <span className="font-bold text-indigo-900">Content Total:</span>
-                            <span className="font-bold text-indigo-900">{formatCurrency(calc.contentCalculation.totalCost)}</span>
+                      calc.contentCombinationBreakdowns && calc.contentCombinationBreakdowns.length > 0 ? (
+                        // Show individual breakdowns for each combination
+                        calc.contentCombinationBreakdowns.map((breakdown, idx) => {
+                          const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
+                          const pricing = getCombinationPricing(breakdown.combinationName, 'content', breakdown);
+                          
+                          return (
+                            <div key={idx} className="border-2 border-indigo-200 bg-indigo-50/50 rounded-lg p-4 mb-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-bold text-indigo-900 flex items-center gap-2">
+                                  <span className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white text-xs">C</span>
+                                  Content Migration – {breakdown.combinationName}
+                                </h4>
+                                <select
+                                  value={selectedTier}
+                                  onChange={(e) => {
+                                    setSelectedTiersPerCombination(prev => ({
+                                      ...prev,
+                                      [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
+                                    }));
+                                  }}
+                                  className="px-3 py-1.5 border border-indigo-300 rounded-lg bg-white text-sm font-medium text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                  <option value="Basic">Basic Plan</option>
+                                  <option value="Standard">Standard Plan</option>
+                                  <option value="Advanced">Advanced Plan</option>
+                                </select>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">User Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">Data Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.dataCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">Migration Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">Instance Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm bg-indigo-100 rounded p-2 mt-2">
+                                  <span className="font-bold text-indigo-900">Content Total ({breakdown.combinationName}):</span>
+                                  <span className="font-bold text-indigo-900">{formatCurrency(pricing.totalCost)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        // Fallback: show aggregated total if per-combination breakdowns not available
+                        <div className="border-2 border-indigo-200 bg-indigo-50/50 rounded-lg p-4 mb-4">
+                          <h4 className="font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                            <span className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white text-xs">C</span>
+                            Content Migration
+                          </h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">User Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.userCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">Data Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.dataCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">Migration Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.migrationCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">Instance Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.instanceCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm bg-indigo-100 rounded p-2 mt-2">
+                              <span className="font-bold text-indigo-900">Content Total:</span>
+                              <span className="font-bold text-indigo-900">{formatCurrency(calc.contentCalculation.totalCost)}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )
                     )}
 
-                    {/* Combined Total */}
-                    <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
-                      <span className="font-bold text-purple-900">Combined Total:</span>
-                      <span className="font-bold text-2xl text-purple-900">{formatCurrency(calc.totalCost)}</span>
-                    </div>
+                    {/* Email Section - show individual combinations if available */}
+                    {calc.emailCalculation && (
+                      calc.emailCombinationBreakdowns && calc.emailCombinationBreakdowns.length > 0 ? (
+                        // Show individual breakdowns for each combination
+                        calc.emailCombinationBreakdowns.map((breakdown, idx) => {
+                          const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
+                          const pricing = getCombinationPricing(breakdown.combinationName, 'email', breakdown);
+                          
+                          return (
+                            <div key={idx} className="border-2 border-amber-200 bg-amber-50/50 rounded-lg p-4 mb-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-bold text-amber-900 flex items-center gap-2">
+                                  <span className="w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-white text-xs">E</span>
+                                  Email Migration – {breakdown.combinationName}
+                                </h4>
+                                <select
+                                  value={selectedTier}
+                                  onChange={(e) => {
+                                    setSelectedTiersPerCombination(prev => ({
+                                      ...prev,
+                                      [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
+                                    }));
+                                  }}
+                                  className="px-3 py-1.5 border border-amber-300 rounded-lg bg-white text-sm font-medium text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                >
+                                  <option value="Basic">Basic Plan</option>
+                                  <option value="Standard">Standard Plan</option>
+                                  <option value="Advanced">Advanced Plan</option>
+                                </select>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">User Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">Migration Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-gray-700">Instance Cost:</span>
+                                  <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm bg-amber-100 rounded p-2 mt-2">
+                                  <span className="font-bold text-amber-900">Email Total ({breakdown.combinationName}):</span>
+                                  <span className="font-bold text-amber-900">{formatCurrency(pricing.totalCost)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        // Fallback: show aggregated total if per-combination breakdowns not available
+                        <div className="border-2 border-amber-200 bg-amber-50/50 rounded-lg p-4 mb-4">
+                          <h4 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                            <span className="w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-white text-xs">E</span>
+                            Email Migration
+                          </h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">User Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.emailCalculation.userCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">Migration Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.emailCalculation.migrationCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-700">Instance Cost:</span>
+                              <span className="font-bold text-gray-900">{formatCurrency(calc.emailCalculation.instanceCost)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm bg-amber-100 rounded p-2 mt-2">
+                              <span className="font-bold text-amber-900">Email Total:</span>
+                              <span className="font-bold text-amber-900">{formatCurrency(calc.emailCalculation.totalCost)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    )}
+
+                    {/* Combined Total - show custom total if tiers are selected, otherwise show tier-based total */}
+                    {customTotal !== null ? (
+                      <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
+                        <span className="font-bold text-purple-900">Combined Total (Custom Plan Selection):</span>
+                        <span className="font-bold text-2xl text-purple-900">{formatCurrency(customTotal * (1 - discount / 100))}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
+                        <span className="font-bold text-purple-900">Combined Total:</span>
+                        <span className="font-bold text-2xl text-purple-900">{formatCurrency(calc.totalCost)}</span>
+                      </div>
+                    )}
                   </>
                 ) : configuration?.combination === 'overage-agreement' ? (
                   <>

@@ -56,6 +56,34 @@ export interface ConfigurationData {
     duration: number;
     dataSizeGB: number;
   };
+  // Per-exhibit configs for Multi combination (one config per selected exhibit)
+  messagingConfigs?: Array<{
+    exhibitId: string;
+    exhibitName: string;
+    numberOfUsers: number;
+    instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
+    numberOfInstances: number;
+    duration: number;
+    messages: number;
+  }>;
+  contentConfigs?: Array<{
+    exhibitId: string;
+    exhibitName: string;
+    numberOfUsers: number;
+    instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
+    numberOfInstances: number;
+    duration: number;
+    dataSizeGB: number;
+  }>;
+  emailConfigs?: Array<{
+    exhibitId: string;
+    exhibitName: string;
+    numberOfUsers: number;
+    instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
+    numberOfInstances: number;
+    duration: number;
+    messages?: number;
+  }>;
 }
 
 export interface PricingCalculation {
@@ -80,6 +108,38 @@ export interface PricingCalculation {
     instanceCost: number;
     totalCost: number;
   };
+  emailCalculation?: {
+    userCost: number;
+    dataCost: number;
+    migrationCost: number;
+    instanceCost: number;
+    totalCost: number;
+  };
+  // Per-combination breakdowns (for displaying individual pricing per combination)
+  contentCombinationBreakdowns?: Array<{
+    combinationName: string;
+    userCost: number;
+    dataCost: number;
+    migrationCost: number;
+    instanceCost: number;
+    totalCost: number;
+  }>;
+  messagingCombinationBreakdowns?: Array<{
+    combinationName: string;
+    userCost: number;
+    dataCost: number;
+    migrationCost: number;
+    instanceCost: number;
+    totalCost: number;
+  }>;
+  emailCombinationBreakdowns?: Array<{
+    combinationName: string;
+    userCost: number;
+    dataCost: number;
+    migrationCost: number;
+    instanceCost: number;
+    totalCost: number;
+  }>;
 }
 
 export interface DealData {
