@@ -56,6 +56,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     }
 
     let total = 0;
+    const breakdown: Array<{ combinationName: string; tier: string; cost: number; type: string }> = [];
     
     // Calculate messaging combinations
     if (configuration.messagingConfigs && configuration.messagingConfigs.length > 0) {
@@ -64,6 +65,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
         const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, tier);
         total += pricing.totalCost;
+        breakdown.push({
+          combinationName: cfg.exhibitName,
+          tier: selectedTierName,
+          cost: pricing.totalCost,
+          type: 'messaging'
+        });
       });
     }
     
@@ -74,6 +81,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
         const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, tier);
         total += pricing.totalCost;
+        breakdown.push({
+          combinationName: cfg.exhibitName,
+          tier: selectedTierName,
+          cost: pricing.totalCost,
+          type: 'content'
+        });
       });
     }
     
@@ -84,8 +97,21 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
         const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, tier);
         total += pricing.totalCost;
+        breakdown.push({
+          combinationName: cfg.exhibitName,
+          tier: selectedTierName,
+          cost: pricing.totalCost,
+          type: 'email'
+        });
       });
     }
+    
+    // Debug logging
+    console.log('🔧 Custom Total Calculation:', {
+      breakdown,
+      total,
+      selectedTiers: selectedTiersPerCombination
+    });
     
     return total;
   }, [configuration, selectedTiersPerCombination]);
@@ -94,23 +120,22 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   const getCombinationPricing = (
     combinationName: string,
     combinationType: 'messaging' | 'content' | 'email',
-    defaultBreakdown: { userCost: number; dataCost: number; migrationCost: number; instanceCost: number; totalCost: number }
+    defaultBreakdown: { userCost: number; dataCost: number; migrationCost: number; instanceCost: number; totalCost: number },
+    planTier?: PricingTier // The tier of the current plan column being displayed
   ) => {
     if (!configuration || configuration.migrationType !== 'Multi combination') {
       return defaultBreakdown;
     }
     
-    const selectedTierName = selectedTiersPerCombination[combinationName];
-    if (!selectedTierName) {
+    // If planTier is provided, use it for comparison view (each column shows its own tier)
+    // Otherwise, use selectedTier for custom total calculation
+    const tierToUse = planTier || PRICING_TIERS.find(t => t.name === selectedTiersPerCombination[combinationName] || 'Standard');
+    
+    if (!tierToUse) {
       return defaultBreakdown;
     }
     
-    const tier = PRICING_TIERS.find(t => t.name === selectedTierName);
-    if (!tier) {
-      return defaultBreakdown;
-    }
-    
-    const pricing = calculateCombinationPricing(combinationName, combinationType, configuration, tier);
+    const pricing = calculateCombinationPricing(combinationName, combinationType, configuration, tierToUse);
     return pricing;
   };
 
@@ -302,7 +327,37 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       
       <div className={`${containerClass} max-w-6xl mx-auto`}>
         {filteredCalculations.map((calc) => {
-          const discountInfo = calculateDiscountedPrice(calc.totalCost);
+          // For Multi combination, recalculate total based on this plan's tier
+          let planTotal = calc.totalCost;
+          if (configuration?.migrationType === 'Multi combination') {
+            planTotal = 0;
+            
+            // Sum messaging combinations
+            if (calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0) {
+              calc.messagingCombinationBreakdowns.forEach(breakdown => {
+                const pricing = getCombinationPricing(breakdown.combinationName, 'messaging', breakdown, calc.tier);
+                planTotal += pricing.totalCost;
+              });
+            }
+            
+            // Sum content combinations
+            if (calc.contentCombinationBreakdowns && calc.contentCombinationBreakdowns.length > 0) {
+              calc.contentCombinationBreakdowns.forEach(breakdown => {
+                const pricing = getCombinationPricing(breakdown.combinationName, 'content', breakdown, calc.tier);
+                planTotal += pricing.totalCost;
+              });
+            }
+            
+            // Sum email combinations
+            if (calc.emailCombinationBreakdowns && calc.emailCombinationBreakdowns.length > 0) {
+              calc.emailCombinationBreakdowns.forEach(breakdown => {
+                const pricing = getCombinationPricing(breakdown.combinationName, 'email', breakdown, calc.tier);
+                planTotal += pricing.totalCost;
+              });
+            }
+          }
+          
+          const discountInfo = calculateDiscountedPrice(planTotal);
           
           return (
             <div
@@ -339,10 +394,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                 ) : (
                   <div>
                     <div className="text-4xl font-bold mb-2 text-gray-900">
-                      {formatCurrency(calc.totalCost)}
+                      {formatCurrency(planTotal)}
                     </div>
                     <div className="text-sm text-gray-600 font-medium">Total project cost</div>
-                    {discount > 0 && calc.totalCost < 2500 && (
+                    {discount > 0 && planTotal < 2500 && (
                       <div className="text-xs text-amber-600 mt-1">
                         Discount available for orders above $2,500
                       </div>
@@ -366,8 +421,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0 ? (
                         // Show individual breakdowns for each combination
                         calc.messagingCombinationBreakdowns.map((breakdown, idx) => {
-                          const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
-                          const pricing = getCombinationPricing(breakdown.combinationName, 'messaging', breakdown);
+                          // Use the current plan column's tier for pricing display (for comparison)
+                          const pricing = getCombinationPricing(breakdown.combinationName, 'messaging', breakdown, calc.tier);
                           
                           return (
                             <div key={idx} className="border-2 border-teal-200 bg-teal-50/50 rounded-lg p-4 mb-4">
@@ -376,20 +431,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs">M</span>
                                   Messaging Migration – {breakdown.combinationName}
                                 </h4>
-                                <select
-                                  value={selectedTier}
-                                  onChange={(e) => {
-                                    setSelectedTiersPerCombination(prev => ({
-                                      ...prev,
-                                      [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
-                                    }));
-                                  }}
-                                  className="px-3 py-1.5 border border-teal-300 rounded-lg bg-white text-sm font-medium text-teal-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                                >
-                                  <option value="Basic">Basic Plan</option>
-                                  <option value="Standard">Standard Plan</option>
-                                  <option value="Advanced">Advanced Plan</option>
-                                </select>
+                                <div className="px-3 py-1.5 border border-teal-300 rounded-lg bg-teal-100 text-sm font-medium text-teal-900">
+                                  {calc.tier.name} Plan
+                                </div>
                               </div>
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-sm">
@@ -446,8 +490,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       calc.contentCombinationBreakdowns && calc.contentCombinationBreakdowns.length > 0 ? (
                         // Show individual breakdowns for each combination
                         calc.contentCombinationBreakdowns.map((breakdown, idx) => {
-                          const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
-                          const pricing = getCombinationPricing(breakdown.combinationName, 'content', breakdown);
+                          // Use the current plan column's tier for pricing display (for comparison)
+                          const pricing = getCombinationPricing(breakdown.combinationName, 'content', breakdown, calc.tier);
                           
                           return (
                             <div key={idx} className="border-2 border-indigo-200 bg-indigo-50/50 rounded-lg p-4 mb-4">
@@ -456,20 +500,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white text-xs">C</span>
                                   Content Migration – {breakdown.combinationName}
                                 </h4>
-                                <select
-                                  value={selectedTier}
-                                  onChange={(e) => {
-                                    setSelectedTiersPerCombination(prev => ({
-                                      ...prev,
-                                      [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
-                                    }));
-                                  }}
-                                  className="px-3 py-1.5 border border-indigo-300 rounded-lg bg-white text-sm font-medium text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                >
-                                  <option value="Basic">Basic Plan</option>
-                                  <option value="Standard">Standard Plan</option>
-                                  <option value="Advanced">Advanced Plan</option>
-                                </select>
+                                <div className="px-3 py-1.5 border border-indigo-300 rounded-lg bg-indigo-100 text-sm font-medium text-indigo-900">
+                                  {calc.tier.name} Plan
+                                </div>
                               </div>
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-sm">
@@ -534,8 +567,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       calc.emailCombinationBreakdowns && calc.emailCombinationBreakdowns.length > 0 ? (
                         // Show individual breakdowns for each combination
                         calc.emailCombinationBreakdowns.map((breakdown, idx) => {
-                          const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
-                          const pricing = getCombinationPricing(breakdown.combinationName, 'email', breakdown);
+                          // Use the current plan column's tier for pricing display (for comparison)
+                          const pricing = getCombinationPricing(breakdown.combinationName, 'email', breakdown, calc.tier);
                           
                           return (
                             <div key={idx} className="border-2 border-amber-200 bg-amber-50/50 rounded-lg p-4 mb-4">
@@ -544,20 +577,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-white text-xs">E</span>
                                   Email Migration – {breakdown.combinationName}
                                 </h4>
-                                <select
-                                  value={selectedTier}
-                                  onChange={(e) => {
-                                    setSelectedTiersPerCombination(prev => ({
-                                      ...prev,
-                                      [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
-                                    }));
-                                  }}
-                                  className="px-3 py-1.5 border border-amber-300 rounded-lg bg-white text-sm font-medium text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                >
-                                  <option value="Basic">Basic Plan</option>
-                                  <option value="Standard">Standard Plan</option>
-                                  <option value="Advanced">Advanced Plan</option>
-                                </select>
+                                <div className="px-3 py-1.5 border border-amber-300 rounded-lg bg-amber-100 text-sm font-medium text-amber-900">
+                                  {calc.tier.name} Plan
+                                </div>
                               </div>
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-sm">
@@ -609,18 +631,11 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       )
                     )}
 
-                    {/* Combined Total - show custom total if tiers are selected, otherwise show tier-based total */}
-                    {customTotal !== null ? (
-                      <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
-                        <span className="font-bold text-purple-900">Combined Total (Custom Plan Selection):</span>
-                        <span className="font-bold text-2xl text-purple-900">{formatCurrency(customTotal * (1 - discount / 100))}</span>
-                      </div>
-                    ) : (
-                      <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
-                        <span className="font-bold text-purple-900">Combined Total:</span>
-                        <span className="font-bold text-2xl text-purple-900">{formatCurrency(calc.totalCost)}</span>
-                      </div>
-                    )}
+                    {/* Combined Total - show tier-based total for this plan column */}
+                    <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
+                      <span className="font-bold text-purple-900">Combined Total ({calc.tier.name} Plan):</span>
+                      <span className="font-bold text-2xl text-purple-900">{formatCurrency(planTotal)}</span>
+                    </div>
                   </>
                 ) : configuration?.combination === 'overage-agreement' ? (
                   <>
@@ -699,6 +714,198 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
           );
         })}
       </div>
+
+      {/* Custom Plan Selection Section - Only for Multi combination */}
+      {configuration?.migrationType === 'Multi combination' && (
+        <div className="mt-8 bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-purple-900 mb-4 text-center">
+            🔧 Customize Individual Combinations
+          </h3>
+          <p className="text-sm text-purple-700 mb-4 text-center">
+            Select different plans for each combination to see a custom total
+          </p>
+          
+          <div className="space-y-4">
+            {/* Messaging Combinations */}
+            {calculations[0]?.messagingCombinationBreakdowns?.map((breakdown) => {
+              const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
+              return (
+                <div key={breakdown.combinationName} className="bg-white rounded-lg p-4 border border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">
+                      Messaging: {breakdown.combinationName}
+                    </span>
+                    <select
+                      value={selectedTier}
+                      onChange={(e) => {
+                        setSelectedTiersPerCombination(prev => ({
+                          ...prev,
+                          [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
+                        }));
+                      }}
+                      className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="Basic">Basic Plan</option>
+                      <option value="Standard">Standard Plan</option>
+                      <option value="Advanced">Advanced Plan</option>
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Content Combinations */}
+            {calculations[0]?.contentCombinationBreakdowns?.map((breakdown) => {
+              const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
+              return (
+                <div key={breakdown.combinationName} className="bg-white rounded-lg p-4 border border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">
+                      Content: {breakdown.combinationName}
+                    </span>
+                    <select
+                      value={selectedTier}
+                      onChange={(e) => {
+                        setSelectedTiersPerCombination(prev => ({
+                          ...prev,
+                          [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
+                        }));
+                      }}
+                      className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="Basic">Basic Plan</option>
+                      <option value="Standard">Standard Plan</option>
+                      <option value="Advanced">Advanced Plan</option>
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Email Combinations */}
+            {calculations[0]?.emailCombinationBreakdowns?.map((breakdown) => {
+              const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
+              return (
+                <div key={breakdown.combinationName} className="bg-white rounded-lg p-4 border border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">
+                      Email: {breakdown.combinationName}
+                    </span>
+                    <select
+                      value={selectedTier}
+                      onChange={(e) => {
+                        setSelectedTiersPerCombination(prev => ({
+                          ...prev,
+                          [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
+                        }));
+                      }}
+                      className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="Basic">Basic Plan</option>
+                      <option value="Standard">Standard Plan</option>
+                      <option value="Advanced">Advanced Plan</option>
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Custom Total Display */}
+          {customTotal !== null && (
+            <>
+              <div className="mt-6 flex justify-between items-center text-lg bg-gradient-to-r from-purple-200 to-indigo-200 border-2 border-purple-400 rounded-lg p-4">
+                <span className="font-bold text-purple-900">Custom Combined Total:</span>
+                <span className="font-bold text-2xl text-purple-900">
+                  {formatCurrency(customTotal * (1 - discount / 100))}
+                </span>
+              </div>
+              
+              {/* Button to proceed with custom selection */}
+              <button
+                onClick={() => {
+                  // Create a custom PricingCalculation from the selected tiers
+                  if (!configuration) return;
+                  
+                  let combinedUserCost = 0;
+                  let combinedDataCost = 0;
+                  let combinedMigrationCost = 0;
+                  let combinedInstanceCost = 0;
+                  
+                  // Calculate messaging combinations
+                  if (configuration.messagingConfigs && configuration.messagingConfigs.length > 0) {
+                    configuration.messagingConfigs.forEach(cfg => {
+                      const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
+                      const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, tier);
+                      combinedUserCost += pricing.userCost;
+                      combinedDataCost += pricing.dataCost;
+                      combinedMigrationCost += pricing.migrationCost;
+                      combinedInstanceCost += pricing.instanceCost;
+                    });
+                  }
+                  
+                  // Calculate content combinations
+                  if (configuration.contentConfigs && configuration.contentConfigs.length > 0) {
+                    configuration.contentConfigs.forEach(cfg => {
+                      const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
+                      const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, tier);
+                      combinedUserCost += pricing.userCost;
+                      combinedDataCost += pricing.dataCost;
+                      combinedMigrationCost += pricing.migrationCost;
+                      combinedInstanceCost += pricing.instanceCost;
+                    });
+                  }
+                  
+                  // Calculate email combinations
+                  if (configuration.emailConfigs && configuration.emailConfigs.length > 0) {
+                    configuration.emailConfigs.forEach(cfg => {
+                      const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
+                      const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, tier);
+                      combinedUserCost += pricing.userCost;
+                      combinedDataCost += pricing.dataCost;
+                      combinedMigrationCost += pricing.migrationCost;
+                      combinedInstanceCost += pricing.instanceCost;
+                    });
+                  }
+                  
+                  // Create custom calculation (use Standard tier as base, but with custom totals)
+                  const customCalculation: PricingCalculation = {
+                    userCost: combinedUserCost,
+                    dataCost: combinedDataCost,
+                    migrationCost: combinedMigrationCost,
+                    instanceCost: combinedInstanceCost,
+                    totalCost: customTotal,
+                    tier: PRICING_TIERS[1], // Use Standard as base tier
+                    // Include the original calculations for reference
+                    messagingCalculation: calculations[0]?.messagingCalculation,
+                    contentCalculation: calculations[0]?.contentCalculation,
+                    emailCalculation: calculations[0]?.emailCalculation,
+                    messagingCombinationBreakdowns: calculations[0]?.messagingCombinationBreakdowns,
+                    contentCombinationBreakdowns: calculations[0]?.contentCombinationBreakdowns,
+                    emailCombinationBreakdowns: calculations[0]?.emailCombinationBreakdowns
+                  };
+                  
+                  console.log('🔧 Proceeding with custom plan selection:', {
+                    customCalculation,
+                    selectedTiers: selectedTiersPerCombination
+                  });
+                  
+                  onSelectTier(customCalculation);
+                }}
+                className="mt-4 w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                <span className="relative flex items-center justify-center gap-2">
+                  Proceed with Custom Plan Selection
+                </span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
