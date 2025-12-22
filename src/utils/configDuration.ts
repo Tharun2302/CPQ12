@@ -7,9 +7,9 @@ import type { ConfigurationData } from '../types/pricing';
  * `messagingConfig/contentConfig` OR the newer `messagingConfigs/contentConfigs` arrays),
  * and sometimes in top-level `duration`.
  *
- * For Multi combination, we SUM durations across categories (Messaging + Content [+ Email]),
- * using the maximum duration within each category. Falls back to top-level duration if nested
- * durations are missing.
+ * For Multi combination, we SUM durations across ALL selected exhibit configs
+ * (Messaging + Content + Email), across every per-combination entry. Falls back to top-level
+ * duration if nested durations are missing.
  */
 export function getEffectiveDurationMonths(configuration?: ConfigurationData | null): number {
   if (!configuration) return 0;
@@ -17,30 +17,26 @@ export function getEffectiveDurationMonths(configuration?: ConfigurationData | n
   const top = Number(configuration.duration || 0);
   if (configuration.migrationType !== 'Multi combination') return top;
 
-  const msgDurations: number[] = [Number(configuration.messagingConfig?.duration || 0)];
-  const contentDurations: number[] = [Number(configuration.contentConfig?.duration || 0)];
-  const emailDurations: number[] = [];
+  const sum = (nums: number[]) => nums.reduce((acc, n) => acc + (Number.isFinite(n) ? n : 0), 0);
 
-  // Newer shape (arrays)
-  for (const cfg of configuration.messagingConfigs || []) {
-    msgDurations.push(Number(cfg?.duration || 0));
-  }
-  for (const cfg of configuration.contentConfigs || []) {
-    contentDurations.push(Number(cfg?.duration || 0));
-  }
-  for (const cfg of configuration.emailConfigs || []) {
-    emailDurations.push(Number(cfg?.duration || 0));
-  }
+  // Newer shape (arrays): sum across every per-combination config
+  const msgArraySum = sum((configuration.messagingConfigs || []).map((c) => Number(c?.duration || 0)));
+  const contentArraySum = sum((configuration.contentConfigs || []).map((c) => Number(c?.duration || 0)));
+  const emailArraySum = sum((configuration.emailConfigs || []).map((c) => Number(c?.duration || 0)));
 
-  const msgMax = Math.max(0, ...msgDurations);
-  const contentMax = Math.max(0, ...contentDurations);
-  const emailMax = Math.max(0, ...emailDurations);
+  const arrayTotal = msgArraySum + contentArraySum + emailArraySum;
 
-  const nestedSum = msgMax + contentMax + emailMax;
+  // Legacy single-config fallback
+  const legacyTotal =
+    Number(configuration.messagingConfig?.duration || 0) +
+    Number(configuration.contentConfig?.duration || 0) +
+    Number((configuration as any).emailConfig?.duration || 0);
 
   // For Multi combination:
   // If nested configs exist, use their sum; otherwise use top-level duration.
-  return nestedSum > 0 ? nestedSum : top;
+  if (arrayTotal > 0) return arrayTotal;
+  if (legacyTotal > 0) return legacyTotal;
+  return top;
 }
 
 export function formatMonths(durationMonths: number): string {

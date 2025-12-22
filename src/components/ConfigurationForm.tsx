@@ -142,7 +142,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             const contentCombinationMap = new Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>();
             const emailCombinationMap = new Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>();
             
-            selectedExhibits.forEach(exhibitId => {
+            // Dedupe exhibit IDs to avoid double-counting/grouping issues
+            const uniqueSelectedExhibits = Array.from(
+              new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean))
+            );
+
+            uniqueSelectedExhibits.forEach(exhibitId => {
               const exhibit = exhibits.find((ex: any) => ex._id === exhibitId);
               if (exhibit) {
                 const rawCategory = (exhibit.category || 'content');

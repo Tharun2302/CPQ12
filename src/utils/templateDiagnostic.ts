@@ -26,6 +26,52 @@ export interface TemplateDiagnosticResult {
  * Comprehensive template diagnostic tool
  */
 export class TemplateDiagnostic {
+  /**
+   * Extract token-like keys from nested array-of-object data.
+   * Example: { exhibits: [{ exhibitDesc: '...', exhibitPrice: '...' }] }
+   * will contribute: ['exhibitDesc', 'exhibitPrice'].
+   */
+  private static extractNestedDataTokens(templateData: Record<string, any>): string[] {
+    const nestedTokens = new Set<string>();
+
+    try {
+      for (const [dataKey, value] of Object.entries(templateData)) {
+        if (!Array.isArray(value)) continue;
+
+        // Special case: some templates use loop-item tokens (e.g. {{#exhibits}} ... {{exhibitType}} ...)
+        // and it's valid for the backing array to be empty (meaning: render no rows).
+        // In that case, we still want diagnostics to consider the loop-item keys "available",
+        // otherwise generation is blocked even though docxtemplater would render fine.
+        if (dataKey === 'exhibits') {
+          nestedTokens.add('exhibitType');
+          nestedTokens.add('exhibitDesc');
+          nestedTokens.add('exhibitPlan');
+          nestedTokens.add('exhibitPrice');
+        }
+
+        // If the array is empty, we cannot infer keys from objects; rely on special cases above.
+        if (value.length === 0) continue;
+
+        // Only consider arrays of plain objects (docxtemplater loop contexts)
+        const objectsOnly = value.filter(
+          (item) => item && typeof item === 'object' && !Array.isArray(item)
+        );
+        if (objectsOnly.length === 0) continue;
+
+        // Collect keys from each object in the array
+        for (const obj of objectsOnly) {
+          for (const key of Object.keys(obj)) {
+            if (key && typeof key === 'string') nestedTokens.add(key);
+          }
+        }
+      }
+    } catch (e) {
+      // best-effort; diagnostics should never crash generation
+      console.warn('⚠️ Unable to extract nested data tokens:', e);
+    }
+
+    return Array.from(nestedTokens);
+  }
   
   /**
    * Diagnose template and data compatibility
@@ -47,15 +93,38 @@ export class TemplateDiagnostic {
       
       // 3. Analyze data tokens
       const dataTokens = Object.keys(templateData);
+      const nestedDataTokens = this.extractNestedDataTokens(templateData);
+      const effectiveDataTokens = Array.from(new Set([...dataTokens, ...nestedDataTokens]));
       console.log('📊 Data tokens provided:', dataTokens);
+      if (nestedDataTokens.length > 0) {
+        console.log('🧩 Nested data tokens provided (from array items):', nestedDataTokens);
+      }
+
+      // Context-aware handling for loop-item tokens.
+      // If the template contains an exhibits loop ({{#exhibits}}...{{/exhibits}}),
+      // the tokens inside that loop (exhibitType/exhibitDesc/exhibitPlan/exhibitPrice)
+      // should NOT be required as top-level data tokens. They are provided by exhibits[] items.
+      const hasExhibitsLoop = templateTokens.includes('#exhibits');
+      const hasExhibitsArrayInData = effectiveDataTokens.some((t) => t.replace(/^\{\{|\}\}$/g, '') === 'exhibits');
+      const optionalLoopItemTokens = new Set<string>();
+      if (hasExhibitsLoop && hasExhibitsArrayInData) {
+        ['exhibitType', 'exhibitDesc', 'exhibitPlan', 'exhibitPrice'].forEach((t) => optionalLoopItemTokens.add(t));
+        console.log('🧩 Template diagnostic: exhibits loop detected; treating exhibit loop-item tokens as optional.');
+      }
       
       // 4. Find mismatches
       console.log('🔍 Comparing tokens:');
       console.log('  Template tokens (raw):', templateTokens);
       console.log('  Data tokens (raw):', dataTokens);
       
-      const mismatchedTokens = this.findMismatches(templateTokens, dataTokens);
-      const missingTokens = this.findMissingTokens(templateTokens, dataTokens);
+      // Use "effective" tokens for mismatch/missing checks so loop-item tokens (e.g. exhibits[].exhibitDesc)
+      // are considered valid.
+      const mismatchedTokens = this.findMismatches(templateTokens, effectiveDataTokens).filter(
+        (t) => !optionalLoopItemTokens.has(t)
+      );
+      const missingTokens = this.findMissingTokens(templateTokens, effectiveDataTokens).filter(
+        (t) => !optionalLoopItemTokens.has(t)
+      );
       const extraTokens = this.findExtraTokens(templateTokens, dataTokens);
       
       console.log('🔍 Comparison results:');
@@ -268,7 +337,20 @@ export class TemplateDiagnostic {
    */
   private static findMissingTokens(templateTokens: string[], dataTokens: string[]): string[] {
     return templateTokens.filter(templateToken => {
-      // Remove {{}} brackets from data tokens for comparison
+      // Skip loop control tokens - these are not data tokens
+      // Loop start tokens: #exhibits, #array, etc.
+      // Loop end tokens: /exhibits, /array, etc.
+      if (templateToken.startsWith('#') || templateToken.startsWith('/')) {
+        // Check if the array name exists in data (e.g., if token is "#exhibits", check for "exhibits")
+        const arrayName = templateToken.replace(/^#|\//, ''); // Remove # or / prefix
+        const normalizedDataTokens = dataTokens.map(token => 
+          token.replace(/^\{\{|\}\}$/g, '')
+        );
+        // If the array exists in data, the loop control token is valid
+        return !normalizedDataTokens.includes(arrayName);
+      }
+      
+      // For regular tokens, check if they exist in data
       const normalizedDataTokens = dataTokens.map(token => 
         token.replace(/^\{\{|\}\}$/g, '')
       );

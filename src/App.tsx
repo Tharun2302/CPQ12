@@ -1269,9 +1269,19 @@ function App() {
 
   // Exhibit change handler
   const handleExhibitsChange = useCallback((exhibitIds: string[]) => {
-    setSelectedExhibits(exhibitIds);
-    localStorage.setItem('cpq_selected_exhibits', JSON.stringify(exhibitIds));
-    console.log('📎 Exhibits selection changed:', exhibitIds);
+    // Normalize + dedupe to prevent duplicate IDs from folder-select and repeated toggles
+    const normalized = Array.from(
+      new Set((exhibitIds || []).map((id) => (id ?? '').toString()).filter(Boolean))
+    );
+    if ((exhibitIds || []).length !== normalized.length) {
+      console.warn('⚠️ Duplicate exhibit IDs detected; deduped automatically.', {
+        rawCount: (exhibitIds || []).length,
+        uniqueCount: normalized.length
+      });
+    }
+    setSelectedExhibits(normalized);
+    localStorage.setItem('cpq_selected_exhibits', JSON.stringify(normalized));
+    console.log('📎 Exhibits selection changed:', { raw: exhibitIds, normalized });
   }, []);
 
   // Restore exhibits from localStorage
@@ -1280,8 +1290,11 @@ function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setSelectedExhibits(parsed);
-        console.log('♻️ Restored selected exhibits:', parsed);
+        const normalized = Array.from(
+          new Set((Array.isArray(parsed) ? parsed : []).map((id) => (id ?? '').toString()).filter(Boolean))
+        );
+        setSelectedExhibits(normalized);
+        console.log('♻️ Restored selected exhibits:', { parsed, normalized });
       } catch (e) {
         console.error('Error parsing saved exhibits:', e);
       }

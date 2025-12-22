@@ -72,6 +72,14 @@ export interface DocxTemplateData {
   quoteId?: string;
   planName?: string;
   paymentTerms?: string;
+  
+  // Exhibit array for dynamic table rows
+  exhibits?: Array<{
+    exhibitType: string;
+    exhibitDesc: string;
+    exhibitPlan: string;
+    exhibitPrice: string;
+  }>;
 }
 
 export interface DocxProcessingResult {
@@ -900,6 +908,21 @@ export class DocxTemplateProcessor {
     
     // COMPREHENSIVE: Create a data object that covers ALL possible token variations
     const processedData: any = {};
+
+    // CRITICAL: Pass through exhibits array for dynamic table loops ({{#exhibits}} ... {{/exhibits}})
+    // QuoteGenerator sets this as a non-bracket key: templateData.exhibits = [...]
+    // If we don't preserve it here, docxtemplater will receive no "exhibits" and render 0 rows.
+    const exhibits = (data as any)?.exhibits;
+    if (Array.isArray(exhibits)) {
+      processedData.exhibits = exhibits;
+      console.log('✅ DOCX PROCESSOR: exhibits array copied to processedData', {
+        length: exhibits.length,
+        sample: exhibits[0]
+      });
+    } else {
+      processedData.exhibits = [];
+      console.log('ℹ️ DOCX PROCESSOR: No exhibits array found; defaulting to []');
+    }
     
     // Extract core values with fallbacks - EXACT tokens from template
     console.log('🔍 DOCX PROCESSOR: Company name sources:');
@@ -1135,6 +1158,24 @@ export class DocxTemplateProcessor {
       '{{migration_type}}': migrationType,
       '{{migrationType}}': migrationType,
       '{{migration}}': migrationType,
+
+      // Shared Server/Instance description (exact token used by some templates)
+      // NOTE: keep as empty string when not applicable; do NOT default to "N/A"
+      '{{server_descriptions}}':
+        (data as any)['{{server_descriptions}}'] ||
+        (data as any)['{{serverDescriptions}}'] ||
+        (data as any)['{{server descriptions}}'] ||
+        '',
+      '{{serverDescriptions}}':
+        (data as any)['{{serverDescriptions}}'] ||
+        (data as any)['{{server_descriptions}}'] ||
+        (data as any)['{{server descriptions}}'] ||
+        '',
+      '{{server descriptions}}':
+        (data as any)['{{server descriptions}}'] ||
+        (data as any)['{{server_descriptions}}'] ||
+        (data as any)['{{serverDescriptions}}'] ||
+        '',
       
       // Client variations
       '{{clientName}}': clientName,
@@ -1361,6 +1402,11 @@ export class DocxTemplateProcessor {
           // Never force-fill discount-related tokens; keep them empty so rows can be removed
           const lower = key.toLowerCase();
           if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount') || lower.includes('if_discount')) {
+            processedData[key] = '';
+            return;
+          }
+          // Never force-fill server_descriptions; keep it empty if not provided
+          if (lower.includes('server_descriptions') || (lower.includes('server') && lower.includes('description'))) {
             processedData[key] = '';
             return;
           }

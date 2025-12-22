@@ -98,18 +98,31 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     return exhibits.filter(exhibit => {
       const exhibitName = exhibit.name.toLowerCase();
       
-      // For Slack to Teams exhibits, check if name contains the tier name
-      if (exhibitName.includes('slack to teams')) {
+      // Check if exhibit name contains a plan type (Standard, Advanced, Basic, Premium, Enterprise)
+      const hasStandard = exhibitName.includes('standard');
+      const hasAdvanced = exhibitName.includes('advanced');
+      const hasBasic = exhibitName.includes('basic');
+      const hasPremium = exhibitName.includes('premium');
+      const hasEnterprise = exhibitName.includes('enterprise');
+      
+      // If exhibit has a plan type, filter by matching tier
+      if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
         if (tierName === 'basic') {
-          return exhibitName.includes('basic');
+          return hasBasic && !hasStandard && !hasAdvanced;
         } else if (tierName === 'standard') {
-          return exhibitName.includes('standard');
+          return hasStandard && !hasAdvanced && !hasBasic;
         } else if (tierName === 'advanced') {
-          return exhibitName.includes('advanced');
+          return hasAdvanced && !hasStandard && !hasBasic;
+        } else if (tierName === 'premium') {
+          return hasPremium;
+        } else if (tierName === 'enterprise') {
+          return hasEnterprise;
         }
+        // If tier doesn't match any plan type, don't show this exhibit
+        return false;
       }
       
-      // For other exhibits (not plan-specific), show them all
+      // For exhibits without explicit plan type, show them (they're generic)
       return true;
     });
   }, [exhibits, selectedTier]);
@@ -122,34 +135,46 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
     const tierName = selectedTier.tier.name.toLowerCase();
     
-    // Get all Slack to Teams exhibits (from original exhibits list, not filtered)
-    const slackExhibits = exhibits.filter(ex => 
-      ex.name.toLowerCase().includes('slack to teams')
-    );
-    
-    // Get matching tier exhibits
-    const matchingSlackExhibitIds = slackExhibits
-      .filter(ex => ex.name.toLowerCase().includes(tierName))
-      .map(ex => ex._id);
-
-    // Get non-Slack exhibits (should be kept)
-    const nonSlackExhibitIds = selectedExhibits.filter(id => {
-      const exhibit = exhibits.find(ex => ex._id === id);
-      return exhibit && !exhibit.name.toLowerCase().includes('slack to teams');
-    });
-
-    // Combine: matching Slack exhibits + non-Slack exhibits
-    const newSelection = [...new Set([...matchingSlackExhibitIds, ...nonSlackExhibitIds])];
+    // Filter all exhibits by tier (not just Slack to Teams)
+    const matchingExhibitIds = exhibits
+      .filter(ex => {
+        const exhibitName = ex.name.toLowerCase();
+        const hasStandard = exhibitName.includes('standard');
+        const hasAdvanced = exhibitName.includes('advanced');
+        const hasBasic = exhibitName.includes('basic');
+        const hasPremium = exhibitName.includes('premium');
+        const hasEnterprise = exhibitName.includes('enterprise');
+        
+        // If exhibit has a plan type, check if it matches selected tier
+        if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
+          if (tierName === 'basic') {
+            return hasBasic && !hasStandard && !hasAdvanced;
+          } else if (tierName === 'standard') {
+            return hasStandard && !hasAdvanced && !hasBasic;
+          } else if (tierName === 'advanced') {
+            return hasAdvanced && !hasStandard && !hasBasic;
+          } else if (tierName === 'premium') {
+            return hasPremium;
+          } else if (tierName === 'enterprise') {
+            return hasEnterprise;
+          }
+          return false;
+        }
+        
+        // Keep exhibits without explicit plan type (generic exhibits)
+        return true;
+      })
+      .map(ex => ex._id)
+      .filter(id => selectedExhibits.includes(id)); // Only keep currently selected exhibits that match tier
 
     // Only update if the selection would change
-    if (JSON.stringify(newSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
+    if (JSON.stringify(matchingExhibitIds.sort()) !== JSON.stringify(selectedExhibits.sort())) {
       console.log('🔄 Auto-filtering exhibits for tier:', tierName, {
-        matchingSlackIds: matchingSlackExhibitIds,
-        nonSlackIds: nonSlackExhibitIds,
         currentSelection: selectedExhibits,
-        newSelection
+        filteredSelection: matchingExhibitIds,
+        removed: selectedExhibits.filter(id => !matchingExhibitIds.includes(id))
       });
-      onExhibitsChange(newSelection);
+      onExhibitsChange(matchingExhibitIds);
     }
   }, [selectedTier, exhibits, selectedExhibits, onExhibitsChange]);
 

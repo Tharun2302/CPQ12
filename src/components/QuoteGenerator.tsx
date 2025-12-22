@@ -80,6 +80,97 @@ function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
   return value.replace(spaceRegex, ' '.repeat(maxSpaces));
 }
 
+// Helper function to get display name for exhibit category
+function getCategoryDisplayName(category: string): string {
+  const normalized = (category || 'content').toLowerCase();
+  switch (normalized) {
+    case 'messaging':
+    case 'message':
+      return 'CloudFuze X-Change Messaging Migration';
+    case 'content':
+      return 'CloudFuze X-Change Content Migration';
+    case 'email':
+      return 'CloudFuze X-Change Email Migration';
+    default:
+      return 'CloudFuze X-Change Data Migration';
+  }
+}
+
+// Helper function to format exhibit description with configuration details
+function formatExhibitDescription(exhibit: any, configuration: ConfigurationData, exhibitConfig?: any): string {
+  const category = (exhibit.category || 'content').toLowerCase();
+  let exhibitName = exhibit.name || '';
+  
+  // Remove plan type and Included/Not Included suffixes from display name
+  // Patterns to remove:
+  // - " Standard Plan - Standard Include"
+  // - " Advanced Plan - Advanced Include"
+  // - " Standard Plan - Included Features"
+  // - " - Included Features"
+  // - " - Not Included Features"
+  const cleanPatterns = [
+    /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Standard|Advanced|Basic|Premium|Enterprise)\s+(Include|Not\s+Include|Included|Not\s+Included)(\s+Features?)?$/i,
+    /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Included|Not\s+Included)\s+Features?$/i,
+    /\s+-\s*(Included|Not\s+Included|Include|Not\s+Include)(\s+Features?)?$/i,
+  ];
+  
+  for (const pattern of cleanPatterns) {
+    exhibitName = exhibitName.replace(pattern, '');
+  }
+  
+  // Also remove any trailing plan type if it exists (e.g., "Some Exhibit Standard")
+  exhibitName = exhibitName.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)$/i, '');
+  exhibitName = exhibitName.trim();
+  
+  // For Multi combination, use the specific config for this exhibit
+  let config = exhibitConfig || configuration;
+  
+  if (category === 'messaging' || category === 'message') {
+    const users = config?.numberOfUsers || 1;
+    const messages = config?.messages || 0;
+    // Format: Exhibit name, dashed line separator, then details
+    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | ${messages} Channels and DMs through JSON Messages`;
+  } else if (category === 'content') {
+    const users = config?.numberOfUsers || 1;
+    const dataSize = config?.dataSizeGB || 0;
+    // Format: Exhibit name, dashed line separator, then details
+    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | ${dataSize} GBs`;
+  } else if (category === 'email') {
+    const mailboxes = config?.numberOfUsers || 1;
+    // Format: Exhibit name, dashed line separator, then details
+    return `${exhibitName}\n---------------------------------\nUp to ${mailboxes} Mailboxes`;
+  }
+  
+  return exhibitName;
+}
+
+// Helper function to calculate exhibit pricing
+function calculateExhibitPrice(exhibit: any, configuration: ConfigurationData, calculation: PricingCalculation | null, exhibitConfig?: any): number {
+  const category = (exhibit.category || 'content').toLowerCase();
+  
+  // For Multi combination, use specific calculation if available
+  if (configuration?.migrationType === 'Multi combination') {
+    if ((category === 'messaging' || category === 'message') && calculation?.messagingCalculation) {
+      return calculation.messagingCalculation.totalCost || 0;
+    } else if (category === 'content' && calculation?.contentCalculation) {
+      return calculation.contentCalculation.totalCost || 0;
+    } else if (category === 'email' && calculation?.emailCalculation) {
+      return calculation.emailCalculation.totalCost || 0;
+    }
+  }
+  
+  // For single migration type, use the overall calculation
+  if (calculation) {
+    return calculation.totalCost || 0;
+  }
+  
+  // Fallback: estimate based on configuration
+  const config = exhibitConfig || configuration;
+  const users = config?.numberOfUsers || 1;
+  const perUserCost = 40; // Default per user cost
+  return users * perUserCost;
+}
+
 
 interface DealData {
   dealId: string;
@@ -1107,8 +1198,14 @@ Quote ID: ${quoteData.id}
           agreementBlob = result.processedDocx;
           
           // Merge selected exhibits ONLY for Multi combination migration type
-          if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
-            console.log('📎 Fetching and merging selected exhibits for Multi combination email...', selectedExhibits);
+          const uniqueSelectedExhibitsForMerge = Array.from(
+            new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean))
+          );
+          if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
+            console.log('📎 Fetching and merging selected exhibits for Multi combination email...', {
+              raw: selectedExhibits,
+              unique: uniqueSelectedExhibitsForMerge
+            });
             
             try {
               // Fetch all exhibit files
@@ -1166,7 +1263,7 @@ Quote ID: ${quoteData.id}
                 }
               };
 
-              const sortedExhibits = await sortExhibits(selectedExhibits);
+              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
 
               // Fetch exhibit metadata for grouping
               const exhibitMetadata: Array<{ name: string; category?: string }> = [];
@@ -2907,18 +3004,32 @@ Total Price: {{total price}}`;
           // Multi combination requirement: sum messaging + content base monthly rates.
           '{{instance_type_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              const msgType = configuration.messagingConfig?.instanceType || 'Small';
-              const contentType = configuration.contentConfig?.instanceType || 'Small';
-              return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+              // Newer UI stores Multi-combo values in messagingConfigs/contentConfigs/emailConfigs arrays.
+              // Keep backward compatibility with older shape (messagingConfig/contentConfig/emailConfig).
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const cfg: any = configuration as any;
+              const msgType = (cfg.messagingConfig?.instanceType ?? cfg.messagingConfigs?.[0]?.instanceType) || 'Small';
+              const contentType = (cfg.contentConfig?.instanceType ?? cfg.contentConfigs?.[0]?.instanceType) || 'Small';
+              const emailType = (cfg.emailConfig?.instanceType ?? cfg.emailConfigs?.[0]?.instanceType) || '';
+
+              const base = getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType);
+              const email = emailType ? getInstanceTypeCost(emailType) : 0;
+              return formatCurrency(base + email);
             }
             return formatCurrency(getInstanceTypeCost(instanceType));
           })(),
           '{{instance_type cost}}': (() => {
             // Space version - keep consistent with {{instance_type_cost}}
             if (configuration?.migrationType === 'Multi combination') {
-              const msgType = configuration.messagingConfig?.instanceType || 'Small';
-              const contentType = configuration.contentConfig?.instanceType || 'Small';
-              return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const cfg: any = configuration as any;
+              const msgType = (cfg.messagingConfig?.instanceType ?? cfg.messagingConfigs?.[0]?.instanceType) || 'Small';
+              const contentType = (cfg.contentConfig?.instanceType ?? cfg.contentConfigs?.[0]?.instanceType) || 'Small';
+              const emailType = (cfg.emailConfig?.instanceType ?? cfg.emailConfigs?.[0]?.instanceType) || '';
+
+              const base = getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType);
+              const email = emailType ? getInstanceTypeCost(emailType) : 0;
+              return formatCurrency(base + email);
             }
             return formatCurrency(getInstanceTypeCost(instanceType));
           })(), // Space version
@@ -3657,6 +3768,287 @@ Total Price: {{total price}}`;
           templateData['{{content_total_cost}}'] = '';
           templateData['{{contentTotalCost}}'] = '';
         }
+
+        // Multi combination: "Overage Charges: $X per User" should reflect the HIGHEST per-user cost
+        // across all selected exhibit configs (messaging/content/email). The template commonly uses
+        // {{per_user_cost}} / {{user_rate}} for this line.
+        if (configuration?.migrationType === 'Multi combination') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cfgAny: any = configuration as any;
+          const calcAny: any = (calculation || safeCalculation) as any;
+
+          const perUserCandidates: number[] = [];
+          const perUserMonthlyCandidates: number[] = [];
+
+          const pushFromConfigs = (configs: any[] | undefined, breakdowns: any[] | undefined) => {
+            if (!Array.isArray(configs) || configs.length === 0) return;
+            for (const c of configs) {
+              const users = Number(c?.numberOfUsers ?? 0);
+              const months = Number(c?.duration ?? 0);
+              const name = String(c?.exhibitName ?? '').trim();
+              if (!name || users <= 0) continue;
+
+              const b = Array.isArray(breakdowns) ? breakdowns.find((x: any) => x?.combinationName === name) : undefined;
+              const userCost = Number(b?.userCost ?? 0);
+              if (!Number.isFinite(userCost) || userCost <= 0) continue;
+
+              perUserCandidates.push(userCost / users);
+              if (months > 0) perUserMonthlyCandidates.push(userCost / (users * months));
+            }
+          };
+
+          // Prefer per-combination breakdowns (one per selected exhibit) + configs arrays
+          pushFromConfigs(cfgAny.messagingConfigs, calcAny.messagingCombinationBreakdowns);
+          pushFromConfigs(cfgAny.contentConfigs, calcAny.contentCombinationBreakdowns);
+          pushFromConfigs(cfgAny.emailConfigs, calcAny.emailCombinationBreakdowns);
+
+          // Backward compatibility fallback (older single-config shape)
+          if (perUserCandidates.length === 0) {
+            const msgUsers = Number(cfgAny.messagingConfig?.numberOfUsers ?? 0);
+            const msgMonths = Number(cfgAny.messagingConfig?.duration ?? 0);
+            const msgUserCost = Number(calcAny?.messagingCalculation?.userCost ?? 0);
+            if (msgUsers > 0 && msgUserCost > 0) {
+              perUserCandidates.push(msgUserCost / msgUsers);
+              if (msgMonths > 0) perUserMonthlyCandidates.push(msgUserCost / (msgUsers * msgMonths));
+            }
+
+            const contentUsers = Number(cfgAny.contentConfig?.numberOfUsers ?? 0);
+            const contentMonths = Number(cfgAny.contentConfig?.duration ?? 0);
+            const contentUserCost = Number(calcAny?.contentCalculation?.userCost ?? 0);
+            if (contentUsers > 0 && contentUserCost > 0) {
+              perUserCandidates.push(contentUserCost / contentUsers);
+              if (contentMonths > 0) perUserMonthlyCandidates.push(contentUserCost / (contentUsers * contentMonths));
+            }
+
+            const emailUsers = Number(cfgAny.emailConfig?.numberOfUsers ?? 0);
+            const emailMonths = Number(cfgAny.emailConfig?.duration ?? 0);
+            const emailUserCost = Number(calcAny?.emailCalculation?.userCost ?? 0);
+            if (emailUsers > 0 && emailUserCost > 0) {
+              perUserCandidates.push(emailUserCost / emailUsers);
+              if (emailMonths > 0) perUserMonthlyCandidates.push(emailUserCost / (emailUsers * emailMonths));
+            }
+          }
+
+          const maxPerUser = perUserCandidates.length > 0 ? Math.max(...perUserCandidates) : 0;
+          const maxPerUserMonthly = perUserMonthlyCandidates.length > 0 ? Math.max(...perUserMonthlyCandidates) : 0;
+
+          const formattedPerUser = formatCurrency(maxPerUser);
+          const formattedPerUserMonthly = formatCurrency(maxPerUserMonthly > 0 ? maxPerUserMonthly : maxPerUser);
+
+          // Set the common tokens used by templates for the overage per-user amount
+          templateData['{{per_user_cost}}'] = formattedPerUser;
+          templateData['{{user_rate}}'] = formattedPerUser;
+          templateData['{{per_user_monthly_cost}}'] = formattedPerUserMonthly;
+          templateData['{{monthly_user_rate}}'] = formattedPerUserMonthly;
+
+          // Also provide explicit overage aliases (optional; use if you update template later)
+          templateData['{{overage_per_user_cost}}'] = formattedPerUser;
+          templateData['{{overage_user_cost}}'] = formattedPerUser;
+          templateData['{{overage per user cost}}'] = formattedPerUser;
+        }
+
+        // Multi combination: many templates still use the "generic" instance tokens in the Shared Server/Instance row.
+        // The base `quoteData.calculation.instanceCost` can be wrong/partial for multi-combo, so aggregate here.
+        // This restores expected instance pricing/labels in the agreement.
+        if (configuration?.migrationType === 'Multi combination') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cfg: any = configuration as any;
+          const calcAny: any = (calculation || safeCalculation) as any;
+
+          const msgCfg = cfg.messagingConfig ?? cfg.messagingConfigs?.[0];
+          const contentCfg = cfg.contentConfig ?? cfg.contentConfigs?.[0];
+          const emailCfg = cfg.emailConfig ?? cfg.emailConfigs?.[0];
+
+          const msgInstances = msgCfg?.numberOfInstances ?? 0;
+          const contentInstances = contentCfg?.numberOfInstances ?? 0;
+          const emailInstances = emailCfg?.numberOfInstances ?? 0;
+          const combinedInstances = (msgInstances || 0) + (contentInstances || 0) + (emailInstances || 0);
+
+          const msgType = (msgCfg?.instanceType || '').trim();
+          const contentType = (contentCfg?.instanceType || '').trim();
+          const emailType = (emailCfg?.instanceType || '').trim();
+          const allTypes = [contentType, msgType, emailType].filter(Boolean);
+          const uniqueTypes = Array.from(new Set(allTypes));
+          const combinedType = uniqueTypes.length === 1 ? uniqueTypes[0] : (uniqueTypes.length > 1 ? 'Mixed' : (instanceType || 'Standard'));
+
+          const combinedInstanceCost =
+            (calcAny?.messagingCalculation?.instanceCost ?? 0) +
+            (calcAny?.contentCalculation?.instanceCost ?? 0) +
+            (calcAny?.emailCalculation?.instanceCost ?? 0);
+
+          // Override generic instance tokens so templates that don't use content_/messaging_ still render correctly.
+          if (combinedInstances > 0) {
+            templateData['{{instance_users}}'] = combinedInstances.toString();
+            templateData['{{number_of_instances}}'] = combinedInstances.toString();
+            templateData['{{number of instances}}'] = combinedInstances.toString();
+            templateData['{{numberOfInstances}}'] = combinedInstances.toString();
+            templateData['{{instances}}'] = combinedInstances.toString();
+          }
+
+          if (combinedType) {
+            templateData['{{instance_type}}'] = combinedType;
+            templateData['{{instanceType}}'] = combinedType;
+            templateData['{{instance type}}'] = combinedType;
+            templateData['{{messaging_instance_type}}'] = templateData['{{messaging_instance_type}}'] || msgType || combinedType;
+            templateData['{{content_instance_type}}'] = templateData['{{content_instance_type}}'] || contentType || combinedType;
+          }
+
+          if (combinedInstanceCost > 0) {
+            templateData['{{instance..cost}}'] = formatCurrency(combinedInstanceCost);
+            templateData['{{instance_cost}}'] = formatCurrency(combinedInstanceCost);
+            templateData['{{instanceCost}}'] = formatCurrency(combinedInstanceCost);
+            templateData['{{instance cost}}'] = formatCurrency(combinedInstanceCost);
+          }
+        }
+        
+        // Build exhibit rows for the template (ONE row per selected migration, not per exhibit file)
+        // This prevents duplicates when a single migration has multiple exhibit files (Included/Not Included/etc).
+        try {
+          // In Multi combination, the per-exhibit configs (messagingConfigs/contentConfigs/emailConfigs)
+          // are the most reliable source of which combinations are selected.
+          // Some flows can have `selectedExhibits` missing/stale, which would cause only 1 row to render.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cfgAny: any = configuration as any;
+          const idsFromSelection = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
+          const idsFromConfigs = [
+            ...(cfgAny.messagingConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
+            ...(cfgAny.contentConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
+            ...(cfgAny.emailConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
+          ].filter(Boolean);
+
+          const exhibitIds = Array.from(new Set([...idsFromSelection, ...idsFromConfigs]));
+
+          const exhibitsData: Array<{
+            exhibitType: string;
+            exhibitDesc: string;
+            exhibitPlan: string;
+            exhibitPrice: string;
+          }> = [];
+
+          if (exhibitIds.length > 0) {
+            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            if (exhibitResponse.ok) {
+              const exhibitDataResponse = await exhibitResponse.json();
+              const allExhibits = exhibitDataResponse?.exhibits || [];
+
+              type ExhibitRowGroup = {
+                category: string;
+                displayName: string; // cleaned name like "Slack to Teams"
+                exhibit: any;
+              };
+
+              const byGroupKey = new Map<string, ExhibitRowGroup>();
+
+              for (const exhibitId of exhibitIds) {
+                const exhibit = allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId);
+                if (!exhibit) continue;
+
+                const category = (exhibit.category || 'content').toLowerCase();
+                const desc = formatExhibitDescription(exhibit, configuration);
+                const displayName = (desc.split('\n')[0] || exhibit.name || '').trim();
+                if (!displayName) continue;
+
+                const key = `${category}|${displayName.toLowerCase()}`;
+
+                // Prefer an "Included" version if we see both Included/Not Included files for the same migration.
+                const isNotIncluded = (exhibit.name || '').toLowerCase().includes('not included') ||
+                  (exhibit.name || '').toLowerCase().includes('not include');
+
+                const existing = byGroupKey.get(key);
+                if (!existing) {
+                  byGroupKey.set(key, { category, displayName, exhibit });
+                } else {
+                  const existingIsNotIncluded =
+                    (existing.exhibit?.name || '').toLowerCase().includes('not included') ||
+                    (existing.exhibit?.name || '').toLowerCase().includes('not include');
+                  if (existingIsNotIncluded && !isNotIncluded) {
+                    byGroupKey.set(key, { category, displayName, exhibit });
+                  }
+                }
+              }
+
+              // Sort in a stable order: messaging → content → email → others, then name
+              const categoryOrder = (cat: string) => {
+                const c = (cat || '').toLowerCase();
+                if (c === 'messaging' || c === 'message') return 1;
+                if (c === 'content') return 2;
+                if (c === 'email') return 3;
+                return 4;
+              };
+
+              const groups = Array.from(byGroupKey.values()).sort((a, b) => {
+                const cd = categoryOrder(a.category) - categoryOrder(b.category);
+                if (cd !== 0) return cd;
+                return a.displayName.localeCompare(b.displayName);
+              });
+
+              for (const g of groups) {
+                // Use per-combination config + breakdowns in Multi combination for accurate price/details.
+                const category = g.category;
+                const combinationName = g.displayName;
+
+                let exhibitConfig: any = configuration;
+                if (configuration?.migrationType === 'Multi combination') {
+                  const exhibitId = g.exhibit?._id?.toString?.() || '';
+                  if (category === 'messaging' || category === 'message') {
+                    exhibitConfig =
+                      (configuration as any).messagingConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
+                      (configuration as any).messagingConfigs?.find((c: any) => c.exhibitName === combinationName) ||
+                      (configuration as any).messagingConfig ||
+                      configuration;
+                  } else if (category === 'content') {
+                    exhibitConfig =
+                      (configuration as any).contentConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
+                      (configuration as any).contentConfigs?.find((c: any) => c.exhibitName === combinationName) ||
+                      (configuration as any).contentConfig ||
+                      configuration;
+                  } else if (category === 'email') {
+                    exhibitConfig =
+                      (configuration as any).emailConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
+                      (configuration as any).emailConfigs?.find((c: any) => c.exhibitName === combinationName) ||
+                      (configuration as any).emailConfig ||
+                      configuration;
+                  }
+                }
+
+                let price = 0;
+                if (configuration?.migrationType === 'Multi combination') {
+                  const breakdownName = exhibitConfig?.exhibitName || combinationName;
+                  if (category === 'messaging' || category === 'message') {
+                    price =
+                      (calculation || safeCalculation)?.messagingCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName)
+                        ?.totalCost ?? 0;
+                  } else if (category === 'content') {
+                    price =
+                      (calculation || safeCalculation)?.contentCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName)
+                        ?.totalCost ?? 0;
+                  } else if (category === 'email') {
+                    price =
+                      (calculation || safeCalculation)?.emailCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName)
+                        ?.totalCost ?? 0;
+                  }
+                }
+
+                // Fallback if breakdown not available
+                if (!price || price <= 0) {
+                  price = calculateExhibitPrice(g.exhibit, configuration, calculation || safeCalculation, exhibitConfig);
+                }
+
+                exhibitsData.push({
+                  exhibitType: 'CloudFuze X-Change Data Migration',
+                  exhibitDesc: formatExhibitDescription(g.exhibit, configuration, exhibitConfig),
+                  exhibitPlan: (calculation || safeCalculation)?.tier?.name || 'Standard',
+                  exhibitPrice: formatCurrency(price),
+                });
+              }
+            }
+          }
+
+          (templateData as any).exhibits = exhibitsData;
+        } catch (e) {
+          console.warn('⚠️ Unable to build exhibit rows for template, continuing without exhibit rows:', e);
+          (templateData as any).exhibits = [];
+        }
         
         console.log('🔍 TEMPLATE DATA CREATED:');
         console.log('  Template data keys:', Object.keys(templateData));
@@ -3757,6 +4149,86 @@ Total Price: {{total price}}`;
         const dataDescription = dataSizeGB > 0 ? `${dataSizeGB} GBs` : '0 GBs';
         templateData['{{data_description}}'] = dataDescription;
         templateData['{{dataDescription}}'] = dataDescription;
+
+        // Add server/instance description token used by some templates
+        // (TemplateDiagnostic requires an exact match for "server_descriptions")
+        const serverDescriptions = (() => {
+          if (configuration?.migrationType === 'Multi combination') {
+            // Build EXACT-style lines based on per-exhibit configs (one config per selected exhibit)
+            // so the Shared Server/Instance description matches prior output.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfg: any = configuration as any;
+
+            type ServerLine = { instances: number; instanceType: string; kind: 'data' | 'email' };
+            const entries: ServerLine[] = [];
+
+            const pushEntries = (list: any[] | undefined, kind: 'data' | 'email') => {
+              if (!Array.isArray(list)) return;
+              for (const item of list) {
+                const instances = Number(item?.numberOfInstances ?? 0);
+                const instanceType = String(item?.instanceType ?? '').trim();
+                if (!instanceType) continue;
+                // Default to 1 if template expects a count and config omitted it
+                entries.push({ instances: instances > 0 ? instances : 1, instanceType, kind });
+              }
+            };
+
+            // Historically, Shared Server/Instance row describes "data migration" + "email migration".
+            // Treat Messaging + Content as "data migration" (both are data moves), and Email as "email migration".
+            pushEntries(cfg.emailConfigs ?? [], 'email');
+            pushEntries(cfg.contentConfigs ?? [], 'data');
+            pushEntries(cfg.messagingConfigs ?? [], 'data');
+
+            // Backward compatibility: if arrays aren't present, fall back to single configs.
+            if (entries.length === 0) {
+              if (cfg.emailConfig?.instanceType) {
+                entries.push({
+                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1),
+                  instanceType: String(cfg.emailConfig?.instanceType),
+                  kind: 'email'
+                });
+              }
+              if (cfg.contentConfig?.instanceType) {
+                entries.push({
+                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1),
+                  instanceType: String(cfg.contentConfig?.instanceType),
+                  kind: 'data'
+                });
+              }
+              if (cfg.messagingConfig?.instanceType) {
+                entries.push({
+                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1),
+                  instanceType: String(cfg.messagingConfig?.instanceType),
+                  kind: 'data'
+                });
+              }
+            }
+
+            // Render in the exact style:
+            // 1
+            // Small server for email migration
+            // -------------------------------
+            // 1
+            // Standard server for data migration
+            const separator = '----------------------------------------';
+            const lines: string[] = [];
+            entries.forEach((e, idx) => {
+              if (idx > 0) lines.push(separator);
+              lines.push(String(e.instances));
+              lines.push(`${e.instanceType} server for ${e.kind === 'email' ? 'email migration' : 'data migration'}`);
+            });
+
+            return lines.join('\n');
+          }
+
+          const n = numberOfInstances || 1;
+          const type = instanceType || 'Standard';
+          return `Server: ${type} (${n} instance${n === 1 ? '' : 's'})`;
+        })();
+
+        templateData['{{server_descriptions}}'] = serverDescriptions;
+        templateData['{{serverDescriptions}}'] = serverDescriptions; // optional camelCase variant
+        templateData['{{server descriptions}}'] = serverDescriptions; // optional space variant
         
         console.log('📋 Template data for DOCX processing:', templateData);
         
@@ -4022,8 +4494,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.log('📄 Processed DOCX type:', result.processedDocx.type);
           
           // Merge selected exhibits ONLY for Multi combination migration type
-          if (selectedExhibits && selectedExhibits.length > 0 && configuration.migrationType === 'Multi combination') {
-            console.log('📎 Fetching and merging selected exhibits for Multi combination...', selectedExhibits);
+          const uniqueSelectedExhibitsForMerge = Array.from(
+            new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean))
+          );
+          if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
+            console.log('📎 Fetching and merging selected exhibits for Multi combination...', {
+              raw: selectedExhibits,
+              unique: uniqueSelectedExhibitsForMerge
+            });
             
             try {
               // Fetch all exhibit files
@@ -4081,7 +4559,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 }
               };
 
-              const sortedExhibits = await sortExhibits(selectedExhibits);
+              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
 
               // Fetch exhibit metadata for grouping
               const exhibitMetadata: Array<{ name: string; category?: string }> = [];
