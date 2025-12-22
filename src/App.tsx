@@ -1418,6 +1418,7 @@ function App() {
       const isDropboxToBox = name.includes('dropbox') && name.includes('box');
       const isDropboxToEgnyte = name.includes('dropbox') && name.includes('egnyte');
       const isBoxToDropbox = name.includes('box') && name.includes('dropbox');
+      const isBoxToShareFile = name.includes('box') && name.includes('sharefile');
       const isBoxToAwsS3 = name.includes('box') && name.includes('aws') && name.includes('s3');
       const isEgnyteToGoogleSharedDrive = name.includes('egnyte') && name.includes('google') && name.includes('sharedrive');
       const isEgnyteToSharePointOnline = name.includes('egnyte') && name.includes('sharepoint');
@@ -1445,6 +1446,7 @@ function App() {
         (combination === 'dropbox-to-microsoft' && name.includes('dropbox') && name.includes('microsoft')) ||
         (combination === 'box-to-box' && name.includes('box') && name.includes('box')) ||
         (combination === 'box-to-dropbox' && isBoxToDropbox) ||
+        (combination === 'box-to-sharefile' && isBoxToShareFile) ||
         (combination === 'box-to-aws-s3' && isBoxToAwsS3) ||
         (combination === 'box-to-google-mydrive' && name.includes('box') && name.includes('google') && name.includes('mydrive')) ||
         (combination === 'box-to-google-sharedrive' && name.includes('box') && name.includes('google') && name.includes('sharedrive')) ||
@@ -1497,6 +1499,7 @@ function App() {
           isDropboxToBox ||
           isDropboxToEgnyte ||
           isBoxToDropbox ||
+          isBoxToShareFile ||
           isBoxToAwsS3) &&
         matchesPlan &&
         matchesCombination
