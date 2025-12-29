@@ -346,6 +346,17 @@ async function seedDefaultExhibits(db) {
       displayOrder: 18,
       keywords: ['box', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
+    // Box to Google MyDrive (Advanced) exhibits
+    {
+      name: 'Box to Google MyDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Box to Google MyDrive Advanced Plan migration',
+      fileName: 'Box to Google MyDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['box-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19,
+      keywords: ['box', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
     // Dropbox to OneDrive (Standard) exhibits
     {
       name: 'Dropbox to OneDrive Standard Plan - Standard Include',
@@ -354,7 +365,7 @@ async function seedDefaultExhibits(db) {
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
-      displayOrder: 19,
+      displayOrder: 20,
       keywords: ['dropbox', 'onedrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
@@ -364,7 +375,7 @@ async function seedDefaultExhibits(db) {
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
-      displayOrder: 20,
+      displayOrder: 21,
       keywords: ['dropbox', 'onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to OneDrive (Advanced) exhibits
@@ -375,7 +386,7 @@ async function seedDefaultExhibits(db) {
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
-      displayOrder: 21,
+      displayOrder: 22,
       keywords: ['dropbox', 'onedrive', 'advanced', 'included', 'features', 'content', 'migration']
     },
     {
@@ -385,7 +396,7 @@ async function seedDefaultExhibits(db) {
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
-      displayOrder: 22,
+      displayOrder: 23,
       keywords: ['dropbox', 'onedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Egnyte (Standard) exhibits
