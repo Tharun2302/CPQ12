@@ -523,6 +523,90 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'egnyte', 'sharepoint', 'online', 'content', 'migration', 'microsoft', 'enterprise']
     },
+    // SHAREPOINT ONLINE TO EGNYTE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'SHAREPOINT ONLINE TO EGNYTE Standard',
+      description: 'Standard template for SharePoint Online to Egnyte migration - suitable for medium to large projects',
+      fileName: 'sharepoint-online-to-egnyte-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-egnyte',
+      planType: 'standard',
+      keywords: ['standard', 'sharepoint', 'online', 'egnyte', 'content', 'migration', 'microsoft']
+    },
+    {
+      name: 'SHAREPOINT ONLINE TO EGNYTE Advanced',
+      description: 'Advanced template for SharePoint Online to Egnyte migration - suitable for large enterprise projects',
+      fileName: 'sharepoint-online-to-egnyte-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-egnyte',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharepoint', 'online', 'egnyte', 'content', 'migration', 'microsoft', 'enterprise']
+    },
+    // SHAREPOINT ONLINE TO GOOGLE MYDRIVE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'SHAREPOINT ONLINE TO GOOGLE MYDRIVE Standard',
+      description: 'Standard template for SharePoint Online to Google MyDrive migration - suitable for medium to large projects',
+      fileName: 'sharepoint-online-to-google-mydrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-google-mydrive',
+      planType: 'standard',
+      keywords: ['standard', 'sharepoint', 'online', 'google', 'mydrive', 'content', 'migration']
+    },
+    {
+      name: 'SHAREPOINT ONLINE TO GOOGLE MYDRIVE Advanced',
+      description: 'Advanced template for SharePoint Online to Google MyDrive migration - suitable for large enterprise projects',
+      fileName: 'sharepoint-online-to-google-mydrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-google-mydrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharepoint', 'online', 'google', 'mydrive', 'content', 'migration', 'enterprise']
+    },
+    // SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE Standard',
+      description: 'Standard template for SharePoint Online to Google Shared Drive migration - suitable for medium to large projects',
+      fileName: 'sharepoint-online-to-google-sharedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-google-sharedrive',
+      planType: 'standard',
+      keywords: ['standard', 'sharepoint', 'online', 'google', 'sharedrive', 'shared drive', 'content', 'migration']
+    },
+    {
+      name: 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE Advanced',
+      description: 'Advanced template for SharePoint Online to Google Shared Drive migration - suitable for large enterprise projects',
+      fileName: 'sharepoint-online-to-google-sharedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-google-sharedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharepoint', 'online', 'google', 'sharedrive', 'shared drive', 'content', 'migration', 'enterprise']
+    },
+    // SHAREPOINT ONLINE TO SHAREPOINT ONLINE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'SHAREPOINT ONLINE TO SHAREPOINT ONLINE Standard',
+      description: 'Standard template for SharePoint Online to SharePoint Online migration - suitable for medium to large projects',
+      fileName: 'sharepoint-online-to-sharepoint-online-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-sharepoint-online',
+      planType: 'standard',
+      keywords: ['standard', 'sharepoint', 'online', 'content', 'migration', 'microsoft']
+    },
+    {
+      name: 'SHAREPOINT ONLINE TO SHAREPOINT ONLINE Advanced',
+      description: 'Advanced template for SharePoint Online to SharePoint Online migration - suitable for large enterprise projects',
+      fileName: 'sharepoint-online-to-sharepoint-online-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'sharepoint-online-to-sharepoint-online',
+      planType: 'advanced',
+      keywords: ['advanced', 'sharepoint', 'online', 'content', 'migration', 'microsoft', 'enterprise']
+    },
     // EGNYTE TO GOOGLE SHARED DRIVE templates (Standard & Advanced only)
     {
       name: 'EGNYTE TO GOOGLE SHARED DRIVE Standard',
@@ -711,6 +795,48 @@ async function seedDefaultTemplates(db) {
       combination: 'google-mydrive-to-google-mydrive',
       planType: 'advanced',
       keywords: ['advanced', 'google', 'mydrive', 'content', 'migration', 'enterprise']
+    },
+    // ONEDRIVE TO GOOGLE MYDRIVE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'ONEDRIVE TO GOOGLE MYDRIVE Standard',
+      description: 'Standard template for OneDrive to Google MyDrive migration - suitable for medium to large projects',
+      fileName: 'onedrive-to-google-mydrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'onedrive-to-google-mydrive',
+      planType: 'standard',
+      keywords: ['standard', 'onedrive', 'google', 'mydrive', 'content', 'migration']
+    },
+    {
+      name: 'ONEDRIVE TO GOOGLE MYDRIVE Advanced',
+      description: 'Advanced template for OneDrive to Google MyDrive migration - suitable for large enterprise projects',
+      fileName: 'onedrive-to-google-mydrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'onedrive-to-google-mydrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'onedrive', 'google', 'mydrive', 'content', 'migration', 'enterprise']
+    },
+    // ONEDRIVE TO ONEDRIVE templates (Standard & Advanced only, Basic to be added later)
+    {
+      name: 'ONEDRIVE TO ONEDRIVE Standard',
+      description: 'Standard template for OneDrive to OneDrive migration - suitable for medium to large projects',
+      fileName: 'onedrive-to-onedrive-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'onedrive-to-onedrive',
+      planType: 'standard',
+      keywords: ['standard', 'onedrive', 'content', 'migration']
+    },
+    {
+      name: 'ONEDRIVE TO ONEDRIVE Advanced',
+      description: 'Advanced template for OneDrive to OneDrive migration - suitable for large enterprise projects',
+      fileName: 'onedrive-to-onedrive-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'onedrive-to-onedrive',
+      planType: 'advanced',
+      keywords: ['advanced', 'onedrive', 'content', 'migration', 'enterprise']
     },
     // SHAREFILE TO GOOGLE MYDRIVE templates (Standard & Advanced only)
     {

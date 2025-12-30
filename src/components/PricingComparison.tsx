@@ -219,6 +219,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                           combination === 'google-mydrive-to-sharepoint' ||
                           combination === 'google-mydrive-to-google-sharedrive' ||
                           combination === 'google-mydrive-to-google-mydrive' ||
+                          combination === 'onedrive-to-onedrive' ||
+                          combination === 'onedrive-to-google-mydrive' ||
+                          combination === 'sharepoint-online-to-egnyte' ||
+                          combination === 'sharepoint-online-to-google-mydrive' ||
+                          combination === 'sharepoint-online-to-google-sharedrive' ||
+                          combination === 'sharepoint-online-to-sharepoint-online' ||
                           combination === 'sharefile-to-google-mydrive' ||
                           combination === 'sharefile-to-google-sharedrive' ||
                           combination === 'sharefile-to-onedrive' ||
