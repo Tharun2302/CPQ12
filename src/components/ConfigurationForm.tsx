@@ -633,6 +633,28 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   }, [config.startDate, config.duration]);
 
+  // Persist multi-combo nested configs (messaging/content) on change so they survive navigation
+  useEffect(() => {
+    if (isInitialLoad) return;
+    try {
+      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(config));
+      const existingNavState = sessionStorage.getItem('cpq_navigation_state');
+      if (existingNavState) {
+        try {
+          const parsed = JSON.parse(existingNavState);
+          if (!parsed.sessionState) parsed.sessionState = {};
+          parsed.sessionState.configuration = config;
+          sessionStorage.setItem('cpq_navigation_state', JSON.stringify(parsed));
+        } catch (navError) {
+          console.warn('💾 Could not save multi combo config to navigation state:', navError);
+        }
+      }
+      console.log('💾 Persisted nested multi-combination config changes');
+    } catch (error) {
+      console.error('💾 Error saving nested config to sessionStorage:', error);
+    }
+  }, [config.messagingConfigs, config.contentConfigs, config.migrationType, config.combination, isInitialLoad, config]);
+
   const handleChange = (field: keyof ConfigurationData, value: any) => {
     console.log(`🔧 ConfigurationForm: Changing ${field} from ${config[field]} to ${value}`);
     const newConfig = { ...config, [field]: value };

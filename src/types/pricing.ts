@@ -118,6 +118,7 @@ export interface PricingCalculation {
   // Per-combination breakdowns (for displaying individual pricing per combination)
   contentCombinationBreakdowns?: Array<{
     combinationName: string;
+    numberOfUsers?: number;
     userCost: number;
     dataCost: number;
     migrationCost: number;
@@ -126,6 +127,7 @@ export interface PricingCalculation {
   }>;
   messagingCombinationBreakdowns?: Array<{
     combinationName: string;
+    numberOfUsers?: number;
     userCost: number;
     dataCost: number;
     migrationCost: number;
@@ -134,6 +136,7 @@ export interface PricingCalculation {
   }>;
   emailCombinationBreakdowns?: Array<{
     combinationName: string;
+    numberOfUsers?: number;
     userCost: number;
     dataCost: number;
     migrationCost: number;
