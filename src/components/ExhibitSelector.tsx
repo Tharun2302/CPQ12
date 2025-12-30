@@ -373,13 +373,19 @@ function CategoryColumn({
       <div className="border-b-2 border-black/80 py-3 px-4 text-center font-semibold tracking-wide uppercase text-sm">
         {title}
       </div>
-      <div className="min-h-[260px] p-4 space-y-3">
+      <div 
+        className="exhibit-scroll-container max-h-[380px] overflow-y-auto p-4 space-y-3" 
+        style={{ 
+          scrollbarWidth: 'thin', 
+          scrollbarColor: '#9ca3af #f3f4f6',
+        }}
+      >
         {exhibits.length === 0 ? (
           <div className="text-sm text-gray-400 text-center py-10">No exhibits</div>
         ) : (
           <>
             {/* Render grouped exhibits as folders */}
-            {groupedExhibits.groups.map((group) => {
+            {groupedExhibits.groups.map((group, groupIndex) => {
               const folderState = getFolderState(group.exhibits);
               const isExpanded = expandedFolders.has(group.folderName);
               const allSelected = folderState === 'all';
@@ -412,6 +418,9 @@ function CategoryColumn({
                       } cursor-pointer`}
                     >
                       <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 bg-white border border-gray-300 rounded flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-semibold text-gray-700">{groupIndex + 1}</span>
+                        </div>
                         <Folder className="w-4 h-4 text-purple-600 flex-shrink-0" />
                         <div
                           className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
@@ -436,7 +445,7 @@ function CategoryColumn({
                   {/* Child exhibits (shown when expanded) */}
                   {isExpanded && (
                     <div className="ml-6 space-y-1 pl-2 border-l-2 border-gray-200">
-                      {group.exhibits.map((exhibit) => {
+                      {group.exhibits.map((exhibit, childIndex) => {
                         const isSelected = selectedExhibits.includes(exhibit._id);
                         const isRequired = exhibit.isRequired;
 
@@ -453,6 +462,9 @@ function CategoryColumn({
                             } ${isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
                           >
                             <div className="flex items-start gap-2">
+                              <div className="w-4 h-4 bg-white border border-gray-300 rounded flex items-center justify-center flex-shrink-0">
+                                <span className="text-[10px] font-semibold text-gray-700">{childIndex + 1}</span>
+                              </div>
                               <div
                                 className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                                   isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
@@ -483,9 +495,10 @@ function CategoryColumn({
             })}
 
             {/* Render ungrouped exhibits */}
-            {groupedExhibits.ungrouped.map((exhibit) => {
+            {groupedExhibits.ungrouped.map((exhibit, ungroupedIndex) => {
               const isSelected = selectedExhibits.includes(exhibit._id);
               const isRequired = exhibit.isRequired;
+              const exhibitNumber = groupedExhibits.groups.length + ungroupedIndex + 1;
 
               return (
                 <button
@@ -500,6 +513,9 @@ function CategoryColumn({
                   } ${isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 bg-white border border-gray-300 rounded flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-semibold text-gray-700">{exhibitNumber}</span>
+                    </div>
                     <div
                       className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                         isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
