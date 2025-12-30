@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Check, Info, Sparkles, ChevronDown, ChevronRight, Folder } from 'lucide-react';
+import { Check, Info, Sparkles, ChevronDown, ChevronRight } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface Exhibit {
@@ -421,7 +421,6 @@ function CategoryColumn({
                         <div className="w-5 h-5 bg-white border border-gray-300 rounded flex items-center justify-center flex-shrink-0">
                           <span className="text-xs font-semibold text-gray-700">{groupIndex + 1}</span>
                         </div>
-                        <Folder className="w-4 h-4 text-purple-600 flex-shrink-0" />
                         <div
                           className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
                             allSelected

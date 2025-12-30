@@ -335,6 +335,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'box-to-google-mydrive': 'BOX TO GOOGLE MYDRIVE',
       'box-to-aws-s3': 'BOX TO AWS S3',
       'box-to-microsoft': 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
+      'box-to-sharepoint': 'BOX TO SHAREPOINT',
+      'box-to-google-sharedrive': 'BOX TO GOOGLE SHARED DRIVE',
       'box-to-google': 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)',
       'google-sharedrive-to-egnyte': 'GOOGLE SHARED DRIVE TO EGNYTE',
       'google-sharedrive-to-google-sharedrive': 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE',
@@ -360,6 +362,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'nfs-to-google': 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)',
       'nfs-to-microsoft': 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'egnyte-to-google': 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)',
+      'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
       'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'overage-agreement': 'OVERAGE AGREEMENT',
       'slack-to-teams': 'SLACK TO TEAMS',
@@ -1420,6 +1423,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
                           { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
                           { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'box-to-sharepoint', label: 'BOX TO SHAREPOINT' },
+                          { value: 'box-to-google-sharedrive', label: 'BOX TO GOOGLE SHARED DRIVE' },
                           { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                           { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
                           { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
@@ -1445,6 +1450,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
                           { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                           { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
+                          { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
                           { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
                         ];
                         
@@ -1507,6 +1513,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'box-to-sharefile', label: 'BOX TO SHAREFILE' },
                             { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
                             { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'box-to-sharepoint', label: 'BOX TO SHAREPOINT' },
+                          { value: 'box-to-google-sharedrive', label: 'BOX TO GOOGLE SHARED DRIVE' },
                             { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                             { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
                             { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
@@ -1531,6 +1539,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
                             { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
                             { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
+                          { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
                           { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                             { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
                           ];

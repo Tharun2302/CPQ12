@@ -3683,6 +3683,7 @@ Total Price: {{total price}}`;
                     'sharepoint-online-to-google-sharedrive': 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE',
                     'sharepoint-online-to-sharepoint-online': 'SHAREPOINT ONLINE TO SHAREPOINT ONLINE',
                     'egnyte-to-google': 'EGNYTE TO GOOGLE',
+                    'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
                     'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT',
                     'nfs-to-google': 'NFS TO GOOGLE',
                     'nfs-to-microsoft': 'NFS TO MICROSOFT',
@@ -6389,14 +6390,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                               width: '100%'
                             }}
                           />
-                          {/* Enhanced zoom controls overlay */}
-                          <div className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded shadow-lg flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                            </svg>
-                            Use Ctrl +/- to zoom
-                          </div>
-                          
+                         
                           {/* Fullscreen floating action buttons */}
                           {isFullscreen && (
                             <div className="absolute bottom-4 right-4 flex flex-col gap-2">

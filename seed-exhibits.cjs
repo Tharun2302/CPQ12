@@ -357,6 +357,182 @@ async function seedDefaultExhibits(db) {
       displayOrder: 19,
       keywords: ['box', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
     },
+    {
+      name: 'Box to Google Shared Drive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Box to Google Shared Drive Advanced Plan migration',
+      fileName: 'Box to Google Shared Drive Advanced Plan - Advanced Include.docx',
+      combinations: ['box-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.5,
+      keywords: ['box', 'google', 'sharedrive', 'shared drive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to Google Shared Drive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Box to Google Shared Drive Standard Plan migration',
+      fileName: 'Box to Google Shared Drive Standard Plan - Standard Include.docx',
+      combinations: ['box-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.6,
+      keywords: ['box', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to Google Shared Drive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Box to Google Shared Drive Standard Plan migration',
+      fileName: 'Box to Google Shared Drive Standard Plan - Standard Not Include.docx',
+      combinations: ['box-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.7,
+      keywords: ['box', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Box to OneDrive exhibits
+    {
+      name: 'Box to OneDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Box to OneDrive Advanced Plan migration',
+      fileName: 'Box to OneDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['box-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.8,
+      keywords: ['box', 'onedrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to OneDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Box to OneDrive Standard Plan migration',
+      fileName: 'Box to OneDrive Standard Plan - Standard Include.docx',
+      combinations: ['box-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.9,
+      keywords: ['box', 'onedrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to OneDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Box to OneDrive Standard Plan migration',
+      fileName: 'Box to OneDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['box-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.95,
+      keywords: ['box', 'onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Box to SharePoint Online exhibits
+    {
+      name: 'Box to SharePoint Online Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Box to SharePoint Online Advanced Plan migration',
+      fileName: 'Box to SharePoint Online Advanced Plan - Advanced Include.docx',
+      combinations: ['box-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.96,
+      keywords: ['box', 'sharepoint', 'sharepoint online', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to SharePoint Online Standard Plan - Standard Include',
+      description: 'Documentation for features included in Box to SharePoint Online Standard Plan migration',
+      fileName: 'Box to SharePoint Online Standard Plan - Standard Include.docx',
+      combinations: ['box-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.97,
+      keywords: ['box', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to SharePoint Online Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Box to SharePoint Online Standard Plan migration',
+      fileName: 'Box to SharePoint Online Standard Plan - Standard Not Include.docx',
+      combinations: ['box-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.98,
+      keywords: ['box', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to OneDrive exhibits (Standard)
+    {
+      name: 'Egnyte to OneDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Egnyte to OneDrive Standard Plan migration',
+      fileName: 'Egnyte to OneDrive Standard Plan - Standard Include.docx',
+      combinations: ['egnyte-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19.99,
+      keywords: ['egnyte', 'onedrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to OneDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Egnyte to OneDrive Standard Plan migration',
+      fileName: 'Egnyte to OneDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['egnyte-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.0,
+      keywords: ['egnyte', 'onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to Google Shared Drive exhibits (Standard)
+    {
+      name: 'Egnyte to Google Shared Drive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Egnyte to Google Shared Drive Standard Plan migration',
+      fileName: 'Egnyte to Google Shared Drive Standard Plan - Standard Include.docx',
+      combinations: ['egnyte-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.1,
+      keywords: ['egnyte', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to Google Shared Drive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Egnyte to Google Shared Drive Standard Plan migration',
+      fileName: 'Egnyte to Google Shared Drive Standard Plan - Standard Not Include.docx',
+      combinations: ['egnyte-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.2,
+      keywords: ['egnyte', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to Google MyDrive exhibits (Standard)
+    {
+      name: 'Egnyte to Google MyDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Egnyte to Google MyDrive Standard Plan migration',
+      fileName: 'Egnyte to Google MyDrive Standard Plan - Standard Include.docx',
+      combinations: ['egnyte-to-google', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.3,
+      keywords: ['egnyte', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to Google MyDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Egnyte to Google MyDrive Standard Plan migration',
+      fileName: 'Egnyte to Google MyDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['egnyte-to-google', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.4,
+      keywords: ['egnyte', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to SharePoint Online exhibits (Advanced)
+    {
+      name: 'Egnyte to SharePoint Online Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Egnyte to SharePoint Online Advanced Plan migration',
+      fileName: 'Egnyte to SharePoint Online Advanced Plan - Advanced Include.docx',
+      combinations: ['egnyte-to-sharepoint-online', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.5,
+      keywords: ['egnyte', 'sharepoint', 'sharepoint online', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to SharePoint Online Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Egnyte to SharePoint Online Advanced Plan migration',
+      fileName: 'Egnyte to SharePoint Online Advanced Plan - Advanced Not Include.docx',
+      combinations: ['egnyte-to-sharepoint-online', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.6,
+      keywords: ['egnyte', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // Dropbox to OneDrive (Standard) exhibits
     {
       name: 'Dropbox to OneDrive Standard Plan - Standard Include',
