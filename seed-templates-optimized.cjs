@@ -70,6 +70,68 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'slack', 'google-chat', 'messaging', 'enterprise']
     },
+    // EMAIL TEMPLATES
+    // We seed one template per tier so App.tsx can auto-select via exact (planType + combination).
+    {
+      name: 'GMAIL TO GMAIL Basic',
+      description: 'Basic template for Gmail to Gmail migration',
+      fileName: 'gmail-to-gmail.docx',
+      isDefault: false,
+      category: 'email',
+      combination: 'gmail-to-gmail',
+      planType: 'basic',
+      keywords: ['gmail', 'email', 'basic', 'migration']
+    },
+    {
+      name: 'GMAIL TO GMAIL Standard',
+      description: 'Standard template for Gmail to Gmail migration',
+      fileName: 'gmail-to-gmail.docx',
+      isDefault: false,
+      category: 'email',
+      combination: 'gmail-to-gmail',
+      planType: 'standard',
+      keywords: ['gmail', 'email', 'standard', 'migration']
+    },
+    {
+      name: 'GMAIL TO GMAIL Advanced',
+      description: 'Advanced template for Gmail to Gmail migration',
+      fileName: 'gmail-to-gmail.docx',
+      isDefault: false,
+      category: 'email',
+      combination: 'gmail-to-gmail',
+      planType: 'advanced',
+      keywords: ['gmail', 'email', 'advanced', 'migration']
+    },
+    {
+      name: 'GMAIL TO OUTLOOK Standard',
+      description: 'Standard template for Gmail to Outlook migration',
+      fileName: 'gmail-to-outlook.docx',
+      isDefault: false,
+      category: 'email',
+      combination: 'gmail-to-outlook',
+      planType: 'standard',
+      keywords: ['gmail', 'outlook', 'email', 'standard', 'migration']
+    },
+    {
+      name: 'OUTLOOK TO OUTLOOK Standard',
+      description: 'Standard template for Outlook to Outlook migration',
+      fileName: 'outlook-to-outlook.docx',
+      isDefault: false,
+      category: 'email',
+      combination: 'outlook-to-outlook',
+      planType: 'standard',
+      keywords: ['outlook', 'email', 'standard', 'migration']
+    },
+    {
+      name: 'OUTLOOK TO GMAIL Standard',
+      description: 'Standard template for Outlook to Gmail migration',
+      fileName: 'outlook-to-gmail.docx',
+      isDefault: false,
+      category: 'email',
+      combination: 'outlook-to-gmail',
+      planType: 'standard',
+      keywords: ['outlook', 'gmail', 'email', 'standard', 'migration']
+    },
     // CONTENT TEMPLATES (Basic, Standard, Advanced)
     {
       name: 'DROPBOX TO MYDRIVE Basic',

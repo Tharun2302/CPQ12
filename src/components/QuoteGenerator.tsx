@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency, getInstanceTypeCost, calculateCombinationPricing } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost } from '../utils/pricing';
 import { 
   FileText, 
   Download, 
@@ -78,6 +78,22 @@ function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
   // Replace any sequence of more than maxSpaces spaces with exactly maxSpaces spaces
   const spaceRegex = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
   return value.replace(spaceRegex, ' '.repeat(maxSpaces));
+}
+
+// Helper function to get display name for exhibit category
+function getCategoryDisplayName(category: string): string {
+  const normalized = (category || 'content').toLowerCase();
+  switch (normalized) {
+    case 'messaging':
+    case 'message':
+      return 'CloudFuze X-Change Messaging Migration';
+    case 'content':
+      return 'CloudFuze X-Change Content Migration';
+    case 'email':
+      return 'CloudFuze X-Change Email Migration';
+    default:
+      return 'CloudFuze X-Change Data Migration';
+  }
 }
 
 // Helper function to format exhibit description with configuration details
@@ -957,91 +973,6 @@ Quote ID: ${quoteData.id}
         // Calculate discount for this function scope
         const localDiscountPercent = clientInfo.discount ?? 0;
         const localDiscountAmount = localDiscountPercent > 0 ? totalCost * (localDiscountPercent / 100) : 0;
-
-        // Multi combination: per-user cost should be the HIGHEST per-user cost among selected exhibits
-        const multiMaxUserRates = (() => {
-          if (configuration?.migrationType !== 'Multi combination') {
-            return { perUser: 0, perUserMonthly: 0 };
-          }
-
-          const cfg: any = configuration as any;
-          const calcSrc: any = (calculation ?? safeCalculation) as any;
-
-          const perUserCandidates: number[] = [];
-          const perUserMonthlyCandidates: number[] = [];
-
-          const pushFromConfigs = (configs: any[] | undefined, breakdowns: any[] | undefined) => {
-            if (!Array.isArray(configs) || configs.length === 0) return;
-            for (const exCfg of configs) {
-              const users = Number(exCfg?.numberOfUsers || 0);
-              const months = Number(exCfg?.duration || 0);
-              const breakdown = breakdowns?.find((b: any) => b?.combinationName === exCfg?.exhibitName);
-              const userCostForExhibit = Number(breakdown?.userCost ?? 0);
-
-              if (users > 0 && isFinite(userCostForExhibit)) {
-                const perUser = userCostForExhibit / users;
-                if (isFinite(perUser) && perUser > 0) perUserCandidates.push(perUser);
-                if (months > 0) {
-                  const perUserMonthly = userCostForExhibit / (users * months);
-                  if (isFinite(perUserMonthly) && perUserMonthly > 0) perUserMonthlyCandidates.push(perUserMonthly);
-                }
-              }
-            }
-          };
-
-          pushFromConfigs(cfg.messagingConfigs, calcSrc?.messagingCombinationBreakdowns);
-          pushFromConfigs(cfg.contentConfigs, calcSrc?.contentCombinationBreakdowns);
-          pushFromConfigs(cfg.emailConfigs, calcSrc?.emailCombinationBreakdowns);
-
-          // Backward compatibility: single nested configs
-          const legacyPairs = [
-            { exCfg: cfg.messagingConfig, userCost: calcSrc?.messagingCalculation?.userCost },
-            { exCfg: cfg.contentConfig, userCost: calcSrc?.contentCalculation?.userCost },
-            { exCfg: cfg.emailConfig, userCost: calcSrc?.emailCalculation?.userCost },
-          ];
-          for (const { exCfg, userCost } of legacyPairs) {
-            const users = Number(exCfg?.numberOfUsers || 0);
-            const months = Number(exCfg?.duration || 0);
-            const cost = Number(userCost ?? 0);
-            if (users > 0 && isFinite(cost)) {
-              const perUser = cost / users;
-              if (isFinite(perUser) && perUser > 0) perUserCandidates.push(perUser);
-              if (months > 0) {
-                const perUserMonthly = cost / (users * months);
-                if (isFinite(perUserMonthly) && perUserMonthly > 0) perUserMonthlyCandidates.push(perUserMonthly);
-              }
-            }
-          }
-
-          // Fallback: if breakdowns/legacy totals are missing, compute per-user rates from selected exhibits
-          // using the existing pricing util, then take the max. (Multi-combo templates only.)
-          if (perUserCandidates.length === 0) {
-            const tierForCalc = calcSrc?.tier;
-            if (tierForCalc) {
-              const computeFromList = (type: 'messaging' | 'content' | 'email', list?: any[]) => {
-                if (!Array.isArray(list) || list.length === 0) return;
-                for (const exCfg of list) {
-                  const users = Number(exCfg?.numberOfUsers || 0);
-                  const months = Number(exCfg?.duration || 0);
-                  if (users <= 0) continue;
-                  const res = calculateCombinationPricing(exCfg?.exhibitName, type, cfg as any, tierForCalc);
-                  const cost = Number(res?.userCost ?? 0);
-                  if (!isFinite(cost) || cost <= 0) continue;
-                  perUserCandidates.push(cost / users);
-                  if (months > 0) perUserMonthlyCandidates.push(cost / (users * months));
-                }
-              };
-              computeFromList('messaging', cfg.messagingConfigs);
-              computeFromList('content', cfg.contentConfigs);
-              computeFromList('email', cfg.emailConfigs);
-            }
-          }
-
-          return {
-            perUser: perUserCandidates.length ? Math.max(...perUserCandidates) : 0,
-            perUserMonthly: perUserMonthlyCandidates.length ? Math.max(...perUserMonthlyCandidates) : 0,
-          };
-        })();
         
         const templateData: Record<string, string> = {
           // Core company and client information
@@ -1106,27 +1037,56 @@ Quote ID: ${quoteData.id}
           '{{instance_costs}}': formatCurrency(instanceCost),
           
           // Per-user cost calculations
+          // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
           '{{per_user_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUser);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
             }
             return formatCurrency((userCost || 0) / (userCount || 1));
           })(),
           '{{per_user_monthly_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUserMonthly);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
             }
             return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
           })(),
           '{{user_rate}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUser);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
             }
             return formatCurrency((userCost || 0) / (userCount || 1));
           })(),
           '{{monthly_user_rate}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUserMonthly);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
             }
             return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
           })(),
@@ -1139,11 +1099,46 @@ Quote ID: ${quoteData.id}
             const safeDataCost = isMulti
               ? (calculation?.contentCalculation?.dataCost ?? safeCalculation.contentCalculation?.dataCost ?? 0)
               : (dataCost ?? 0);
-            const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
+            
+            // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
+            // use the tier's perGBCost directly instead of calculating from division
+            const tierPerGbRaw = isMulti
+              ? (calculation?.contentCalculation?.tier?.perGBCost ??
+                  safeCalculation.contentCalculation?.tier?.perGBCost ??
+                  calculation?.tier?.perGBCost ??
+                  safeCalculation.tier?.perGBCost ??
+                  0)
+              : (calculation?.tier?.perGBCost ?? safeCalculation.tier?.perGBCost ?? 0);
+
+            const tierNameForFallback = (
+              calculation?.tier?.name ??
+              safeCalculation.tier?.name ??
+              ''
+            ).toString().toLowerCase();
+
+            // Fallback defaults if tier.perGBCost is 0/undefined
+            const fallbackPerGb =
+              tierNameForFallback === 'basic' ? 1.0 :
+              tierNameForFallback === 'standard' ? 1.5 :
+              tierNameForFallback === 'advanced' ? 1.8 :
+              1.5; // Default to Standard rate if tier unknown
+
+            const tierPerGb = (tierPerGbRaw && tierPerGbRaw > 0) ? tierPerGbRaw : fallbackPerGb;
+
+            // Use tier's per-GB cost when dataSize is 0 (common in Email/Overage)
+            const perDataCost = safeDataSize > 0 ? (safeDataCost / safeDataSize) : tierPerGb;
+            
             console.log('🔍 PER_DATA_COST CALCULATION (handleEmailAgreement):', {
+              migType: configuration?.migrationType,
               dataSizeGB: safeDataSize,
               dataCost: safeDataCost,
-              perDataCost: perDataCost,
+              'calculation.tier': calculation?.tier,
+              'safeCalculation.tier': safeCalculation.tier,
+              tierPerGbRaw,
+              tierNameForFallback,
+              fallbackPerGb,
+              tierPerGb,
+              perDataCost,
               formatted: formatCurrency(perDataCost)
             });
             return formatCurrency(perDataCost);
@@ -1604,90 +1599,6 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
 
     const quoteNumber = `CPQ-001`;
 
-    // Multi combination: per-user cost should be the HIGHEST per-user cost among selected exhibits
-    const multiMaxUserRates = (() => {
-      if (quote.configuration?.migrationType !== 'Multi combination') {
-        return { perUser: 0, perUserMonthly: 0 };
-      }
-
-      const cfg: any = quote.configuration as any;
-      const calcSrc: any = safeCalculation as any;
-
-      const perUserCandidates: number[] = [];
-      const perUserMonthlyCandidates: number[] = [];
-
-      const pushFromConfigs = (configs: any[] | undefined, breakdowns: any[] | undefined) => {
-        if (!Array.isArray(configs) || configs.length === 0) return;
-        for (const exCfg of configs) {
-          const users = Number(exCfg?.numberOfUsers || 0);
-          const months = Number(exCfg?.duration || 0);
-          const breakdown = breakdowns?.find((b: any) => b?.combinationName === exCfg?.exhibitName);
-          const userCostForExhibit = Number(breakdown?.userCost ?? 0);
-
-          if (users > 0 && isFinite(userCostForExhibit)) {
-            const perUser = userCostForExhibit / users;
-            if (isFinite(perUser) && perUser > 0) perUserCandidates.push(perUser);
-            if (months > 0) {
-              const perUserMonthly = userCostForExhibit / (users * months);
-              if (isFinite(perUserMonthly) && perUserMonthly > 0) perUserMonthlyCandidates.push(perUserMonthly);
-            }
-          }
-        }
-      };
-
-      pushFromConfigs(cfg.messagingConfigs, calcSrc?.messagingCombinationBreakdowns);
-      pushFromConfigs(cfg.contentConfigs, calcSrc?.contentCombinationBreakdowns);
-      pushFromConfigs(cfg.emailConfigs, calcSrc?.emailCombinationBreakdowns);
-
-      // Backward compatibility: single nested configs
-      const legacyPairs = [
-        { exCfg: cfg.messagingConfig, userCost: calcSrc?.messagingCalculation?.userCost },
-        { exCfg: cfg.contentConfig, userCost: calcSrc?.contentCalculation?.userCost },
-        { exCfg: cfg.emailConfig, userCost: calcSrc?.emailCalculation?.userCost },
-      ];
-      for (const { exCfg, userCost } of legacyPairs) {
-        const users = Number(exCfg?.numberOfUsers || 0);
-        const months = Number(exCfg?.duration || 0);
-        const cost = Number(userCost ?? 0);
-        if (users > 0 && isFinite(cost)) {
-          const perUser = cost / users;
-          if (isFinite(perUser) && perUser > 0) perUserCandidates.push(perUser);
-          if (months > 0) {
-            const perUserMonthly = cost / (users * months);
-            if (isFinite(perUserMonthly) && perUserMonthly > 0) perUserMonthlyCandidates.push(perUserMonthly);
-          }
-        }
-      }
-
-      // Fallback: compute from selected exhibits if breakdowns/legacy totals are missing
-      if (perUserCandidates.length === 0) {
-        const tierForCalc = calcSrc?.tier;
-        if (tierForCalc) {
-          const computeFromList = (type: 'messaging' | 'content' | 'email', list?: any[]) => {
-            if (!Array.isArray(list) || list.length === 0) return;
-            for (const exCfg of list) {
-              const users = Number(exCfg?.numberOfUsers || 0);
-              const months = Number(exCfg?.duration || 0);
-              if (users <= 0) continue;
-              const res = calculateCombinationPricing(exCfg?.exhibitName, type, cfg as any, tierForCalc);
-              const cost = Number(res?.userCost ?? 0);
-              if (!isFinite(cost) || cost <= 0) continue;
-              perUserCandidates.push(cost / users);
-              if (months > 0) perUserMonthlyCandidates.push(cost / (users * months));
-            }
-          };
-          computeFromList('messaging', cfg.messagingConfigs);
-          computeFromList('content', cfg.contentConfigs);
-          computeFromList('email', cfg.emailConfigs);
-        }
-      }
-
-      return {
-        perUser: perUserCandidates.length ? Math.max(...perUserCandidates) : 0,
-        perUserMonthly: perUserMonthlyCandidates.length ? Math.max(...perUserMonthlyCandidates) : 0,
-      };
-    })();
-
     // Define placeholder mappings - match exact placeholders from template
     const placeholderMappings = {
       '{{Company Name}}': quote.company || 'Company Name',
@@ -1711,31 +1622,15 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       })(),
       '{{per_user_cost}}': (() => {
         if (quote.configuration?.migrationType === 'Multi combination') {
-          return formatCurrency(multiMaxUserRates.perUser);
+          const msgUsers = quote.configuration.messagingConfig?.numberOfUsers || 0;
+          const contentUsers = quote.configuration.contentConfig?.numberOfUsers || 0;
+          const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+          const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+          const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+          const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+          return formatCurrency(Math.max(msgPerUser, contentPerUser));
         }
         return formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1));
-      })(),
-      '{{per_user_monthly_cost}}': (() => {
-        if (quote.configuration?.migrationType === 'Multi combination') {
-          return formatCurrency(multiMaxUserRates.perUserMonthly);
-        }
-        const users = quote.configuration.numberOfUsers || 1;
-        const months = getEffectiveDurationMonths(quote.configuration) || 1;
-        return formatCurrency((safeCalculation.userCost || 0) / (users * months));
-      })(),
-      '{{user_rate}}': (() => {
-        if (quote.configuration?.migrationType === 'Multi combination') {
-          return formatCurrency(multiMaxUserRates.perUser);
-        }
-        return formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1));
-      })(),
-      '{{monthly_user_rate}}': (() => {
-        if (quote.configuration?.migrationType === 'Multi combination') {
-          return formatCurrency(multiMaxUserRates.perUserMonthly);
-        }
-        const users = quote.configuration.numberOfUsers || 1;
-        const months = getEffectiveDurationMonths(quote.configuration) || 1;
-        return formatCurrency((safeCalculation.userCost || 0) / (users * months));
       })(),
       '{{data_size}}': (quote.configuration.dataSizeGB ?? 0).toString(),
       '{{dataSizeGB}}': (quote.configuration.dataSizeGB ?? 0).toString(),
@@ -1745,11 +1640,37 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         const isMulti = quote.configuration?.migrationType === 'Multi combination';
         const safeDataSize = isMulti ? (quote.configuration?.contentConfig?.dataSizeGB ?? 0) : (quote.configuration.dataSizeGB ?? 0);
         const safeDataCost = isMulti ? (safeCalculation.contentCalculation?.dataCost ?? 0) : (safeCalculation.dataCost ?? 0);
-        const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
+        
+        // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
+        // use the tier's perGBCost directly
+        const tierPerGbRaw = isMulti
+          ? (safeCalculation.contentCalculation?.tier?.perGBCost ?? safeCalculation.tier?.perGBCost ?? 0)
+          : (safeCalculation.tier?.perGBCost ?? 0);
+
+        const tierNameForFallback = (safeCalculation.tier?.name ?? '').toString().toLowerCase();
+
+        // Fallback defaults if tier.perGBCost is 0/undefined
+        const fallbackPerGb =
+          tierNameForFallback === 'basic' ? 1.0 :
+          tierNameForFallback === 'standard' ? 1.5 :
+          tierNameForFallback === 'advanced' ? 1.8 :
+          1.5; // Default to Standard rate if tier unknown
+
+        const tierPerGb = (tierPerGbRaw && tierPerGbRaw > 0) ? tierPerGbRaw : fallbackPerGb;
+
+        // Use tier's per-GB cost when dataSize is 0
+        const perDataCost = safeDataSize > 0 ? (safeDataCost / safeDataSize) : tierPerGb;
+        
         console.log('🔍 PER_DATA_COST CALCULATION (generatePlaceholderPreview):', {
+          migType: quote.configuration?.migrationType,
           dataSizeGB: safeDataSize,
           dataCost: safeDataCost,
-          perDataCost: perDataCost,
+          'safeCalculation.tier': safeCalculation.tier,
+          tierPerGbRaw,
+          tierNameForFallback,
+          fallbackPerGb,
+          tierPerGb,
+          perDataCost,
           formatted: formatCurrency(perDataCost)
         });
         return formatCurrency(perDataCost);
@@ -3119,90 +3040,6 @@ Total Price: {{total price}}`;
         console.log('  configuration?.duration:', configuration?.duration);
         console.log('  Full configuration object:', configuration);
         console.log('  Full clientInfo object:', clientInfo);
-
-        // Multi combination: per-user cost should be the HIGHEST per-user cost among selected exhibits
-        const multiMaxUserRates = (() => {
-          if (configuration?.migrationType !== 'Multi combination') {
-            return { perUser: 0, perUserMonthly: 0 };
-          }
-
-          const cfg: any = configuration as any;
-          const calcSrc: any = quoteData.calculation as any;
-
-          const perUserCandidates: number[] = [];
-          const perUserMonthlyCandidates: number[] = [];
-
-          const pushFromConfigs = (configs: any[] | undefined, breakdowns: any[] | undefined) => {
-            if (!Array.isArray(configs) || configs.length === 0) return;
-            for (const exCfg of configs) {
-              const users = Number(exCfg?.numberOfUsers || 0);
-              const months = Number(exCfg?.duration || 0);
-              const breakdown = breakdowns?.find((b: any) => b?.combinationName === exCfg?.exhibitName);
-              const userCostForExhibit = Number(breakdown?.userCost ?? 0);
-
-              if (users > 0 && isFinite(userCostForExhibit)) {
-                const perUser = userCostForExhibit / users;
-                if (isFinite(perUser) && perUser > 0) perUserCandidates.push(perUser);
-                if (months > 0) {
-                  const perUserMonthly = userCostForExhibit / (users * months);
-                  if (isFinite(perUserMonthly) && perUserMonthly > 0) perUserMonthlyCandidates.push(perUserMonthly);
-                }
-              }
-            }
-          };
-
-          pushFromConfigs(cfg.messagingConfigs, calcSrc?.messagingCombinationBreakdowns);
-          pushFromConfigs(cfg.contentConfigs, calcSrc?.contentCombinationBreakdowns);
-          pushFromConfigs(cfg.emailConfigs, calcSrc?.emailCombinationBreakdowns);
-
-          // Backward compatibility: single nested configs
-          const legacyPairs = [
-            { exCfg: cfg.messagingConfig, userCost: calcSrc?.messagingCalculation?.userCost },
-            { exCfg: cfg.contentConfig, userCost: calcSrc?.contentCalculation?.userCost },
-            { exCfg: cfg.emailConfig, userCost: calcSrc?.emailCalculation?.userCost },
-          ];
-          for (const { exCfg, userCost } of legacyPairs) {
-            const users = Number(exCfg?.numberOfUsers || 0);
-            const months = Number(exCfg?.duration || 0);
-            const cost = Number(userCost ?? 0);
-            if (users > 0 && isFinite(cost)) {
-              const perUser = cost / users;
-              if (isFinite(perUser) && perUser > 0) perUserCandidates.push(perUser);
-              if (months > 0) {
-                const perUserMonthly = cost / (users * months);
-                if (isFinite(perUserMonthly) && perUserMonthly > 0) perUserMonthlyCandidates.push(perUserMonthly);
-              }
-            }
-          }
-
-          // Fallback: compute from selected exhibits if breakdowns/legacy totals are missing
-          if (perUserCandidates.length === 0) {
-            const tierForCalc = calcSrc?.tier;
-            if (tierForCalc) {
-              const computeFromList = (type: 'messaging' | 'content' | 'email', list?: any[]) => {
-                if (!Array.isArray(list) || list.length === 0) return;
-                for (const exCfg of list) {
-                  const users = Number(exCfg?.numberOfUsers || 0);
-                  const months = Number(exCfg?.duration || 0);
-                  if (users <= 0) continue;
-                  const res = calculateCombinationPricing(exCfg?.exhibitName, type, cfg as any, tierForCalc);
-                  const cost = Number(res?.userCost ?? 0);
-                  if (!isFinite(cost) || cost <= 0) continue;
-                  perUserCandidates.push(cost / users);
-                  if (months > 0) perUserMonthlyCandidates.push(cost / (users * months));
-                }
-              };
-              computeFromList('messaging', cfg.messagingConfigs);
-              computeFromList('content', cfg.contentConfigs);
-              computeFromList('email', cfg.emailConfigs);
-            }
-          }
-
-          return {
-            perUser: perUserCandidates.length ? Math.max(...perUserCandidates) : 0,
-            perUserMonthly: perUserMonthlyCandidates.length ? Math.max(...perUserMonthlyCandidates) : 0,
-          };
-        })();
         
         const templateData: Record<string, string> = {
           // Core company and client information
@@ -3268,6 +3105,7 @@ Total Price: {{total price}}`;
           '{{instances}}': numberOfInstances.toString(),
           '{{Duration of months}}': (duration || 1).toString(),
           '{{Duration_of_months}}': (duration || 1).toString(),
+          '{{Duration of months}}': (duration || 1).toString(), // Space version (duplicate for clarity)
           '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
           '{{duration_months}}': (duration || 1).toString(),
           '{{duration}}': (duration || 1).toString(),
@@ -3479,30 +3317,61 @@ Total Price: {{total price}}`;
           '{{migration_cost}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           '{{migrationCost}}': formatCurrency(migrationCost || 0),
+          '{{instance_cost}}': formatCurrency(instanceCost),
+          '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
           
           // Per-user cost calculations
+          // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
           '{{per_user_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUser);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
             }
             return formatCurrency((userCost || 0) / (userCount || 1));
           })(),
           '{{per_user_monthly_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUserMonthly);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
             }
             return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
           })(),
           '{{user_rate}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUser);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
             }
             return formatCurrency((userCost || 0) / (userCount || 1));
           })(),
           '{{monthly_user_rate}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
-              return formatCurrency(multiMaxUserRates.perUserMonthly);
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
             }
             return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
           })(),
@@ -3513,11 +3382,41 @@ Total Price: {{total price}}`;
             const isMulti = configuration?.migrationType === 'Multi combination';
             const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
             const safeDataCost = isMulti ? (safeCalculation.contentCalculation?.dataCost ?? 0) : (dataCost ?? 0);
-            const perDataCost = safeDataSize > 0 ? safeDataCost / safeDataSize : 0;
+            
+            // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
+            // use the tier's perGBCost directly
+            const tierPerGbRaw = isMulti
+              ? (safeCalculation.contentCalculation?.tier?.perGBCost ??
+                  safeCalculation.tier?.perGBCost ??
+                  0)
+              : (safeCalculation.tier?.perGBCost ?? 0);
+
+            const tierNameForFallback = (
+              safeCalculation.tier?.name ?? ''
+            ).toString().toLowerCase();
+
+            // Fallback defaults if tier.perGBCost is 0/undefined
+            const fallbackPerGb =
+              tierNameForFallback === 'basic' ? 1.0 :
+              tierNameForFallback === 'standard' ? 1.5 :
+              tierNameForFallback === 'advanced' ? 1.8 :
+              1.5; // Default to Standard rate if tier unknown
+
+            const tierPerGb = (tierPerGbRaw && tierPerGbRaw > 0) ? tierPerGbRaw : fallbackPerGb;
+
+            // Use tier's per-GB cost when dataSize is 0
+            const perDataCost = safeDataSize > 0 ? (safeDataCost / safeDataSize) : tierPerGb;
+            
             console.log('🔍 PER_DATA_COST CALCULATION (handleGenerateAgreement):', {
+              migType: configuration?.migrationType,
               dataSizeGB: safeDataSize,
               dataCost: safeDataCost,
-              perDataCost: perDataCost,
+              'safeCalculation.tier': safeCalculation.tier,
+              tierPerGbRaw,
+              tierNameForFallback,
+              fallbackPerGb,
+              tierPerGb,
+              perDataCost,
               formatted: formatCurrency(perDataCost)
             });
             return formatCurrency(perDataCost);
@@ -3679,9 +3578,6 @@ Total Price: {{total price}}`;
                     'onedrive-to-onedrive': 'ONEDRIVE TO ONEDRIVE',
                     'onedrive-to-google-mydrive': 'ONEDRIVE TO GOOGLE MYDRIVE',
                     'sharepoint-online-to-egnyte': 'SHAREPOINT ONLINE TO EGNYTE',
-                    'sharepoint-online-to-google-mydrive': 'SHAREPOINT ONLINE TO GOOGLE MYDRIVE',
-                    'sharepoint-online-to-google-sharedrive': 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE',
-                    'sharepoint-online-to-sharepoint-online': 'SHAREPOINT ONLINE TO SHAREPOINT ONLINE',
                     'egnyte-to-google': 'EGNYTE TO GOOGLE',
                     'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT',
                     'nfs-to-google': 'NFS TO GOOGLE',
@@ -4808,13 +4704,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           }
         }
 
-        // Ensure we have a final document before using it
-        if (!processedDocument) {
-          console.error('❌ No processed agreement document generated.');
-          alert('Failed to generate agreement document. Please try again.');
-          return;
-        }
-
         // Store the (now PDF) document for download handlers
         setProcessedAgreement(processedDocument);
 
@@ -4827,12 +4716,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         return;
         
         // For DOCX files render with docx-preview to match exact document formatting
-        if (processedDocument!.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           // Open modal first so container exists, then render
           setShowAgreementPreview(true);
           await delayFrame();
           try {
-            await renderDocxPreview(processedDocument!);
+            await renderDocxPreview(processedDocument);
             return;
           } catch (err) {
             console.warn('docx-preview render failed in initial flow, trying mammoth HTML fallback.', err);
@@ -4841,7 +4730,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             console.log('🔄 Converting DOCX to HTML for preview with exact formatting...');
             const mammoth = await import('mammoth');
             
-            const arrayBuffer = await processedDocument!.arrayBuffer();
+            const arrayBuffer = await processedDocument.arrayBuffer();
             const result = await mammoth.convertToHtml({ 
               arrayBuffer,
               styleMap: [
@@ -5071,13 +4960,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           } catch (error) {
             console.error('❌ Error converting DOCX to HTML:', error);
             // Fallback to direct document URL
-            const previewUrl = URL.createObjectURL(processedDocument!);
+            const previewUrl = URL.createObjectURL(processedDocument);
             setPreviewUrl(previewUrl);
             setShowInlinePreview(true);
           }
         } else {
           // For PDF files, use direct URL
-          const previewUrl = URL.createObjectURL(processedDocument!);
+          const previewUrl = URL.createObjectURL(processedDocument);
           setPreviewUrl(previewUrl);
           setShowInlinePreview(true);
         }
@@ -5086,7 +4975,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         try {
           console.log('💾 Saving PDF to MongoDB...');
           const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
-          const base64Data = await documentServiceMongoDB.blobToBase64(processedDocument!);
+          const base64Data = await documentServiceMongoDB.blobToBase64(processedDocument);
           
           // Define variables for the saved document
           const finalCompanyName = clientInfo.company || 'Unknown Company';
@@ -5096,7 +4985,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           const savedDoc = {
             fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
             fileData: base64Data,
-            fileSize: processedDocument!.size,
+            fileSize: processedDocument.size,
             clientName: clientName,
             clientEmail: clientEmail,
             company: finalCompanyName,
@@ -5144,6 +5033,120 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
       alert(`Error generating agreement: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`);
     } finally {
       setIsGeneratingAgreement(false);
+    }
+  };
+
+  const handleSendQuote = async () => {
+    try {
+      // Create quote object
+      const quote = {
+        id: `quote-001`,
+        clientName: clientInfo.clientName,
+        clientEmail: clientInfo.clientEmail,
+        company: clientInfo.company,
+        configuration: configuration,
+        calculation: safeCalculation,
+        selectedTier: safeCalculation.tier,
+        status: 'draft' as const,
+        createdAt: new Date(),
+        templateUsed: selectedTemplate ? {
+          id: selectedTemplate.id,
+          name: selectedTemplate.name,
+          isDefault: false
+        } : { id: 'default', name: 'Default Template', isDefault: true }
+      };
+
+      // If a custom template is selected, use it for PDF generation
+      if (selectedTemplate && selectedTemplate.file) {
+        console.log('Using custom template:', selectedTemplate.name);
+        
+        try {
+        // Generate quote number
+        const quoteNumber = `CPQ-001`;
+        
+          // Check if this is an SOW template with placeholders
+          const { detectPlaceholders } = await import('../utils/pdfMerger');
+          const isSowTemplate = await detectPlaceholders(selectedTemplate.file);
+          
+          let mergedPdfBlob;
+          
+          if (isSowTemplate) {
+            // Use placeholder replacement for SOW templates
+            console.log('📄 Detected SOW template, using placeholder replacement...');
+            const { mergeQuoteWithPlaceholders } = await import('../utils/pdfMerger');
+            const { quoteBlob, newTemplateBlob } = await mergeQuoteWithPlaceholders(selectedTemplate.file, quote, quoteNumber);
+            
+            // Download the quote PDF
+            const quoteFileName = `Quote-${clientInfo.clientName.replace(/\s+/g, '-')}-${selectedTemplate.name}.pdf`;
+            const quoteUrl = URL.createObjectURL(quoteBlob);
+            const quoteLink = document.createElement('a');
+            quoteLink.href = quoteUrl;
+            quoteLink.download = quoteFileName;
+            document.body.appendChild(quoteLink);
+            quoteLink.click();
+            document.body.removeChild(quoteLink);
+            URL.revokeObjectURL(quoteUrl);
+            
+            // Download the new template
+            const templateFileName = `New-Template-${selectedTemplate.name}-${new Date().toISOString().split('T')[0]}.pdf`;
+            const templateUrl = URL.createObjectURL(newTemplateBlob);
+            const templateLink = document.createElement('a');
+            templateLink.href = templateUrl;
+            templateLink.download = templateFileName;
+            document.body.appendChild(templateLink);
+            templateLink.click();
+            document.body.removeChild(templateLink);
+            URL.revokeObjectURL(templateUrl);
+            
+            console.log('✅ Quote generated with SOW template and new template created successfully');
+            
+            // Show success message
+            alert(`✅ Quote generated successfully!\n\n📄 Quote PDF: ${quoteFileName}\n📄 New Template: ${templateFileName}\n\nBoth files have been downloaded. The new template contains your current data and can be used for future quotes.`);
+            
+          } else {
+            // Use regular template merge for other templates
+            console.log('📄 Using regular template merge...');
+            const { mergeQuoteIntoTemplate } = await import('../utils/pdfMerger');
+            mergedPdfBlob = await mergeQuoteIntoTemplate(selectedTemplate.file, quote, quoteNumber);
+            
+            // Download the merged PDF
+            const fileName = `Quote-${clientInfo.clientName.replace(/\s+/g, '-')}-${selectedTemplate.name}.pdf`;
+            const url = URL.createObjectURL(mergedPdfBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ Quote generated with custom template successfully');
+            
+            // Show success message
+            alert(`Quote PDF "${fileName}" has been generated using custom template "${selectedTemplate.name}" and downloaded successfully!`);
+          }
+          
+        } catch (error) {
+          console.error('Error merging with template:', error);
+          alert('Error generating quote with template. Using default template instead.');
+          
+          // Fallback to default template
+          if (onGenerateQuote) {
+            onGenerateQuote(quote);
+          }
+        }
+      } else {
+        // Use default template (existing logic)
+        console.log('Using default template');
+        
+        // Call the onGenerateQuote callback
+        if (onGenerateQuote) {
+          onGenerateQuote(quote);
+        }
+      }
+    } catch (error) {
+      console.error('Error generating quote:', error);
+      alert('Error generating quote. Please try again.');
     }
   };
 

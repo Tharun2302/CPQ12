@@ -34,9 +34,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   selectedTier,
   dealData, 
   onContactInfoChange,
-  templates: _templates = [],
-  selectedTemplate: _selectedTemplate,
-  onTemplateSelect: _onTemplateSelect
+  templates = [],
+  selectedTemplate,
+  onTemplateSelect
 }) => {
   const [config, setConfig] = useState<ConfigurationData>({
     numberOfUsers: 1,
@@ -353,9 +353,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
       'sharefile-to-sharepoint': 'SHAREFILE TO SHAREPOINT',
       'sharepoint-online-to-egnyte': 'SHAREPOINT ONLINE TO EGNYTE',
-      'sharepoint-online-to-google-mydrive': 'SHAREPOINT ONLINE TO GOOGLE MYDRIVE',
-      'sharepoint-online-to-google-sharedrive': 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE',
-      'sharepoint-online-to-sharepoint-online': 'SHAREPOINT ONLINE TO SHAREPOINT ONLINE',
       'sharefile-to-sharefile': 'SHAREFILE TO SHAREFILE',
       'nfs-to-google': 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)',
       'nfs-to-microsoft': 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
@@ -367,6 +364,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     };
     
     return combinationLabels[combinationValue] || combinationValue.replace(/-/g, ' ').toUpperCase();
+  };
+
+  // Helper function to limit consecutive spaces to maximum 5
+  const limitConsecutiveSpaces = (value: string, maxSpaces: number = 5): string => {
+    const pattern = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
+    return value.replace(pattern, ' '.repeat(maxSpaces));
   };
 
   // Helper function to sanitize email (remove emojis, special characters, and trailing numbers after domain)
@@ -690,6 +693,33 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           || document.querySelector('[data-section="project-configuration"]');
         if (target) (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 150);
+    }
+  };
+
+  const handleContactInfoChange = (field: keyof typeof contactInfo, value: string) => {
+    let processedValue = value;
+    
+    // Apply sanitization based on field type
+    if (field === 'clientEmail') {
+      processedValue = sanitizeEmail(value);
+    } else {
+      processedValue = limitConsecutiveSpaces(value);
+    }
+    
+    const newContactInfo = { ...contactInfo, [field]: processedValue };
+    setContactInfo(newContactInfo);
+    
+    // Save to localStorage so it persists across sessions
+    try { localStorage.setItem('cpq_contact_info', JSON.stringify(newContactInfo)); } catch {}
+    
+    // Also notify parent component
+    if (onContactInfoChange) {
+      onContactInfoChange({
+        clientName: newContactInfo.clientName || '',
+        clientEmail: newContactInfo.clientEmail || '',
+        company: newContactInfo.company || '',
+        companyName2: newContactInfo.companyName2 || newContactInfo.company || ''
+      });
     }
   };
 
@@ -1276,16 +1306,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   } catch (error) {
                     console.warn('Could not save to sessionStorage:', error);
                   }
-
-                  // Auto-scroll to the next relevant section
-                  setTimeout(() => {
-                    const targetSelector =
-                      newMigrationType === 'Multi combination'
-                        ? '[data-section="exhibits-selection"]'
-                        : '[data-section="template-selection"]';
-                    const target = document.querySelector(targetSelector);
-                    if (target) (target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }, 150);
                 }}
                 className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
               >
@@ -1369,6 +1389,57 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       }}
                     >
                       <option value="">Select Combination</option>
+                      {/* Multi combination - shows all combinations */}
+                      {config.migrationType === 'Multi combination' && (() => {
+                        const allCombinations = [
+                          // Messaging
+                          { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
+                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
+                          // Content
+                          { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
+                          { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
+                          { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE' },
+                          { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
+                          { value: 'box-to-box', label: 'BOX TO BOX' },
+                          { value: 'box-to-dropbox', label: 'BOX TO DROPBOX' },
+                          { value: 'box-to-sharefile', label: 'BOX TO SHAREFILE' },
+                          { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
+                          { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
+                          { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
+                          { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
+                          { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
+                          { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
+                          { value: 'google-sharedrive-to-sharepoint', label: 'GOOGLE SHARED DRIVE TO SHAREPOINT' },
+                          { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
+                          { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
+                          { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
+                          { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
+                          { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
+                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
+                          { value: 'onedrive-to-onedrive', label: 'ONEDRIVE TO ONEDRIVE' },
+                          { value: 'onedrive-to-google-mydrive', label: 'ONEDRIVE TO GOOGLE MYDRIVE' },
+                          { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
+                          { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
+                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
+                          { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
+                          { value: 'sharepoint-online-to-egnyte', label: 'SHAREPOINT ONLINE TO EGNYTE' },
+                          { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
+                          { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
+                          { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
+                          { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
+                          { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
+                        ];
+                        
+                        const filtered = allCombinations.filter(combo => 
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
+                        
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
                       {/* Messaging combinations */}
                       {config.migrationType === 'Messaging' && (() => {
                         const messagingCombinations = [
@@ -1416,9 +1487,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
                           { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
                           { value: 'sharepoint-online-to-egnyte', label: 'SHAREPOINT ONLINE TO EGNYTE' },
-                          { value: 'sharepoint-online-to-google-mydrive', label: 'SHAREPOINT ONLINE TO GOOGLE MYDRIVE' },
-                          { value: 'sharepoint-online-to-google-sharedrive', label: 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE' },
-                          { value: 'sharepoint-online-to-sharepoint-online', label: 'SHAREPOINT ONLINE TO SHAREPOINT ONLINE' },
                           { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
                           { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
                           { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
@@ -1437,9 +1505,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       {/* Email combinations */}
                       {config.migrationType === 'Email' && (() => {
                         const emailCombinations = [
-                          { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK/EXCHANGE' },
+                          { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK' },
                           { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL' },
-                          { value: 'exchange-to-gmail', label: 'EXCHANGE TO GMAIL' },
+                          { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK' },
                           { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL' }
                         ];
                         
@@ -1503,9 +1571,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
                             { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
                             { value: 'sharepoint-online-to-egnyte', label: 'SHAREPOINT ONLINE TO EGNYTE' },
-                            { value: 'sharepoint-online-to-google-mydrive', label: 'SHAREPOINT ONLINE TO GOOGLE MYDRIVE' },
-                            { value: 'sharepoint-online-to-google-sharedrive', label: 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE' },
-                            { value: 'sharepoint-online-to-sharepoint-online', label: 'SHAREPOINT ONLINE TO SHAREPOINT ONLINE' },
                             { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
                             { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
                             { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
@@ -1515,16 +1580,26 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                        const overageCombinations = [
                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                        ];
+                       const multiCombinations = [
+                         // Messaging
+                         { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
+                         { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
+                         // Content
+                         ...contentCombinations
+                       ];
+
                           let allCombinations: { value: string; label: string }[] = [];
-                          if (config.migrationType === 'Messaging') {
+                          if (config.migrationType === 'Multi combination') {
+                            allCombinations = multiCombinations;
+                          } else if (config.migrationType === 'Messaging') {
                             allCombinations = messagingCombinations;
                           } else if (config.migrationType === 'Content') {
                             allCombinations = contentCombinations;
                           } else if (config.migrationType === 'Email') {
                             const emailCombinations = [
-                              { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK/EXCHANGE' },
+                              { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK' },
                               { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL' },
-                              { value: 'exchange-to-gmail', label: 'EXCHANGE TO GMAIL' },
+                              { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK' },
                               { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL' }
                             ];
                             allCombinations = emailCombinations;
@@ -2097,7 +2172,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* OTHER MIGRATION TYPES: Standard single configuration */}
-          {config.migrationType && config.migrationType !== 'Multi combination' && !!config.combination && (
+          {config.migrationType && config.migrationType !== 'Multi combination' && (config.combination || config.migrationType === 'Multi combination') && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
@@ -2229,8 +2304,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             )}
 
-                {/* Data Size - Show for Content, Hide for Messaging and overage agreement */}
-                {config.migrationType === 'Content' && config.combination !== 'overage-agreement' && (
+                {/* Data Size - Show for Content and Multi combination, Hide for Messaging and overage agreement */}
+                {(config.migrationType === 'Content' || config.migrationType === 'Multi combination') && config.combination !== 'overage-agreement' && (
                   <div className="group md:col-span-2">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
@@ -2316,8 +2391,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
                 </div>
 
-                {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
-                {config.migrationType === 'Messaging' && config.combination !== 'overage-agreement' && (
+                {/* Messages Field - Show for Messaging and Multi combination, Hide for Content and overage agreement */}
+                {(config.migrationType === 'Messaging' || config.migrationType === 'Multi combination') && config.combination !== 'overage-agreement' && (
                   <div className="group">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">

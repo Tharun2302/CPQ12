@@ -580,19 +580,62 @@ export class DocxTemplateProcessor {
       // Remove any remaining unreplaced tokens
       finalDocumentXml = finalDocumentXml.replace(/\{\{[^}]+\}\}/g, '');
 
-      // CRITICAL: If the template still contains a hardcoded "$1.00 per GB" (or "$1 per GB")
-      // in the Payment Notes / Overage Charges section, overwrite it with the dynamically
-      // calculated per-GB value that the UI computed ({{per_data_cost}}).
+      // CRITICAL: Overage per-GB value
+      //
+      // Some templates include the per-GB overage rate either:
+      // - as a hardcoded value (e.g. "$1.00 per GB" or "$0.00 per GB"), OR
+      // - as a token {{per_data_cost}} followed by " per GB".
+      //
+      // Email migrations commonly have dataSizeGB=0 and dataCost=0, which can lead to a
+      // rendered "$0.00" if the token logic upstream is missing/misconfigured.
+      //
+      // To make the generated agreement consistent, we patch the *rendered DOCX XML*
+      // near the "Overage Charges" line to use a sane per-GB rate.
       //
       // This makes the generated agreement consistent even if the DOCX template wasn't updated.
       try {
-        const dynamicPerDataCost = String((processedData as any)?.['{{per_data_cost}}'] || '').trim();
-        if (dynamicPerDataCost) {
+        const rawPerDataCost = String((processedData as any)?.['{{per_data_cost}}'] || '').trim();
+        const tierNameForFallback = String(
+          (processedData as any)?.['{{tier_name}}'] ??
+          (processedData as any)?.['{{plan_name}}'] ??
+          (processedData as any)?.['{{plan}}'] ??
+          ''
+        ).toLowerCase();
+
+        // If upstream produced "$0.00" (or empty), fall back based on tier name.
+        const fallbackPerDataCost =
+          tierNameForFallback.includes('basic') ? '$1.00' :
+          tierNameForFallback.includes('advanced') ? '$1.80' :
+          '$1.50'; // default to Standard
+
+        const effectivePerDataCost =
+          rawPerDataCost && rawPerDataCost !== '$0.00' ? rawPerDataCost : fallbackPerDataCost;
+
+        if (effectivePerDataCost) {
           const beforeOveragePatch = finalDocumentXml;
-          // Match common hardcoded variants (case-insensitive), keep rest of sentence intact.
-          finalDocumentXml = finalDocumentXml.replace(/\$?\s*1(?:\.00)?\s*per\s*GB\.?/gi, `${dynamicPerDataCost} per GB`);
+          // 1) Patch common hardcoded variants (case-insensitive).
+          finalDocumentXml = finalDocumentXml.replace(
+            /\$?\s*(?:0|1)(?:\.00)?\s*per\s*GB\.?/gi,
+            `${effectivePerDataCost} per GB`
+          );
+
+          // 2) Patch cases where the token rendered to "$0.00" and " per GB" is in a separate run.
+          // We look for the Overage line and replace the first "$0.00" nearby.
+          const overageIdx = finalDocumentXml.toLowerCase().indexOf('overage');
+          if (overageIdx !== -1 && effectivePerDataCost !== '$0.00') {
+            const start = Math.max(0, overageIdx - 500);
+            const end = Math.min(finalDocumentXml.length, overageIdx + 4000);
+            const window = finalDocumentXml.slice(start, end);
+            const patchedWindow = window.replace(/\$0(?:\.00)?/i, effectivePerDataCost);
+            if (patchedWindow !== window) {
+              finalDocumentXml = finalDocumentXml.slice(0, start) + patchedWindow + finalDocumentXml.slice(end);
+            }
+          }
+
           if (finalDocumentXml !== beforeOveragePatch) {
-            console.log('✅ Overage per-GB patched in DOCX (replaced hardcoded "$1.00 per GB") with:', dynamicPerDataCost);
+            console.log('✅ Overage per-GB patched in DOCX with:', effectivePerDataCost);
+          } else {
+            console.log('ℹ️ No overage per-GB patch needed (template already consistent).');
           }
         }
       } catch (err) {

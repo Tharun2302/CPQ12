@@ -277,6 +277,26 @@ function CategoryColumn({
 }) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
+  const getChildDisplayName = (fullName: string) => {
+    // Most grouped items use "Base Name - Child Name" and we show only the child part.
+    // For a few legacy exhibits (e.g., OneDrive->OneDrive Std), the child part is
+    // "Included Features"/"Not Included Features" but we want "Standard Include"/"Standard Not Include".
+    const dashIndex = fullName.indexOf(' - ');
+    if (dashIndex <= 0) return fullName;
+
+    const base = fullName.substring(0, dashIndex).toLowerCase();
+    const child = fullName.substring(dashIndex + 3);
+    const childLower = child.toLowerCase();
+
+    const isStandardPlan = base.includes('standard plan');
+    if (isStandardPlan) {
+      if (childLower === 'included features') return 'Standard Include';
+      if (childLower === 'not included features') return 'Standard Not Include';
+    }
+
+    return child || fullName;
+  };
+
   // Group exhibits by similar names
   const groupedExhibits = useMemo(() => {
     const groups: Map<string, Exhibit[]> = new Map();
@@ -475,7 +495,7 @@ function CategoryColumn({
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium text-gray-800 text-xs">
-                                    {exhibit.name.split(' - ')[1] || exhibit.name}
+                                    {getChildDisplayName(exhibit.name)}
                                   </div>
                                   {isRequired && (
                                     <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">

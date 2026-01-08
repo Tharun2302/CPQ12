@@ -12,6 +12,23 @@ async function seedDefaultExhibits(db) {
 
   console.log('🌱 Starting exhibits seeding process...');
 
+  // Cleanup: remove legacy/incorrectly named exhibits to avoid duplicates in UI.
+  // (We key exhibits by fileName; if the fileName changes, the old record remains unless removed.)
+  try {
+    const legacyFileNamesToRemove = [
+      // Old OneDrive->OneDrive Standard not-included exhibit used a double extension; file is now single ".docx"
+      'onedrive-to-onedrive-standard-plan-notincluded.docx.docx',
+    ];
+    const result = await db.collection('exhibits').deleteMany({
+      fileName: { $in: legacyFileNamesToRemove },
+    });
+    if (result.deletedCount) {
+      console.log(`🧹 Removed ${result.deletedCount} legacy exhibit record(s)`);
+    }
+  } catch (e) {
+    console.warn('⚠️ Could not cleanup legacy exhibits:', e?.message || e);
+  }
+
   const defaultExhibits = [
     // Messaging exhibits
     {
@@ -73,6 +90,67 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 6,
       keywords: ['slack', 'teams', 'messaging', 'advanced', 'not included', 'features', 'limitations']
+    },
+    {
+      name: 'Slack to Google Chat Basic Plan - Basic Include',
+      description: 'Documentation for features included in Slack to Google Chat Basic Plan migration',
+      fileName: 'Slack to Google Chat Basic Plan - Basic Include.docx',
+      combinations: ['slack-to-google-chat'],
+      category: 'messaging',
+      isRequired: false,
+      displayOrder: 6.5,
+      keywords: ['slack', 'google', 'chat', 'google chat', 'messaging', 'basic', 'included', 'features']
+    },
+    {
+      name: 'Slack to Google Chat Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Slack to Google Chat Basic Plan migration',
+      fileName: 'Slack to Google Chat Basic Plan - Basic Not Include.docx',
+      combinations: ['slack-to-google-chat'],
+      category: 'messaging',
+      isRequired: false,
+      displayOrder: 6.6,
+      keywords: ['slack', 'google', 'chat', 'google chat', 'messaging', 'basic', 'not included', 'features', 'limitations']
+    },
+    {
+      name: 'Slack to Google Chat Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Slack to Google Chat Advanced Plan migration',
+      fileName: 'Slack to Google Chat Advanced Plan - Advanced Include.docx',
+      combinations: ['slack-to-google-chat'],
+      category: 'messaging',
+      isRequired: false,
+      displayOrder: 6.7,
+      keywords: ['slack', 'google', 'chat', 'google chat', 'messaging', 'advanced', 'included', 'features']
+    },
+    {
+      name: 'Slack to Google Chat Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Slack to Google Chat Advanced Plan migration',
+      fileName: 'Slack to Google Chat Advanced Plan - Advanced Not Include.docx',
+      combinations: ['slack-to-google-chat'],
+      category: 'messaging',
+      isRequired: false,
+      displayOrder: 6.8,
+      keywords: ['slack', 'google', 'chat', 'google chat', 'messaging', 'advanced', 'not included', 'features', 'limitations']
+    },
+    // Slack to Slack exhibits (no plan tier; only included / not included)
+    {
+      name: 'Slack to Slack - Included Features',
+      description: 'Documentation for features included in Slack to Slack migration',
+      fileName: 'Slack to Slack - Included.docx.docx',
+      combinations: ['slack-to-slack', 'all'],
+      category: 'messaging',
+      isRequired: false,
+      displayOrder: 7,
+      keywords: ['slack', 'messaging', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Slack to Slack - Not Included Features',
+      description: 'Documentation for features not included in Slack to Slack migration',
+      fileName: 'Slack to Slack - Not Included.docx.docx',
+      combinations: ['slack-to-slack', 'all'],
+      category: 'messaging',
+      isRequired: false,
+      displayOrder: 8,
+      keywords: ['slack', 'messaging', 'not included', 'features', 'limitations', 'migration']
     },
     // Email exhibits
     {
@@ -325,6 +403,69 @@ async function seedDefaultExhibits(db) {
       displayOrder: 16,
       keywords: ['box', 'sharefile', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
+    // ShareFile to ShareFile (Advanced) exhibits
+    {
+      name: 'ShareFile to ShareFile Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in ShareFile to ShareFile Advanced Plan migration',
+      fileName: 'ShareFile to ShareFile Advanced Plan - Advanced Include.docx',
+      combinations: ['sharefile-to-sharefile', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.5,
+      keywords: ['sharefile', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to ShareFile Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in ShareFile to ShareFile Advanced Plan migration',
+      fileName: 'ShareFile to ShareFile Advanced Plan - Advanced Not Include.docx',
+      combinations: ['sharefile-to-sharefile', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.6,
+      keywords: ['sharefile', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // ShareFile to OneDrive (Advanced) exhibits
+    {
+      name: 'ShareFile to OneDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in ShareFile to OneDrive Advanced Plan migration',
+      fileName: 'ShareFile to OneDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['sharefile-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.7,
+      keywords: ['sharefile', 'onedrive', 'microsoft', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to OneDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in ShareFile to OneDrive Advanced Plan migration',
+      fileName: 'ShareFile to OneDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['sharefile-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.8,
+      keywords: ['sharefile', 'onedrive', 'microsoft', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // ShareFile to Google MyDrive (Advanced) exhibits
+    {
+      name: 'ShareFile to Google MyDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in ShareFile to Google MyDrive Advanced Plan migration',
+      fileName: 'ShareFile to Google MyDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['sharefile-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.9,
+      keywords: ['sharefile', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to Google MyDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in ShareFile to Google MyDrive Advanced Plan migration',
+      fileName: 'ShareFile to Google MyDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['sharefile-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 17.0,
+      keywords: ['sharefile', 'google', 'mydrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // Box to Google MyDrive (Standard) exhibits
     {
       name: 'Box to Google MyDrive Standard Plan - Standard Include',
@@ -483,6 +624,220 @@ async function seedDefaultExhibits(db) {
       displayOrder: 14,
       keywords: ['dropbox', 'mydrive', 'google', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
+    // Dropbox to SharePoint Online (Standard) exhibits
+    {
+      name: 'Dropbox to SharePoint Online Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to SharePoint Online Standard Plan migration',
+      fileName: 'Dropbox to SharePoint Online Standard Plan - Standard Include.docx',
+      // Use existing SharePoint combination key; name clarifies "Online" for the exhibit folder.
+      combinations: ['dropbox-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 15,
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to SharePoint Online Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to SharePoint Online Standard Plan migration',
+      fileName: 'Dropbox to SharePoint Online Standard Plan - Standard Not Include.docx',
+      combinations: ['dropbox-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16,
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // NFS to SharePoint Online (Standard) exhibits
+    {
+      name: 'NFS to SharePoint Online Standard Plan - Standard Include',
+      description: 'Documentation for features included in NFS to SharePoint Online Standard Plan migration',
+      fileName: 'NFS to SharePoint Online Standard Plan - Standard Include.docx',
+      // NFS uses a combined Microsoft route (OneDrive/SharePoint) in CPQ: nfs-to-microsoft
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.1,
+      keywords: ['nfs', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'NFS to SharePoint Online Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in NFS to SharePoint Online Standard Plan migration',
+      fileName: 'NFS to SharePoint Online Standard Plan - Standard Not Include.docx',
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.2,
+      keywords: ['nfs', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // NFS to OneDrive (Standard) exhibits
+    {
+      name: 'NFS to OneDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in NFS to OneDrive Standard Plan migration',
+      fileName: 'NFS to OneDrive Standard Plan - Standard Include.docx',
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.25,
+      keywords: ['nfs', 'onedrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'NFS to OneDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in NFS to OneDrive Standard Plan migration',
+      fileName: 'NFS to OneDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.26,
+      keywords: ['nfs', 'onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // NFS to OneDrive (Advanced) exhibits
+    {
+      name: 'NFS to OneDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in NFS to OneDrive Advanced Plan migration',
+      fileName: 'NFS to OneDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.27,
+      keywords: ['nfs', 'onedrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'NFS to OneDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in NFS to OneDrive Advanced Plan migration',
+      fileName: 'NFS to OneDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.28,
+      keywords: ['nfs', 'onedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // NFS to SharePoint Online (Advanced) exhibits
+    {
+      name: 'NFS to SharePoint Online Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in NFS to SharePoint Online Advanced Plan migration',
+      fileName: 'NFS to SharePoint Online Advanced Plan - Advanced Include.docx',
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.3,
+      keywords: ['nfs', 'sharepoint', 'sharepoint online', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'NFS to SharePoint Online Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in NFS to SharePoint Online Advanced Plan migration',
+      fileName: 'NFS to SharePoint Online Advanced Plan - Advanced Not Include.docx',
+      combinations: ['nfs-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.4,
+      keywords: ['nfs', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to SharePoint Online (Advanced) exhibits
+    {
+      name: 'Dropbox to SharePoint Online Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Dropbox to SharePoint Online Advanced Plan migration',
+      fileName: 'Dropbox to SharePoint Online Advanced Plan - Advanced Include.docx',
+      combinations: ['dropbox-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 17,
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to SharePoint Online Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Dropbox to SharePoint Online Advanced Plan migration',
+      fileName: 'Dropbox to SharePoint Online Advanced Plan - Advanced Not Include.docx',
+      combinations: ['dropbox-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 18,
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // ShareFile to SharePoint Online (Advanced) exhibits
+    {
+      name: 'ShareFile to SharePoint Online Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in ShareFile to SharePoint Online Advanced Plan migration',
+      fileName: 'ShareFile to SharePoint Online Advanced Plan - Advanced Include.docx',
+      // Canonical CPQ combination is "sharefile-to-sharepoint"; exhibit name clarifies "Online" for the folder.
+      combinations: ['sharefile-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 18.5,
+      keywords: ['sharefile', 'sharepoint', 'sharepoint online', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to SharePoint Online Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in ShareFile to SharePoint Online Advanced Plan migration',
+      fileName: 'ShareFile to SharePoint Online Advanced Plan - Advanced Not Include.docx',
+      combinations: ['sharefile-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 18.6,
+      keywords: ['sharefile', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to Google MyDrive (Advanced) exhibits
+    {
+      name: 'Egnyte to Google MyDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Egnyte to Google MyDrive Advanced Plan migration',
+      fileName: 'Egnyte to Google MyDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['egnyte-to-google', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.5,
+      keywords: ['egnyte', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to Google MyDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Egnyte to Google MyDrive Advanced Plan migration',
+      fileName: 'Egnyte to Google MyDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['egnyte-to-google', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.6,
+      keywords: ['egnyte', 'google', 'mydrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to SharePoint (Standard) exhibits
+    {
+      name: 'Egnyte to SharePoint Standard Plan - Standard Include',
+      description: 'Documentation for features included in Egnyte to SharePoint Standard Plan migration',
+      fileName: 'Egnyte to SharePoint Standard Plan - Standard Include.docx',
+      // Existing CPQ combination uses "egnyte-to-sharepoint-online"
+      combinations: ['egnyte-to-sharepoint-online', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 19,
+      keywords: ['egnyte', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to SharePoint Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Egnyte to SharePoint Standard Plan migration',
+      fileName: 'Egnyte to SharePoint Standard Plan - Standard Not Include.docx',
+      combinations: ['egnyte-to-sharepoint-online', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20,
+      keywords: ['egnyte', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to Google Shared Drive (Advanced) exhibits
+    {
+      name: 'Egnyte to Google Shared Drive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Egnyte to Google Shared Drive Advanced Plan migration',
+      fileName: 'Egnyte to Google Shared Drive Advanced Plan - Advanced Include.docx',
+      combinations: ['egnyte-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.3,
+      keywords: ['egnyte', 'google', 'sharedrive', 'shared drive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to Google Shared Drive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Egnyte to Google Shared Drive Advanced Plan migration',
+      fileName: 'Egnyte to Google Shared Drive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['egnyte-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.4,
+      keywords: ['egnyte', 'google', 'sharedrive', 'shared drive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // OneDrive to OneDrive exhibits
     {
       name: 'OneDrive to OneDrive Standard Plan - Included Features',
@@ -497,12 +852,74 @@ async function seedDefaultExhibits(db) {
     {
       name: 'OneDrive to OneDrive Standard Plan - Not Included Features',
       description: 'Documentation for features not included in OneDrive to OneDrive Standard Plan migration',
-      fileName: 'onedrive-to-onedrive-standard-plan-notincluded.docx.docx',
+      fileName: 'onedrive-to-onedrive-standard-plan-notincluded.docx',
       combinations: ['onedrive-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 2,
       keywords: ['onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    {
+      name: 'OneDrive to OneDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in OneDrive to OneDrive Advanced Plan migration',
+      fileName: 'OneDrive to OneDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['onedrive-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 2.5,
+      keywords: ['onedrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'OneDrive to OneDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in OneDrive to OneDrive Advanced Plan migration',
+      fileName: 'OneDrive to OneDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['onedrive-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 2.6,
+      keywords: ['onedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // OneDrive to Google MyDrive (Standard) exhibits
+    {
+      name: 'OneDrive to Google MyDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in OneDrive to Google MyDrive Standard Plan migration',
+      fileName: 'OneDrive to Google MyDrive Standard Plan - Standard Include.docx',
+      combinations: ['onedrive-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 3,
+      keywords: ['onedrive', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'OneDrive to Google MyDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in OneDrive to Google MyDrive Standard Plan migration',
+      fileName: 'OneDrive to Google MyDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['onedrive-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 4,
+      keywords: ['onedrive', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // OneDrive to Google MyDrive (Advanced) exhibits
+    {
+      name: 'OneDrive to Google MyDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in OneDrive to Google MyDrive Advanced Plan migration',
+      fileName: 'OneDrive to Google MyDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['onedrive-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 4.5,
+      keywords: ['onedrive', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'OneDrive to Google MyDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in OneDrive to Google MyDrive Advanced Plan migration',
+      fileName: 'OneDrive to Google MyDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['onedrive-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 4.6,
+      keywords: ['onedrive', 'google', 'mydrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
       name: 'MyDrive Migration Guide',
