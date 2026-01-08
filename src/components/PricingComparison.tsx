@@ -19,6 +19,20 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   // Track selected tier per combination (key: combinationName, value: tier name)
   const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>({});
 
+  const totalUsers = useMemo(() => {
+    if (!configuration) return 0;
+    if (configuration.migrationType === 'Multi combination') {
+      const sumUsers = (arr?: Array<{ numberOfUsers: number }>) =>
+        arr?.reduce((acc, item) => acc + (item.numberOfUsers || 0), 0) || 0;
+      return (
+        sumUsers(configuration.messagingConfigs) +
+        sumUsers(configuration.contentConfigs) +
+        sumUsers(configuration.emailConfigs)
+      );
+    }
+    return configuration.numberOfUsers || 0;
+  }, [configuration]);
+
   // Initialize selected tiers with the current calculation tier (Standard by default)
   useEffect(() => {
     if (configuration?.migrationType === 'Multi combination' && calculations.length > 0) {
@@ -120,7 +134,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   const getCombinationPricing = (
     combinationName: string,
     combinationType: 'messaging' | 'content' | 'email',
-    defaultBreakdown: { userCost: number; dataCost: number; migrationCost: number; instanceCost: number; totalCost: number },
+    defaultBreakdown: { numberOfUsers?: number; userCost: number; dataCost: number; migrationCost: number; instanceCost: number; totalCost: number },
     planTier?: PricingTier // The tier of the current plan column being displayed
   ) => {
     if (!configuration || configuration.migrationType !== 'Multi combination') {
@@ -206,6 +220,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                           combination === 'box-to-dropbox' ||
                           combination === 'box-to-google-mydrive' ||
                           combination === 'box-to-google-sharedrive' ||
+                          combination === 'box-to-sharepoint' ||
                           combination === 'box-to-onedrive' ||
                           combination === 'box-to-microsoft' ||
                           combination === 'box-to-google' ||
@@ -419,6 +434,19 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       </p>
                     </div>
 
+                    <div className="space-y-2 mb-4 bg-white/70 border border-purple-200 rounded-lg p-4">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-700">Per user cost:</span>
+                        <span className="font-bold text-gray-900">
+                          {totalUsers > 0 ? `${formatCurrency(calc.userCost / totalUsers)}/user` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-700">Total users (all combinations):</span>
+                        <span className="font-bold text-gray-900">{totalUsers || 0}</span>
+                      </div>
+                    </div>
+
                     {/* Messaging Section - show individual combinations if available */}
                     {calc.messagingCalculation && (
                       calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0 ? (
@@ -426,6 +454,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         calc.messagingCombinationBreakdowns.map((breakdown, idx) => {
                           // Use the current plan column's tier for pricing display (for comparison)
                           const pricing = getCombinationPricing(breakdown.combinationName, 'messaging', breakdown, calc.tier);
+                          const combinationUsers =
+                            breakdown.numberOfUsers ??
+                            configuration?.messagingConfigs?.find(c => c.exhibitName === breakdown.combinationName)?.numberOfUsers ??
+                            0;
                           
                           return (
                             <div key={idx} className="border-2 border-teal-200 bg-teal-50/50 rounded-lg p-4 mb-4">
@@ -443,6 +475,14 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="text-gray-700">User Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
                                 </div>
+                                {combinationUsers > 0 && (
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-700">Per user cost:</span>
+                                    <span className="font-bold text-gray-900">
+                                      {`${formatCurrency(pricing.userCost / combinationUsers)}/user`}
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="text-gray-700">Migration Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
@@ -471,6 +511,17 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                               <span className="text-gray-700">User Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.userCost)}</span>
                             </div>
+                            {(configuration?.messagingConfigs?.length || 0) > 0 && (
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-700">Per user cost:</span>
+                                <span className="font-bold text-gray-900">
+                                  {`${formatCurrency(
+                                    calc.messagingCalculation.userCost /
+                                      ((configuration?.messagingConfigs || []).reduce((acc, c) => acc + (c.numberOfUsers || 0), 0) || 1)
+                                  )}/user`}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-gray-700">Migration Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.migrationCost)}</span>
@@ -495,6 +546,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         calc.contentCombinationBreakdowns.map((breakdown, idx) => {
                           // Use the current plan column's tier for pricing display (for comparison)
                           const pricing = getCombinationPricing(breakdown.combinationName, 'content', breakdown, calc.tier);
+                          const combinationUsers =
+                            breakdown.numberOfUsers ??
+                            configuration?.contentConfigs?.find(c => c.exhibitName === breakdown.combinationName)?.numberOfUsers ??
+                            0;
                           
                           return (
                             <div key={idx} className="border-2 border-indigo-200 bg-indigo-50/50 rounded-lg p-4 mb-4">
@@ -512,6 +567,14 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="text-gray-700">User Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
                                 </div>
+                                {combinationUsers > 0 && (
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-700">Per user cost:</span>
+                                    <span className="font-bold text-gray-900">
+                                      {`${formatCurrency(pricing.userCost / combinationUsers)}/user`}
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="text-gray-700">Data Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.dataCost)}</span>
@@ -544,6 +607,17 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                               <span className="text-gray-700">User Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.userCost)}</span>
                             </div>
+                            {(configuration?.contentConfigs?.length || 0) > 0 && (
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-700">Per user cost:</span>
+                                <span className="font-bold text-gray-900">
+                                  {`${formatCurrency(
+                                    calc.contentCalculation.userCost /
+                                      ((configuration?.contentConfigs || []).reduce((acc, c) => acc + (c.numberOfUsers || 0), 0) || 1)
+                                  )}/user`}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-gray-700">Data Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.dataCost)}</span>
@@ -572,6 +646,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         calc.emailCombinationBreakdowns.map((breakdown, idx) => {
                           // Use the current plan column's tier for pricing display (for comparison)
                           const pricing = getCombinationPricing(breakdown.combinationName, 'email', breakdown, calc.tier);
+                          const combinationUsers =
+                            breakdown.numberOfUsers ??
+                            configuration?.emailConfigs?.find(c => c.exhibitName === breakdown.combinationName)?.numberOfUsers ??
+                            0;
                           
                           return (
                             <div key={idx} className="border-2 border-amber-200 bg-amber-50/50 rounded-lg p-4 mb-4">
@@ -589,6 +667,14 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="text-gray-700">User Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
                                 </div>
+                                {combinationUsers > 0 && (
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-700">Per user cost:</span>
+                                    <span className="font-bold text-gray-900">
+                                      {`${formatCurrency(pricing.userCost / combinationUsers)}/user`}
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="text-gray-700">Migration Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
@@ -617,6 +703,17 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                               <span className="text-gray-700">User Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.emailCalculation.userCost)}</span>
                             </div>
+                            {(configuration?.emailConfigs?.length || 0) > 0 && (
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-700">Per user cost:</span>
+                                <span className="font-bold text-gray-900">
+                                  {`${formatCurrency(
+                                    calc.emailCalculation.userCost /
+                                      ((configuration?.emailConfigs || []).reduce((acc, c) => acc + (c.numberOfUsers || 0), 0) || 1)
+                                  )}/user`}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-gray-700">Migration Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.emailCalculation.migrationCost)}</span>

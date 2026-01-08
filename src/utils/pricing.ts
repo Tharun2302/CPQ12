@@ -8,7 +8,7 @@ export const PRICING_TIERS: PricingTier[] = [
     perGBCost: 1.00,
     managedMigrationCost: 300,
     instanceCost: 500,
-    userLimits: { from: 1, to: 1000 },
+    userLimits: { from: 1, to: Infinity },
     gbLimits: { from: 1, to: 10000 },
     features: [
       'Basic support',
@@ -24,7 +24,7 @@ export const PRICING_TIERS: PricingTier[] = [
     perGBCost: 1.50,
     managedMigrationCost: 300,
     instanceCost: 500,
-    userLimits: { from: 1, to: 1000 },
+    userLimits: { from: 1, to: Infinity },
     gbLimits: { from: 1, to: 10000 },
     features: [
       'Priority support',
@@ -41,7 +41,7 @@ export const PRICING_TIERS: PricingTier[] = [
     perGBCost: 1.80,
     managedMigrationCost: 300,
     instanceCost: 500,
-    userLimits: { from: 1, to: 1000 },
+    userLimits: { from: 1, to: Infinity },
     gbLimits: { from: 1, to: 10000 },
     features: [
       'Dedicated support',
@@ -189,7 +189,8 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
     { threshold: 5000, value: 8 },
     { threshold: 10000, value: 7.5 },
     { threshold: 50000, value: 7 },
-    { threshold: Infinity, value: 0 }
+    // Keep a non-zero floor so ultra-high user counts still accrue per-user cost
+    { threshold: Infinity, value: 7 }
   ];
 
   const vxLookup = [
@@ -262,7 +263,6 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
 
   const planKey = tier.name.toLowerCase() as 'basic' | 'standard' | 'advanced';
   const k2Value = lookupValue(config.numberOfUsers, vwLookup);
-  const m2 = k2Value * config.numberOfUsers;
 
   let userCostPerUser: number;
   if (planKey === 'basic') {
@@ -275,7 +275,6 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
   const userCost = userCostPerUser * config.numberOfUsers;
 
   const k3Value = lookupValue(config.dataSizeGB, qrLookup);
-  const m3 = k3Value * config.dataSizeGB;
 
   let perGBCost: number;
   if (planKey === 'basic') {
@@ -488,12 +487,13 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
           combination: 'multi-combination-messaging'
         };
         const result = calculateMessagingPricing(msgConfig, tier);
-        return { combinationName: exCfg.exhibitName, ...result };
+        return { combinationName: exCfg.exhibitName, numberOfUsers: exCfg.numberOfUsers, ...result };
       });
 
       // Store per-combination breakdowns for UI display
       messagingCombinationBreakdowns = perExhibitResults.map(r => ({
         combinationName: r.combinationName,
+        numberOfUsers: r.numberOfUsers,
         userCost: r.userCost,
         dataCost: r.dataCost,
         migrationCost: r.migrationCost,
@@ -559,12 +559,13 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
           combination: 'multi-combination-content'
         };
         const result = calculateContentPricing(contentConfigData, tier);
-        return { combinationName: exCfg.exhibitName, ...result };
+        return { combinationName: exCfg.exhibitName, numberOfUsers: exCfg.numberOfUsers, ...result };
       });
 
       // Store per-combination breakdowns for UI display
       contentCombinationBreakdowns = perExhibitResults.map(r => ({
         combinationName: r.combinationName,
+        numberOfUsers: r.numberOfUsers,
         userCost: r.userCost,
         dataCost: r.dataCost,
         migrationCost: r.migrationCost,
@@ -630,12 +631,13 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
           combination: 'multi-combination-email'
         };
         const result = calculateEmailPricing(emailConfigData, tier);
-        return { combinationName: exCfg.exhibitName, ...result };
+        return { combinationName: exCfg.exhibitName, numberOfUsers: exCfg.numberOfUsers, ...result };
       });
 
       // Store per-combination breakdowns for UI display
       emailCombinationBreakdowns = perExhibitResults.map(r => ({
         combinationName: r.combinationName,
+        numberOfUsers: r.numberOfUsers,
         userCost: r.userCost,
         dataCost: r.dataCost,
         migrationCost: r.migrationCost,
@@ -787,6 +789,7 @@ export function calculateCombinationPricing(
   tier: PricingTier
 ): {
   combinationName: string;
+  numberOfUsers: number;
   userCost: number;
   dataCost: number;
   migrationCost: number;
@@ -807,6 +810,15 @@ export function calculateCombinationPricing(
       combination: 'multi-combination-messaging'
     };
     result = calculateMessagingPricing(msgConfig, tier);
+    return {
+      combinationName,
+      numberOfUsers: msgConfig.numberOfUsers,
+      userCost: result.userCost,
+      dataCost: result.dataCost,
+      migrationCost: result.migrationCost,
+      instanceCost: result.instanceCost,
+      totalCost: result.totalCost,
+    };
   } else if (combinationType === 'content') {
     const contentConfig: ConfigurationData = {
       numberOfUsers: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.numberOfUsers || 0,
@@ -819,6 +831,15 @@ export function calculateCombinationPricing(
       combination: 'multi-combination-content'
     };
     result = calculateContentPricing(contentConfig, tier);
+    return {
+      combinationName,
+      numberOfUsers: contentConfig.numberOfUsers,
+      userCost: result.userCost,
+      dataCost: result.dataCost,
+      migrationCost: result.migrationCost,
+      instanceCost: result.instanceCost,
+      totalCost: result.totalCost,
+    };
   } else {
     // email
     const emailConfig: ConfigurationData = {
@@ -832,16 +853,16 @@ export function calculateCombinationPricing(
       combination: 'multi-combination-email'
     };
     result = calculateEmailPricing(emailConfig, tier);
+    return {
+      combinationName,
+      numberOfUsers: emailConfig.numberOfUsers,
+      userCost: result.userCost,
+      dataCost: result.dataCost,
+      migrationCost: result.migrationCost,
+      instanceCost: result.instanceCost,
+      totalCost: result.totalCost,
+    };
   }
-
-  return {
-    combinationName,
-    userCost: result.userCost,
-    dataCost: result.dataCost,
-    migrationCost: result.migrationCost,
-    instanceCost: result.instanceCost,
-    totalCost: result.totalCost,
-  };
 }
  
 export function getRecommendedTier(calculations: PricingCalculation[]): PricingCalculation {
