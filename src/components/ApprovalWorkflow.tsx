@@ -29,7 +29,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   // Team Approval emails mapping
   const TEAM_APPROVAL_EMAILS: Record<string, string> = {
     SMB: 'chitradip.saha@cloudfuze.com',
-    AM: 'lawrence.lewis@cloudfuze.com',
+    AM: 'joy.prakash@cloudfuze.com',
     ENT: 'anthony@cloudfuze.com',
     DEV: 'anushreddydasari@gmail.com',
     DEV2: 'raya.durai@cloudfuze.com',

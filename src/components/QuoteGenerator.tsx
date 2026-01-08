@@ -539,13 +539,13 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 
   // Mapping for Team Approval emails by group
   // SMB  -> chitradip.saha@cloudfuze.com
-  // AM   -> lawrence.lewis@cloudfuze.com
+  // AM   -> joy.prakash@cloudfuze.com
   // ENT  -> anthony@cloudfuze.com
   // DEV  -> anushreddydasari@gmail.com
   // DEV2 -> raya.durai@cloudfuze.com
   const TEAM_APPROVAL_EMAILS: Record<string, string> = {
     SMB: 'chitradip.saha@cloudfuze.com',
-    AM: 'lawrence.lewis@cloudfuze.com',
+    AM: 'joy.prakash@cloudfuze.com',
     ENT: 'anthony@cloudfuze.com', // Update if Enterprise owner changes
     DEV: 'anushreddydasari@gmail.com',
     DEV2: 'raya.durai@cloudfuze.com',
