@@ -20,6 +20,9 @@ async function seedDefaultExhibits(db) {
       'onedrive-to-onedrive-standard-plan-notincluded.docx.docx',
       // Old Egnyte->SharePoint Online Advanced Not Include exhibit filename had a typo ("Not Includ")
       'Egnyte to SharePoint Online Advanced Plan - Advanced Not Includ.docx',
+      // Old non-"Online" Egnyte->SharePoint exhibits (keep only the "Egnyte to SharePoint Online ..." variants)
+      'Egnyte to SharePoint Standard Plan - Standard Include.docx',
+      'Egnyte to SharePoint Standard Plan - Standard Not Include.docx',
     ];
     const result = await db.collection('exhibits').deleteMany({
       fileName: { $in: legacyFileNamesToRemove },
@@ -196,6 +199,28 @@ async function seedDefaultExhibits(db) {
       keywords: ['outlook', 'email', 'not included', 'features', 'limitations']
     },
     // ShareFile to Google Shared Drive exhibits
+    // Standard plan
+    {
+      name: 'ShareFile to Google Shared Drive Standard Plan - Standard Include',
+      description: 'Documentation for features included in ShareFile to Google Shared Drive Standard Plan migration',
+      fileName: 'ShareFile to Google Shared Drive Standard Plan - Standard Include.docx',
+      combinations: ['sharefile-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 0.9,
+      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features']
+    },
+    {
+      name: 'ShareFile to Google Shared Drive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in ShareFile to Google Shared Drive Standard Plan migration',
+      fileName: 'ShareFile to Google Shared Drive Standard Plan - Standard Not Include.docx',
+      combinations: ['sharefile-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 0.95,
+      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations']
+    },
+    // Advanced plan
     {
       name: 'ShareFile to Google Shared Drive Advanced Plan - Included Features',
       description: 'Documentation for features included in ShareFile to Google Shared Drive Advanced Plan migration',
@@ -299,6 +324,27 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 6,
       keywords: ['dropbox', 'box', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Box to Box (Standard) exhibits
+    {
+      name: 'Box to Box Standard Plan - Standard Include',
+      description: 'Documentation for features included in Box to Box Standard Plan migration',
+      fileName: 'Box to Box Standard Plan - Standard Include.docx',
+      combinations: ['box-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 6.9,
+      keywords: ['box', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to Box Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Box to Box Standard Plan migration',
+      fileName: 'Box to Box Standard Plan - Standard Not Include.docx',
+      combinations: ['box-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 6.95,
+      keywords: ['box', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Box to Box (Advanced) exhibits
     {
@@ -405,6 +451,27 @@ async function seedDefaultExhibits(db) {
       displayOrder: 16,
       keywords: ['box', 'sharefile', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
+    // ShareFile to ShareFile (Standard) exhibits
+    {
+      name: 'ShareFile to ShareFile Standard Plan - Standard Include',
+      description: 'Documentation for features included in ShareFile to ShareFile Standard Plan migration',
+      fileName: 'ShareFile to ShareFile Standard Plan - Standard Include.docx',
+      combinations: ['sharefile-to-sharefile', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.45,
+      keywords: ['sharefile', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to ShareFile Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in ShareFile to ShareFile Standard Plan migration',
+      fileName: 'ShareFile to ShareFile Standard Plan - Standard Not Include.docx',
+      combinations: ['sharefile-to-sharefile', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.46,
+      keywords: ['sharefile', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // ShareFile to ShareFile (Advanced) exhibits
     {
       name: 'ShareFile to ShareFile Advanced Plan - Advanced Include',
@@ -426,6 +493,27 @@ async function seedDefaultExhibits(db) {
       displayOrder: 16.6,
       keywords: ['sharefile', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
     },
+    // ShareFile to OneDrive (Standard) exhibits
+    {
+      name: 'ShareFile to OneDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in ShareFile to OneDrive Standard Plan migration',
+      fileName: 'ShareFile to OneDrive Standard Plan - Standard Include.docx',
+      combinations: ['sharefile-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.65,
+      keywords: ['sharefile', 'onedrive', 'microsoft', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to OneDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in ShareFile to OneDrive Standard Plan migration',
+      fileName: 'ShareFile to OneDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['sharefile-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.66,
+      keywords: ['sharefile', 'onedrive', 'microsoft', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // ShareFile to OneDrive (Advanced) exhibits
     {
       name: 'ShareFile to OneDrive Advanced Plan - Advanced Include',
@@ -446,6 +534,27 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 16.8,
       keywords: ['sharefile', 'onedrive', 'microsoft', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // ShareFile to Google MyDrive (Standard) exhibits
+    {
+      name: 'ShareFile to Google MyDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in ShareFile to Google MyDrive Standard Plan migration',
+      fileName: 'ShareFile to Google MyDrive Standard Plan - Standard Include.docx',
+      combinations: ['sharefile-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.85,
+      keywords: ['sharefile', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to Google MyDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in ShareFile to Google MyDrive Standard Plan migration',
+      fileName: 'ShareFile to Google MyDrive Standard Plan - Standard Not Include.docx',
+      combinations: ['sharefile-to-google-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.86,
+      keywords: ['sharefile', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // ShareFile to Google MyDrive (Advanced) exhibits
     {
@@ -612,6 +721,27 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 20.0,
       keywords: ['egnyte', 'onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Egnyte to OneDrive exhibits (Advanced)
+    {
+      name: 'Egnyte to OneDrive Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Egnyte to OneDrive Advanced Plan migration',
+      fileName: 'Egnyte to OneDrive Advanced Plan - Advanced Include.docx',
+      combinations: ['egnyte-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.01,
+      keywords: ['egnyte', 'onedrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to OneDrive Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Egnyte to OneDrive Advanced Plan migration',
+      fileName: 'Egnyte to OneDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['egnyte-to-onedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 20.02,
+      keywords: ['egnyte', 'onedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Egnyte to Google Shared Drive exhibits (Standard)
     {
@@ -866,6 +996,27 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 16.06,
       keywords: ['google', 'mydrive', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Google MyDrive to SharePoint Online (Advanced) exhibits
+    {
+      name: 'Google MyDrive to SharePoint Online Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Google MyDrive to SharePoint Online Advanced Plan migration',
+      fileName: 'Google MyDrive to SharePoint Online Advanced Plan - Advanced Include.docx',
+      combinations: ['google-mydrive-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.061,
+      keywords: ['google', 'mydrive', 'sharepoint', 'sharepoint online', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Google MyDrive to SharePoint Online Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Google MyDrive to SharePoint Online Advanced Plan migration',
+      fileName: 'Google MyDrive to SharePoint Online Advanced Plan - Advanced Not Include.docx',
+      combinations: ['google-mydrive-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 16.062,
+      keywords: ['google', 'mydrive', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Google MyDrive to OneDrive (Standard) exhibits
     {
@@ -1312,6 +1463,28 @@ async function seedDefaultExhibits(db) {
       displayOrder: 18,
       keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
     },
+    // ShareFile to SharePoint Online (Standard) exhibits
+    {
+      name: 'ShareFile to SharePoint Online Standard Plan - Standard Include',
+      description: 'Documentation for features included in ShareFile to SharePoint Online Standard Plan migration',
+      fileName: 'ShareFile to SharePoint Online Standard Plan - Standard Include.docx',
+      // Canonical CPQ combination is "sharefile-to-sharepoint"; exhibit name clarifies "Online" for the folder.
+      combinations: ['sharefile-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 18.45,
+      keywords: ['sharefile', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to SharePoint Online Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in ShareFile to SharePoint Online Standard Plan migration',
+      fileName: 'ShareFile to SharePoint Online Standard Plan - Standard Not Include.docx',
+      combinations: ['sharefile-to-sharepoint', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 18.46,
+      keywords: ['sharefile', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // ShareFile to SharePoint Online (Advanced) exhibits
     {
       name: 'ShareFile to SharePoint Online Advanced Plan - Advanced Include',
@@ -1333,6 +1506,28 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 18.6,
       keywords: ['sharefile', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // SharePoint to SharePoint Online (Standard) exhibits
+    {
+      name: 'SharePoint to SharePoint Online Standard Plan - Standard Include',
+      description: 'Documentation for features included in SharePoint to SharePoint Online Standard Plan migration',
+      fileName: 'SharePoint to SharePoint Online Standard Plan - Standard Include.docx',
+      // No dedicated SharePoint->SharePoint Online combination key exists yet; keep available for all.
+      combinations: ['all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 18.55,
+      keywords: ['sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'SharePoint to SharePoint Online Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in SharePoint to SharePoint Online Standard Plan migration',
+      fileName: 'SharePoint to SharePoint Online Standard Plan - Standard Not Include.docx',
+      combinations: ['all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 18.56,
+      keywords: ['sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // SharePoint to SharePoint Online (Advanced) exhibits
     {
@@ -1376,28 +1571,6 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 20.6,
       keywords: ['egnyte', 'google', 'mydrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
-    },
-    // Egnyte to SharePoint (Standard) exhibits
-    {
-      name: 'Egnyte to SharePoint Standard Plan - Standard Include',
-      description: 'Documentation for features included in Egnyte to SharePoint Standard Plan migration',
-      fileName: 'Egnyte to SharePoint Standard Plan - Standard Include.docx',
-      // Existing CPQ combination uses "egnyte-to-sharepoint-online"
-      combinations: ['egnyte-to-sharepoint-online', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 19,
-      keywords: ['egnyte', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
-    },
-    {
-      name: 'Egnyte to SharePoint Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in Egnyte to SharePoint Standard Plan migration',
-      fileName: 'Egnyte to SharePoint Standard Plan - Standard Not Include.docx',
-      combinations: ['egnyte-to-sharepoint-online', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 20,
-      keywords: ['egnyte', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Egnyte to Google Shared Drive (Advanced) exhibits
     {
