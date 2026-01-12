@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Check, Info, Sparkles, ChevronDown, ChevronRight } from 'lucide-react';
+import { Check, ChevronRight, ChevronDown, ArrowRight, Search } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface Exhibit {
@@ -21,13 +21,14 @@ interface ExhibitSelectorProps {
 }
 
 const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
-  combination,
   selectedExhibits,
   onExhibitsChange,
   selectedTier
 }) => {
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadExhibits();
@@ -85,47 +86,55 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   };
 
-  // Filter exhibits based on selected tier (Basic/Standard/Advanced)
+  // Filter exhibits based on selected tier (Basic/Standard/Advanced) and search query
   const filteredExhibits = useMemo(() => {
-    if (!selectedTier?.tier?.name) {
-      // No tier selected, show all exhibits
-      return exhibits;
+    let filtered = exhibits;
+
+    // First filter by tier if selected
+    if (selectedTier?.tier?.name) {
+      const tierName = selectedTier.tier.name.toLowerCase();
+      
+      filtered = filtered.filter(exhibit => {
+        const exhibitName = exhibit.name.toLowerCase();
+        
+        // Check if exhibit name contains a plan type (Standard, Advanced, Basic, Premium, Enterprise)
+        const hasStandard = exhibitName.includes('standard');
+        const hasAdvanced = exhibitName.includes('advanced');
+        const hasBasic = exhibitName.includes('basic');
+        const hasPremium = exhibitName.includes('premium');
+        const hasEnterprise = exhibitName.includes('enterprise');
+        
+        // If exhibit has a plan type, filter by matching tier
+        if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
+          if (tierName === 'basic') {
+            return hasBasic && !hasStandard && !hasAdvanced;
+          } else if (tierName === 'standard') {
+            return hasStandard && !hasAdvanced && !hasBasic;
+          } else if (tierName === 'advanced') {
+            return hasAdvanced && !hasStandard && !hasBasic;
+          } else if (tierName === 'premium') {
+            return hasPremium;
+          } else if (tierName === 'enterprise') {
+            return hasEnterprise;
+          }
+          return false;
+        }
+        
+        // For exhibits without explicit plan type, show them (they're generic)
+        return true;
+      });
     }
 
-    const tierName = selectedTier.tier.name.toLowerCase();
-    
-    // Filter exhibits to only show those matching the selected tier
-    return exhibits.filter(exhibit => {
-      const exhibitName = exhibit.name.toLowerCase();
-      
-      // Check if exhibit name contains a plan type (Standard, Advanced, Basic, Premium, Enterprise)
-      const hasStandard = exhibitName.includes('standard');
-      const hasAdvanced = exhibitName.includes('advanced');
-      const hasBasic = exhibitName.includes('basic');
-      const hasPremium = exhibitName.includes('premium');
-      const hasEnterprise = exhibitName.includes('enterprise');
-      
-      // If exhibit has a plan type, filter by matching tier
-      if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
-        if (tierName === 'basic') {
-          return hasBasic && !hasStandard && !hasAdvanced;
-        } else if (tierName === 'standard') {
-          return hasStandard && !hasAdvanced && !hasBasic;
-        } else if (tierName === 'advanced') {
-          return hasAdvanced && !hasStandard && !hasBasic;
-        } else if (tierName === 'premium') {
-          return hasPremium;
-        } else if (tierName === 'enterprise') {
-          return hasEnterprise;
-        }
-        // If tier doesn't match any plan type, don't show this exhibit
-        return false;
-      }
-      
-      // For exhibits without explicit plan type, show them (they're generic)
-      return true;
-    });
-  }, [exhibits, selectedTier]);
+    // Then filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(exhibit => 
+        exhibit.name.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [exhibits, selectedTier, searchQuery]);
 
   // Auto-select only matching tier exhibits when tier changes
   useEffect(() => {
@@ -178,16 +187,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   }, [selectedTier, exhibits, selectedExhibits, onExhibitsChange]);
 
-  const byCategory = useMemo(() => {
-    const normalized = (ex: Exhibit) => (ex.category || 'content').toLowerCase();
-    const sorted = [...filteredExhibits].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
-
-    return {
-      messaging: sorted.filter((e) => normalized(e) === 'messaging' || normalized(e) === 'message'),
-      content: sorted.filter((e) => normalized(e) === 'content'),
-      email: sorted.filter((e) => normalized(e) === 'email'),
-    };
-  }, [filteredExhibits]);
 
   const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
     if (isRequired) return; // Cannot deselect required exhibits
@@ -199,90 +198,30 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   };
 
+  const handleUnselectAll = () => {
+    // Only unselect non-required exhibits
+    const requiredExhibitIds = exhibits
+      .filter(ex => ex.isRequired)
+      .map(ex => ex._id);
+    
+    onExhibitsChange(requiredExhibitIds);
+  };
+
   const hasAnyExhibits = filteredExhibits.length > 0;
+  const totalExhibits = exhibits.length;
 
-  return (
-    <div className="flex justify-center">
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8 w-full max-w-6xl">
-        <div className="text-center mb-6">
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Select exhibits</h3>
-          <p className="text-gray-600">
-            Exhibits are additional documents (not combinations). Select what you want to append to the end of the agreement.
-          </p>
-        </div>
+  // Get file count for each exhibit (simplified - assuming 1 file per exhibit, can be enhanced)
+  const getFileCount = () => {
+    // You can enhance this to get actual file count from exhibit data if available
+    return 1; // Default to 1 file per exhibit
+  };
 
-      <div className="mb-6 p-4 bg-purple-50 rounded-xl border border-purple-200 flex items-start gap-3">
-        <Sparkles className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-purple-700">
-          All available exhibits are shown below, organized by category (Messaging / Content / Email).
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="animate-pulse bg-gray-100 rounded-2xl p-6 h-40"></div>
-      ) : !hasAnyExhibits ? (
-        <div className="p-5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-600">
-          No exhibits found for this combination yet. Add exhibit DOCX files in <code className="font-mono">CPQ12/backend-exhibits/</code> and restart backend seeding.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <CategoryColumn
-            title="message"
-            exhibits={byCategory.messaging}
-            selectedExhibits={selectedExhibits}
-            onToggle={toggleExhibit}
-            onExhibitsChange={onExhibitsChange}
-          />
-          <CategoryColumn
-            title="content"
-            exhibits={byCategory.content}
-            selectedExhibits={selectedExhibits}
-            onToggle={toggleExhibit}
-            onExhibitsChange={onExhibitsChange}
-          />
-          <CategoryColumn
-            title="email"
-            exhibits={byCategory.email}
-            selectedExhibits={selectedExhibits}
-            onToggle={toggleExhibit}
-            onExhibitsChange={onExhibitsChange}
-          />
-        </div>
-      )}
-      </div>
-    </div>
-  );
-};
-
-export default ExhibitSelector;
-
-// Interface for grouped exhibits
-interface ExhibitGroup {
-  folderName: string;
-  exhibits: Exhibit[];
-}
-
-function CategoryColumn({
-  title,
-  exhibits,
-  selectedExhibits,
-  onToggle,
-  onExhibitsChange,
-}: {
-  title: string;
-  exhibits: Exhibit[];
-  selectedExhibits: string[];
-  onToggle: (exhibitId: string, isRequired: boolean) => void;
-  onExhibitsChange: (exhibitIds: string[]) => void;
-}) {
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-
-  // Group exhibits by similar names
+  // Group exhibits by folder name (base name before " - " or plan type)
   const groupedExhibits = useMemo(() => {
     const groups: Map<string, Exhibit[]> = new Map();
     const ungrouped: Exhibit[] = [];
 
-    exhibits.forEach((exhibit) => {
+    filteredExhibits.forEach((exhibit) => {
       // Check if exhibit name contains " - " (dash separator)
       const dashIndex = exhibit.name.indexOf(' - ');
       if (dashIndex > 0) {
@@ -291,7 +230,7 @@ function CategoryColumn({
         
         // Extract folder name by removing common suffixes like "Basic Plan", "Standard Plan", etc.
         let folderName = baseName
-          .replace(/\s+(Basic|Standard|Advanced|Premium)\s+Plan$/i, '')
+          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan$/i, '')
           .trim();
         
         // If folder name is empty or too short, use the base name
@@ -310,7 +249,7 @@ function CategoryColumn({
     });
 
     // Convert groups to array and filter out groups with only one exhibit (no need to group)
-    const groupsArray: ExhibitGroup[] = Array.from(groups.entries())
+    const groupsArray = Array.from(groups.entries())
       .filter(([_, exhibits]) => exhibits.length > 1)
       .map(([folderName, exhibits]) => ({
         folderName,
@@ -325,9 +264,21 @@ function CategoryColumn({
     });
 
     return { groups: groupsArray, ungrouped };
-  }, [exhibits]);
+  }, [filteredExhibits]);
 
-  const toggleFolder = (folderName: string, groupExhibits: Exhibit[]) => {
+  const toggleFolder = (folderName: string) => {
+    setExpandedFolders(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(folderName)) {
+        newSet.delete(folderName);
+      } else {
+        newSet.add(folderName);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleFolderSelection = (folderName: string, groupExhibits: Exhibit[]) => {
     const allSelected = groupExhibits.every(ex => selectedExhibits.includes(ex._id));
     const nonRequiredExhibits = groupExhibits.filter(ex => !ex.isRequired);
     
@@ -348,19 +299,6 @@ function CategoryColumn({
     }
   };
 
-  const toggleFolderExpansion = (folderName: string) => {
-    setExpandedFolders(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(folderName)) {
-        newSet.delete(folderName);
-      } else {
-        newSet.add(folderName);
-      }
-      return newSet;
-    });
-  };
-
-  // Helper to check folder selection state
   const getFolderState = (groupExhibits: Exhibit[]) => {
     const selectedCount = groupExhibits.filter(ex => selectedExhibits.includes(ex._id)).length;
     if (selectedCount === 0) return 'none';
@@ -369,179 +307,248 @@ function CategoryColumn({
   };
 
   return (
-    <div className="border-2 border-black/80 rounded-md overflow-hidden bg-white">
-      <div className="border-b-2 border-black/80 py-3 px-4 text-center font-semibold tracking-wide uppercase text-sm">
-        {title}
-      </div>
-      <div 
-        className="exhibit-scroll-container max-h-[380px] overflow-y-auto p-4 space-y-3" 
-        style={{ 
-          scrollbarWidth: 'thin', 
-          scrollbarColor: '#9ca3af #f3f4f6',
-        }}
-      >
-        {exhibits.length === 0 ? (
-          <div className="text-sm text-gray-400 text-center py-10">No exhibits</div>
-        ) : (
-          <>
-            {/* Render grouped exhibits as folders */}
-            {groupedExhibits.groups.map((group, groupIndex) => {
-              const folderState = getFolderState(group.exhibits);
-              const isExpanded = expandedFolders.has(group.folderName);
-              const allSelected = folderState === 'all';
-              const someSelected = folderState === 'partial';
+    <div className="w-full">
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-4 sm:p-6 md:p-8 mb-8 w-full">
+        {/* Header Section */}
+        <div className="mb-4 sm:mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-0 mb-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 flex-shrink-0" />
+              <div>
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Search and select migration</h3>
+                <p className="text-gray-600 text-xs sm:text-sm">
+                  Choose your migration type to configure the project requirements.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleUnselectAll}
+              className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors self-start sm:self-auto"
+            >
+              Unselect All
+            </button>
+          </div>
 
-              return (
-                <div key={group.folderName} className="space-y-1">
-                  {/* Folder header */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleFolderExpansion(group.folderName)}
-                      className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-gray-600" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-gray-600" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleFolder(group.folderName, group.exhibits)}
-                      className={`flex-1 text-left p-2 rounded-lg border transition-all ${
-                        allSelected
-                          ? 'border-purple-500 bg-purple-50'
-                          : someSelected
-                          ? 'border-purple-300 bg-purple-25'
-                          : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
-                      } cursor-pointer`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 bg-white border border-gray-300 rounded flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-semibold text-gray-700">{groupIndex + 1}</span>
+          {/* Search Bar */}
+          <div className="relative mb-4 sm:mb-6">
+            <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search migration types..."
+              className="w-full pl-10 sm:pl-12 pr-4 py-2 sm:py-3 border-2 border-purple-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-gray-900 placeholder-gray-400 text-sm sm:text-base"
+            />
+          </div>
+        </div>
+
+        {/* Exhibits Section */}
+        {loading ? (
+          <div className="animate-pulse bg-gray-100 rounded-2xl p-6 h-40"></div>
+        ) : !hasAnyExhibits ? (
+          <div className="p-5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-600">
+            No exhibits found. {searchQuery ? 'Try a different search query.' : 'Add exhibit DOCX files in <code className="font-mono">CPQ12/backend-exhibits/</code> and restart backend seeding.'}
+          </div>
+        ) : (
+          <div className="bg-purple-50 rounded-2xl border border-purple-200 p-6">
+            {/* EXHIBITS Header */}
+            <div className="mb-4">
+              <div className="inline-block bg-gray-200 h-px w-full mb-3"></div>
+              <div className="flex items-center justify-center gap-2">
+                <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide">EXHIBITS</h4>
+                <p className="text-xs text-gray-600">
+                  Showing {filteredExhibits.length} of {totalExhibits} exhibits. {filteredExhibits.length < totalExhibits && 'Scroll to view more.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Exhibits List */}
+            <div className="bg-white rounded-xl p-4 space-y-1 h-[200px] overflow-y-auto">
+              {/* Render grouped exhibits as folders */}
+              {groupedExhibits.groups.map((group, groupIndex) => {
+                const folderState = getFolderState(group.exhibits);
+                const isExpanded = expandedFolders.has(group.folderName);
+                const allSelected = folderState === 'all';
+                const someSelected = folderState === 'partial';
+                const fileCount = group.exhibits.length;
+
+                return (
+                  <div key={group.folderName} className="space-y-1">
+                    {/* Folder header */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleFolder(group.folderName)}
+                        className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4 text-gray-600" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-gray-600" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleFolderSelection(group.folderName, group.exhibits)}
+                        className={`flex-1 flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all ${
+                          allSelected
+                            ? 'bg-purple-600 text-white'
+                            : someSelected
+                            ? 'bg-purple-100 text-purple-900'
+                            : 'bg-white hover:bg-gray-50 text-gray-900'
+                        } cursor-pointer border ${
+                          allSelected ? 'border-purple-600' : someSelected ? 'border-purple-300' : 'border-gray-200'
+                        }`}
+                      >
+                        {/* Number Badge */}
+                        <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-semibold ${
+                          allSelected ? 'bg-white text-purple-600' : someSelected ? 'bg-purple-200 text-purple-700' : 'bg-gray-200 text-gray-700'
+                        }`}>
+                          {groupIndex + 1}
                         </div>
-                        <div
-                          className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                            allSelected
-                              ? 'border-purple-500 bg-purple-500'
-                              : someSelected
-                              ? 'border-purple-500 bg-white'
-                              : 'border-gray-300 bg-white'
-                          }`}
-                        >
-                          {allSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+
+                        {/* Checkbox */}
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                          allSelected
+                            ? 'border-white bg-white'
+                            : someSelected
+                            ? 'border-purple-600 bg-white'
+                            : 'border-gray-300 bg-white'
+                        }`}>
+                          {allSelected && <Check className="w-3 h-3 text-purple-600" strokeWidth={3} />}
                           {someSelected && (
-                            <div className="w-2 h-2 bg-purple-500 rounded-sm" />
+                            <div className="w-2 h-2 bg-purple-600 rounded-sm" />
                           )}
                         </div>
-                        <div className="font-semibold text-gray-900 text-sm">{group.folderName}</div>
-                        <span className="text-xs text-gray-500">({group.exhibits.length} files)</span>
-                      </div>
-                    </button>
-                  </div>
-                  
-                  {/* Child exhibits (shown when expanded) */}
-                  {isExpanded && (
-                    <div className="ml-6 space-y-1 pl-2 border-l-2 border-gray-200">
-                      {group.exhibits.map((exhibit, childIndex) => {
-                        const isSelected = selectedExhibits.includes(exhibit._id);
-                        const isRequired = exhibit.isRequired;
 
-                        return (
-                          <button
-                            key={exhibit._id}
-                            type="button"
-                            onClick={() => onToggle(exhibit._id, isRequired)}
-                            disabled={isRequired}
-                            className={`w-full text-left p-2 rounded-lg border transition-all ${
-                              isSelected
-                                ? 'border-purple-500 bg-purple-50'
-                                : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
-                            } ${isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
-                          >
-                            <div className="flex items-start gap-2">
-                              <div className="w-4 h-4 bg-white border border-gray-300 rounded flex items-center justify-center flex-shrink-0">
-                                <span className="text-[10px] font-semibold text-gray-700">{childIndex + 1}</span>
-                              </div>
-                              <div
-                                className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                                  isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
-                                }`}
-                              >
-                                {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium text-gray-800 text-xs">
-                                    {exhibit.name.split(' - ')[1] || exhibit.name}
-                                  </div>
-                                  {isRequired && (
-                                    <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
-                                      Required
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Render ungrouped exhibits */}
-            {groupedExhibits.ungrouped.map((exhibit, ungroupedIndex) => {
-              const isSelected = selectedExhibits.includes(exhibit._id);
-              const isRequired = exhibit.isRequired;
-              const exhibitNumber = groupedExhibits.groups.length + ungroupedIndex + 1;
-
-              return (
-                <button
-                  key={exhibit._id}
-                  type="button"
-                  onClick={() => onToggle(exhibit._id, isRequired)}
-                  disabled={isRequired}
-                  className={`w-full text-left p-3 rounded-lg border transition-all ${
-                    isSelected
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
-                  } ${isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
-                >
-                  <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-white border border-gray-300 rounded flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-semibold text-gray-700">{exhibitNumber}</span>
-                    </div>
-                    <div
-                      className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                        isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-semibold text-gray-900 text-sm">{exhibit.name}</div>
-                        {isRequired && (
-                          <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
-                            Required
+                        {/* Folder Name */}
+                        <div className="flex-1 text-left">
+                          <span className={`font-medium ${allSelected ? 'text-white' : someSelected ? 'text-purple-900' : 'text-gray-900'}`}>
+                            {group.folderName}
                           </span>
-                        )}
-                      </div>
+                          <span className={`ml-2 text-sm ${allSelected ? 'text-purple-100' : someSelected ? 'text-purple-700' : 'text-gray-500'}`}>
+                            ({fileCount} {fileCount === 1 ? 'file' : 'files'})
+                          </span>
+                        </div>
+                      </button>
                     </div>
+                    
+                    {/* Child exhibits (shown when expanded) */}
+                    {isExpanded && (
+                      <div className="ml-6 space-y-1 pl-2 border-l-2 border-gray-200">
+                        {group.exhibits.map((exhibit, childIndex) => {
+                          const isSelected = selectedExhibits.includes(exhibit._id);
+                          const fileCount = getFileCount();
+
+                          return (
+                            <button
+                              key={exhibit._id}
+                              type="button"
+                              onClick={() => toggleExhibit(exhibit._id, exhibit.isRequired)}
+                              disabled={exhibit.isRequired}
+                              className={`w-full flex items-center gap-2 py-1 px-2 rounded-lg transition-all ${
+                                isSelected
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-white hover:bg-gray-50 text-gray-900'
+                              } ${exhibit.isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'} border ${
+                                isSelected ? 'border-purple-600' : 'border-gray-200'
+                              }`}
+                            >
+                              {/* Number Badge */}
+                              <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 text-[10px] font-semibold ${
+                                isSelected ? 'bg-white text-purple-600' : 'bg-gray-200 text-gray-700'
+                              }`}>
+                                {childIndex + 1}
+                              </div>
+
+                              {/* Checkbox */}
+                              <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                                isSelected
+                                  ? 'border-white bg-white'
+                                  : 'border-gray-300 bg-white'
+                              }`}>
+                                {isSelected && <Check className="w-2.5 h-2.5 text-purple-600" strokeWidth={3} />}
+                              </div>
+
+                              {/* Exhibit Name */}
+                              <div className="flex-1 text-left">
+                                <span className={`font-medium text-sm ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+                                  {exhibit.name.split(' - ')[1] || exhibit.name}
+                                </span>
+                                <span className={`ml-2 text-xs ${isSelected ? 'text-purple-100' : 'text-gray-500'}`}>
+                                  ({fileCount} {fileCount === 1 ? 'file' : 'files'})
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </button>
-              );
-            })}
-          </>
+                );
+              })}
+
+              {/* Render ungrouped exhibits */}
+              {groupedExhibits.ungrouped.map((exhibit, ungroupedIndex) => {
+                const isSelected = selectedExhibits.includes(exhibit._id);
+                const fileCount = getFileCount();
+                const exhibitNumber = groupedExhibits.groups.length + ungroupedIndex + 1;
+
+                return (
+                  <button
+                    key={exhibit._id}
+                    type="button"
+                    onClick={() => toggleExhibit(exhibit._id, exhibit.isRequired)}
+                    disabled={exhibit.isRequired}
+                    className={`w-full flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all ${
+                      isSelected
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white hover:bg-gray-50 text-gray-900'
+                    } ${exhibit.isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'} border ${
+                      isSelected ? 'border-purple-600' : 'border-gray-200'
+                    }`}
+                  >
+                    {/* Arrow Icon */}
+                    <ChevronRight className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-white' : 'text-gray-400'}`} />
+                    
+                    {/* Number Badge */}
+                    <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-xs font-semibold ${
+                      isSelected ? 'bg-white text-purple-600' : 'bg-gray-200 text-gray-700'
+                    }`}>
+                      {exhibitNumber}
+                    </div>
+
+                    {/* Checkbox */}
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                      isSelected
+                        ? 'border-white bg-white'
+                        : 'border-gray-300 bg-white'
+                    }`}>
+                      {isSelected && <Check className="w-3 h-3 text-purple-600" strokeWidth={3} />}
+                    </div>
+
+                    {/* Exhibit Name */}
+                    <div className="flex-1 text-left">
+                      <span className={`font-medium ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+                        {exhibit.name}
+                      </span>
+                      <span className={`ml-2 text-sm ${isSelected ? 'text-purple-100' : 'text-gray-500'}`}>
+                        ({fileCount} {fileCount === 1 ? 'file' : 'files'})
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
     </div>
   );
-}
+};
+
+export default ExhibitSelector;
 
 
 

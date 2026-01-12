@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
 import { formatCurrency, PRICING_TIERS, calculateCombinationPricing } from '../utils/pricing';
+import { ChevronDown } from 'lucide-react';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -18,6 +19,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   
   // Track selected tier per combination (key: combinationName, value: tier name)
   const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>({});
+  
+  // Track expanded/collapsed state for migration breakdown cards (key: "type-combinationName", value: boolean)
+  const [expandedBreakdowns, setExpandedBreakdowns] = useState<Record<string, boolean>>({});
 
   const totalUsers = useMemo(() => {
     if (!configuration) return 0;
@@ -314,7 +318,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   } else if (filteredCalculations.length === 2) {
     containerClass = 'flex flex-col md:flex-row justify-center items-center gap-8';
   } else if (filteredCalculations.length === 3) {
-    containerClass = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8';
+    containerClass = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8';
   }
 
   // Debug logging for overage agreement
@@ -334,7 +338,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   }
 
   return (
-    <div id="pricing-comparison" className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-8 backdrop-blur-sm">
+    <div id="pricing-comparison" className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-4 sm:p-6 md:p-8 backdrop-blur-sm w-full">
       <div className="text-center mb-10">
         <h2 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-3">
           {configuration?.combination === 'overage-agreement' ? 'Overage Agreement Pricing' : 'Choose Your Perfect Plan'}
@@ -346,7 +350,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         </p>
       </div>
       
-      <div className={`${containerClass} max-w-6xl mx-auto`}>
+      <div className={`${containerClass} w-full`}>
         {filteredCalculations.map((calc) => {
           // For Multi combination, recalculate total based on this plan's tier
           let planTotal = calc.totalCost;
@@ -389,40 +393,19 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             >
 
               <div className="text-center mb-6">
-                {/* Special heading for overage agreement */}
-                {configuration?.combination === 'overage-agreement' ? (
-                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
-                    Overage Agreement
-                  </h3>
-                ) : (
-                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
-                    {calc.tier.name}
-                  </h3>
-                )}
-                {discountInfo.hasDiscount ? (
+                {discountInfo.hasDiscount && (
                   <div>
                     <div className="text-2xl text-gray-500 line-through mb-1">
                       {formatCurrency(discountInfo.originalPrice)}
                     </div>
-                    <div className="text-4xl font-bold mb-2 text-green-600">
-                      {formatCurrency(discountInfo.finalPrice)}
-                    </div>
                     <div className="text-sm text-green-600 font-medium mb-1">
                       Save {formatCurrency(discountInfo.discountAmount)} ({discountInfo.discountPercent}% off)
                     </div>
-                    <div className="text-sm text-gray-600 font-medium">Total project cost</div>
                   </div>
-                ) : (
-                  <div>
-                    <div className="text-4xl font-bold mb-2 text-gray-900">
-                      {formatCurrency(planTotal)}
-                    </div>
-                    <div className="text-sm text-gray-600 font-medium">Total project cost</div>
-                    {discount > 0 && planTotal < 2500 && (
-                      <div className="text-xs text-amber-600 mt-1">
-                        Discount available for orders above $2,500
-                      </div>
-                    )}
+                )}
+                {discount > 0 && !discountInfo.hasDiscount && planTotal < 2500 && (
+                  <div className="text-xs text-amber-600 mt-1">
+                    Discount available for orders above $2,500
                   </div>
                 )}
               </div>
@@ -431,24 +414,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                 {/* For MULTI COMBINATION: Show separate Messaging + Content breakdowns */}
                 {configuration?.migrationType === 'Multi combination' && (calc.messagingCalculation || calc.contentCalculation) ? (
                   <>
-                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
-                      <p className="text-sm text-purple-800 font-bold text-center">
-                        🔀 Multi Combination Pricing Breakdown
-                      </p>
-                    </div>
-
-                    <div className="space-y-2 mb-4 bg-white/70 border border-purple-200 rounded-lg p-4">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700">Per user cost:</span>
-                        <span className="font-bold text-gray-900">
-                          {totalUsers > 0 ? `${formatCurrency(calc.userCost / totalUsers)}/user` : 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700">Total users (all combinations):</span>
-                        <span className="font-bold text-gray-900">{totalUsers || 0}</span>
-                      </div>
-                    </div>
 
                     {/* Messaging Section - show individual combinations if available */}
                     {calc.messagingCalculation && (
@@ -462,17 +427,22 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                             configuration?.messagingConfigs?.find(c => c.exhibitName === breakdown.combinationName)?.numberOfUsers ??
                             0;
                           
+                          const breakdownKey = `messaging-${breakdown.combinationName}-${idx}`;
+                          const isExpanded = expandedBreakdowns[breakdownKey] ?? true; // Default to expanded
+                          
                           return (
                             <div key={idx} className="border-2 border-teal-200 bg-teal-50/50 rounded-lg p-4 mb-4">
-                              <div className="flex items-center justify-between mb-3">
+                              <div 
+                                className="flex items-center justify-between mb-3 cursor-pointer"
+                                onClick={() => setExpandedBreakdowns(prev => ({ ...prev, [breakdownKey]: !isExpanded }))}
+                              >
                                 <h4 className="font-bold text-teal-900 flex items-center gap-2">
                                   <span className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs">M</span>
                                   Messaging Migration – {breakdown.combinationName}
                                 </h4>
-                                <div className="px-3 py-1.5 border border-teal-300 rounded-lg bg-teal-100 text-sm font-medium text-teal-900">
-                                  {calc.tier.name} Plan
-                                </div>
+                                <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                               </div>
+                              {isExpanded && (
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="text-gray-700">User Cost:</span>
@@ -494,11 +464,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="text-gray-700">Instance Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-sm bg-teal-100 rounded p-2 mt-2">
-                                  <span className="font-bold text-teal-900">Messaging Total ({breakdown.combinationName}):</span>
-                                  <span className="font-bold text-teal-900">{formatCurrency(pricing.totalCost)}</span>
+                                <div className="flex justify-between items-center text-sm bg-blue-100 rounded p-2 mt-2">
+                                  <span className="font-bold text-blue-900">Subtotal:</span>
+                                  <span className="font-bold text-blue-900">{formatCurrency(pricing.totalCost)}</span>
                                 </div>
                               </div>
+                              )}
                             </div>
                           );
                         })
@@ -533,9 +504,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                               <span className="text-gray-700">Instance Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.messagingCalculation.instanceCost)}</span>
                             </div>
-                            <div className="flex justify-between items-center text-sm bg-teal-100 rounded p-2 mt-2">
-                              <span className="font-bold text-teal-900">Messaging Total:</span>
-                              <span className="font-bold text-teal-900">{formatCurrency(calc.messagingCalculation.totalCost)}</span>
+                            <div className="flex justify-between items-center text-sm bg-blue-100 rounded p-2 mt-2">
+                              <span className="font-bold text-blue-900">Subtotal:</span>
+                              <span className="font-bold text-blue-900">{formatCurrency(calc.messagingCalculation.totalCost)}</span>
                             </div>
                           </div>
                         </div>
@@ -554,17 +525,22 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                             configuration?.contentConfigs?.find(c => c.exhibitName === breakdown.combinationName)?.numberOfUsers ??
                             0;
                           
+                          const breakdownKey = `content-${breakdown.combinationName}-${idx}`;
+                          const isExpanded = expandedBreakdowns[breakdownKey] ?? true; // Default to expanded
+                          
                           return (
                             <div key={idx} className="border-2 border-indigo-200 bg-indigo-50/50 rounded-lg p-4 mb-4">
-                              <div className="flex items-center justify-between mb-3">
+                              <div 
+                                className="flex items-center justify-between mb-3 cursor-pointer"
+                                onClick={() => setExpandedBreakdowns(prev => ({ ...prev, [breakdownKey]: !isExpanded }))}
+                              >
                                 <h4 className="font-bold text-indigo-900 flex items-center gap-2">
                                   <span className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white text-xs">C</span>
                                   Content Migration – {breakdown.combinationName}
                                 </h4>
-                                <div className="px-3 py-1.5 border border-indigo-300 rounded-lg bg-indigo-100 text-sm font-medium text-indigo-900">
-                                  {calc.tier.name} Plan
-                                </div>
+                                <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                               </div>
+                              {isExpanded && (
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="text-gray-700">User Cost:</span>
@@ -590,11 +566,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="text-gray-700">Instance Cost:</span>
                                   <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-sm bg-indigo-100 rounded p-2 mt-2">
-                                  <span className="font-bold text-indigo-900">Content Total ({breakdown.combinationName}):</span>
-                                  <span className="font-bold text-indigo-900">{formatCurrency(pricing.totalCost)}</span>
+                                <div className="flex justify-between items-center text-sm bg-blue-100 rounded p-2 mt-2">
+                                  <span className="font-bold text-blue-900">Subtotal:</span>
+                                  <span className="font-bold text-blue-900">{formatCurrency(pricing.totalCost)}</span>
                                 </div>
                               </div>
+                              )}
                             </div>
                           );
                         })
@@ -633,9 +610,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                               <span className="text-gray-700">Instance Cost:</span>
                               <span className="font-bold text-gray-900">{formatCurrency(calc.contentCalculation.instanceCost)}</span>
                             </div>
-                            <div className="flex justify-between items-center text-sm bg-indigo-100 rounded p-2 mt-2">
-                              <span className="font-bold text-indigo-900">Content Total:</span>
-                              <span className="font-bold text-indigo-900">{formatCurrency(calc.contentCalculation.totalCost)}</span>
+                            <div className="flex justify-between items-center text-sm bg-blue-100 rounded p-2 mt-2">
+                              <span className="font-bold text-blue-900">Subtotal:</span>
+                              <span className="font-bold text-blue-900">{formatCurrency(calc.contentCalculation.totalCost)}</span>
                             </div>
                           </div>
                         </div>
@@ -654,17 +631,22 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                             configuration?.emailConfigs?.find(c => c.exhibitName === breakdown.combinationName)?.numberOfUsers ??
                             0;
                           
+                          const breakdownKey = `email-${breakdown.combinationName}-${idx}`;
+                          const isExpanded = expandedBreakdowns[breakdownKey] ?? true; // Default to expanded
+                          
                           return (
                             <div key={idx} className="border-2 border-amber-200 bg-amber-50/50 rounded-lg p-4 mb-4">
-                              <div className="flex items-center justify-between mb-3">
+                              <div 
+                                className="flex items-center justify-between mb-3 cursor-pointer"
+                                onClick={() => setExpandedBreakdowns(prev => ({ ...prev, [breakdownKey]: !isExpanded }))}
+                              >
                                 <h4 className="font-bold text-amber-900 flex items-center gap-2">
                                   <span className="w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-white text-xs">E</span>
                                   Email Migration – {breakdown.combinationName}
                                 </h4>
-                                <div className="px-3 py-1.5 border border-amber-300 rounded-lg bg-amber-100 text-sm font-medium text-amber-900">
-                                  {calc.tier.name} Plan
-                                </div>
+                                <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                               </div>
+                              {isExpanded && (
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="text-gray-700">User Cost:</span>
@@ -691,6 +673,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                                   <span className="font-bold text-amber-900">{formatCurrency(pricing.totalCost)}</span>
                                 </div>
                               </div>
+                              )}
                             </div>
                           );
                         })
