@@ -137,6 +137,26 @@ async function seedDefaultExhibits(db) {
       displayOrder: 12,
       keywords: ['gmail', 'email', 'standard', 'not included', 'features', 'limitations', 'migration']
     },
+    {
+      name: 'Gmail to Outlook Standard Plan - Standard Include',
+      description: 'Documentation for features included in Gmail to Outlook Standard Plan migration',
+      fileName: 'Gmail to Outlook Standard Plan - Standard Include.docx',
+      combinations: ['gmail-to-outlook', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 13,
+      keywords: ['gmail', 'outlook', 'email', 'standard', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Gmail to Outlook Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Gmail to Outlook Standard Plan migration',
+      fileName: 'Gmail to Outlook Standard Plan - Standard Not Include.docx',
+      combinations: ['gmail-to-outlook', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 14,
+      keywords: ['gmail', 'outlook', 'email', 'standard', 'not included', 'features', 'limitations', 'migration']
+    },
     // ShareFile to Google Shared Drive exhibits
     {
       name: 'ShareFile to Google Shared Drive Advanced Plan - Included Features',
