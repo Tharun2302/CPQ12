@@ -411,7 +411,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               selectedTier={selectedTier}
             />
 
-            {showPricing && calculations.length > 0 && (
+            {calculations.length > 0 && (
               <PricingComparison
                 calculations={calculations}
                 recommendedTier={getRecommendedTier(calculations)}

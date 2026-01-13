@@ -799,14 +799,26 @@ export function calculateCombinationPricing(
   let result: PricingCalculation;
 
   if (combinationType === 'messaging') {
-    const msgConfig: ConfigurationData = {
-      numberOfUsers: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.numberOfUsers || 0,
-      instanceType: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.instanceType || 'Standard',
-      numberOfInstances: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.numberOfInstances || 0,
-      duration: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.duration || 0,
+    // Check if config is passed directly (from ConfigurationForm) or nested in messagingConfigs array
+    const msgConfigFromArray = config.messagingConfigs?.find(c => c.exhibitName === combinationName);
+    const msgConfig: ConfigurationData = msgConfigFromArray ? {
+      numberOfUsers: msgConfigFromArray.numberOfUsers || 0,
+      instanceType: msgConfigFromArray.instanceType || 'Standard',
+      numberOfInstances: msgConfigFromArray.numberOfInstances || 0,
+      duration: msgConfigFromArray.duration || 0,
       migrationType: 'Messaging',
       dataSizeGB: 0,
-      messages: config.messagingConfigs?.find(c => c.exhibitName === combinationName)?.messages || 0,
+      messages: msgConfigFromArray.messages || 0,
+      combination: 'multi-combination-messaging'
+    } : {
+      // Use config directly if it's already a single config object (from ConfigurationForm)
+      numberOfUsers: config.numberOfUsers || 0,
+      instanceType: config.instanceType || 'Standard',
+      numberOfInstances: config.numberOfInstances || 0,
+      duration: config.duration || 0,
+      migrationType: 'Messaging',
+      dataSizeGB: 0,
+      messages: config.messages || 0,
       combination: 'multi-combination-messaging'
     };
     result = calculateMessagingPricing(msgConfig, tier);
@@ -820,13 +832,25 @@ export function calculateCombinationPricing(
       totalCost: result.totalCost,
     };
   } else if (combinationType === 'content') {
-    const contentConfig: ConfigurationData = {
-      numberOfUsers: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.numberOfUsers || 0,
-      instanceType: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.instanceType || 'Standard',
-      numberOfInstances: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.numberOfInstances || 0,
-      duration: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.duration || 0,
+    // Check if config is passed directly (from ConfigurationForm) or nested in contentConfigs array
+    const contentConfigFromArray = config.contentConfigs?.find(c => c.exhibitName === combinationName);
+    const contentConfig: ConfigurationData = contentConfigFromArray ? {
+      numberOfUsers: contentConfigFromArray.numberOfUsers || 0,
+      instanceType: contentConfigFromArray.instanceType || 'Standard',
+      numberOfInstances: contentConfigFromArray.numberOfInstances || 0,
+      duration: contentConfigFromArray.duration || 0,
       migrationType: 'Content',
-      dataSizeGB: config.contentConfigs?.find(c => c.exhibitName === combinationName)?.dataSizeGB || 0,
+      dataSizeGB: contentConfigFromArray.dataSizeGB || 0,
+      messages: 0,
+      combination: 'multi-combination-content'
+    } : {
+      // Use config directly if it's already a single config object (from ConfigurationForm)
+      numberOfUsers: config.numberOfUsers || 0,
+      instanceType: config.instanceType || 'Standard',
+      numberOfInstances: config.numberOfInstances || 0,
+      duration: config.duration || 0,
+      migrationType: 'Content',
+      dataSizeGB: config.dataSizeGB || 0,
       messages: 0,
       combination: 'multi-combination-content'
     };
@@ -842,14 +866,26 @@ export function calculateCombinationPricing(
     };
   } else {
     // email
-    const emailConfig: ConfigurationData = {
-      numberOfUsers: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.numberOfUsers || 0,
-      instanceType: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.instanceType || 'Standard',
-      numberOfInstances: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.numberOfInstances || 0,
-      duration: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.duration || 0,
+    // Check if config is passed directly (from ConfigurationForm) or nested in emailConfigs array
+    const emailConfigFromArray = config.emailConfigs?.find(c => c.exhibitName === combinationName);
+    const emailConfig: ConfigurationData = emailConfigFromArray ? {
+      numberOfUsers: emailConfigFromArray.numberOfUsers || 0,
+      instanceType: emailConfigFromArray.instanceType || 'Standard',
+      numberOfInstances: emailConfigFromArray.numberOfInstances || 0,
+      duration: emailConfigFromArray.duration || 0,
       migrationType: 'Email',
       dataSizeGB: 0,
-      messages: config.emailConfigs?.find(c => c.exhibitName === combinationName)?.messages || 0,
+      messages: emailConfigFromArray.messages || 0,
+      combination: 'multi-combination-email'
+    } : {
+      // Use config directly if it's already a single config object (from ConfigurationForm)
+      numberOfUsers: config.numberOfUsers || 0,
+      instanceType: config.instanceType || 'Standard',
+      numberOfInstances: config.numberOfInstances || 0,
+      duration: config.duration || 0,
+      migrationType: 'Email',
+      dataSizeGB: 0,
+      messages: config.messages || 0,
       combination: 'multi-combination-email'
     };
     result = calculateEmailPricing(emailConfig, tier);

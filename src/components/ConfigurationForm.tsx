@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ConfigurationData } from '../types/pricing';
-import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail } from 'lucide-react';
+import { ConfigurationData, PricingTier } from '../types/pricing';
+import { ArrowRight, Users, Server, Clock, Database, FileText, Calculator, Sparkles, Calendar, Percent, MessageSquare, Search, X, Mail, ChevronDown, Plus } from 'lucide-react';
 import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
+import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -88,6 +89,27 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     hasContent: boolean;
     hasEmail: boolean;
   }>({ hasMessaging: false, hasContent: false, hasEmail: false });
+
+  // State to track selected tier for each content/messaging/email configuration
+  const [contentTiers, setContentTiers] = useState<Record<string, PricingTier>>({});
+  const [messagingTiers, setMessagingTiers] = useState<Record<string, PricingTier>>({});
+  const [emailTiers, setEmailTiers] = useState<Record<string, PricingTier>>({});
+
+  // State to track collapsed/expanded sections
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [noteExpanded, setNoteExpanded] = useState<boolean>(false);
+
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSections(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId);
+      } else {
+        newSet.add(sectionId);
+      }
+      return newSet;
+    });
+  };
 
   // Dynamically detect which exhibit categories are selected (for Multi combination)
   useEffect(() => {
@@ -807,9 +829,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     
     // Multi combination validation
     if (config.migrationType === 'Multi combination') {
-      // Require at least one Message or Content exhibit
-      if (!selectedExhibitCategories.hasMessaging && !selectedExhibitCategories.hasContent) {
-        alert('Please select at least one Message or Content exhibit to proceed.');
+      // Require at least one exhibit (Messaging, Content, or Email)
+      if (!selectedExhibitCategories.hasMessaging && !selectedExhibitCategories.hasContent && !selectedExhibitCategories.hasEmail) {
+        alert('Please select at least one exhibit to proceed.');
         return;
       }
       
@@ -1053,10 +1075,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           background: #6b7280;
         }
       `}</style>
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Contact Information Display - Show when deal data exists */}
-        {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
-          <div className="mb-6 bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl shadow-lg border border-emerald-200 p-8">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Contact Information and Migration Type - Side by Side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Contact Information Display - Show when deal data exists */}
+          {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
+            <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl shadow-lg border border-emerald-200 p-8">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
                 <Users className="w-5 h-5 text-white" />
@@ -1275,26 +1299,25 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             </div>
             
-            <div className="mt-4 p-3 bg-emerald-100/50 rounded-lg border border-emerald-200">
-              <p className="text-xs text-emerald-800">
-                <strong>📌 Note:</strong> Edit the contact information above. Changes will be automatically saved and reflected in your quotes and agreements.
-              </p>
+            <div 
+              className="mt-4 p-3 bg-emerald-100/50 rounded-lg border border-emerald-200 cursor-pointer hover:bg-emerald-100 transition-colors duration-200"
+              onClick={() => setNoteExpanded(!noteExpanded)}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-emerald-800">
+                  <strong>📌 Note:</strong>
+                  {noteExpanded && (
+                    <span className="ml-2"> Edit the contact information above. Changes will be automatically saved and reflected in your quotes and agreements.</span>
+                  )}
+                </p>
+                <ChevronDown className={`w-4 h-4 text-emerald-800 transition-transform duration-200 ${noteExpanded ? 'rotate-180' : ''}`} />
+              </div>
             </div>
           </div>
-        )}
+          )}
 
-
-        <form onSubmit={handleSubmit} className="space-y-8">
           {/* Migration Type - Primary Component */}
           <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl shadow-lg border border-teal-200 p-8">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <ArrowRight className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2 whitespace-nowrap">Select Migration Type</h3>
-              <p className="text-gray-600">Choose your migration type to configure the project requirements</p>
-            </div>
-            
             <div className="max-w-md mx-auto">
               <label className="flex items-center gap-3 text-lg font-semibold text-gray-800 mb-4">
                 <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center">
@@ -1343,6 +1366,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </select>
             </div>
           </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-8">
 
           {/* Template Selection - Show when migration type is selected (except Multi combination) */}
           {config.migrationType && config.migrationType !== 'Multi combination' && (
@@ -1693,512 +1719,828 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* MULTI COMBINATION: Show separate sections for Messaging and Content */}
+          {/* MULTI COMBINATION: Show separate sections for Messaging, Content, and Email */}
           {config.migrationType === 'Multi combination' && selectedExhibits.length > 0 && (
             <>
-              {/* Show warning if only Email exhibits selected */}
-              {!selectedExhibitCategories.hasMessaging && !selectedExhibitCategories.hasContent && selectedExhibitCategories.hasEmail && (
-                <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 mb-8">
-                  <p className="text-yellow-800 text-center font-semibold">
-                    ⚠️ Select at least one Message or Content exhibit to configure pricing.
-                  </p>
-                  <p className="text-yellow-700 text-center text-sm mt-2">
-                    Email exhibits will be included as attachments, but pricing requires Messaging or Content migrations.
-                  </p>
-                </div>
-              )}
 
               {/* Messaging Project Configuration Section - one card per messaging exhibit */}
-              {selectedExhibitCategories.hasMessaging && (config.messagingConfigs || []).map((messagingCfg, messagingIndex) => (
+              {selectedExhibitCategories.hasMessaging && (config.messagingConfigs || []).map((messagingCfg, messagingIndex) => {
+                // Get or initialize tier for this messaging config
+                const currentTier = messagingTiers[messagingCfg.exhibitId] || PRICING_TIERS.find(t => t.name === 'Standard') || PRICING_TIERS[1];
+                
+                // Calculate pricing for this messaging configuration
+                const messagingConfigData: ConfigurationData = {
+                  numberOfUsers: messagingCfg.numberOfUsers || 0,
+                  instanceType: messagingCfg.instanceType || 'Small',
+                  numberOfInstances: messagingCfg.numberOfInstances || 0,
+                  duration: messagingCfg.duration || 0,
+                  messages: messagingCfg.messages || 0,
+                  dataSizeGB: 0, // Not used for messaging
+                  combination: messagingCfg.exhibitName || '',
+                  migrationType: 'messaging' as any
+                };
+                
+                const pricing = calculateCombinationPricing(
+                  messagingCfg.exhibitName || '',
+                  'messaging',
+                  messagingConfigData,
+                  currentTier
+                ) || {
+                  userCost: 0,
+                  migrationCost: 0,
+                  instanceCost: 0,
+                  totalCost: 0
+                };
+                
+                const sectionId = `messaging-${messagingCfg.exhibitId}`;
+                const isCollapsed = collapsedSections.has(sectionId);
+                
+                return (
                 <div
                   key={messagingCfg.exhibitId}
                   data-section={`messaging-configuration-${messagingCfg.exhibitId}`}
-                  className="bg-gradient-to-br from-teal-50 via-cyan-50 to-blue-50 rounded-2xl shadow-2xl border-2 border-teal-200 p-8 backdrop-blur-sm mb-8"
+                  className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 mb-4"
                 >
-                  <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <MessageSquare className="w-8 h-8 text-white" />
+                  {/* Header with white background */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-2 mb-3 -mx-1 -mt-1 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(sectionId)}
+                        className="flex items-center gap-2 flex-1 text-left cursor-pointer hover:bg-gray-50 transition-all duration-200 rounded-lg p-1 -m-1"
+                      >
+                        <div className="w-6 h-6 bg-blue-500 rounded flex items-center justify-center transition-transform duration-200 hover:scale-110">
+                          <MessageSquare className="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-900 mb-0.5 transition-colors duration-200">Project Configuration – {messagingCfg.exhibitName}</h3>
+                          <p className="text-[10px] text-gray-600 transition-colors duration-200">Configure your messaging migration requirements for this exhibit.</p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(sectionId)}
+                        className="flex items-center justify-center w-6 h-6 hover:bg-gray-100 rounded transition-all duration-200 hover:scale-110"
+                        aria-label={isCollapsed ? "Expand section" : "Collapse section"}
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 text-gray-700 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-180'}`} />
+                      </button>
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Messaging Project Configuration – {messagingCfg.exhibitName}</h3>
-                    <p className="text-gray-600">Configure your messaging migration requirements for this exhibit</p>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Messaging: Number of Users */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Users className="w-4 h-4 text-white" />
+                  {!isCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Left Column: Configuration Inputs in 2 columns */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Left Column of Inputs */}
+                      <div className="space-y-6">
+                        {/* Messaging: Number of Users */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                              <Users className="w-4 h-4 text-white" />
+                            </div>
+                            Number of Users
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={messagingCfg.numberOfUsers || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                                    i === messagingIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                                  ),
+                                };
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of users"
+                            autoComplete="off"
+                          />
                         </div>
-                        Number of Users
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={messagingCfg.numberOfUsers || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                              i === messagingIndex ? { ...cfg, numberOfUsers: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
-                        placeholder="Enter number of users"
-                        autoComplete="off"
-                      />
+
+                        {/* Messaging: Number of Instances */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                              <Server className="w-4 h-4 text-white" />
+                            </div>
+                            Number of Instances
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={messagingCfg.numberOfInstances || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                                    i === messagingIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                                  ),
+                                };
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of instances"
+                            autoComplete="off"
+                          />
+                        </div>
+
+                        {/* Messaging: Messages (required) */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
+                              <MessageSquare className="w-4 h-4 text-white" />
+                            </div>
+                            Messages
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={messagingCfg.messages || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                                    i === messagingIndex ? { ...cfg, messages: numValue } : cfg
+                                  ),
+                                };
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of messages"
+                            autoComplete="off"
+                          />
+                          <p className="text-xs text-gray-500 mt-2">Number of messages for the messaging migration.</p>
+                        </div>
+                      </div>
+
+                      {/* Right Column of Inputs */}
+                      <div className="space-y-6">
+                        {/* Messaging: Instance Type */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                              <Server className="w-4 h-4 text-white" />
+                            </div>
+                            Instance Type
+                          </label>
+                          <select
+                            value={messagingCfg.instanceType || 'Small'}
+                            onChange={(e) => {
+                              const value = e.target.value as any;
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                                    i === messagingIndex ? { ...cfg, instanceType: value } : cfg
+                                  ),
+                                };
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                          >
+                            <option value="Small">Small</option>
+                            <option value="Standard">Standard</option>
+                            <option value="Large">Large</option>
+                            <option value="Extra Large">Extra Large</option>
+                          </select>
+                        </div>
+
+                        {/* Messaging: Duration */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                              <Clock className="w-4 h-4 text-white" />
+                            </div>
+                            Duration (Months)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={messagingCfg.duration || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
+                                    i === messagingIndex ? { ...cfg, duration: numValue } : cfg
+                                  ),
+                                };
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter duration"
+                            autoComplete="off"
+                          />
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Messaging: Instance Type */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Server className="w-4 h-4 text-white" />
+                    {/* Right Column: Pricing Section */}
+                    <div className="bg-blue-50/30 rounded-lg border border-blue-200 p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-lg font-bold text-gray-900">Pricing</h4>
+                        <select
+                          value={currentTier.name}
+                          onChange={(e) => {
+                            const selectedTier = PRICING_TIERS.find(t => t.name === e.target.value) || PRICING_TIERS[1];
+                            setMessagingTiers(prev => ({
+                              ...prev,
+                              [messagingCfg.exhibitId]: selectedTier
+                            }));
+                          }}
+                          className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          {PRICING_TIERS.map(tier => (
+                            <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">User Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
                         </div>
-                        Instance Type
-                      </label>
-                      <select
-                        value={messagingCfg.instanceType || 'Small'}
-                        onChange={(e) => {
-                          const value = e.target.value as any;
-                          setConfig(prev => ({
-                            ...prev,
-                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                              i === messagingIndex ? { ...cfg, instanceType: value } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
-                      >
-                        <option value="Small">Small</option>
-                        <option value="Standard">Standard</option>
-                        <option value="Large">Large</option>
-                        <option value="Extra Large">Extra Large</option>
-                      </select>
-                    </div>
-
-                    {/* Messaging: Number of Instances */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Server className="w-4 h-4 text-white" />
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">Migration Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
                         </div>
-                        Number of Instances
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={messagingCfg.numberOfInstances || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                              i === messagingIndex ? { ...cfg, numberOfInstances: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
-                        placeholder="Enter number of instances"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Messaging: Duration */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Clock className="w-4 h-4 text-white" />
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">Instance Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
                         </div>
-                        Duration (Months)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={messagingCfg.duration || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                              i === messagingIndex ? { ...cfg, duration: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
-                        placeholder="Enter duration"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Messaging: Messages (required) */}
-                    <div className="group md:col-span-2">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <MessageSquare className="w-4 h-4 text-white" />
+                        <div className="flex justify-between items-center text-sm bg-blue-100 rounded p-3 mt-4">
+                          <span className="font-bold text-gray-900">Subtotal:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.totalCost)}</span>
                         </div>
-                        Messages
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={messagingCfg.messages || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            messagingConfigs: (prev.messagingConfigs || []).map((cfg, i) =>
-                              i === messagingIndex ? { ...cfg, messages: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
-                        placeholder="Enter number of messages"
-                        autoComplete="off"
-                      />
-                      <p className="text-xs text-gray-500 mt-2">Number of messages for the messaging migration.</p>
+                      </div>
                     </div>
                   </div>
+                  )}
                 </div>
-              ))}
+              );
+              })}
 
               {/* Content Project Configuration Section - one card per content exhibit */}
-              {selectedExhibitCategories.hasContent && (config.contentConfigs || []).map((contentCfg, contentIndex) => (
+              {selectedExhibitCategories.hasContent && (config.contentConfigs || []).map((contentCfg, contentIndex) => {
+                // Get or initialize tier for this content config
+                const currentTier = contentTiers[contentCfg.exhibitId] || PRICING_TIERS.find(t => t.name === 'Standard') || PRICING_TIERS[1];
+                
+                // Calculate pricing for this content configuration
+                const contentConfigData: ConfigurationData = {
+                  numberOfUsers: contentCfg.numberOfUsers || 0,
+                  instanceType: contentCfg.instanceType || 'Small',
+                  numberOfInstances: contentCfg.numberOfInstances || 0,
+                  duration: contentCfg.duration || 0,
+                  dataSizeGB: contentCfg.dataSizeGB || 0,
+                  combination: contentCfg.exhibitName || '',
+                  migrationType: 'content' as any
+                };
+                
+                const pricing = calculateCombinationPricing(
+                  contentCfg.exhibitName || '',
+                  'content',
+                  contentConfigData,
+                  currentTier
+                );
+                
+                const sectionId = `content-${contentCfg.exhibitId}`;
+                const isCollapsed = collapsedSections.has(sectionId);
+                
+                return (
                 <div
                   key={contentCfg.exhibitId}
                   data-section={`content-configuration-${contentCfg.exhibitId}`}
-                  className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-2xl shadow-2xl border-2 border-indigo-200 p-8 backdrop-blur-sm mb-8"
+                  className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 mb-4"
                 >
-                  <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <Database className="w-8 h-8 text-white" />
+                  {/* Header with white background */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-2 mb-3 -mx-1 -mt-1 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(sectionId)}
+                        className="flex items-center gap-2 flex-1 text-left cursor-pointer hover:bg-gray-50 transition-all duration-200 rounded-lg p-1 -m-1"
+                      >
+                        <div className="w-6 h-6 bg-emerald-500 rounded flex items-center justify-center transition-transform duration-200 hover:scale-110">
+                          <Database className="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-900 mb-0.5 transition-colors duration-200">{contentCfg.exhibitName}</h3>
+                          <p className="text-[10px] text-gray-600 transition-colors duration-200">Configure your content migration requirements for this exhibit.</p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(sectionId)}
+                        className="flex items-center justify-center w-6 h-6 hover:bg-gray-100 rounded transition-all duration-200 hover:scale-110"
+                        aria-label={isCollapsed ? "Expand section" : "Collapse section"}
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 text-gray-700 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-180'}`} />
+                      </button>
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Content Project Configuration – {contentCfg.exhibitName}</h3>
-                    <p className="text-gray-600">Configure your content migration requirements for this exhibit</p>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Content: Number of Users */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Users className="w-4 h-4 text-white" />
+                  {!isCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Left Column: Configuration Inputs in 2 columns */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Left Column of Inputs */}
+                      <div className="space-y-6">
+                        {/* Content: Number of Users */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                              <Users className="w-4 h-4 text-white" />
+                            </div>
+                            Number of Users
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={contentCfg.numberOfUsers || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                  i === contentIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of users"
+                            autoComplete="off"
+                          />
                         </div>
-                        Number of Users
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={contentCfg.numberOfUsers || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                              i === contentIndex ? { ...cfg, numberOfUsers: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
-                        placeholder="Enter number of users"
-                        autoComplete="off"
-                      />
+
+                        {/* Content: Number of Instances */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                              <Server className="w-4 h-4 text-white" />
+                            </div>
+                            Number of Instances
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={contentCfg.numberOfInstances || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                  i === contentIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of instances"
+                            autoComplete="off"
+                          />
+                        </div>
+
+                        {/* Content: Data Size (required) */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                              <Database className="w-4 h-4 text-white" />
+                            </div>
+                            Data Size (GB)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={contentCfg.dataSizeGB || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                  i === contentIndex ? { ...cfg, dataSizeGB: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter data size in GB"
+                            autoComplete="off"
+                          />
+                          <p className="text-xs text-gray-500 mt-2">Total data size for the content migration.</p>
+                        </div>
+                      </div>
+
+                      {/* Right Column of Inputs */}
+                      <div className="space-y-6">
+                        {/* Content: Instance Type */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                              <Server className="w-4 h-4 text-white" />
+                            </div>
+                            Instance Type
+                          </label>
+                          <select
+                            value={contentCfg.instanceType || 'Small'}
+                            onChange={(e) => {
+                              const value = e.target.value as any;
+                              setConfig(prev => ({
+                                ...prev,
+                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                  i === contentIndex ? { ...cfg, instanceType: value } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                          >
+                            <option value="Small">Small</option>
+                            <option value="Standard">Standard</option>
+                            <option value="Large">Large</option>
+                            <option value="Extra Large">Extra Large</option>
+                          </select>
+                        </div>
+
+                        {/* Content: Duration */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                              <Clock className="w-4 h-4 text-white" />
+                            </div>
+                            Duration (Months)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={contentCfg.duration || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                  i === contentIndex ? { ...cfg, duration: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter duration"
+                            autoComplete="off"
+                          />
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Content: Instance Type */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Server className="w-4 h-4 text-white" />
+                    {/* Right Column: Pricing Section */}
+                    <div className="bg-emerald-50/30 rounded-lg border border-emerald-200 p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-lg font-bold text-gray-900">Pricing</h4>
+                        <select
+                          value={currentTier.name}
+                          onChange={(e) => {
+                            const selectedTier = PRICING_TIERS.find(t => t.name === e.target.value) || PRICING_TIERS[1];
+                            setContentTiers(prev => ({
+                              ...prev,
+                              [contentCfg.exhibitId]: selectedTier
+                            }));
+                          }}
+                          className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        >
+                          {PRICING_TIERS.map(tier => (
+                            <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">User Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
                         </div>
-                        Instance Type
-                      </label>
-                      <select
-                        value={contentCfg.instanceType || 'Small'}
-                        onChange={(e) => {
-                          const value = e.target.value as any;
-                          setConfig(prev => ({
-                            ...prev,
-                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                              i === contentIndex ? { ...cfg, instanceType: value } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
-                      >
-                        <option value="Small">Small</option>
-                        <option value="Standard">Standard</option>
-                        <option value="Large">Large</option>
-                        <option value="Extra Large">Extra Large</option>
-                      </select>
-                    </div>
-
-                    {/* Content: Number of Instances */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Server className="w-4 h-4 text-white" />
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">Data Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.dataCost)}</span>
                         </div>
-                        Number of Instances
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={contentCfg.numberOfInstances || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                              i === contentIndex ? { ...cfg, numberOfInstances: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
-                        placeholder="Enter number of instances"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Content: Duration */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Clock className="w-4 h-4 text-white" />
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">Migration Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
                         </div>
-                        Duration (Months)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={contentCfg.duration || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                              i === contentIndex ? { ...cfg, duration: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
-                        placeholder="Enter duration"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Content: Data Size (required) */}
-                    <div className="group md:col-span-2">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Database className="w-4 h-4 text-white" />
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">Instance Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
                         </div>
-                        Data Size (GB)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={contentCfg.dataSizeGB || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                              i === contentIndex ? { ...cfg, dataSizeGB: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-indigo-300 text-lg font-medium"
-                        placeholder="Enter data size in GB"
-                        autoComplete="off"
-                      />
-                      <p className="text-xs text-gray-500 mt-2">Total data size for the content migration.</p>
+                        <div className="flex justify-between items-center text-sm bg-blue-100 rounded p-3 mt-4">
+                          <span className="font-bold text-gray-900">Subtotal:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.totalCost)}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
+                  )}
                 </div>
-              ))}
+              );
+              })}
 
               {/* Email Project Configuration Section - one card per email exhibit */}
-              {selectedExhibitCategories.hasEmail && (config.emailConfigs || []).map((emailCfg, emailIndex) => (
+              {selectedExhibitCategories.hasEmail && (config.emailConfigs || []).map((emailCfg, emailIndex) => {
+                // Get or initialize tier for this email config
+                const currentTier = emailTiers[emailCfg.exhibitId] || PRICING_TIERS.find(t => t.name === 'Standard') || PRICING_TIERS[1];
+                
+                // Calculate pricing for this email configuration
+                const emailConfigData: ConfigurationData = {
+                  numberOfUsers: emailCfg.numberOfUsers || 0,
+                  instanceType: emailCfg.instanceType || 'Small',
+                  numberOfInstances: emailCfg.numberOfInstances || 0,
+                  duration: emailCfg.duration || 0,
+                  messages: emailCfg.messages || 0,
+                  dataSizeGB: 0, // Not used for email
+                  combination: emailCfg.exhibitName || '',
+                  migrationType: 'email' as any
+                };
+                
+                const pricing = calculateCombinationPricing(
+                  emailCfg.exhibitName || '',
+                  'email',
+                  emailConfigData,
+                  currentTier
+                ) || {
+                  userCost: 0,
+                  migrationCost: 0,
+                  instanceCost: 0,
+                  totalCost: 0
+                };
+                
+                const sectionId = `email-${emailCfg.exhibitId}`;
+                const isCollapsed = collapsedSections.has(sectionId);
+                
+                return (
                 <div
                   key={emailCfg.exhibitId}
                   data-section={`email-configuration-${emailCfg.exhibitId}`}
-                  className="bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 rounded-2xl shadow-2xl border-2 border-amber-200 p-8 backdrop-blur-sm mb-8"
+                  className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 mb-4"
                 >
-                  <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <Mail className="w-8 h-8 text-white" />
-                    </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Email Project Configuration – {emailCfg.exhibitName}</h3>
-                    <p className="text-gray-600">Configure your email migration requirements for this exhibit</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Email: Number of Mailboxes */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Users className="w-4 h-4 text-white" />
-                        </div>
-                        Number of Mailboxes
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={emailCfg.numberOfUsers || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                              i === emailIndex ? { ...cfg, numberOfUsers: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
-                        placeholder="Enter number of mailboxes"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Email: Instance Type */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Server className="w-4 h-4 text-white" />
-                        </div>
-                        Instance Type
-                      </label>
-                      <select
-                        value={emailCfg.instanceType || 'Small'}
-                        onChange={(e) => {
-                          const value = e.target.value as any;
-                          setConfig(prev => ({
-                            ...prev,
-                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                              i === emailIndex ? { ...cfg, instanceType: value } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
+                  {/* Header with white background */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-2 mb-3 -mx-1 -mt-1 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(sectionId)}
+                        className="flex items-center gap-2 flex-1 text-left cursor-pointer hover:bg-gray-50 transition-all duration-200 rounded-lg p-1 -m-1"
                       >
-                        <option value="Small">Small</option>
-                        <option value="Standard">Standard</option>
-                        <option value="Large">Large</option>
-                        <option value="Extra Large">Extra Large</option>
-                      </select>
-                    </div>
-
-                    {/* Email: Number of Instances */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Server className="w-4 h-4 text-white" />
+                        <div className="w-6 h-6 bg-rose-500 rounded flex items-center justify-center transition-transform duration-200 hover:scale-110">
+                          <Mail className="w-3.5 h-3.5 text-white" />
                         </div>
-                        Number of Instances
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={emailCfg.numberOfInstances || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                              i === emailIndex ? { ...cfg, numberOfInstances: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
-                        placeholder="Enter number of instances"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Email: Duration */}
-                    <div className="group">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <Clock className="w-4 h-4 text-white" />
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-900 mb-0.5 transition-colors duration-200">Project Configuration – {emailCfg.exhibitName}</h3>
+                          <p className="text-[10px] text-gray-600 transition-colors duration-200">Configure your email migration requirements for this exhibit.</p>
                         </div>
-                        Duration (Months)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={emailCfg.duration || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                              i === emailIndex ? { ...cfg, duration: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
-                        placeholder="Enter duration"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    {/* Email: Number of Emails (optional) */}
-                    <div className="group md:col-span-2">
-                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-rose-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                          <MessageSquare className="w-4 h-4 text-white" />
-                        </div>
-                        Emails (optional)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={emailCfg.messages || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const numValue = value === '' ? 0 : parseInt(value) || 0;
-                          setConfig(prev => ({
-                            ...prev,
-                            emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                              i === emailIndex ? { ...cfg, messages: numValue } : cfg
-                            ),
-                          }));
-                        }}
-                        className="w-full px-5 py-4 border-2 border-amber-200 rounded-xl focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-amber-300 text-lg font-medium"
-                        placeholder="Enter number of emails"
-                        autoComplete="off"
-                      />
-                      <p className="text-xs text-gray-500 mt-2">Number of emails involved in the email migration (optional).</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(sectionId)}
+                        className="flex items-center justify-center w-6 h-6 hover:bg-gray-100 rounded transition-all duration-200 hover:scale-110"
+                        aria-label={isCollapsed ? "Expand section" : "Collapse section"}
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 text-gray-700 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-180'}`} />
+                      </button>
                     </div>
                   </div>
+
+                  {!isCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Left Column: Configuration Inputs in 2 columns */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Left Column of Inputs */}
+                      <div className="space-y-6">
+                        {/* Email: Number of Mailboxes */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                              <Users className="w-4 h-4 text-white" />
+                            </div>
+                            Number of Mailboxes
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={emailCfg.numberOfUsers || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                  i === emailIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of mailboxes"
+                            autoComplete="off"
+                          />
+                        </div>
+
+                        {/* Email: Number of Instances */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                              <Server className="w-4 h-4 text-white" />
+                            </div>
+                            Number of Instances
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={emailCfg.numberOfInstances || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                  i === emailIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of instances"
+                            autoComplete="off"
+                          />
+                        </div>
+
+                        {/* Email: Emails (optional) */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
+                              <MessageSquare className="w-4 h-4 text-white" />
+                            </div>
+                            Emails (optional)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={emailCfg.messages || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                  i === emailIndex ? { ...cfg, messages: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter number of emails"
+                            autoComplete="off"
+                          />
+                          <p className="text-xs text-gray-500 mt-2">Number of emails involved in the email migration (optional).</p>
+                        </div>
+                      </div>
+
+                      {/* Right Column of Inputs */}
+                      <div className="space-y-6">
+                        {/* Email: Instance Type */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                              <Server className="w-4 h-4 text-white" />
+                            </div>
+                            Instance Type
+                          </label>
+                          <select
+                            value={emailCfg.instanceType || 'Small'}
+                            onChange={(e) => {
+                              const value = e.target.value as any;
+                              setConfig(prev => ({
+                                ...prev,
+                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                  i === emailIndex ? { ...cfg, instanceType: value } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                          >
+                            <option value="Small">Small</option>
+                            <option value="Standard">Standard</option>
+                            <option value="Large">Large</option>
+                            <option value="Extra Large">Extra Large</option>
+                          </select>
+                        </div>
+
+                        {/* Email: Duration */}
+                        <div className="group">
+                          <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                              <Clock className="w-4 h-4 text-white" />
+                            </div>
+                            Duration (Months)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={emailCfg.duration || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              setConfig(prev => ({
+                                ...prev,
+                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                  i === emailIndex ? { ...cfg, duration: numValue } : cfg
+                                ),
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
+                            placeholder="Enter duration"
+                            autoComplete="off"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Pricing Section */}
+                    <div className="bg-rose-50/30 rounded-lg border border-rose-200 p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-lg font-bold text-gray-900">Pricing</h4>
+                        <select
+                          value={currentTier.name}
+                          onChange={(e) => {
+                            const selectedTier = PRICING_TIERS.find(t => t.name === e.target.value) || PRICING_TIERS[1];
+                            setEmailTiers(prev => ({
+                              ...prev,
+                              [emailCfg.exhibitId]: selectedTier
+                            }));
+                          }}
+                          className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                        >
+                          {PRICING_TIERS.map(tier => (
+                            <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">User Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.userCost)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">Migration Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.migrationCost)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-700">Instance Cost:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.instanceCost)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm bg-blue-100 rounded p-3 mt-4">
+                          <span className="font-bold text-gray-900">Subtotal:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(pricing.totalCost)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  )}
                 </div>
-              ))}
+              );
+              })}
             </>
           )}
 
@@ -2453,28 +2795,41 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Calculate Pricing Button */}
-          {/* For Multi combination: show if at least one section is active */}
-          {/* For other types: show after combination is selected */}
-          {config.migrationType && (
-            config.migrationType === 'Multi combination' 
-              ? (selectedExhibitCategories.hasMessaging || selectedExhibitCategories.hasContent)
-              : config.combination
-          ) && (
-            <>
-              <button
-                type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-5 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                <span className="relative flex items-center justify-center gap-3">
-                  <Calculator className="w-5 h-5" />
-                  Calculate Pricing
-                  <Sparkles className="w-5 h-5" />
-                </span>
-              </button>
-            </>
+          {/* Add More Exhibits Option - Show when at least one exhibit is configured */}
+          {config.migrationType === 'Multi combination' && 
+           (selectedExhibitCategories.hasMessaging || selectedExhibitCategories.hasContent || selectedExhibitCategories.hasEmail) && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-lg border border-blue-200 p-4 mb-6">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Plus className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className="text-base font-bold text-gray-900 whitespace-nowrap">Want to add more exhibits?</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const exhibitSection = document.querySelector('[data-section="exhibits-selection"]');
+                    if (exhibitSection) {
+                      exhibitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      // Highlight the section briefly
+                      exhibitSection.classList.add('ring-4', 'ring-blue-400', 'ring-opacity-50');
+                      setTimeout(() => {
+                        exhibitSection.classList.remove('ring-4', 'ring-blue-400', 'ring-opacity-50');
+                      }, 2000);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  Go to Exhibit Selection
+                </button>
+              </div>
+            </div>
           )}
+
         </form>
       </div>
     </div>
