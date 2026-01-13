@@ -117,6 +117,26 @@ async function seedDefaultExhibits(db) {
       keywords: ['teams', 'messaging', 'advanced', 'not included', 'features', 'limitations', 'migration']
     },
     // Email exhibits (Outlook exhibits removed — files not present in backend-exhibits/)
+    {
+      name: 'Gmail to Gmail Standard Plan - Standard Include',
+      description: 'Documentation for features included in Gmail to Gmail Standard Plan migration',
+      fileName: 'Gmail to Gmail Standard Plan - Standard Include.docx',
+      combinations: ['gmail-to-gmail', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 11,
+      keywords: ['gmail', 'email', 'standard', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Gmail to Gmail Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Gmail to Gmail Standard Plan migration',
+      fileName: 'Gmail to Gmail Standard Plan - Standard Not Include.docx',
+      combinations: ['gmail-to-gmail', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 12,
+      keywords: ['gmail', 'email', 'standard', 'not included', 'features', 'limitations', 'migration']
+    },
     // ShareFile to Google Shared Drive exhibits
     {
       name: 'ShareFile to Google Shared Drive Advanced Plan - Included Features',
