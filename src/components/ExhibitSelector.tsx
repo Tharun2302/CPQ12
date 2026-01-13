@@ -294,12 +294,6 @@ function CategoryColumn({
       if (childLower === 'not included features') return 'Standard Not Include';
     }
 
-    const isAdvancedPlan = base.includes('advanced plan');
-    if (isAdvancedPlan) {
-      if (childLower === 'included features') return 'Advanced Included';
-      if (childLower === 'not included features') return 'Advanced Not Included';
-    }
-
     return child || fullName;
   };
 

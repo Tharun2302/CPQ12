@@ -314,33 +314,69 @@ export class DocxTemplateProcessor {
       });
       
       // CRITICAL: Create data object with keys WITHOUT {{}} brackets for docxtemplater
+      //
+      // IMPORTANT: Some DOCX templates include extra whitespace inside the tag,
+      // e.g. "{{ per_data_cost }}" (note the spaces). Docxtemplater will treat
+      // the tag name literally unless trimmed by a parser, so we provide
+      // compatibility keys and also generate common variants.
       const docxtemplaterData: any = {};
-      Object.keys(processedData).forEach(key => {
+      Object.keys(processedData).forEach((key) => {
         if (key.startsWith('{{') && key.endsWith('}}')) {
           // Remove {{}} brackets for docxtemplater
-          const cleanKey = key.slice(2, -2);
-          docxtemplaterData[cleanKey] = processedData[key];
-          
+          const rawCleanKey = key.slice(2, -2);
+          const cleanKey = rawCleanKey.trim();
+          const value = processedData[key];
+
+          // Primary (trimmed) key
+          docxtemplaterData[cleanKey] = value;
+
+          // Also store the raw (untrimmed) key just in case the template uses spaces in the tag name.
+          if (rawCleanKey !== cleanKey) {
+            docxtemplaterData[rawCleanKey] = value;
+          }
+
           // CRITICAL: Also add underscore version for compatibility
           // This handles cases where template has "Company Name" but docxtemplater expects "Company_Name"
           if (cleanKey.includes(' ')) {
             const underscoreKey = cleanKey.replace(/\s+/g, '_');
-            docxtemplaterData[underscoreKey] = processedData[key];
+            docxtemplaterData[underscoreKey] = value;
             console.log(`🔧 Added underscore version: "${cleanKey}" → "${underscoreKey}"`);
           }
-          
+
           // CRITICAL: Also add space version for compatibility
           // This handles cases where template has "Company_Name" but docxtemplater expects "Company Name"
           if (cleanKey.includes('_')) {
             const spaceKey = cleanKey.replace(/_/g, ' ');
-            docxtemplaterData[spaceKey] = processedData[key];
+            docxtemplaterData[spaceKey] = value;
             console.log(`🔧 Added space version: "${cleanKey}" → "${spaceKey}"`);
+          }
+
+          // Also add a hyphenated version for templates that use kebab-case keys.
+          if (cleanKey.includes('_') || cleanKey.includes(' ')) {
+            const kebabKey = cleanKey.replace(/\s+/g, '-').replace(/_/g, '-');
+            docxtemplaterData[kebabKey] = value;
           }
         } else {
           // Keep non-bracket keys as is
           docxtemplaterData[key] = processedData[key];
         }
       });
+
+      // Extra compatibility: if templates have a single space padding inside tags
+      // (e.g. "{{ per_data_cost }}" where tag name is " per_data_cost "), make
+      // sure those keys exist too.
+      try {
+        Object.keys(docxtemplaterData).forEach((k) => {
+          if (typeof k === 'string' && k.trim() === k) {
+            const padded = ` ${k} `;
+            if (!(padded in docxtemplaterData)) {
+              docxtemplaterData[padded] = docxtemplaterData[k];
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('⚠️ Unable to add whitespace-padded token compatibility keys:', e);
+      }
       
       // CRITICAL: Add direct mappings for common tokens that might be missing
       const commonTokens = {

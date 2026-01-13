@@ -1818,6 +1818,44 @@ app.get('/api/templates/:id/file', async (req, res) => {
   }
 });
 
+// Reseed default templates/exhibits from disk into the database
+// This syncs files from ./backend-templates and ./backend-exhibits into MongoDB.
+// Useful when you updated a DOCX on disk but the UI still serves an older DB copy.
+app.post('/api/templates/reseed', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot reseed templates without database connection'
+      });
+    }
+
+    console.log('🌱 Reseeding templates/exhibits on demand...');
+    const { seedDefaultTemplates } = require('./seed-templates.cjs');
+    const { seedDefaultExhibits } = require('./seed-exhibits.cjs');
+
+    const templatesUpdated = await seedDefaultTemplates(db);
+    const exhibitsUpdated = await seedDefaultExhibits(db);
+
+    console.log('✅ Reseed completed:', { templatesUpdated, exhibitsUpdated });
+
+    return res.json({
+      success: true,
+      message: 'Templates/exhibits reseeded successfully',
+      templatesUpdated,
+      exhibitsUpdated
+    });
+  } catch (error) {
+    console.error('❌ Error reseeding templates/exhibits:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to reseed templates/exhibits',
+      details: error?.message || String(error)
+    });
+  }
+});
+
 // ============================================
 // EXHIBITS API ENDPOINTS
 // ============================================

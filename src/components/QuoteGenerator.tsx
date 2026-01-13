@@ -942,7 +942,37 @@ Quote ID: ${quoteData.id}
       // Ensure we have an agreement generated
       let agreementBlob: Blob | null = processedAgreement;
 
-      if (!agreementBlob && selectedTemplate?.file && selectedTemplate.file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      // Always attempt to fetch the latest template file from backend (cache-bust),
+      // so backend template edits (e.g. removing "Dedicated") show up immediately
+      // without re-selecting the template in the UI.
+      const fetchLatestTemplateFile = async (): Promise<File | null> => {
+        try {
+          if (!selectedTemplate?.id) return null;
+          const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          if (!fr.ok) return null;
+          const blob = await fr.blob();
+          return new File(
+            [blob],
+            selectedTemplate.fileName || selectedTemplate.file?.name || 'template.docx',
+            {
+              type:
+                selectedTemplate.fileType ||
+                selectedTemplate.file?.type ||
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            }
+          );
+        } catch (e) {
+          console.warn('⚠️ Unable to fetch latest template file, falling back to cached file:', e);
+          return null;
+        }
+      };
+
+      const latestTemplateFile = await fetchLatestTemplateFile();
+      const templateFileForEmail = latestTemplateFile || selectedTemplate?.file || null;
+
+      if (!agreementBlob && templateFileForEmail && templateFileForEmail.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
 
         const companyName = (configureContactInfo?.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Your Company');
@@ -1228,7 +1258,7 @@ Quote ID: ${quoteData.id}
           '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
         };
 
-        const result = await DocxTemplateProcessor.processDocxTemplate(selectedTemplate.file as File, templateData);
+        const result = await DocxTemplateProcessor.processDocxTemplate(templateFileForEmail as File, templateData);
         if (result.success && result.processedDocx) {
           agreementBlob = result.processedDocx;
           
@@ -2852,8 +2882,37 @@ Total Price: {{total price}}`;
 
       let processedDocument: Blob | null = null;
 
+      // Always try to fetch the latest template file from backend (cache-bust) so
+      // edits in Mongo/disk are reflected even if the template was previously loaded.
+      const fetchLatestTemplateFile = async (): Promise<File | null> => {
+        try {
+          if (!selectedTemplate?.id) return null;
+          const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          if (!fr.ok) return null;
+          const blob = await fr.blob();
+          return new File(
+            [blob],
+            selectedTemplate.fileName || selectedTemplate.file?.name || 'template.docx',
+            {
+              type:
+                selectedTemplate.fileType ||
+                selectedTemplate.file?.type ||
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            }
+          );
+        } catch (e) {
+          console.warn('⚠️ Unable to fetch latest template file, falling back to cached file:', e);
+          return null;
+        }
+      };
+
+      const latestTemplateFile = await fetchLatestTemplateFile();
+      const templateFileForAgreement = latestTemplateFile || selectedTemplate.file;
+
       // Process based on template file type - DOCX is now the primary method
-      if (selectedTemplate.file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      if (templateFileForAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         console.log('🔄 Processing DOCX template (Primary Method)...');
         
         // Import DOCX template processor
@@ -4475,7 +4534,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
         // Process DOCX template
         console.log('🚀 FINAL TEMPLATE DATA BEING SENT TO DOCX PROCESSOR:');
-        console.log('  Template file:', selectedTemplate.file.name);
+        console.log('  Template file:', templateFileForAgreement.name);
         console.log('  Template data keys:', Object.keys(templateData));
         console.log('  Template data values:', Object.values(templateData));
         
@@ -4497,7 +4556,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('  templateData.{{per_user_cost}}:', templateData['{{per_user_cost}}']);
         
         const result = await DocxTemplateProcessor.processDocxTemplate(
-          selectedTemplate.file,
+          templateFileForAgreement,
           templateData
         );
 
