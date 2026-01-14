@@ -417,4 +417,3 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 };
 
 export default ExhibitSelector;
-

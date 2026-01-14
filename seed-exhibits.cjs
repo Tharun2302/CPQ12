@@ -157,6 +157,48 @@ async function seedDefaultExhibits(db) {
       displayOrder: 14,
       keywords: ['gmail', 'outlook', 'email', 'standard', 'not included', 'features', 'limitations', 'migration']
     },
+    // Outlook to Outlook exhibits (Included/Not Included)
+    {
+      name: 'Outlook to Outlook - Included Features',
+      description: 'Documentation for features included in Outlook to Outlook migration',
+      fileName: 'Outlook to Outlook - Included Features.docx',
+      combinations: ['outlook-to-outlook', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 15,
+      keywords: ['outlook', 'email', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Outlook to Outlook - Not Included Features',
+      description: 'Documentation for features not included in Outlook to Outlook migration',
+      fileName: 'Outlook to Outlook - Not Included Features.docx',
+      combinations: ['outlook-to-outlook', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 16,
+      keywords: ['outlook', 'email', 'not included', 'features', 'limitations', 'migration']
+    },
+    // Outlook to Gmail exhibits (Included/Not Included)
+    {
+      name: 'Outlook to Gmail - Included Features',
+      description: 'Documentation for features included in Outlook to Gmail migration',
+      fileName: 'Outlook to Gmail - Included Features.docx',
+      combinations: ['outlook-to-gmail', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 17,
+      keywords: ['outlook', 'gmail', 'email', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Outlook to Gmail - Not Included Features',
+      description: 'Documentation for features not included in Outlook to Gmail migration',
+      fileName: 'Outlook to Gmail - Not Included Features.docx',
+      combinations: ['outlook-to-gmail', 'all'],
+      category: 'email',
+      isRequired: false,
+      displayOrder: 18,
+      keywords: ['outlook', 'gmail', 'email', 'not included', 'features', 'limitations', 'migration']
+    },
     // ShareFile to Google Shared Drive exhibits
     {
       name: 'ShareFile to Google Shared Drive Advanced Plan - Included Features',
