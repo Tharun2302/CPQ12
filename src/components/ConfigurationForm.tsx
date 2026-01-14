@@ -1714,7 +1714,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 combination={config.combination || 'multi-combination'}
                 selectedExhibits={selectedExhibits}
                 onExhibitsChange={onExhibitsChange}
-                selectedTier={selectedTier}
+                // Multi-combination can include multiple migrations with different tiers.
+                // Don't filter exhibit list by a single global tier selection.
+                selectedTier={null}
               />
             </div>
           )}

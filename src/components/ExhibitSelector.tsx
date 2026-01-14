@@ -28,6 +28,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadExhibits();
@@ -196,6 +197,15 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     // Group exhibits by base name (for items with " - " separator)
     const groups: Map<string, Exhibit[]> = new Map();
     const ungrouped: Exhibit[] = [];
+
+    // Hide legacy ShareFile groups in UI (we use the merged "Google Drive (MyDrive & Shared Drive)" group instead)
+    const hiddenGroupNames = new Set([
+      'ShareFile to Google Shared Drive',
+      'ShareFile to Google MyDrive',
+      // Hide legacy Dropbox groups in UI (we use the merged "Google Drive (MyDrive & Shared Drive)" group instead)
+      'Dropbox to MyDrive',
+      'Dropbox to Google Shared Drive',
+    ]);
     
     sorted.forEach((exhibit) => {
       const dashIndex = exhibit.name.indexOf(' - ');
@@ -207,6 +217,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         
         if (!folderName || folderName.length < 3) {
           folderName = baseName;
+        }
+
+        // Skip rendering these groups entirely in the UI
+        if (hiddenGroupNames.has(folderName)) {
+          return;
         }
         
         if (!groups.has(folderName)) {
@@ -346,6 +361,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                   const hasRequired = item.exhibits.some(ex => ex.isRequired);
                   const fileCount = item.exhibits.length;
                   const isSelected = isGroup ? allExhibitsSelected : selectedExhibits.includes(item.exhibits[0]._id);
+                  const isExpanded = isGroup ? expandedGroups.has(item.id) : false;
 
                   const handleClick = () => {
                     if (isGroup) {
@@ -370,9 +386,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                     }
                   };
 
-                  return (
+                  const header = (
                     <button
-                      key={item.id}
+                      key={`${item.id}-header`}
                       type="button"
                       onClick={handleClick}
                       disabled={hasRequired && isGroup}
@@ -383,7 +399,30 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                       } ${hasRequired && isGroup ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        {/* Expand/collapse chevron for groups (clicking it shouldn't toggle selection) */}
+                        {isGroup ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedGroups(prev => {
+                                const next = new Set(prev);
+                                if (next.has(item.id)) next.delete(item.id);
+                                else next.add(item.id);
+                                return next;
+                              });
+                            }}
+                            className="w-5 h-5 flex items-center justify-center flex-shrink-0 rounded hover:bg-gray-100"
+                            aria-label={isExpanded ? 'Collapse group' : 'Expand group'}
+                          >
+                            <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          </button>
+                        ) : (
+                          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-300 opacity-0" />
+                          </div>
+                        )}
+
                         <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
                           <span className="text-[10px] font-semibold text-gray-700">{index + 1}</span>
                         </div>
@@ -405,6 +444,50 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                         </div>
                       </div>
                     </button>
+                  );
+
+                  if (!isGroup) return header;
+
+                  return (
+                    <div key={item.id} className="space-y-1">
+                      {header}
+                      {isExpanded && (
+                        <div className="ml-10 mr-2 space-y-1">
+                          {item.exhibits
+                            .slice()
+                            .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+                            .map((ex) => {
+                              const isExSelected = selectedExhibits.includes(ex._id);
+                              const dashIndex = ex.name.indexOf(' - ');
+                              const childLabel = dashIndex > 0 ? ex.name.substring(dashIndex + 3) : ex.name;
+                              return (
+                                <button
+                                  key={ex._id}
+                                  type="button"
+                                  onClick={() => toggleExhibit(ex._id, ex.isRequired)}
+                                  disabled={ex.isRequired}
+                                  className={`w-full text-left px-2.5 py-2 rounded-md border transition-all ${
+                                    isExSelected
+                                      ? 'border-purple-400 bg-white'
+                                      : 'border-gray-200 bg-white hover:border-purple-200 hover:bg-gray-50'
+                                  } ${ex.isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className={`w-4 h-4 border-2 flex items-center justify-center flex-shrink-0 ${
+                                        isExSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
+                                      }`}
+                                    >
+                                      {isExSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                                    </div>
+                                    <div className="text-[11px] text-gray-800 font-medium">{childLabel}</div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })
               )}

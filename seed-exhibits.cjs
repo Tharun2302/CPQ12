@@ -220,6 +220,48 @@ async function seedDefaultExhibits(db) {
       displayOrder: 2,
       keywords: ['sharefile', 'google', 'sharedrive', 'advanced', 'not included', 'features', 'limitations']
     },
+    // ShareFile to Google Drive (MyDrive & Shared Drive) - merged Standard exhibits
+    {
+      name: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include',
+      description: 'Documentation for features included in ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan migration',
+      fileName: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include.docx',
+      combinations: ['sharefile-to-google-mydrive', 'sharefile-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 3,
+      keywords: ['sharefile', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan migration',
+      fileName: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx',
+      combinations: ['sharefile-to-google-mydrive', 'sharefile-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 4,
+      keywords: ['sharefile', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to Google Drive (MyDrive & Shared Drive) - merged Advanced exhibits
+    {
+      name: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan migration',
+      fileName: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx',
+      combinations: ['dropbox-to-mydrive', 'dropbox-to-google-sharedrive', 'dropbox-to-google', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 5,
+      keywords: ['dropbox', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'advanced', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan migration',
+      fileName: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx',
+      combinations: ['dropbox-to-mydrive', 'dropbox-to-google-sharedrive', 'dropbox-to-google', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 6,
+      keywords: ['dropbox', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // Dropbox to Google Shared Drive (Standard) exhibits
     {
       name: 'Dropbox to Google Shared Drive Standard Plan - Standard Include',
@@ -683,6 +725,39 @@ async function seedDefaultExhibits(db) {
       displayOrder: 4,
       keywords: ['structure', 'files', 'folders']
     },
+    // Google Drive (MyDrive & Shared Drive) merged exhibits
+    {
+      name: 'Google Drive to Google(MyDrive & Shared Drive) - Included Features',
+      description: 'Documentation for features included in Google Drive to Google(MyDrive & Shared Drive) migration',
+      fileName: 'Google Drive to Google(MyDrive & Shared Drive) - Included Features.docx',
+      // Previously used filename (kept here to migrate/rename existing DB record instead of duplicating)
+      legacyFileNames: ['Google Drive to Google Drive (MyDrive & Shared Drive) - Included Features.docx'],
+      combinations: ['google-mydrive-to-google-sharedrive', 'google-sharedrive-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 5,
+      keywords: ['google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include',
+      description: 'Documentation for features included in Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan migration',
+      fileName: 'Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include.docx',
+      combinations: ['google-mydrive-to-google-mydrive', 'google-mydrive-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 6,
+      keywords: ['google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan migration',
+      fileName: 'Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx',
+      combinations: ['google-mydrive-to-google-mydrive', 'google-mydrive-to-google-sharedrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 7,
+      keywords: ['google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
     // General exhibits (available for all combinations)
     {
       name: 'Data Privacy Agreement',
@@ -752,8 +827,11 @@ async function seedDefaultExhibits(db) {
       };
 
       // Check if exhibit already exists
+      const legacyFileNames = Array.isArray(exhibit.legacyFileNames) ? exhibit.legacyFileNames : [];
+      const fileNamesToMatch = [exhibit.fileName, ...legacyFileNames].filter(Boolean);
+
       const existing = await db.collection('exhibits').findOne({
-        fileName: exhibit.fileName
+        fileName: { $in: fileNamesToMatch }
       });
 
       if (existing) {
@@ -782,7 +860,7 @@ async function seedDefaultExhibits(db) {
 
         if (fileStats.mtime > existingModified || metadataChanged) {
           await db.collection('exhibits').updateOne(
-            { fileName: exhibit.fileName },
+            { _id: existing._id },
             {
               $set: {
                 ...exhibitDoc,
