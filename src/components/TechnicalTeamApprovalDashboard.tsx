@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText, Loader2 } from 'lucide-react';
+import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Eye, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { track } from '../analytics/clarity';
@@ -757,38 +757,44 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         </div>
       </div>
 
-      {/* Document Preview Modal */}
+      {/* Document Preview Modal - Enhanced UI/UX */}
       {showDocumentModal && selectedWorkflow && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-teal-600" />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/50 max-w-7xl w-full max-h-[95vh] overflow-hidden transform transition-all duration-300 scale-100">
+            {/* Enhanced Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-blue-50/30">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shadow-md">
+                  <FileText className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Document Preview</h2>
-                  <p className="text-sm text-gray-500">ID: {selectedWorkflow.documentId}</p>
+                  <h2 className="text-xl font-bold text-gray-900">Document Preview</h2>
+                  <p className="text-sm text-gray-600 font-mono mt-0.5">ID: {selectedWorkflow.documentId}</p>
                 </div>
               </div>
               <button
                 onClick={closeDocumentModal}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
+            {/* Enhanced Content Area */}
             <div className="p-6 overflow-y-auto max-h-[calc(95vh-200px)]">
-              <div className="bg-gray-100 rounded-lg p-4">
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200 shadow-inner">
                 {isLoadingPreview ? (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600 text-sm">Loading document preview...</p>
+                  <div className="text-center py-12">
+                    <div className="inline-flex items-center justify-center w-16 h-16 mb-4">
+                      <div className="animate-spin rounded-full h-12 w-12 border-4 border-teal-200 border-t-teal-600"></div>
+                    </div>
+                    <p className="text-gray-700 font-medium">Loading document preview...</p>
+                    <p className="text-gray-500 text-sm mt-2">Please wait</p>
                   </div>
                 ) : documentPreview ? (
                   <div className="space-y-4">
-                    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
                       <iframe
                         src={documentPreview}
                         className="w-full h-[70vh] border-0"
@@ -803,19 +809,23 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                           link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
                           link.click();
                         }}
-                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-teal-700 hover:to-teal-800 transition-all duration-300 transform hover:scale-105"
                       >
+                        <FileText className="w-4 h-4" />
                         Download PDF
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8">
-                    <div className="w-32 h-40 bg-white rounded-lg shadow-sm mx-auto mb-4 flex items-center justify-center">
-                      <FileText className="w-16 h-16 text-gray-400" />
+                  <div className="text-center py-12">
+                    <div className="w-40 h-48 bg-white rounded-xl shadow-md mx-auto mb-6 flex items-center justify-center border-2 border-dashed border-gray-300">
+                      <FileText className="w-20 h-20 text-gray-300" />
                     </div>
-                    <p className="text-gray-600 text-sm mb-4">
+                    <p className="text-gray-700 font-medium text-base mb-2">
                       Document preview not available
+                    </p>
+                    <p className="text-gray-500 text-sm mb-6">
+                      The document could not be loaded. Please try again.
                     </p>
                     <button
                       onClick={() => {
@@ -823,8 +833,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                           handleViewDocument(selectedWorkflow);
                         }
                       }}
-                      className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-teal-600 hover:to-teal-700 transition-all duration-300 transform hover:scale-105 mx-auto"
                     >
+                      <RefreshCw className="w-4 h-4" />
                       Retry Loading
                     </button>
                   </div>
@@ -832,8 +843,8 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
               </div>
             </div>
 
-            {/* Action Buttons - Only show when opened from "My Approval Queue" tab and it's user's turn */}
-            <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
+            {/* Enhanced Action Buttons Footer */}
+            <div className="flex items-center justify-between gap-4 p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-slate-50">
                {modalOpenedFromTab === 'queue' ? (
                  (() => {
                   // Use latest workflow state from store to avoid stale selectedWorkflow after actions
@@ -865,17 +876,17 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                            handleApprove(selectedWorkflow.id);
                          }}
                          disabled={isApproving || hasActedOnThis}
-                         className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                         className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-green-700 hover:to-green-800 transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                        >
                          {isApproving ? (
                            <>
-                             <Loader2 className="w-4 h-4 animate-spin" />
-                             Approving...
+                             <Loader2 className="w-5 h-5 animate-spin" />
+                             <span>Approving...</span>
                            </>
                          ) : (
                            <>
-                             <ThumbsUp className="w-4 h-4" />
-                             Approve
+                             <ThumbsUp className="w-5 h-5" />
+                             <span>Approve</span>
                            </>
                          )}
                        </button>
@@ -895,42 +906,42 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                            }
                          }}
                          disabled={isDenying || hasActedOnThis}
-                         className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                         className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-red-700 hover:to-red-800 transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                        >
                          {isDenying ? (
                            <>
-                             <Loader2 className="w-4 h-4 animate-spin" />
-                             Denying...
+                             <Loader2 className="w-5 h-5 animate-spin" />
+                             <span>Denying...</span>
                            </>
                          ) : (
                            <>
-                             <ThumbsDown className="w-4 h-4" />
-                             Deny
+                             <ThumbsDown className="w-5 h-5" />
+                             <span>Deny</span>
                            </>
                          )}
                        </button>
                        <button
                          onClick={() => handleAddComment(selectedWorkflow.id)}
-                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                         className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105"
                        >
-                         <MessageCircle className="w-4 h-4" />
-                         Add Comment
+                         <MessageCircle className="w-5 h-5" />
+                         <span>Add Comment</span>
                        </button>
                      </div>
                    ) : (
-                     <div className="text-sm text-gray-500">
+                     <div className="text-sm text-gray-600 font-medium px-4 py-2 bg-gray-100 rounded-lg border border-gray-200">
                        This workflow is no longer awaiting your approval
                      </div>
                    );
                  })()
                ) : (
-                 <div className="text-sm text-gray-500">
+                 <div className="text-sm text-gray-600 font-medium px-4 py-2 bg-gray-100 rounded-lg border border-gray-200">
                    Read-only view from Workflow Status
                  </div>
                )}
                <button
                  onClick={closeDocumentModal}
-                 className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+                 className="px-6 py-3 text-gray-700 font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gray-300"
                >
                  Close
                </button>
@@ -939,65 +950,92 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         </div>
       )}
 
-      {/* Comment Modal */}
+      {/* Enhanced Comment Modal */}
       {showCommentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <MessageCircle className="w-5 h-5 text-blue-600" />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/50 max-w-md w-full transform transition-all duration-300 scale-100">
+            {/* Enhanced Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50/30">
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-md ${
+                  denyAfterComment 
+                    ? 'bg-gradient-to-br from-red-500 to-red-600' 
+                    : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                }`}>
+                  <MessageCircle className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-900">{denyAfterComment ? 'Provide Reason for Denial' : 'Add Comment'}</h2>
-                  <p className="text-sm text-gray-500">{denyAfterComment ? 'This reason will be saved and the request will be denied.' : 'Add your feedback for this workflow'}</p>
+                  <h2 className="text-xl font-bold text-gray-900">{denyAfterComment ? 'Provide Reason for Denial' : 'Add Comment'}</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">{denyAfterComment ? 'This reason will be saved and the request will be denied.' : 'Add your feedback for this workflow'}</p>
                 </div>
               </div>
               <button
                 onClick={handleCancelComment}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
+            {/* Enhanced Content */}
             <div className="p-6">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Comment
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    {denyAfterComment ? 'Reason for Denial *' : 'Comment'}
                   </label>
                   <textarea
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Enter your comment here..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    placeholder={denyAfterComment ? "Please provide a reason for denying this request..." : "Enter your comment here..."}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none bg-white shadow-sm transition-all duration-300"
                     rows={4}
                   />
+                  {denyAfterComment && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      <span className="text-red-600 font-semibold">*</span> A reason is required to deny this request
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+            {/* Enhanced Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-slate-50">
               <button
                 onClick={handleCancelComment}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+                className="px-6 py-3 text-gray-700 font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gray-300"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveComment}
-                disabled={isSavingComment}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSavingComment || (denyAfterComment && !commentText.trim())}
+                className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
+                  denyAfterComment
+                    ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white'
+                }`}
               >
                 {isSavingComment ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Saving...
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Saving...</span>
                   </>
                 ) : (
                   <>
-                    {denyAfterComment ? 'Save & Deny' : 'Save Comment'}
+                    {denyAfterComment ? (
+                      <>
+                        <ThumbsDown className="w-5 h-5" />
+                        <span>Save & Deny</span>
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle className="w-5 h-5" />
+                        <span>Save Comment</span>
+                      </>
+                    )}
                   </>
                 )}
               </button>
