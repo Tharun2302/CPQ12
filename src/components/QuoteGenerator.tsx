@@ -493,6 +493,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 
   // Agreement preview state
   const [processedAgreement, setProcessedAgreement] = useState<Blob | null>(null);
+  const [originalDocxAgreement, setOriginalDocxAgreement] = useState<Blob | null>(null); // Store original DOCX for Word downloads
   const [showAgreementPreview, setShowAgreementPreview] = useState(false);
   const [isGeneratingAgreement, setIsGeneratingAgreement] = useState(false);
   const [showInlinePreview, setShowInlinePreview] = useState(false);
@@ -1784,11 +1785,33 @@ Total Price: {{total price}}`;
   };
 
   const handleDownloadAgreement = () => {
-    if (processedAgreement) {
-      const url = URL.createObjectURL(processedAgreement);
+    // For Word downloads, prefer the original DOCX if available
+    const documentToDownload = originalDocxAgreement || processedAgreement;
+    
+    if (!documentToDownload) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
+
+    try {
+      // Use original DOCX if available, otherwise use processed agreement
+      const isDOCX = originalDocxAgreement !== null;
+      const fileExtension = isDOCX ? 'docx' : (processedAgreement?.type === 'application/pdf' ? 'pdf' : 'docx');
+      const fileSize = documentToDownload.size;
+      
+      // Generate filename with correct extension
+      const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `agreement-${clientName}-${dateStr}.${fileExtension}`;
+      
+      console.log(`📥 Downloading Word document: ${filename} (${(fileSize / 1024).toFixed(2)} KB)`);
+      console.log(`📄 Document type: ${isDOCX ? 'DOCX (original)' : 'PDF (converted)'}`);
+      
+      // Create download link
+      const url = URL.createObjectURL(documentToDownload);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.docx`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1798,14 +1821,19 @@ Total Price: {{total price}}`;
       trackDocumentOperation({
         action: 'downloaded',
         documentType: 'agreement',
-        documentName: link.download,
-        format: 'docx',
-        fileSize: processedAgreement.size / 1024 // Convert to KB
+        documentName: filename,
+        format: fileExtension,
+        fileSize: fileSize / 1024 // Convert to KB
       });
       
-      // Close preview after download
-      setShowAgreementPreview(false);
-      setProcessedAgreement(null);
+      console.log(`✅ Word document downloaded as ${filename} (${(fileSize / 1024).toFixed(2)} KB)`);
+      
+      // Don't close preview automatically - let user decide when to close
+      // setShowAgreementPreview(false);
+      // setProcessedAgreement(null);
+    } catch (error) {
+      console.error('❌ Error downloading Word document:', error);
+      alert('Failed to download Word document. Please try again.');
     }
   };
 
@@ -2156,9 +2184,9 @@ Total Price: {{total price}}`;
         alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
       }
 
-      // Navigate to Approval page → Start Approval Workflow tab so user can see the workflow
+      // Navigate to Approval page → Admin Dashboard tab so user can see the workflow status
       navigate('/approval', {
-        state: { openStartApprovalTab: true, source: 'quote-approval', documentId: documentId }
+        state: { openDashboardTab: true, source: 'quote-approval', documentId: documentId }
       });
 
     } catch (error) {
@@ -4750,9 +4778,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('📄 Processed document size:', processedDocument.size, 'bytes');
         console.log('📄 Processed document type:', processedDocument.type);
 
-        // For DOCX, immediately convert to PDF so the inline preview
-        // looks exactly the same as the final downloaded PDF.
+        // For DOCX, store the original before converting to PDF for preview
         if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          // Store original DOCX for Word downloads
+          setOriginalDocxAgreement(processedDocument);
+          console.log('💾 Stored original DOCX for Word downloads');
+          
           try {
             console.log('🔄 Converting DOCX agreement to PDF for preview...');
             const { templateService } = await import('../utils/templateService');
@@ -4762,9 +4793,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           } catch (error) {
             console.error('❌ Failed to convert DOCX to PDF for preview. Falling back to original blob.', error);
           }
+        } else {
+          // For PDF templates, clear the original DOCX since we don't have one
+          setOriginalDocxAgreement(null);
         }
 
-        // Store the (now PDF) document for download handlers
+        // Store the (now PDF) document for preview and PDF downloads
         setProcessedAgreement(processedDocument);
 
         // Always preview the same blob that will be downloaded
@@ -6325,10 +6359,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <>
                       <button
                         onClick={handleDownloadAgreement}
-                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold hidden"
-                        title="Download Agreement"
+                        disabled={!processedAgreement}
+                        className={`text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold ${
+                          !processedAgreement ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={processedAgreement ? "Download Agreement (Word Document)" : "No agreement available"}
                       >
-                        📥 Download
+                        📥 Word
                       </button>
                       <button
                         onClick={handleDownloadAgreementPDF}
@@ -6379,6 +6416,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     onClick={() => {
                       setShowAgreementPreview(false);
                       setProcessedAgreement(null);
+                      setOriginalDocxAgreement(null); // Clear original DOCX
                       setIsFullscreen(false);
                       // Reset inline preview when closing agreement modal
                       setShowInlinePreview(false);
@@ -6458,8 +6496,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                             <div className="absolute bottom-4 right-4 flex flex-col gap-2">
                               <button
                                 onClick={handleDownloadAgreement}
-                                className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform hover:scale-105"
-                                title="Download Agreement"
+                                disabled={!processedAgreement}
+                                className={`text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform ${
+                                  !processedAgreement
+                                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                                    : 'bg-green-600 hover:bg-green-700 hover:scale-105'
+                                }`}
+                                title={processedAgreement ? "Download Agreement (Word Document)" : "No agreement available"}
                               >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -6524,7 +6567,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <div className="flex gap-2 justify-center flex-wrap">
                     <button
                       onClick={handleDownloadAgreement}
-                      className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all duration-200 font-semibold text-xs shadow-lg"
+                      disabled={!processedAgreement}
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                        !processedAgreement
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
+                      }`}
+                      title={processedAgreement ? "Download Agreement (Word Document)" : "Generate agreement first"}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -6602,6 +6651,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       onClick={() => {
                         setShowAgreementPreview(false);
                         setProcessedAgreement(null);
+                        setOriginalDocxAgreement(null); // Clear original DOCX
                         setShowInlinePreview(false);
                         setIsFullscreen(false);
                         if (previewUrl) {

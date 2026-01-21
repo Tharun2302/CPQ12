@@ -12,6 +12,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   const [documentPreview, setDocumentPreview] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -126,19 +127,80 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
     if (workflow.documentId) {
       setIsLoadingPreview(true);
       setDocumentPreview(null);
+      setPreviewError(null);
       
       try {
+        console.log('🔄 Fetching document preview for:', workflow.documentId);
         const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response ok:', response.ok);
+        
+        if (!response.ok) {
+          // If 404 or other error, try fallback method
+          if (response.status === 404) {
+            console.log('⚠️ Preview endpoint returned 404, trying fallback method...');
+            throw new Error(`HTTP error! status: ${response.status}`);
+          } else {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+        }
+        
         const result = await response.json();
+        console.log('📄 API Response:', result);
         
         if (result.success && result.dataUrl) {
           setDocumentPreview(result.dataUrl);
-          console.log('✅ Document preview loaded:', result.fileName);
+          console.log('✅ Document preview loaded successfully:', result.fileName);
+          console.log('📄 Data URL length:', result.dataUrl.length);
         } else {
           console.log('⚠️ Document not found or no file data');
+          console.log('📄 Result:', result);
+          
+          // Fallback: Try to load document directly
+          console.log('🔄 Trying fallback method...');
+          try {
+            const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
+            if (directResponse.ok) {
+              const blob = await directResponse.blob();
+              const url = URL.createObjectURL(blob);
+              setDocumentPreview(url);
+              console.log('✅ Document loaded via fallback method');
+            } else {
+              console.log('⚠️ Fallback method also returned error:', directResponse.status);
+              setPreviewError(`Document not found (Status: ${directResponse.status})`);
+            }
+          } catch (fallbackError) {
+            console.error('❌ Fallback method also failed:', fallbackError);
+            setPreviewError('Failed to load document. The document may not exist in the system.');
+          }
         }
       } catch (error) {
         console.error('❌ Error fetching document preview:', error);
+        console.error('❌ Error details:', (error as Error).message);
+        
+        // Fallback: Try to load document directly if preview endpoint failed
+        if ((error as Error).message.includes('404') || (error as Error).message.includes('HTTP error')) {
+          console.log('🔄 Attempting direct document fetch as fallback...');
+          try {
+            const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
+            if (directResponse.ok) {
+              const blob = await directResponse.blob();
+              const url = URL.createObjectURL(blob);
+              setDocumentPreview(url);
+              setPreviewError(null);
+              console.log('✅ Document loaded via direct fallback method');
+            } else {
+              console.log('⚠️ Direct fallback also failed with status:', directResponse.status);
+              setPreviewError(`Document not found. The document with ID "${workflow.documentId}" may not exist in the system.`);
+            }
+          } catch (fallbackError) {
+            console.error('❌ Direct fallback method also failed:', fallbackError);
+            setPreviewError('Unable to load document. Please check if the document exists and try again.');
+          }
+        } else {
+          setPreviewError('An error occurred while loading the document. Please try again.');
+        }
       } finally {
         setIsLoadingPreview(false);
       }
@@ -150,6 +212,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
     setSelectedWorkflow(null);
     setDocumentPreview(null);
     setIsLoadingPreview(false);
+    setPreviewError(null);
   };
 
 
@@ -717,58 +780,66 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
          </div>
        </div>
 
-       {/* Workflow Details Modal */}
+       {/* Enhanced Workflow Details Modal */}
        {showWorkflowModal && selectedWorkflow && (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-           <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden">
-             <div className="flex items-center justify-between p-6 border-b border-gray-200">
-               <div className="flex items-center gap-3">
-                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                   <FileCheck className="w-5 h-5 text-blue-600" />
+         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+           <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/50 max-w-7xl w-full max-h-[95vh] overflow-hidden transform transition-all duration-300 scale-100">
+             {/* Enhanced Header */}
+             <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-blue-50/30">
+               <div className="flex items-center gap-4">
+                 <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
+                   <FileCheck className="w-6 h-6 text-white" />
                  </div>
                  <div>
-                   <h2 className="text-xl font-semibold text-gray-900">Workflow Details</h2>
-                   <p className="text-sm text-gray-500">ID: {selectedWorkflow.id}</p>
+                   <h2 className="text-xl font-bold text-gray-900">Workflow Details</h2>
+                   <p className="text-sm text-gray-600 font-mono mt-0.5">ID: {selectedWorkflow.id}</p>
                  </div>
                </div>
                <button
                  onClick={closeWorkflowModal}
-                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                 className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                 aria-label="Close modal"
                >
                  <X className="w-5 h-5" />
                </button>
              </div>
              
-             <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
-               {/* Top Section - 4 Column Grid for Information */}
+             <div className="p-6 overflow-y-auto max-h-[calc(95vh-200px)]">
+               {/* Enhanced Top Section - 4 Column Grid for Information */}
                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-                 {/* Basic Information */}
-                 <div className="space-y-4">
-                   <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
-                   <div className="space-y-3">
+                 {/* Enhanced Basic Information Card */}
+                 <div className="space-y-4 bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 border border-gray-200 shadow-sm">
+                   <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                     Basic Information
+                   </h3>
+                   <div className="space-y-4">
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Document ID</label>
-                       <p className="text-gray-900">{selectedWorkflow.documentId || 'Unknown'}</p>
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Document ID</label>
+                       <p className="text-gray-900 font-medium mt-1">{selectedWorkflow.documentId || 'Unknown'}</p>
                      </div>
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Client Name</label>
-                       <p className="text-gray-900">{selectedWorkflow.clientName || 'Unknown'}</p>
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client Name</label>
+                       <p className="text-gray-900 font-semibold text-base mt-1">{selectedWorkflow.clientName || 'Unknown'}</p>
                      </div>
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Document Type</label>
-                       <p className="text-gray-900">{selectedWorkflow.documentType || 'PDF'}</p>
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Document Type</label>
+                       <p className="text-gray-900 font-medium mt-1">{selectedWorkflow.documentType || 'PDF'} Agreement</p>
                      </div>
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Amount</label>
-                       <p className="text-gray-900 font-semibold">${(selectedWorkflow.amount || 0).toLocaleString()}</p>
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</label>
+                       <p className="text-gray-900 font-bold text-lg mt-1">${(selectedWorkflow.amount || 0).toLocaleString()}</p>
                      </div>
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Status</label>
-                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                         selectedWorkflow.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                         selectedWorkflow.status === 'approved' ? 'bg-green-100 text-green-800' :
-                         selectedWorkflow.status === 'denied' ? 'bg-red-100 text-red-800' :
-                         'bg-gray-100 text-gray-800'
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Status</label>
+                       <span className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold border ${
+                         selectedWorkflow.status === 'pending' || selectedWorkflow.status === 'in_progress' 
+                           ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                         selectedWorkflow.status === 'approved' 
+                           ? 'bg-green-100 text-green-800 border-green-200' :
+                         selectedWorkflow.status === 'denied' 
+                           ? 'bg-red-100 text-red-800 border-red-200' :
+                         'bg-gray-100 text-gray-800 border-gray-200'
                        }`}>
                          {selectedWorkflow.status || 'pending'}
                        </span>
@@ -776,70 +847,81 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                    </div>
                  </div>
 
-                 {/* Workflow Progress */}
-                 <div className="space-y-4">
-                   <h3 className="text-lg font-semibold text-gray-900">Workflow Progress</h3>
-                   <div className="space-y-3">
+                 {/* Enhanced Workflow Progress Card */}
+                 <div className="space-y-4 bg-gradient-to-br from-blue-50/50 to-indigo-50/50 rounded-xl p-5 border border-blue-200/50 shadow-sm">
+                   <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                     <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                     Workflow Progress
+                   </h3>
+                   <div className="space-y-4">
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Current Step</label>
-                       <p className="text-gray-900">Step {selectedWorkflow.currentStep || 1} of 3</p>
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Current Step</label>
+                       <p className="text-gray-900 font-semibold mt-1">Step {selectedWorkflow.currentStep || 1} of {selectedWorkflow.totalSteps || 3}</p>
                      </div>
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Progress</label>
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Progress</label>
                        <div className="mt-2">
-                         <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
+                         <div className="flex items-center justify-between text-sm font-semibold text-gray-700 mb-2">
                            <span>Completion</span>
-                           <span>{Math.round(((selectedWorkflow.currentStep || 1) / 3) * 100)}%</span>
+                           <span className="text-indigo-600">{Math.round(((selectedWorkflow.currentStep || 1) / (selectedWorkflow.totalSteps || 3)) * 100)}%</span>
                          </div>
-                         <div className="w-full bg-gray-200 rounded-full h-2">
+                         <div className="w-full bg-gray-200 rounded-full h-3 shadow-inner">
                            <div 
-                             className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                             style={{ width: `${((selectedWorkflow.currentStep || 1) / 3) * 100}%` }}
+                             className="bg-gradient-to-r from-blue-600 to-indigo-600 h-3 rounded-full transition-all duration-500 shadow-sm"
+                             style={{ width: `${((selectedWorkflow.currentStep || 1) / (selectedWorkflow.totalSteps || 3)) * 100}%` }}
                            ></div>
                          </div>
                        </div>
                      </div>
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Created</label>
-                       <p className="text-gray-900">
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Created</label>
+                       <p className="text-gray-900 font-medium text-sm mt-1">
                          {selectedWorkflow.createdAt ? new Date(selectedWorkflow.createdAt).toLocaleString() : 'Unknown'}
                        </p>
                      </div>
                      <div>
-                       <label className="text-sm font-medium text-gray-600">Last Updated</label>
-                       <p className="text-gray-900">
+                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Updated</label>
+                       <p className="text-gray-900 font-medium text-sm mt-1">
                          {selectedWorkflow.updatedAt ? new Date(selectedWorkflow.updatedAt).toLocaleString() : 'Unknown'}
                        </p>
                      </div>
                    </div>
                  </div>
 
-                 {/* Approval Steps */}
-                 <div className="space-y-4">
-                   <h3 className="text-lg font-semibold text-gray-900">Approval Steps</h3>
-                   <div className="space-y-2">
+                 {/* Enhanced Approval Steps Card */}
+                 <div className="space-y-4 bg-gradient-to-br from-purple-50/50 to-pink-50/50 rounded-xl p-5 border border-purple-200/50 shadow-sm lg:col-span-2">
+                   <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                     <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                     Approval Steps
+                   </h3>
+                   <div className="space-y-3">
                      {(selectedWorkflow.workflowSteps || []).filter((step: any) => step.role !== 'E-signed').map((step: any, index: number) => {
                        const StepIcon = getStatusIcon(step.status);
                        return (
-                         <div key={step.step || index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                           <div className={`p-1.5 rounded-lg ${getStatusColor(step.status)}`}>
-                             <StepIcon className="w-4 h-4" />
+                         <div key={step.step || index} className="flex items-center gap-3 p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
+                           <div className={`p-2 rounded-lg shadow-sm ${getStatusColor(step.status)}`}>
+                             <StepIcon className="w-5 h-5" />
                            </div>
                            <div className="flex-1 min-w-0">
-                             <div className="flex items-center justify-between">
-                               <h4 className="font-medium text-gray-900 text-sm truncate">{step.role || 'Unknown Role'}</h4>
-                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                 step.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                 step.status === 'approved' ? 'bg-green-100 text-green-800' :
-                                 step.status === 'denied' ? 'bg-red-100 text-red-800' :
-                                 'bg-gray-100 text-gray-800'
+                             <div className="flex items-center justify-between mb-1">
+                               <h4 className="font-semibold text-gray-900 text-sm truncate">{step.role || 'Unknown Role'}</h4>
+                               <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                                 step.status === 'pending' 
+                                   ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                 step.status === 'approved' 
+                                   ? 'bg-green-100 text-green-800 border-green-200' :
+                                 step.status === 'denied' 
+                                   ? 'bg-red-100 text-red-800 border-red-200' :
+                                 'bg-gray-100 text-gray-800 border-gray-200'
                                }`}>
                                  {step.status || 'pending'}
                                </span>
                              </div>
-                             <p className="text-xs text-gray-600 mt-1 truncate">{step.email || 'No email provided'}</p>
+                             <p className="text-xs text-gray-600 mt-1 truncate font-medium">{step.email || 'No email provided'}</p>
                              {step.comments && (
-                               <p className="text-xs text-gray-500 mt-1 italic truncate">"{step.comments}"</p>
+                               <p className="text-xs text-gray-500 mt-2 italic bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                                 "{step.comments}"
+                               </p>
                              )}
                              {step.timestamp && (
                                <p className="text-xs text-gray-400 mt-1">
@@ -852,24 +934,27 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                      })}
                    </div>
                  </div>
-
-                 {/* Empty 4th column for spacing */}
-                 <div></div>
                </div>
 
-               {/* Document Preview Section - Full width at bottom */}
-               <div className="w-full">
-                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Document Preview</h3>
+               {/* Enhanced Document Preview Section */}
+               <div className="w-full mt-6">
+                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                   <FileText className="w-5 h-5 text-blue-600" />
+                   Document Preview
+                 </h3>
                  
-                 <div className="bg-gray-100 rounded-lg p-4">
+                 <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200 shadow-inner">
                    {isLoadingPreview ? (
-                     <div className="text-center py-8">
-                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                       <p className="text-gray-600 text-sm">Loading document preview...</p>
+                     <div className="text-center py-12">
+                       <div className="inline-flex items-center justify-center w-16 h-16 mb-4">
+                         <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
+                       </div>
+                       <p className="text-gray-700 font-medium">Loading document preview...</p>
+                       <p className="text-gray-500 text-sm mt-2">Please wait</p>
                      </div>
                    ) : documentPreview ? (
                      <div className="space-y-4">
-                       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                       <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
                          <iframe
                            src={documentPreview}
                            className="w-full h-[70vh] border-0"
@@ -885,20 +970,73 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                              link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
                              link.click();
                            }}
-                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                           className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105"
                          >
+                           <FileText className="w-4 h-4" />
                            Download PDF
                          </button>
                        </div>
                      </div>
                    ) : (
-                     <div className="text-center py-8">
-                       <div className="w-32 h-40 bg-white rounded-lg shadow-sm mx-auto mb-4 flex items-center justify-center">
-                         <FileText className="w-16 h-16 text-gray-400" />
+                     <div className="text-center py-12">
+                       <div className="w-40 h-48 bg-white rounded-xl shadow-md mx-auto mb-6 flex items-center justify-center border-2 border-dashed border-gray-300">
+                         <FileText className="w-20 h-20 text-gray-300" />
                        </div>
-                       <p className="text-gray-600 text-sm mb-4">
+                       <p className="text-gray-700 font-medium text-base mb-2">
                          Document preview not available
                        </p>
+                       {previewError ? (
+                         <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                           <div className="flex items-start gap-3">
+                             <div className="flex-shrink-0">
+                               <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                             </div>
+                             <div className="flex-1">
+                               <p className="text-red-800 font-semibold text-sm mb-2">
+                                 Document Not Found
+                               </p>
+                               <p className="text-red-700 text-sm mb-3">
+                                 {previewError}
+                               </p>
+                               <div className="bg-white rounded border border-red-200 p-3 space-y-2">
+                                 <div className="text-xs">
+                                   <span className="font-semibold text-gray-700">Document ID:</span>
+                                   <span className="font-mono text-gray-900 ml-2">{selectedWorkflow.documentId}</span>
+                                 </div>
+                                 {selectedWorkflow.clientName && (
+                                   <div className="text-xs">
+                                     <span className="font-semibold text-gray-700">Client:</span>
+                                     <span className="text-gray-900 ml-2">{selectedWorkflow.clientName}</span>
+                                   </div>
+                                 )}
+                                 {selectedWorkflow.amount && (
+                                   <div className="text-xs">
+                                     <span className="font-semibold text-gray-700">Amount:</span>
+                                     <span className="text-gray-900 ml-2">${(selectedWorkflow.amount || 0).toLocaleString()}</span>
+                                   </div>
+                                 )}
+                               </div>
+                               <div className="mt-3 space-y-2">
+                                 <p className="text-red-600 text-xs font-semibold">
+                                   Possible causes:
+                                 </p>
+                                 <ul className="text-red-600 text-xs space-y-1 ml-4 list-disc">
+                                   <li>The document may not have been saved when the workflow was created</li>
+                                   <li>The document may have been deleted from the database</li>
+                                   <li>There may be a mismatch between the workflow document ID and the saved document</li>
+                                 </ul>
+                                 <p className="text-red-600 text-xs mt-2 italic">
+                                   💡 Tip: Check the "Documents" page to see if this document exists. If not, you may need to recreate the workflow with a valid document.
+                                 </p>
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                       ) : (
+                         <p className="text-gray-500 text-sm mb-6">
+                           The document could not be loaded. Please try again.
+                         </p>
+                       )}
                        <button
                          onClick={() => {
                            // Try to fetch document again
@@ -906,8 +1044,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                              handleViewWorkflow(selectedWorkflow);
                            }
                          }}
-                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                         className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 mx-auto"
                        >
+                         <RefreshCw className="w-4 h-4" />
                          Retry Loading
                        </button>
                      </div>
@@ -916,10 +1055,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                </div>
              </div>
 
-             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+             {/* Enhanced Footer */}
+             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-slate-50">
                <button
                  onClick={closeWorkflowModal}
-                 className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+                 className="px-6 py-3 text-gray-700 font-semibold border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gray-300"
                >
                  Close
                </button>
@@ -929,17 +1069,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = () => {
                    closeWorkflowModal();
                  }}
                  disabled={isDeleting}
-                 className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                 className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-red-700 hover:to-red-800 transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                >
                  {isDeleting ? (
                    <>
-                     <Loader2 className="w-4 h-4 animate-spin" />
-                     Deleting...
+                     <Loader2 className="w-5 h-5 animate-spin" />
+                     <span>Deleting...</span>
                    </>
                  ) : (
                    <>
-                     <Trash2 className="w-4 h-4" />
-                     Delete Workflow
+                     <Trash2 className="w-5 h-5" />
+                     <span>Delete Workflow</span>
                    </>
                  )}
                </button>
