@@ -129,7 +129,7 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
     const users = config?.numberOfUsers || 1;
     const messages = config?.messages || 0;
     // Format: Exhibit name, dashed line separator, then details
-    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | ${messages} Channels and DMs through JSON Messages`;
+    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | All Channels and DMs | ${messages} Messages`;
   } else if (category === 'content') {
     const users = config?.numberOfUsers || 1;
     const dataSize = config?.dataSizeGB || 0;
@@ -3644,6 +3644,7 @@ Total Price: {{total price}}`;
                   const labels: Record<string, string> = {
                     'slack-to-teams': 'SLACK TO TEAMS',
                     'slack-to-google-chat': 'SLACK TO GOOGLE CHAT',
+                    'google-chat-to-teams': 'GOOGLE CHAT TO TEAMS',
                     'sharefile-to-google-sharedrive': 'SHAREFILE TO GOOGLE SHARED DRIVE',
                     'sharefile-to-google-mydrive': 'SHAREFILE TO GOOGLE MYDRIVE',
                     'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
