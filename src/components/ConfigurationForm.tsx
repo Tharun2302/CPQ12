@@ -1440,57 +1440,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       }}
                     >
                       <option value="">Select Combination</option>
-                      {/* Multi combination - shows all combinations */}
-                      {config.migrationType === 'Multi combination' && (() => {
-                        const allCombinations = [
-                          // Messaging
-                          { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
-                          // Content
-                          { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
-                          { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
-                          { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
-                          { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE' },
-                          { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
-                          { value: 'box-to-box', label: 'BOX TO BOX' },
-                          { value: 'box-to-dropbox', label: 'BOX TO DROPBOX' },
-                          { value: 'box-to-sharefile', label: 'BOX TO SHAREFILE' },
-                          { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
-                          { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
-                          { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
-                          { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
-                          { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
-                          { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
-                          { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
-                          { value: 'google-sharedrive-to-sharepoint', label: 'GOOGLE SHARED DRIVE TO SHAREPOINT' },
-                          { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
-                          { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
-                          { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
-                          { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
-                          { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
-                          { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
-                          { value: 'onedrive-to-onedrive', label: 'ONEDRIVE TO ONEDRIVE' },
-                          { value: 'onedrive-to-google-mydrive', label: 'ONEDRIVE TO GOOGLE MYDRIVE' },
-                          { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
-                          { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
-                          { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
-                          { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
-                          { value: 'sharepoint-online-to-egnyte', label: 'SHAREPOINT ONLINE TO EGNYTE' },
-                          { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-                          { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
-                          { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
-                          { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
-                          { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
-                        ];
-                        
-                        const filtered = allCombinations.filter(combo => 
-                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
-                        );
-                        
-                        return filtered.map(combo => (
-                          <option key={combo.value} value={combo.value}>{combo.label}</option>
-                        ));
-                      })()}
                       {/* Messaging combinations */}
                       {config.migrationType === 'Messaging' && (() => {
                         const messagingCombinations = [
@@ -1637,18 +1586,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                        const overageCombinations = [
                          { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                        ];
-                       const multiCombinations = [
-                         // Messaging
-                         { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                         { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
-                         // Content
-                         ...contentCombinations
-                       ];
 
                           let allCombinations: { value: string; label: string }[] = [];
-                          if (config.migrationType === 'Multi combination') {
-                            allCombinations = multiCombinations;
-                          } else if (config.migrationType === 'Messaging') {
+                          if (config.migrationType === 'Messaging') {
                             allCombinations = messagingCombinations;
                           } else if (config.migrationType === 'Content') {
                             allCombinations = contentCombinations;
@@ -2546,8 +2486,75 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </>
           )}
 
+          {/* Multi combination: Discount input (global) - show AFTER all project configuration sections */}
+          {config.migrationType === 'Multi combination' && (
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+              <div className="group max-w-md">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
+                    <Percent className="w-4 h-4 text-white" />
+                  </div>
+                  Discount (%)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={15}
+                  step={0.01}
+                  value={discountValue}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+
+                    // Allow empty value for clearing
+                    if (raw === '') {
+                      setDiscountValue('');
+                      try {
+                        localStorage.setItem('cpq_discount', '');
+                        sessionStorage.setItem('cpq_discount_session', '');
+                        window.dispatchEvent(new CustomEvent('discountUpdated'));
+                      } catch {}
+                      return;
+                    }
+
+                    const numValue = Number(raw);
+
+                    // Check if value exceeds 15%
+                    if (numValue > 15) {
+                      alert('Discount cannot be more than 15%');
+                      return; // Don't update the value
+                    }
+
+                    // Ensure value is not negative
+                    if (numValue < 0) {
+                      setDiscountValue('0');
+                      try {
+                        sessionStorage.setItem('cpq_discount_session', '0');
+                        localStorage.setItem('cpq_discount', '0');
+                        window.dispatchEvent(new CustomEvent('discountUpdated'));
+                      } catch {}
+                      return;
+                    }
+
+                    // Update the display value immediately
+                    setDiscountValue(raw);
+
+                    // Save to sessionStorage + localStorage and notify other components
+                    try {
+                      sessionStorage.setItem('cpq_discount_session', raw);
+                      localStorage.setItem('cpq_discount', raw);
+                      window.dispatchEvent(new CustomEvent('discountUpdated'));
+                    } catch {}
+                  }}
+                  className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
+                  placeholder="Enter discount percentage (max 15%)"
+                />
+                <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
+              </div>
+            </div>
+          )}
+
           {/* OTHER MIGRATION TYPES: Standard single configuration */}
-          {config.migrationType && config.migrationType !== 'Multi combination' && (config.combination || config.migrationType === 'Multi combination') && (
+          {config.migrationType && config.migrationType !== 'Multi combination' && !!config.combination && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
@@ -2679,8 +2686,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             )}
 
-                {/* Data Size - Show for Content and Multi combination, Hide for Messaging and overage agreement */}
-                {(config.migrationType === 'Content' || config.migrationType === 'Multi combination') && config.combination !== 'overage-agreement' && (
+                {/* Data Size - Show for Content, Hide for Messaging and overage agreement */}
+                {config.migrationType === 'Content' && config.combination !== 'overage-agreement' && (
                   <div className="group md:col-span-2">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
@@ -2754,9 +2761,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       // Update the display value immediately
                       setDiscountValue(raw);
                       
-                      // Save to sessionStorage and notify other components
+                      // Save to sessionStorage + localStorage (source-of-truth used by QuoteGenerator),
+                      // and notify other components
                       try { 
                         sessionStorage.setItem('cpq_discount_session', raw);
+                        localStorage.setItem('cpq_discount', raw);
                         window.dispatchEvent(new CustomEvent('discountUpdated'));
                       } catch {}
                     }}
@@ -2766,8 +2775,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
                 </div>
 
-                {/* Messages Field - Show for Messaging and Multi combination, Hide for Content and overage agreement */}
-                {(config.migrationType === 'Messaging' || config.migrationType === 'Multi combination') && config.combination !== 'overage-agreement' && (
+                {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
+                {config.migrationType === 'Messaging' && config.combination !== 'overage-agreement' && (
                   <div className="group">
                     <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
