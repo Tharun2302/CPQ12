@@ -801,18 +801,10 @@ export class DocxTemplateProcessor {
               return para;
             });
 
-            // 3. Remove specific discount table cells (but preserve headers)
-            const discountCellRegex = /<w:tc[\s\S]*?<\/w:tc>/gi;
-            modifiedXml = modifiedXml.replace(discountCellRegex, (cell) => {
-              const cellText = cell.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-              
-              // Only remove cells that are clearly discount-related
-              if (cellText === 'discount' || cellText === 'n/a') {
-                console.log('🧹 Removing discount cell:', cellText);
-                return '';
-              }
-              return cell;
-            });
+            // 3. IMPORTANT: Do NOT remove individual <w:tc> cells.
+            // Deleting table cells can corrupt the table grid and causes Word to show:
+            // "Word found unreadable content... Do you want to recover..."
+            // We only remove whole discount rows / standalone discount paragraphs above.
 
             // 4. Remove empty table rows that might be left after discount removal
             const emptyRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
