@@ -2063,10 +2063,78 @@ app.get('/api/documents/:id', async (req, res) => {
     }
 
     const documentsCollection = db.collection('documents');
-    const document = await documentsCollection.findOne({ id: req.params.id });
+    let document = await documentsCollection.findOne({ id: req.params.id });
 
+    // Smart search fallback: if exact ID doesn't match, try to find by client/company
     if (!document) {
-      return res.status(404).json({ success: false, error: 'Document not found' });
+      console.log('⚠️ Exact ID not found in direct fetch, attempting smart search...');
+      const id = req.params.id;
+      
+      // Extract client and company from ID pattern: Company_Client_Timestamp
+      const parts = id.split('_');
+      if (parts.length >= 2) {
+        // Search for documents where ID starts with the same company_client pattern
+        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
+        const matchingDocs = await documentsCollection
+          .find({ id: { $regex: idPattern } })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .toArray();
+        
+        if (matchingDocs.length > 0) {
+          document = matchingDocs[0];
+          console.log(`✅ Found matching document: ${document.id} (searched for: ${id})`);
+        } else {
+          // Fallback: search by company and clientName fields
+          const companyPart = parts[0].replace(/[0-9]/g, '');
+          const clientPart = parts[1].replace(/[0-9]/g, '');
+          
+          if (companyPart && clientPart) {
+            const searchQuery = {
+              $and: [
+                { company: { $regex: companyPart, $options: 'i' } },
+                { clientName: { $regex: clientPart, $options: 'i' } }
+              ]
+            };
+            
+            const matchingDocs2 = await documentsCollection
+              .find(searchQuery)
+              .sort({ createdAt: -1 })
+              .limit(1)
+              .toArray();
+            
+            if (matchingDocs2.length > 0) {
+              document = matchingDocs2[0];
+              console.log(`✅ Found matching document by client/company: ${document.id} (searched for: ${id})`);
+              } else {
+              // Fallback: search by clientName only (in case company name changed or is different)
+              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
+              // Insert optional spaces before capital letters (camelCase handling)
+              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
+              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
+              const clientOnlyQuery = {
+                clientName: { $regex: clientNamePattern, $options: 'i' }
+              };
+              
+              const matchingDocs3 = await documentsCollection
+                .find(clientOnlyQuery)
+                .sort({ createdAt: -1 })
+                .limit(1)
+                .toArray();
+              
+              if (matchingDocs3.length > 0) {
+                document = matchingDocs3[0];
+                console.log(`✅ Found matching document by client name only: ${document.id} (searched for: ${id})`);
+                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${document.company}`);
+              }
+            }
+          }
+        }
+      }
+      
+      if (!document) {
+        return res.status(404).json({ success: false, error: 'Document not found' });
+      }
     }
 
     console.log('✅ Retrieved document from MongoDB:', document.id);
@@ -3645,13 +3713,85 @@ app.get('/api/documents/:id/preview', async (req, res) => {
     
     console.log('📄 Fetching document preview:', id);
     
-    const document = await db.collection('documents').findOne({ id: id });
+    let document = await db.collection('documents').findOne({ id: id });
     
+    // Smart search fallback: if exact ID doesn't match, try to find by client/company
     if (!document) {
-      return res.status(404).json({
-        success: false,
-        error: 'Document not found'
-      });
+      console.log('⚠️ Exact ID not found, attempting smart search...');
+      
+      // Extract client and company from ID pattern: Company_Client_Timestamp
+      const parts = id.split('_');
+      if (parts.length >= 2) {
+        // Try to match documents with similar company and client names
+        // The ID format is: sanitizedCompany_sanitizedClient_timestamp
+        // We'll search for documents where company or clientName contains parts of the ID
+        const companyPart = parts[0].replace(/[0-9]/g, ''); // Remove numbers
+        const clientPart = parts[1].replace(/[0-9]/g, ''); // Remove numbers
+        
+        if (companyPart && clientPart) {
+          console.log('🔍 Searching by company/client pattern:', { companyPart, clientPart });
+          
+          // Search for documents where ID starts with the same company_client pattern
+          const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
+          const matchingDocs = await db.collection('documents')
+            .find({ id: { $regex: idPattern } })
+            .sort({ createdAt: -1 })
+            .limit(1)
+            .toArray();
+          
+          if (matchingDocs.length > 0) {
+            document = matchingDocs[0];
+            console.log(`✅ Found matching document: ${document.id} (searched for: ${id})`);
+          } else {
+            // Fallback 1: search by company and clientName fields
+            const searchQuery = {
+              $and: [
+                { company: { $regex: companyPart, $options: 'i' } },
+                { clientName: { $regex: clientPart, $options: 'i' } }
+              ]
+            };
+            
+            const matchingDocs2 = await db.collection('documents')
+              .find(searchQuery)
+              .sort({ createdAt: -1 })
+              .limit(1)
+              .toArray();
+            
+            if (matchingDocs2.length > 0) {
+              document = matchingDocs2[0];
+              console.log(`✅ Found matching document by client/company: ${document.id} (searched for: ${id})`);
+            } else {
+              // Fallback 2: search by clientName only (in case company name changed)
+              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
+              // Insert optional spaces before capital letters (camelCase handling)
+              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
+              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
+              const clientOnlyQuery = {
+                clientName: { $regex: clientNamePattern, $options: 'i' }
+              };
+              
+              const matchingDocs3 = await db.collection('documents')
+                .find(clientOnlyQuery)
+                .sort({ createdAt: -1 })
+                .limit(1)
+                .toArray();
+              
+              if (matchingDocs3.length > 0) {
+                document = matchingDocs3[0];
+                console.log(`✅ Found matching document by client name only: ${document.id} (searched for: ${id})`);
+                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${document.company}`);
+              }
+            }
+          }
+        }
+      }
+      
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          error: 'Document not found'
+        });
+      }
     }
 
     // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
@@ -4255,13 +4395,80 @@ app.get('/api/documents/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const doc = await db.collection('documents').findOne({ id });
+    let doc = await db.collection('documents').findOne({ id });
 
-    if (!doc || !doc.fileData) {
-      return res.status(404).json({
-        success: false,
-        error: 'Document not found',
-      });
+    // Smart search fallback: if exact ID doesn't match, try to find by client/company
+    if (!doc) {
+      console.log('⚠️ Exact ID not found in raw fetch, attempting smart search...');
+      
+      // Extract client and company from ID pattern: Company_Client_Timestamp
+      const parts = id.split('_');
+      if (parts.length >= 2) {
+        // Search for documents where ID starts with the same company_client pattern
+        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
+        const matchingDocs = await db.collection('documents')
+          .find({ id: { $regex: idPattern } })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .toArray();
+        
+        if (matchingDocs.length > 0) {
+          doc = matchingDocs[0];
+          console.log(`✅ Found matching document: ${doc.id} (searched for: ${id})`);
+        } else {
+          // Fallback: search by company and clientName fields
+          const companyPart = parts[0].replace(/[0-9]/g, '');
+          const clientPart = parts[1].replace(/[0-9]/g, '');
+          
+          if (companyPart && clientPart) {
+            const searchQuery = {
+              $and: [
+                { company: { $regex: companyPart, $options: 'i' } },
+                { clientName: { $regex: clientPart, $options: 'i' } }
+              ]
+            };
+            
+            const matchingDocs2 = await db.collection('documents')
+              .find(searchQuery)
+              .sort({ createdAt: -1 })
+              .limit(1)
+              .toArray();
+            
+            if (matchingDocs2.length > 0) {
+              doc = matchingDocs2[0];
+              console.log(`✅ Found matching document by client/company: ${doc.id} (searched for: ${id})`);
+            } else {
+              // Fallback: search by clientName only (in case company name changed or is different)
+              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
+              // Insert optional spaces before capital letters (camelCase handling)
+              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
+              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
+              const clientOnlyQuery = {
+                clientName: { $regex: clientNamePattern, $options: 'i' }
+              };
+              
+              const matchingDocs3 = await db.collection('documents')
+                .find(clientOnlyQuery)
+                .sort({ createdAt: -1 })
+                .limit(1)
+                .toArray();
+              
+              if (matchingDocs3.length > 0) {
+                doc = matchingDocs3[0];
+                console.log(`✅ Found matching document by client name only: ${doc.id} (searched for: ${id})`);
+                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${doc.company}`);
+              }
+            }
+          }
+        }
+      }
+      
+      if (!doc || !doc.fileData) {
+        return res.status(404).json({
+          success: false,
+          error: 'Document not found',
+        });
+      }
     }
 
     const buffer = Buffer.from(doc.fileData, 'base64');
@@ -4273,6 +4480,70 @@ app.get('/api/documents/:id', async (req, res) => {
     res.send(buffer);
   } catch (error) {
     console.error('❌ Error fetching document file:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Smart document search by client name and company (fallback when exact ID doesn't match)
+app.get('/api/documents/search', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { clientName, company } = req.query;
+    
+    if (!clientName && !company) {
+      return res.status(400).json({
+        success: false,
+        error: 'clientName or company query parameter required',
+      });
+    }
+
+    console.log('🔍 Searching documents by:', { clientName, company });
+
+    const query = {};
+    if (clientName) {
+      query.clientName = { $regex: clientName.trim(), $options: 'i' };
+    }
+    if (company) {
+      query.company = { $regex: company.trim(), $options: 'i' };
+    }
+
+    const docs = await db.collection('documents')
+      .find(query)
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .toArray();
+
+    if (docs.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No documents found matching criteria',
+      });
+    }
+
+    console.log(`✅ Found ${docs.length} matching document(s)`);
+
+    res.json({
+      success: true,
+      documents: docs.map(doc => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        clientName: doc.clientName,
+        company: doc.company,
+        createdAt: doc.createdAt
+      })),
+      count: docs.length
+    });
+  } catch (error) {
+    console.error('❌ Error searching documents:', error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -4294,13 +4565,66 @@ app.get('/api/documents/:id/preview', async (req, res) => {
     const doc = await db.collection('documents').findOne({ id });
 
     if (!doc || !doc.fileData) {
+      // Try smart search as fallback if exact ID doesn't match
+      console.log('⚠️ Exact ID not found, attempting smart search...');
+      
+      // Extract client and company from ID pattern: Company_Client_Timestamp
+      const parts = id.split('_');
+      if (parts.length >= 2) {
+        const sanitizeForSearch = (str) => {
+          if (!str) return null;
+          // Remove numbers and special chars, keep letters
+          return str.replace(/[0-9]/g, '').replace(/[^a-zA-Z]/g, ' ').trim();
+        };
+        
+        const possibleCompany = sanitizeForSearch(parts[0]);
+        const possibleClient = sanitizeForSearch(parts[1]);
+        
+        if (possibleCompany && possibleClient) {
+          console.log('🔍 Searching by:', { company: possibleCompany, client: possibleClient });
+          const searchQuery = {
+            $or: [
+              { company: { $regex: possibleCompany, $options: 'i' } },
+              { clientName: { $regex: possibleClient, $options: 'i' } }
+            ]
+          };
+          
+          const matchingDocs = await db.collection('documents')
+            .find(searchQuery)
+            .sort({ createdAt: -1 })
+            .limit(1)
+            .toArray();
+          
+          if (matchingDocs.length > 0) {
+            const matchedDoc = matchingDocs[0];
+            console.log(`✅ Found matching document: ${matchedDoc.id} (searched for: ${id})`);
+            
+            // Return the matched document
+            const dataUrl = typeof matchedDoc.fileData === 'string' 
+              ? `data:application/pdf;base64,${matchedDoc.fileData}`
+              : `data:application/pdf;base64,${Buffer.from(matchedDoc.fileData).toString('base64')}`;
+            
+            return res.json({
+              success: true,
+              dataUrl,
+              fileName: matchedDoc.fileName || 'document.pdf',
+              documentId: matchedDoc.id,
+              originalSearchedId: id,
+              matched: true
+            });
+          }
+        }
+      }
+      
       return res.status(404).json({
         success: false,
         error: 'Document not found',
       });
     }
 
-    const dataUrl = `data:application/pdf;base64,${doc.fileData}`;
+    const dataUrl = typeof doc.fileData === 'string'
+      ? `data:application/pdf;base64,${doc.fileData}`
+      : `data:application/pdf;base64,${Buffer.from(doc.fileData).toString('base64')}`;
 
     res.json({
       success: true,

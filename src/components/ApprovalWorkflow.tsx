@@ -47,12 +47,25 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // If navigated from template upload / quote approval, jump directly to Start Approval Workflow tab
+  // Handle navigation state to open specific tabs
   useEffect(() => {
-    const state = location.state as { openStartApprovalTab?: boolean; documentId?: string } | null;
-    if (state?.openStartApprovalTab) {
+    const state = location.state as { 
+      openStartApprovalTab?: boolean; 
+      openDashboardTab?: boolean;
+      documentId?: string;
+      source?: string;
+    } | null;
+    
+    // If navigated from quote approval, open Admin Dashboard tab
+    if (state?.openDashboardTab || state?.source === 'quote-approval') {
+      setActiveTab('dashboard');
+      console.log('✅ Opening Admin Dashboard tab after approval submission');
+    } 
+    // If navigated from template upload, jump directly to Start Approval Workflow tab
+    else if (state?.openStartApprovalTab) {
       setActiveTab('start');
     }
+    
     // If a documentId is passed via navigation state, pre-fill it
     if (state?.documentId) {
       setFormData(prev => ({
