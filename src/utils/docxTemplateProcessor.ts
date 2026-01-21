@@ -525,6 +525,33 @@ export class DocxTemplateProcessor {
         } catch (cleanupErr) {
           console.warn('⚠️ Could not post-process DOCX to remove Discount rows:', cleanupErr);
         }
+
+        // Always remove fully empty table rows (common cause of "blank rows" in pricing tables)
+        // We only remove rows that have no visible text AND no drawings/objects to avoid breaking layout tables.
+        try {
+          const zipAfter = doc.getZip();
+          const xmlPath = 'word/document.xml';
+          const originalXml = zipAfter.file(xmlPath)?.asText() || '';
+          if (originalXml) {
+            const stripTags = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+            const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
+            const cleanedXml = originalXml.replace(rowRegex, (row) => {
+              const rowText = stripTags(row);
+              const hasNonTextContent =
+                /<w:drawing\b|<w:pict\b|<v:shape\b|<w:object\b|<w:instrText\b/i.test(row);
+              if (rowText.length === 0 && !hasNonTextContent) {
+                return '';
+              }
+              return row;
+            });
+            if (cleanedXml !== originalXml) {
+              zipAfter.file(xmlPath, cleanedXml);
+              console.log('🧹 Removed fully empty table rows from document.xml');
+            }
+          }
+        } catch (emptyRowCleanupErr) {
+          console.warn('⚠️ Could not post-process DOCX to remove empty table rows:', emptyRowCleanupErr);
+        }
         
         // CRITICAL: Log the final processed document to verify tokens were replaced
         const finalDocumentXml = zip.file('word/document.xml')?.asText() || '';
