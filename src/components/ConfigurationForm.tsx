@@ -131,24 +131,45 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             let hasContent = false;
             let hasEmail = false;
             
-            // Helper function to extract base combination name from exhibit name
-            // e.g., "OneDrive to OneDrive Standard Plan - Included Features" -> "OneDrive to OneDrive"
-            // e.g., "ShareFile to Google Shared Drive Advanced Plan - Included Features" -> "ShareFile to Google Shared Drive"
-            const extractCombinationName = (exhibitName: string): string => {
+            // Helper function to extract base combination from exhibit
+            // Priority: Use combinations field (base combination), fallback to name extraction
+            const extractCombinationName = (exhibit: any): string => {
+              // First, try to extract base combination from combinations field
+              if (exhibit.combinations && exhibit.combinations.length > 0) {
+                const primaryCombination = exhibit.combinations[0];
+                if (primaryCombination && primaryCombination !== 'all') {
+                  // Extract base combination (remove include/notinclude and plan type suffixes)
+                  const base = primaryCombination
+                    .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '')
+                    .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, ''); // Run twice to catch both
+                  
+                  if (base && base !== 'all' && base.length >= 3) {
+                    // Format for display: "testing-to-production" -> "Testing To Production"
+                    const formatted = base
+                      .split('-')
+                      .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ');
+                    return formatted;
+                  }
+                }
+              }
+              
+              // Fallback: Extract from exhibit name (for backward compatibility)
+              const exhibitName = exhibit.name || '';
+              if (!exhibitName || exhibitName === 'New Exhibit') {
+                return exhibitName;
+              }
+              
               // Remove common suffixes like:
               // - " Standard Plan - Included Features"
               // - " Advanced Plan - Included Features"
               // - " Basic Plan - Not Included Features"
-              // - " Plan - ..." (any plan type)
-              // - " - Included Features"
-              // - " - Not Included Features"
-              // - " - ..." (generic suffix)
               const patterns = [
-                /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i, // Plan types with "- ..."
-                /\s+Plan\s*-\s*.*$/i, // Generic " Plan - ..."
-                /\s+-\s*Included\s+Features$/i, // " - Included Features"
-                /\s+-\s*Not\s+Included\s+Features$/i, // " - Not Included Features"
-                /\s+-\s*.*$/i, // Generic "- ..." suffix
+                /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i,
+                /\s+Plan\s*-\s*.*$/i,
+                /\s+-\s*Included\s+Features$/i,
+                /\s+-\s*Not\s+Included\s+Features$/i,
+                /\s+-\s*.*$/i,
               ];
               
               let cleaned = exhibitName;
@@ -174,7 +195,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               if (exhibit) {
                 const rawCategory = (exhibit.category || 'content');
                 const category = rawCategory.toLowerCase();
-                const combinationName = extractCombinationName(exhibit.name || '');
+                // Extract base combination name (prioritizes combinations field over name)
+                const combinationName = extractCombinationName(exhibit);
                 
                 if (category === 'messaging' || category === 'message') {
                   hasMessaging = true;
@@ -214,12 +236,25 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             messagingCombinationMap.forEach((group, combinationName) => {
               // Use first exhibit ID as the primary ID, but store all IDs in the name or use combination name
               const primaryExhibitId = group.exhibitIds[0];
+              const primaryExhibit = exhibits.find((ex: any) => ex._id === primaryExhibitId);
               const existing = (config.messagingConfigs || []).find(c => 
                 c.exhibitId === primaryExhibitId || c.exhibitName === combinationName
               );
               
-              newMessagingConfigs.push(
-                existing || {
+              // Get plan type from exhibit if available
+              let exhibitPlanType = '';
+              if (primaryExhibit?.planType) {
+                exhibitPlanType = primaryExhibit.planType.toLowerCase();
+              }
+              
+              if (existing) {
+                // Preserve existing config but update planType if not set
+                newMessagingConfigs.push({
+                  ...existing,
+                  planType: existing.planType || exhibitPlanType,
+                });
+              } else {
+                newMessagingConfigs.push({
                   exhibitId: primaryExhibitId, // Store first exhibit ID, but display combination name
                   exhibitName: combinationName, // Display the combination name, not individual exhibit name
                   numberOfUsers: config.messagingConfig?.numberOfUsers || 1,
@@ -227,19 +262,33 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   numberOfInstances: config.messagingConfig?.numberOfInstances || 1,
                   duration: config.messagingConfig?.duration || 1,
                   messages: config.messagingConfig?.messages || 1,
-                }
-              );
+                  planType: exhibitPlanType, // Store plan type from exhibit
+                });
+              }
             });
             
             // Build content configs (one per combination)
             contentCombinationMap.forEach((group, combinationName) => {
               const primaryExhibitId = group.exhibitIds[0];
+              const primaryExhibit = exhibits.find((ex: any) => ex._id === primaryExhibitId);
               const existing = (config.contentConfigs || []).find(c => 
                 c.exhibitId === primaryExhibitId || c.exhibitName === combinationName
               );
               
-              newContentConfigs.push(
-                existing || {
+              // Get plan type from exhibit if available
+              let exhibitPlanType = '';
+              if (primaryExhibit?.planType) {
+                exhibitPlanType = primaryExhibit.planType.toLowerCase();
+              }
+              
+              if (existing) {
+                // Preserve existing config but update planType if not set
+                newContentConfigs.push({
+                  ...existing,
+                  planType: existing.planType || exhibitPlanType,
+                });
+              } else {
+                newContentConfigs.push({
                   exhibitId: primaryExhibitId,
                   exhibitName: combinationName, // Display the combination name
                   numberOfUsers: config.contentConfig?.numberOfUsers || 1,
@@ -247,8 +296,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   numberOfInstances: config.contentConfig?.numberOfInstances || 1,
                   duration: config.contentConfig?.duration || 1,
                   dataSizeGB: config.contentConfig?.dataSizeGB || 1,
-                }
-              );
+                  planType: exhibitPlanType, // Store plan type from exhibit
+                });
+              }
             });
             
             // Build email configs (one per combination)
@@ -1726,7 +1776,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               {/* Messaging Project Configuration Section - one card per messaging exhibit */}
               {selectedExhibitCategories.hasMessaging && (config.messagingConfigs || []).map((messagingCfg, messagingIndex) => {
                 // Get or initialize tier for this messaging config
-                const currentTier = messagingTiers[messagingCfg.exhibitId] || PRICING_TIERS.find(t => t.name === 'Standard') || PRICING_TIERS[1];
+                // Use planType from config if available, otherwise default to Standard
+                const planTypeFromConfig = (messagingCfg as any).planType;
+                const defaultTierName = planTypeFromConfig 
+                  ? planTypeFromConfig.charAt(0).toUpperCase() + planTypeFromConfig.slice(1)
+                  : 'Standard';
+                const currentTier = messagingTiers[messagingCfg.exhibitId] || 
+                  PRICING_TIERS.find(t => t.name === defaultTierName) || 
+                  PRICING_TIERS.find(t => t.name === 'Standard') || 
+                  PRICING_TIERS[1];
                 
                 // Calculate pricing for this messaging configuration
                 const messagingConfigData: ConfigurationData = {
@@ -2013,7 +2071,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               {/* Content Project Configuration Section - one card per content exhibit */}
               {selectedExhibitCategories.hasContent && (config.contentConfigs || []).map((contentCfg, contentIndex) => {
                 // Get or initialize tier for this content config
-                const currentTier = contentTiers[contentCfg.exhibitId] || PRICING_TIERS.find(t => t.name === 'Standard') || PRICING_TIERS[1];
+                // Use planType from config if available, otherwise default to Standard
+                const planTypeFromConfig = (contentCfg as any).planType;
+                const defaultTierName = planTypeFromConfig 
+                  ? planTypeFromConfig.charAt(0).toUpperCase() + planTypeFromConfig.slice(1)
+                  : 'Standard';
+                const currentTier = contentTiers[contentCfg.exhibitId] || 
+                  PRICING_TIERS.find(t => t.name === defaultTierName) || 
+                  PRICING_TIERS.find(t => t.name === 'Standard') || 
+                  PRICING_TIERS[1];
                 
                 // Calculate pricing for this content configuration
                 const contentConfigData: ConfigurationData = {

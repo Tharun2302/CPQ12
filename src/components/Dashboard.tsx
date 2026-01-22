@@ -11,6 +11,7 @@ import DealDetails from './DealDetails';
 import Settings from './Settings';
 import DigitalSignatureForm from './DigitalSignatureForm';
 import ApprovalWorkflow from './ApprovalWorkflow';
+import ExhibitManager from './ExhibitManager';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
 import { FileText } from 'lucide-react';
@@ -159,7 +160,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       return 'documents';
     }
 
-    const allowed = ['deal', 'configure', 'quote', 'documents', 'templates', 'approval'];
+    const allowed = ['deal', 'configure', 'quote', 'documents', 'templates', 'approval', 'exhibits'];
     return allowed.includes(tab) ? tab : 'deal';
   };
 
@@ -547,6 +548,9 @@ const Dashboard: React.FC<DashboardProps> = ({
             updateCompanyInfo={updateCompanyInfo}
           />
         );
+
+      case 'exhibits':
+        return <ExhibitManager />;
 
       default:
         return <Navigate to="/deal" replace />;

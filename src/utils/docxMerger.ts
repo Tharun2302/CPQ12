@@ -9,6 +9,25 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
   
   // Paragraph properties for title styling
   const pPr = doc.createElementNS(ns, 'w:pPr');
+  
+  // Add paragraph alignment (center)
+  const jc = doc.createElementNS(ns, 'w:jc');
+  jc.setAttribute('w:val', 'center');
+  pPr.appendChild(jc);
+  
+  // Add shading for blue background bar
+  const shd = doc.createElementNS(ns, 'w:shd');
+  shd.setAttribute('w:fill', 'D9E1F2'); // Light blue color (similar to the blue bar)
+  shd.setAttribute('w:val', 'clear');
+  pPr.appendChild(shd);
+  
+  // Add spacing
+  const spacing = doc.createElementNS(ns, 'w:spacing');
+  spacing.setAttribute('w:before', '240'); // Space before
+  spacing.setAttribute('w:after', '120'); // Space after
+  pPr.appendChild(spacing);
+  
+  // Add paragraph style
   const pStyle = doc.createElementNS(ns, 'w:pStyle');
   pStyle.setAttribute('w:val', 'Heading1');
   pPr.appendChild(pStyle);
@@ -17,8 +36,15 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
   // Run for the title text
   const r = doc.createElementNS(ns, 'w:r');
   const rPr = doc.createElementNS(ns, 'w:rPr');
+  
+  // Bold text
   const b = doc.createElementNS(ns, 'w:b');
   rPr.appendChild(b);
+  
+  // Uppercase text
+  const caps = doc.createElementNS(ns, 'w:caps');
+  rPr.appendChild(caps);
+  
   r.appendChild(rPr);
   
   const t = doc.createElementNS(ns, 'w:t');
@@ -80,9 +106,44 @@ export async function mergeDocxFiles(
       groupedExhibits = { included: [], notIncluded: [] };
       exhibitMetadata.forEach((meta, index) => {
         const nameLower = meta.name.toLowerCase();
-        const isNotIncluded = nameLower.includes('not included') || 
-                              nameLower.includes('not include') ||
-                              nameLower.includes('notincluded');
+        // Check for various "not included" patterns (with/without spaces, different cases, dashes)
+        // Pattern: "not - include", "not - included", "not include", "not included", etc.
+        // Use regex to handle variations with spaces, dashes, and different word boundaries
+        // More comprehensive pattern matching for "not included" variations
+        // Check for "not" followed by optional spaces/dashes and "include" (with or without 'd')
+        const hasNot = nameLower.includes('not');
+        const hasInclude = nameLower.includes('include');
+        
+        // If it has both "not" and "include", check the pattern more carefully
+        let isNotIncluded = false;
+        if (hasNot && hasInclude) {
+          // Check various patterns - use lookahead to avoid requiring a character after "include"
+          const patterns = [
+            /not\s+included/i,                    // "not included"
+            /not\s+include(?!d)/i,                // "not include" (not followed by 'd')
+            /not\s*-\s*include(?!d)/i,            // "not - include" or "not-include" (not followed by 'd')
+            /not\s*-\s*included/i,                // "not - included" or "not-included"
+            /notincluded/i,                       // "notincluded"
+            /notinclude(?!d)/i,                   // "notinclude" (not followed by 'd')
+            /not\s*-\s*include\b/i                // "not - include" (word boundary, more flexible)
+          ];
+          
+          isNotIncluded = patterns.some(pattern => pattern.test(nameLower));
+          
+          // Fallback: If "not" appears before "include" and it's not "included", it's likely "not include"
+          if (!isNotIncluded) {
+            const notIndex = nameLower.indexOf('not');
+            const includeIndex = nameLower.indexOf('include');
+            if (notIndex !== -1 && includeIndex !== -1 && notIndex < includeIndex) {
+              // Check if it's "included" (with 'd') - if not, it's "not include"
+              const afterInclude = nameLower.substring(includeIndex + 7); // "include" is 7 chars
+              if (!afterInclude.startsWith('d')) {
+                isNotIncluded = true;
+              }
+            }
+          }
+        }
+        
         if (isNotIncluded) {
           groupedExhibits!.notIncluded.push(index);
           console.log(`   📌 [${index}] "${meta.name}" → NOT INCLUDED`);
@@ -173,9 +234,18 @@ export async function mergeDocxFiles(
             pStyle.getAttribute('w:val')?.toLowerCase().includes('title')
           );
           
-          // For INCLUDED exhibits: Skip any headings/content that contain "NOT INCLUDED"
-          if (isIncludedExhibit && (isHeading || paragraphText.length > 50)) {
-            if (lowerText.includes('not included') || lowerText.includes('exhibit 2')) {
+          // For INCLUDED exhibits: Skip ANY content that contains "NOT INCLUDED" patterns
+          // Check ALL paragraphs, not just headings or long ones
+          if (isIncludedExhibit) {
+            // Check for various "not included" patterns (with/without spaces, different cases)
+            const hasNotIncluded = lowerText.includes('not included') ||
+                                  lowerText.includes('not include') ||
+                                  lowerText.includes('notincluded') ||
+                                  lowerText.includes('notinclude') ||
+                                  lowerText.includes('not-include') ||
+                                  lowerText.includes('not-included') ||
+                                  lowerText.includes('exhibit 2');
+            if (hasNotIncluded) {
               console.log(`   ⏭️  Skipping "NOT INCLUDED" content from included exhibit: ${paragraphText.substring(0, 50)}...`);
               continue;
             }
@@ -183,7 +253,15 @@ export async function mergeDocxFiles(
           
           // For NOT INCLUDED exhibits: Skip first heading (already handled by main header)
           if (skipFirstHeading && !skippedFirstHeading) {
-            if (isHeading || lowerText.includes('not included') || lowerText.includes('exhibit 2')) {
+            // Check for various "not included" patterns
+            const hasNotIncluded = lowerText.includes('not included') ||
+                                  lowerText.includes('not include') ||
+                                  lowerText.includes('notincluded') ||
+                                  lowerText.includes('notinclude') ||
+                                  lowerText.includes('not-include') ||
+                                  lowerText.includes('not-included') ||
+                                  lowerText.includes('exhibit 2');
+            if (isHeading || hasNotIncluded) {
               console.log(`   ⏭️  Skipping first heading from exhibit (main "Exhibit 2" header already added)`);
               skippedFirstHeading = true;
               continue;
@@ -249,6 +327,8 @@ export async function mergeDocxFiles(
       // STEP 3: THEN process all Not Included exhibits (their tables will appear below the header)
       if (groupedExhibits.notIncluded.length > 0) {
         console.log(`📋 STEP 2 & 3: Processing ${groupedExhibits.notIncluded.length} Not Included exhibit(s)...`);
+        console.log(`📋 Not Included exhibit indices:`, groupedExhibits.notIncluded);
+        console.log(`📋 Not Included exhibit names:`, groupedExhibits.notIncluded.map(idx => exhibitMetadata?.[idx]?.name || `[${idx}]`));
         
         // Add page break before the Not Included group (but not before title)
         const pageBreak = mainDoc.createElementNS(ns, 'w:p');

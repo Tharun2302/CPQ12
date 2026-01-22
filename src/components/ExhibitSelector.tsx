@@ -9,6 +9,7 @@ interface Exhibit {
   fileName: string;
   combinations: string[];
   category?: string;
+  planType?: string; // 'basic' | 'standard' | 'advanced' | ''
   isRequired: boolean;
   displayOrder: number;
 }
@@ -28,6 +29,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadExhibits();
@@ -96,16 +98,20 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     
     // Filter exhibits to only show those matching the selected tier
     return exhibits.filter(exhibit => {
-      const exhibitName = exhibit.name.toLowerCase();
+      // First check if exhibit has planType field (new way - more reliable)
+      if (exhibit.planType) {
+        return exhibit.planType.toLowerCase() === tierName;
+      }
       
-      // Check if exhibit name contains a plan type (Standard, Advanced, Basic, Premium, Enterprise)
+      // Fallback: Check if exhibit name contains a plan type (legacy support)
+      const exhibitName = exhibit.name.toLowerCase();
       const hasStandard = exhibitName.includes('standard');
       const hasAdvanced = exhibitName.includes('advanced');
       const hasBasic = exhibitName.includes('basic');
       const hasPremium = exhibitName.includes('premium');
       const hasEnterprise = exhibitName.includes('enterprise');
       
-      // If exhibit has a plan type, filter by matching tier
+      // If exhibit has a plan type in name, filter by matching tier
       if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
         if (tierName === 'basic') {
           return hasBasic && !hasStandard && !hasAdvanced;
@@ -189,32 +195,79 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     );
   }, [filteredExhibits, searchQuery]);
 
+  // Helper function to extract base combination from combination string
+  const extractBaseCombination = (combination: string): string => {
+    if (!combination || combination === 'all') return '';
+    
+    let base = combination.toLowerCase();
+    
+    // Remove plan type suffixes
+    base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+    
+    // Remove include/notinclude suffixes
+    base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+    
+    // Clean up any trailing dashes
+    base = base.replace(/-+$/, '').trim();
+    
+    return base;
+  };
+
+  // Helper function to format combination for display (e.g., "testing-to-production" -> "Testing to Production")
+  const formatCombinationForDisplay = (combination: string): string => {
+    if (!combination) return '';
+    
+    return combination
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
   // Process exhibits for flat list display (handle grouping)
   const processedExhibits = useMemo(() => {
     const sorted = [...searchFilteredExhibits].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
     
-    // Group exhibits by base name (for items with " - " separator)
+    // Group exhibits by base combination extracted from combinations field
     const groups: Map<string, Exhibit[]> = new Map();
     const ungrouped: Exhibit[] = [];
     
     sorted.forEach((exhibit) => {
-      const dashIndex = exhibit.name.indexOf(' - ');
-      if (dashIndex > 0) {
-        const baseName = exhibit.name.substring(0, dashIndex);
-        let folderName = baseName
-          .replace(/\s+(Basic|Standard|Advanced|Premium)\s+Plan$/i, '')
-          .trim();
-        
-        if (!folderName || folderName.length < 3) {
-          folderName = baseName;
-        }
+      // Get the first combination (or 'all' if no combinations)
+      const primaryCombination = exhibit.combinations && exhibit.combinations.length > 0 
+        ? exhibit.combinations[0] 
+        : 'all';
+      
+      // Extract base combination (e.g., "testing-to-production" from "testing-to-production-include-basic")
+      const baseCombination = extractBaseCombination(primaryCombination);
+      
+      if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 3) {
+        // Use base combination as folder name
+        const folderName = formatCombinationForDisplay(baseCombination);
         
         if (!groups.has(folderName)) {
           groups.set(folderName, []);
         }
         groups.get(folderName)!.push(exhibit);
       } else {
-        ungrouped.push(exhibit);
+        // Fallback: Try grouping by name pattern (for backward compatibility)
+        const dashIndex = exhibit.name.indexOf(' - ');
+        if (dashIndex > 0) {
+          const baseName = exhibit.name.substring(0, dashIndex);
+          let folderName = baseName
+            .replace(/\s+(Basic|Standard|Advanced|Premium)\s+Plan$/i, '')
+            .trim();
+          
+          if (!folderName || folderName.length < 3) {
+            folderName = baseName;
+          }
+          
+          if (!groups.has(folderName)) {
+            groups.set(folderName, []);
+          }
+          groups.get(folderName)!.push(exhibit);
+        } else {
+          ungrouped.push(exhibit);
+        }
       }
     });
     
@@ -346,6 +399,20 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                   const hasRequired = item.exhibits.some(ex => ex.isRequired);
                   const fileCount = item.exhibits.length;
                   const isSelected = isGroup ? allExhibitsSelected : selectedExhibits.includes(item.exhibits[0]._id);
+                  const isExpanded = isGroup && expandedGroups.has(item.id);
+
+                  const handleToggleExpand = (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    if (isGroup) {
+                      const newExpanded = new Set(expandedGroups);
+                      if (newExpanded.has(item.id)) {
+                        newExpanded.delete(item.id);
+                      } else {
+                        newExpanded.add(item.id);
+                      }
+                      setExpandedGroups(newExpanded);
+                    }
+                  };
 
                   const handleClick = () => {
                     if (isGroup) {
@@ -371,40 +438,123 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                   };
 
                   return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={handleClick}
-                      disabled={hasRequired && isGroup}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-all ${
-                        isSelected
-                          ? 'border-purple-500 bg-white shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-gray-50'
-                      } ${hasRequired && isGroup ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                        <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px] font-semibold text-gray-700">{index + 1}</span>
+                    <div key={item.id} className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={handleClick}
+                        disabled={hasRequired && isGroup}
+                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${
+                          isSelected
+                            ? 'border-purple-500 bg-white shadow-sm'
+                            : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-gray-50'
+                        } ${hasRequired && isGroup ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={handleToggleExpand}
+                            className={`flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                          >
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                          </button>
+                          <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <span className="text-[10px] font-semibold text-gray-700">{index + 1}</span>
+                          </div>
+                          <div
+                            className={`w-4 h-4 border-2 flex items-center justify-center flex-shrink-0 ${
+                              isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                            {isGroup && someExhibitsSelected && !allExhibitsSelected && (
+                              <div className="w-1.5 h-1.5 bg-purple-500 rounded-sm" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-900 text-xs leading-tight">{item.name}</div>
+                          </div>
+                          <div className="text-[10px] text-gray-500 flex-shrink-0 whitespace-nowrap">
+                            ({fileCount} {fileCount === 1 ? 'file' : 'files'})
+                          </div>
                         </div>
-                        <div
-                          className={`w-4 h-4 border-2 flex items-center justify-center flex-shrink-0 ${
-                            isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
-                          }`}
-                        >
-                          {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
-                          {isGroup && someExhibitsSelected && !allExhibitsSelected && (
-                            <div className="w-1.5 h-1.5 bg-purple-500 rounded-sm" />
-                          )}
+                      </button>
+                      
+                      {/* Show individual exhibits when group is expanded */}
+                      {isGroup && isExpanded && (
+                        <div className="ml-6 space-y-1 border-l-2 border-gray-200 pl-2 mt-1">
+                          {item.exhibits.map((exhibit) => {
+                            const exhibitSelected = selectedExhibits.includes(exhibit._id);
+                            
+                            // Extract plan type and include/notinclude status from exhibit
+                            const planType = exhibit.planType || '';
+                            const combination = exhibit.combinations?.[0] || '';
+                            const exhibitNameLower = exhibit.name.toLowerCase();
+                            const combinationLower = combination.toLowerCase();
+                            
+                            // Check for "not include" patterns (same logic as docxMerger)
+                            const isNotIncluded = combinationLower.includes('not included') || 
+                                                  combinationLower.includes('not include') ||
+                                                  combinationLower.includes('notincluded') ||
+                                                  combinationLower.includes('notinclude') ||
+                                                  combinationLower.includes('not-include') ||
+                                                  combinationLower.includes('not-included') ||
+                                                  exhibitNameLower.includes('not included') ||
+                                                  exhibitNameLower.includes('not include') ||
+                                                  exhibitNameLower.includes('notincluded') ||
+                                                  exhibitNameLower.includes('notinclude') ||
+                                                  exhibitNameLower.includes('not-include') ||
+                                                  exhibitNameLower.includes('not-included') ||
+                                                  exhibitNameLower.includes('not - include') ||
+                                                  exhibitNameLower.includes('not - included');
+                            const includeStatus = isNotIncluded ? 'Not Include' : 'Include';
+                            
+                            return (
+                              <button
+                                key={exhibit._id}
+                                type="button"
+                                onClick={() => toggleExhibit(exhibit._id, exhibit.isRequired)}
+                                disabled={exhibit.isRequired}
+                                className={`w-full text-left p-2 rounded-md border transition-all ${
+                                  exhibitSelected
+                                    ? 'border-purple-400 bg-purple-50'
+                                    : 'border-gray-100 bg-gray-50 hover:border-purple-200 hover:bg-purple-50/50'
+                                } ${exhibit.isRequired ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`w-3.5 h-3.5 border-2 flex items-center justify-center flex-shrink-0 ${
+                                      exhibitSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
+                                    }`}
+                                  >
+                                    {exhibitSelected && <Check className="w-2 h-2 text-white" strokeWidth={3} />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-medium text-gray-800 leading-tight">{exhibit.name}</div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      {planType && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">
+                                          {planType.charAt(0).toUpperCase() + planType.slice(1)}
+                                        </span>
+                                      )}
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                        isNotIncluded 
+                                          ? 'bg-orange-100 text-orange-700' 
+                                          : 'bg-green-100 text-green-700'
+                                      }`}>
+                                        {includeStatus}
+                                      </span>
+                                      {exhibit.isRequired && (
+                                        <span className="text-[10px] text-purple-600 font-medium">Required</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-gray-900 text-xs leading-tight">{item.name}</div>
-                        </div>
-                        <div className="text-[10px] text-gray-500 flex-shrink-0 whitespace-nowrap">
-                          ({fileCount} {fileCount === 1 ? 'file' : 'files'})
-                        </div>
-                      </div>
-                    </button>
+                      )}
+                    </div>
                   );
                 })
               )}

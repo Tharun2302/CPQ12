@@ -162,7 +162,96 @@ async function initializeDatabase() {
       console.log('⏭️ Skipping template/exhibit seeding on startup (SEED_TEMPLATES_ON_STARTUP not set to true)');
       console.log('💡 Tip: Set SEED_TEMPLATES_ON_STARTUP=true in .env to auto-sync backend template changes');
     }
+
     console.log('✅ MongoDB Atlas ping successful');
+    
+    // Function to sync exhibits from MongoDB to backend-exhibits folder
+    // This restores UI-added exhibits to folder after Docker restart
+    async function syncExhibitsToFolder(db) {
+      try {
+        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+        
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(exhibitsDir)) {
+          try {
+            fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
+            console.log(`📁 Created backend-exhibits directory: ${exhibitsDir}`);
+          } catch (mkdirError) {
+            console.warn(`⚠️ Cannot create backend-exhibits directory: ${mkdirError.message}`);
+            return; // Skip sync if can't create directory
+          }
+        }
+
+        // Check write permissions
+        try {
+          fs.accessSync(exhibitsDir, fs.constants.W_OK);
+        } catch (accessError) {
+          console.warn(`⚠️ No write permission for backend-exhibits directory: ${accessError.message}`);
+          return; // Skip sync if no write permission
+        }
+
+        console.log('🔄 Syncing exhibits from MongoDB to backend-exhibits folder...');
+        
+        // Get all exhibits from MongoDB
+        const exhibits = await db.collection('exhibits').find({}).toArray();
+        let syncedCount = 0;
+        let skippedCount = 0;
+        let errorCount = 0;
+
+        for (const exhibit of exhibits) {
+          try {
+            if (!exhibit.fileName || !exhibit.fileData) {
+              skippedCount++;
+              continue;
+            }
+
+            const filePath = path.join(exhibitsDir, exhibit.fileName);
+            
+            // Skip if file already exists (don't overwrite)
+            if (fs.existsSync(filePath)) {
+              skippedCount++;
+              continue;
+            }
+
+            // Convert base64 to buffer and write to file
+            let fileBuffer;
+            if (Buffer.isBuffer(exhibit.fileData)) {
+              fileBuffer = exhibit.fileData;
+            } else if (typeof exhibit.fileData === 'string') {
+              fileBuffer = Buffer.from(exhibit.fileData, 'base64');
+            } else {
+              console.warn(`⚠️ Unknown fileData format for exhibit: ${exhibit.fileName}`);
+              skippedCount++;
+              continue;
+            }
+
+            fs.writeFileSync(filePath, fileBuffer, { mode: 0o644 });
+            console.log(`✅ Synced exhibit to folder: ${exhibit.fileName}`);
+            syncedCount++;
+          } catch (fileError) {
+            console.error(`❌ Error syncing exhibit ${exhibit.fileName}:`, fileError.message);
+            errorCount++;
+          }
+        }
+
+        console.log(`📊 Folder Sync Summary:`);
+        console.log(`   ✅ Synced: ${syncedCount}`);
+        console.log(`   ⏭️  Skipped (already exists): ${skippedCount}`);
+        console.log(`   ❌ Errors: ${errorCount}`);
+        console.log(`   📁 Total exhibits in MongoDB: ${exhibits.length}\n`);
+      } catch (error) {
+        console.error('❌ Error syncing exhibits to folder:', error.message);
+        // Don't throw - this is non-critical
+      }
+    }
+
+    // Sync MongoDB exhibits back to backend-exhibits folder (reverse sync)
+    // This restores UI-added exhibits to folder after Docker restart
+    try {
+      await syncExhibitsToFolder(db);
+    } catch (error) {
+      console.log('⚠️ Exhibit folder sync skipped due to error:', error.message);
+    }
     
     // Create users collection with proper indexes
     const usersCollection = db.collection('users');
@@ -1959,6 +2048,525 @@ app.get('/api/exhibits/:id/file', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to fetch exhibit file',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
+// EXHIBIT UPLOAD/MANAGEMENT API ENDPOINTS
+// ============================================
+
+// Upload new exhibit (POST)
+app.post('/api/exhibits', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database not available' 
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No file uploaded' 
+      });
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword'
+    ];
+    
+    if (!allowedTypes.includes(req.file.mimetype) && !req.file.originalname.toLowerCase().endsWith('.docx')) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid file type. Only DOCX files are allowed.' 
+      });
+    }
+
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (req.file.size > maxSize) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'File size exceeds 10MB limit' 
+      });
+    }
+
+    // Get metadata from request body
+    const {
+      name,
+      description = '',
+      category,
+      combinations,
+      planType = '',
+      displayOrder,
+      keywords,
+      isRequired = false
+    } = req.body;
+
+    // Validate required fields
+    if (!category) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required field: category is required' 
+      });
+    }
+
+    // Validate plan type (required)
+    if (!planType || planType.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required field: planType is required. Please select Basic, Standard, or Advanced.' 
+      });
+    }
+
+    // Validate plan type value
+    const validPlanTypes = ['basic', 'standard', 'advanced'];
+    if (!validPlanTypes.includes(planType.toLowerCase())) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Invalid plan type: ${planType}. Must be one of: Basic, Standard, or Advanced.` 
+      });
+    }
+
+    // Parse combinations FIRST (needed for name generation)
+    let combinationsArray = [];
+    if (combinations) {
+      try {
+        combinationsArray = typeof combinations === 'string' 
+          ? JSON.parse(combinations) 
+          : Array.isArray(combinations) 
+            ? combinations 
+            : [combinations];
+      } catch (e) {
+        combinationsArray = [combinations];
+      }
+    }
+
+    // Auto-generate name from combination if not provided
+    let finalName = name ? name.trim() : '';
+    if (!finalName && combinationsArray.length > 0 && combinationsArray[0] !== 'all') {
+      const combination = combinationsArray[0];
+      // Convert "slack-to-teams" to "Slack to Teams"
+      // Also handles single words like "testing" -> "Testing"
+      const parts = combination.split('-');
+      const formatted = parts
+        .filter(part => part.trim() !== '' && part !== 'to')
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(' ');
+      
+      // If formatted is empty, capitalize the original combination
+      finalName = formatted || (combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase());
+    }
+    if (!finalName) {
+      finalName = 'New Exhibit';
+    }
+
+    // Parse keywords (can be string or array)
+    let keywordsArray = [];
+    if (keywords) {
+      try {
+        keywordsArray = typeof keywords === 'string' 
+          ? JSON.parse(keywords) 
+          : Array.isArray(keywords) 
+            ? keywords 
+            : [keywords];
+      } catch (e) {
+        keywordsArray = keywords.split(',').map(k => k.trim()).filter(Boolean);
+      }
+    }
+
+    // Convert file to base64
+    const fileData = req.file.buffer.toString('base64');
+
+    // Create exhibit document
+    const exhibitDoc = {
+      name: finalName,
+      description: description.trim() || '',
+      fileName: req.file.originalname,
+      fileData: fileData,
+      fileType: req.file.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      fileSize: req.file.size,
+      combinations: combinationsArray.length > 0 ? combinationsArray : ['all'],
+      category: category.toLowerCase(),
+      planType: planType ? planType.toLowerCase() : '', // Store plan type (basic, standard, advanced)
+      displayOrder: displayOrder ? parseInt(displayOrder) : 999,
+      keywords: keywordsArray,
+      isRequired: isRequired === true || isRequired === 'true',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      version: 1
+    };
+
+    // Check if exhibit with same filename already exists (in MongoDB)
+    const existing = await db.collection('exhibits').findOne({
+      fileName: exhibitDoc.fileName
+    });
+
+    if (existing) {
+      return res.status(409).json({ 
+        success: false, 
+        error: 'Exhibit with this filename already exists',
+        existingId: existing._id
+      });
+    }
+
+    // Check if file already exists in folder (to prevent overwriting manually added files)
+    const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+    const filePath = path.join(exhibitsDir, exhibitDoc.fileName);
+    
+    // Only check folder if directory exists
+    if (fs.existsSync(exhibitsDir) && fs.existsSync(filePath)) {
+      // File exists in folder but not in MongoDB - warn but allow (might be orphaned file)
+      console.warn(`⚠️ File exists in folder but not in MongoDB: ${exhibitDoc.fileName}`);
+      console.warn(`   Proceeding with upload - file will be overwritten in folder`);
+    }
+
+    // Insert into database
+    const result = await db.collection('exhibits').insertOne(exhibitDoc);
+
+    // Also save to backend-exhibits folder for easy file access
+    try {
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(exhibitsDir)) {
+        try {
+          fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
+          console.log(`📁 Created backend-exhibits directory: ${exhibitsDir}`);
+        } catch (mkdirError: any) {
+          // Check if it's a permission error
+          if (mkdirError.code === 'EACCES' || mkdirError.code === 'EPERM') {
+            console.error(`❌ Permission denied creating directory: ${exhibitsDir}`);
+            console.error(`   Error: ${mkdirError.message}`);
+            throw new Error(`Permission denied: Cannot create backend-exhibits directory. Check file system permissions.`);
+          }
+          throw mkdirError;
+        }
+      }
+      
+      // Check write permissions before attempting to write
+      try {
+        fs.accessSync(exhibitsDir, fs.constants.W_OK);
+      } catch (accessError: any) {
+        console.error(`❌ No write permission for directory: ${exhibitsDir}`);
+        throw new Error(`Permission denied: Cannot write to backend-exhibits directory. Check file system permissions.`);
+      }
+      
+      // Save file to folder
+      fs.writeFileSync(filePath, req.file.buffer, { mode: 0o644 });
+      console.log(`💾 Exhibit file saved to folder: ${filePath}`);
+    } catch (folderError: any) {
+      // Log detailed error information
+      const errorDetails = {
+        message: folderError.message,
+        code: folderError.code,
+        path: exhibitsDir,
+        stack: folderError.stack
+      };
+      
+      console.error(`❌ Failed to save exhibit to backend-exhibits folder:`, errorDetails);
+      console.warn(`⚠️ Exhibit saved to MongoDB but NOT to folder`);
+      console.warn(`   This is non-critical - exhibit is still accessible from MongoDB`);
+      
+      // In production, you might want to send this to error tracking service
+      // For now, we continue without failing the upload
+    }
+
+    console.log(`✅ Exhibit uploaded: ${exhibitDoc.name} (ID: ${result.insertedId})`);
+
+    res.json({
+      success: true,
+      message: 'Exhibit uploaded successfully',
+      exhibit: {
+        id: result.insertedId.toString(),
+        name: exhibitDoc.name,
+        fileName: exhibitDoc.fileName,
+        category: exhibitDoc.category,
+        combinations: exhibitDoc.combinations
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error uploading exhibit:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to upload exhibit',
+      details: error.message 
+    });
+  }
+});
+
+// Update exhibit (PUT)
+app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database not available' 
+      });
+    }
+
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+
+    // Get existing exhibit
+    const existing = await db.collection('exhibits').findOne({
+      _id: new ObjectId(id)
+    });
+
+    if (!existing) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Exhibit not found' 
+      });
+    }
+
+    // Prepare update data
+    const updateData: any = {
+      updatedAt: new Date()
+    };
+
+    // Update metadata if provided
+    // Auto-generate name from combination if not provided or if name is "New Exhibit"
+    if (req.body.name) {
+      updateData.name = req.body.name.trim();
+    }
+    
+    // Parse combinations first to use for name generation
+    let parsedCombinations = existing.combinations || [];
+    if (req.body.combinations) {
+      try {
+        parsedCombinations = typeof req.body.combinations === 'string' 
+          ? JSON.parse(req.body.combinations) 
+          : Array.isArray(req.body.combinations) 
+            ? req.body.combinations 
+            : [req.body.combinations];
+      } catch (e) {
+        parsedCombinations = [req.body.combinations];
+      }
+    }
+    
+    // Auto-generate name if not provided or if current name is "New Exhibit"
+    if (!updateData.name || updateData.name === 'New Exhibit') {
+      if (parsedCombinations.length > 0 && parsedCombinations[0] !== 'all') {
+        const combination = parsedCombinations[0];
+        const parts = combination.split('-');
+        const formatted = parts
+          .filter(part => part.trim() !== '' && part !== 'to')
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+          .join(' ');
+        updateData.name = formatted || (combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase());
+      }
+    }
+    if (req.body.description !== undefined) updateData.description = req.body.description.trim() || '';
+    if (req.body.category) updateData.category = req.body.category.toLowerCase();
+    if (req.body.planType !== undefined) {
+      const planTypeValue = req.body.planType ? req.body.planType.toLowerCase().trim() : '';
+      if (!planTypeValue) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Plan Type is required. Please select Basic, Standard, or Advanced.' 
+        });
+      }
+      const validPlanTypes = ['basic', 'standard', 'advanced'];
+      if (!validPlanTypes.includes(planTypeValue)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Invalid plan type: ${req.body.planType}. Must be one of: Basic, Standard, or Advanced.` 
+        });
+      }
+      updateData.planType = planTypeValue;
+    }
+    if (req.body.displayOrder) updateData.displayOrder = parseInt(req.body.displayOrder);
+    if (req.body.isRequired !== undefined) {
+      updateData.isRequired = req.body.isRequired === true || req.body.isRequired === 'true';
+    }
+
+    // Update combinations (already parsed above for name generation)
+    if (req.body.combinations) {
+      updateData.combinations = parsedCombinations;
+    }
+
+    // Update keywords
+    if (req.body.keywords) {
+      try {
+        updateData.keywords = typeof req.body.keywords === 'string' 
+          ? JSON.parse(req.body.keywords) 
+          : Array.isArray(req.body.keywords) 
+            ? req.body.keywords 
+            : req.body.keywords.split(',').map((k) => k.trim()).filter(Boolean);
+      } catch (e) {
+        updateData.keywords = [req.body.keywords];
+      }
+    }
+
+    // Update file if new file provided
+    if (req.file) {
+      // Validate file type
+      const allowedTypes = [
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword'
+      ];
+      
+      if (!allowedTypes.includes(req.file.mimetype) && !req.file.originalname.toLowerCase().endsWith('.docx')) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Invalid file type. Only DOCX files are allowed.' 
+        });
+      }
+
+      // Validate file size
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (req.file.size > maxSize) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'File size exceeds 10MB limit' 
+        });
+      }
+
+      // Check if new filename conflicts with another exhibit
+      if (req.file.originalname !== existing.fileName) {
+        const conflictingExhibit = await db.collection('exhibits').findOne({
+          fileName: req.file.originalname,
+          _id: { $ne: new ObjectId(id) } // Exclude current exhibit
+        });
+        
+        if (conflictingExhibit) {
+          return res.status(409).json({ 
+            success: false, 
+            error: 'Another exhibit with this filename already exists',
+            conflictingId: conflictingExhibit._id
+          });
+        }
+      }
+
+      updateData.fileName = req.file.originalname;
+      updateData.fileData = req.file.buffer.toString('base64');
+      updateData.fileType = req.file.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      updateData.fileSize = req.file.size;
+      updateData.version = (existing.version || 0) + 1;
+      
+      // Also update file in backend-exhibits folder
+      try {
+        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+        
+        // Ensure directory exists
+        if (!fs.existsSync(exhibitsDir)) {
+          fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
+        }
+        
+        // Check write permissions
+        try {
+          fs.accessSync(exhibitsDir, fs.constants.W_OK);
+        } catch (accessError: any) {
+          throw new Error(`Permission denied: Cannot write to backend-exhibits directory`);
+        }
+        
+        // Delete old file if filename changed
+        if (existing.fileName && existing.fileName !== req.file.originalname) {
+          const oldFilePath = path.join(exhibitsDir, existing.fileName);
+          if (fs.existsSync(oldFilePath)) {
+            fs.unlinkSync(oldFilePath);
+            console.log(`🗑️ Deleted old exhibit file: ${oldFilePath}`);
+          }
+        }
+        
+        // Save new file
+        const filePath = path.join(exhibitsDir, req.file.originalname);
+        fs.writeFileSync(filePath, req.file.buffer, { mode: 0o644 });
+        console.log(`💾 Exhibit file updated in folder: ${filePath}`);
+      } catch (folderError: any) {
+        const errorDetails = {
+          message: folderError.message,
+          code: folderError.code,
+          path: path.join(__dirname, 'backend-exhibits')
+        };
+        console.error(`❌ Failed to update exhibit in backend-exhibits folder:`, errorDetails);
+        console.warn(`⚠️ Exhibit updated in MongoDB but NOT in folder`);
+      }
+    }
+
+    // Update in database
+    await db.collection('exhibits').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    console.log(`✅ Exhibit updated: ${id}`);
+
+    res.json({
+      success: true,
+      message: 'Exhibit updated successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating exhibit:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to update exhibit',
+      details: error.message 
+    });
+  }
+});
+
+// Delete exhibit (DELETE)
+app.delete('/api/exhibits/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database not available' 
+      });
+    }
+
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+
+    // Get exhibit info before deleting (to remove file from folder)
+    const exhibit = await db.collection('exhibits').findOne({
+      _id: new ObjectId(id)
+    });
+
+    const result = await db.collection('exhibits').deleteOne({
+      _id: new ObjectId(id)
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Exhibit not found' 
+      });
+    }
+
+    // Also delete file from backend-exhibits folder
+    if (exhibit && exhibit.fileName) {
+      try {
+        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+        const filePath = path.join(exhibitsDir, exhibit.fileName);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`🗑️ Deleted exhibit file from folder: ${filePath}`);
+        }
+      } catch (folderError) {
+        console.warn(`⚠️ Failed to delete exhibit from backend-exhibits folder: ${folderError.message}`);
+      }
+    }
+
+    console.log(`✅ Exhibit deleted: ${id}`);
+
+    res.json({
+      success: true,
+      message: 'Exhibit deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error deleting exhibit:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete exhibit',
       details: error.message 
     });
   }

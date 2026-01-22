@@ -757,8 +757,24 @@ async function seedDefaultExhibits(db) {
       });
 
       if (existing) {
-        // Update if file is newer OR metadata changed (combinations/category/name/etc).
+        // PROTECTION: Check if exhibit was added via UI (not from seeding)
+        // UI-added exhibits have createdAt close to updatedAt (uploaded together)
+        // Seeded exhibits have createdAt much earlier than updatedAt
+        const timeDiff = existing.updatedAt 
+          ? (existing.updatedAt.getTime() - existing.createdAt.getTime()) 
+          : 0;
+        const likelyUIAdded = timeDiff < 5000; // Less than 5 seconds difference = likely UI upload
+        
+        // PROTECTION: Don't overwrite UI-added exhibits unless explicitly needed
+        // Only update if:
+        // 1. File in folder is significantly newer (more than 1 hour)
+        // 2. OR metadata changed AND exhibit was seeded (not UI-added)
         const existingModified = existing.updatedAt || existing.createdAt || new Date(0);
+        const fileModTime = fileStats.mtime.getTime();
+        const existingModTime = existingModified.getTime();
+        const oneHourInMs = 60 * 60 * 1000;
+        const fileIsSignificantlyNewer = (fileModTime - existingModTime) > oneHourInMs;
+        
         const metadataChanged = (() => {
           const keysToCompare = ['name', 'description', 'fileName', 'category', 'isRequired', 'displayOrder', 'keywords', 'combinations'];
           for (const key of keysToCompare) {
@@ -780,25 +796,39 @@ async function seedDefaultExhibits(db) {
           return false;
         })();
 
-        if (fileStats.mtime > existingModified || metadataChanged) {
+        // Update conditions:
+        // 1. File is significantly newer (more than 1 hour) - safe to update
+        // 2. Metadata changed AND exhibit was seeded (not UI-added) - safe to update
+        // 3. File is newer AND exhibit was seeded (not UI-added) - safe to update
+        const shouldUpdate = fileIsSignificantlyNewer || 
+                            (metadataChanged && !likelyUIAdded) || 
+                            ((fileModTime > existingModTime) && !likelyUIAdded);
+
+        if (shouldUpdate) {
           await db.collection('exhibits').updateOne(
             { fileName: exhibit.fileName },
             {
               $set: {
                 ...exhibitDoc,
-                createdAt: existing.createdAt,
+                createdAt: existing.createdAt, // Preserve original creation date
                 version: (existing.version || 0) + 1
               }
             }
           );
-          console.log(`✅ Updated exhibit: ${exhibit.name}${metadataChanged && fileStats.mtime <= existingModified ? ' (metadata changed)' : ''}`);
+          const reason = fileIsSignificantlyNewer ? 'file significantly newer' : 
+                        (metadataChanged ? 'metadata changed' : 'file newer');
+          console.log(`✅ Updated exhibit: ${exhibit.name} (${reason})`);
           updatedCount++;
         } else {
-          console.log(`⏭️  Skipped (up to date): ${exhibit.name}`);
+          if (likelyUIAdded) {
+            console.log(`🔒 Protected UI-added exhibit: ${exhibit.name} (skipped to prevent overwrite)`);
+          } else {
+            console.log(`⏭️  Skipped (up to date): ${exhibit.name}`);
+          }
           skippedCount++;
         }
       } else {
-        // Insert new exhibit
+        // Insert new exhibit (only if it's in the seed config)
         exhibitDoc.createdAt = new Date();
         await db.collection('exhibits').insertOne(exhibitDoc);
         console.log(`✅ Seeded exhibit: ${exhibit.name}`);

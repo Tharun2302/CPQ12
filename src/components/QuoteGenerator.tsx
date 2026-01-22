@@ -1294,7 +1294,13 @@ Quote ID: ${quoteData.id}
                     const ex = lookup.get(id) as any;
                     if (!ex) return;
                     const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    const isNotIncluded = text.includes('not included');
+                    // Check for various "not included" patterns (with/without spaces, different cases)
+                    const isNotIncluded = text.includes('not included') ||
+                                        text.includes('not include') ||
+                                        text.includes('notincluded') ||
+                                        text.includes('notinclude') ||
+                                        text.includes('not-include') ||
+                                        text.includes('not-included');
                     if (isNotIncluded) {
                       notIncluded.push({ id, exhibit: ex });
                     } else {
@@ -4055,16 +4061,25 @@ Total Price: {{total price}}`;
                 const key = `${category}|${displayName.toLowerCase()}`;
 
                 // Prefer an "Included" version if we see both Included/Not Included files for the same migration.
-                const isNotIncluded = (exhibit.name || '').toLowerCase().includes('not included') ||
-                  (exhibit.name || '').toLowerCase().includes('not include');
+                const exhibitNameLower = (exhibit.name || '').toLowerCase();
+                const isNotIncluded = exhibitNameLower.includes('not included') ||
+                  exhibitNameLower.includes('not include') ||
+                  exhibitNameLower.includes('notincluded') ||
+                  exhibitNameLower.includes('notinclude') ||
+                  exhibitNameLower.includes('not-include') ||
+                  exhibitNameLower.includes('not-included');
 
                 const existing = byGroupKey.get(key);
                 if (!existing) {
                   byGroupKey.set(key, { category, displayName, exhibit });
                 } else {
-                  const existingIsNotIncluded =
-                    (existing.exhibit?.name || '').toLowerCase().includes('not included') ||
-                    (existing.exhibit?.name || '').toLowerCase().includes('not include');
+                  const existingNameLower = (existing.exhibit?.name || '').toLowerCase();
+                  const existingIsNotIncluded = existingNameLower.includes('not included') ||
+                    existingNameLower.includes('not include') ||
+                    existingNameLower.includes('notincluded') ||
+                    existingNameLower.includes('notinclude') ||
+                    existingNameLower.includes('not-include') ||
+                    existingNameLower.includes('not-included');
                   if (existingIsNotIncluded && !isNotIncluded) {
                     byGroupKey.set(key, { category, displayName, exhibit });
                   }
@@ -4628,7 +4643,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     const ex = lookup.get(id) as any;
                     if (!ex) return;
                     const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    const isNotIncluded = text.includes('not included');
+                    // Check for various "not included" patterns (with/without spaces, different cases)
+                    const isNotIncluded = text.includes('not included') ||
+                                        text.includes('not include') ||
+                                        text.includes('notincluded') ||
+                                        text.includes('notinclude') ||
+                                        text.includes('not-include') ||
+                                        text.includes('not-included');
                     if (isNotIncluded) {
                       notIncluded.push({ id, exhibit: ex });
                     } else {

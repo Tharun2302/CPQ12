@@ -65,6 +65,7 @@ export interface ConfigurationData {
     numberOfInstances: number;
     duration: number;
     messages: number;
+    planType?: string; // Plan type from exhibit (basic, standard, advanced)
   }>;
   contentConfigs?: Array<{
     exhibitId: string;
@@ -74,6 +75,7 @@ export interface ConfigurationData {
     numberOfInstances: number;
     duration: number;
     dataSizeGB: number;
+    planType?: string; // Plan type from exhibit (basic, standard, advanced)
   }>;
   emailConfigs?: Array<{
     exhibitId: string;
