@@ -2236,7 +2236,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
         try {
           fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
           console.log(`📁 Created backend-exhibits directory: ${exhibitsDir}`);
-        } catch (mkdirError: any) {
+        } catch (mkdirError) {
           // Check if it's a permission error
           if (mkdirError.code === 'EACCES' || mkdirError.code === 'EPERM') {
             console.error(`❌ Permission denied creating directory: ${exhibitsDir}`);
@@ -2250,7 +2250,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       // Check write permissions before attempting to write
       try {
         fs.accessSync(exhibitsDir, fs.constants.W_OK);
-      } catch (accessError: any) {
+      } catch (accessError) {
         console.error(`❌ No write permission for directory: ${exhibitsDir}`);
         throw new Error(`Permission denied: Cannot write to backend-exhibits directory. Check file system permissions.`);
       }
@@ -2258,7 +2258,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       // Save file to folder
       fs.writeFileSync(filePath, req.file.buffer, { mode: 0o644 });
       console.log(`💾 Exhibit file saved to folder: ${filePath}`);
-    } catch (folderError: any) {
+    } catch (folderError) {
       // Log detailed error information
       const errorDetails = {
         message: folderError.message,
@@ -2461,7 +2461,7 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
         // Check write permissions
         try {
           fs.accessSync(exhibitsDir, fs.constants.W_OK);
-        } catch (accessError: any) {
+        } catch (accessError) {
           throw new Error(`Permission denied: Cannot write to backend-exhibits directory`);
         }
         
@@ -2478,7 +2478,7 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
         const filePath = path.join(exhibitsDir, req.file.originalname);
         fs.writeFileSync(filePath, req.file.buffer, { mode: 0o644 });
         console.log(`💾 Exhibit file updated in folder: ${filePath}`);
-      } catch (folderError: any) {
+      } catch (folderError) {
         const errorDetails = {
           message: folderError.message,
           code: folderError.code,

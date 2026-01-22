@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { BACKEND_URL } from '../config/api';
 
 interface Exhibit {
@@ -26,6 +27,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   onExhibitsChange,
   selectedTier
 }) => {
+  const navigate = useNavigate();
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -385,6 +387,21 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
               className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
             />
           </div>
+        </div>
+
+        {/* Helpful message for adding exhibits */}
+        <div className="mb-3 p-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-xs text-gray-700 text-center">
+            If you can't find the combination you need,{' '}
+            <button
+              type="button"
+              onClick={() => navigate('/exhibits')}
+              className="text-purple-600 hover:text-purple-700 underline font-medium"
+            >
+              go to Exhibits
+            </button>
+            {' '}and you can add them. Those will reflect here.
+          </p>
         </div>
 
         {/* Exhibits List Container */}
