@@ -2325,7 +2325,7 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
     }
 
     // Prepare update data
-    const updateData: any = {
+    const updateData = {
       updatedAt: new Date()
     };
 
