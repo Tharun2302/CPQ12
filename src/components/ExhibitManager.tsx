@@ -1112,18 +1112,6 @@ const ExhibitManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Auto-detected Info */}
-                {detectedMetadata && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-sm font-medium text-blue-900 mb-2">Auto-Detected Information</p>
-                    <div className="text-xs text-blue-800 space-y-1">
-                      <div>Combination: {detectedMetadata.combination || 'Not detected'}</div>
-                      <div>Category: {detectedMetadata.category}</div>
-                      <div>Plan: {detectedMetadata.plan || 'Not detected'}</div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Category */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
