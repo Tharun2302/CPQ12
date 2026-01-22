@@ -129,7 +129,7 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
     const users = config?.numberOfUsers || 1;
     const messages = config?.messages || 0;
     // Format: Exhibit name, dashed line separator, then details
-    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | ${messages} Channels and DMs through JSON Messages`;
+    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | All Channels and DMs | ${messages} Messages`;
   } else if (category === 'content') {
     const users = config?.numberOfUsers || 1;
     const dataSize = config?.dataSizeGB || 0;
@@ -401,7 +401,33 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   });
   
   // Calculate discount logic - source discount primarily from Configure session (localStorage)
-  const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
+  const getEffectiveTotalCost = (
+    cfg: typeof configuration,
+    calc: typeof calculation | typeof safeCalculation
+  ): number => {
+    const c: any = calc || {};
+    if (cfg?.migrationType === 'Multi combination') {
+      const sumBreakdowns = (arr: any[] | undefined) =>
+        Array.isArray(arr) ? arr.reduce((acc, b) => acc + (Number(b?.totalCost) || 0), 0) : 0;
+
+      const messagingTotal =
+        sumBreakdowns(c.messagingCombinationBreakdowns) ||
+        (Number(c.messagingCalculation?.totalCost) || 0);
+      const contentTotal =
+        sumBreakdowns(c.contentCombinationBreakdowns) ||
+        (Number(c.contentCalculation?.totalCost) || 0);
+      const emailTotal =
+        sumBreakdowns(c.emailCombinationBreakdowns) ||
+        (Number(c.emailCalculation?.totalCost) || 0);
+
+      const combined = messagingTotal + contentTotal + emailTotal;
+      // Fall back to the top-level totalCost if for some reason the above is empty
+      return combined > 0 ? combined : (Number(c.totalCost) || 0);
+    }
+    return Number(c.totalCost) || 0;
+  };
+
+  const totalCost = getEffectiveTotalCost(configuration, calculation || safeCalculation);
   // Read latest discount from sessionStorage as the source of truth, fallback to state
   const storedDiscountPercent = (() => {
     try {
@@ -981,7 +1007,7 @@ Quote ID: ${quoteData.id}
         const userCount = configuration?.numberOfUsers || 1;
         const userCost = calculation?.userCost ?? safeCalculation.userCost;
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
-        const totalCost = calculation?.totalCost ?? safeCalculation.totalCost;
+        const totalCost = getEffectiveTotalCost(configuration, calculation || safeCalculation);
         const duration = getEffectiveDurationMonths(configuration) || 1;
         const migrationType = configuration?.migrationType || 'Content';
         const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
@@ -1001,9 +1027,14 @@ Quote ID: ${quoteData.id}
         console.log('  Final dataSizeGB value:', dataSizeGB);
         console.log('  dataCost value:', dataCost);
         
-        // Calculate discount for this function scope
-        const localDiscountPercent = clientInfo.discount ?? 0;
-        const localDiscountAmount = localDiscountPercent > 0 ? totalCost * (localDiscountPercent / 100) : 0;
+        // Calculate discount for this function scope (use sessionStorage as source of truth)
+        const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
+        const localIsDiscountAllowed = totalCost >= 2500;
+        const localHasValidDiscount = localDiscountPercent > 0 && localDiscountPercent <= 15;
+        const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
+        const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
+        const localIsDiscountValid = localHasValidDiscount ? localFinalTotalAfterDiscount >= 2500 : true;
+        const localShouldApplyDiscount = localIsDiscountAllowed && localHasValidDiscount && localIsDiscountValid;
         
         const templateData: Record<string, string> = {
           // Core company and client information
@@ -1134,9 +1165,7 @@ Quote ID: ${quoteData.id}
             // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
             // use the tier's perGBCost directly instead of calculating from division
             const tierPerGbRaw = isMulti
-              ? (calculation?.contentCalculation?.tier?.perGBCost ??
-                  safeCalculation.contentCalculation?.tier?.perGBCost ??
-                  calculation?.tier?.perGBCost ??
+              ? (calculation?.tier?.perGBCost ??
                   safeCalculation.tier?.perGBCost ??
                   0)
               : (calculation?.tier?.perGBCost ?? safeCalculation.tier?.perGBCost ?? 0);
@@ -1184,25 +1213,28 @@ Quote ID: ${quoteData.id}
           '{{sub_total}}': formatCurrency(totalCost || 0),
           
           // Discount information - hide discount tokens when discount is 0
-          '{{discount}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-          '{{discount_percent}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-          '{{discount_percentage}}': (shouldApplyDiscount && discountPercent > 0) ? discountPercent.toString() : '',
-          '{{discount_amount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
-          '{{discountAmount}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
-          '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
-          '{{discount_line}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{Discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_percentage}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{Discount Amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discountAmount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount_text}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `Discount (${localDiscountPercent}%)` : '',
+          '{{discount_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
           // Some templates may have a static label cell; clear it when no discount
-          '{{discount_label}}': (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '',
+          '{{discount_label}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'Discount' : '',
           // Special tokens for conditional display in templates
-          '{{show_discount}}': (shouldApplyDiscount && discountPercent > 0) ? 'true' : '',
-          '{{hide_discount}}': (shouldApplyDiscount && discountPercent > 0) ? '' : 'true',
+          '{{show_discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'true' : '',
+          '{{hide_discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? '' : 'true',
           // Additional conditional tokens
-          '{{if_discount}}': (shouldApplyDiscount && discountPercent > 0) ? 'show' : 'hide',
-          '{{discount_row}}': (shouldApplyDiscount && localDiscountAmount > 0) ? `<tr><td>Discount (${discountPercent}%)</td><td>-${formatCurrency(localDiscountAmount)}</td></tr>` : '',
-          '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
-          '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
-          '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
-          '{{finalTotal}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
+          '{{if_discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'show' : 'hide',
+          '{{discount_row}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `<tr><td>Discount (${localDiscountPercent}%)</td><td>-${formatCurrency(localDiscountAmount)}</td></tr>` : '',
+          '{{total_after_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{Total After Discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{total_price_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{final_total}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{finalTotal}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           
           // Plan and tier information
           '{{tier_name}}': tierName,
@@ -1681,7 +1713,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
         // use the tier's perGBCost directly
         const tierPerGbRaw = isMulti
-          ? (safeCalculation.contentCalculation?.tier?.perGBCost ?? safeCalculation.tier?.perGBCost ?? 0)
+          ? (safeCalculation.tier?.perGBCost ?? 0)
           : (safeCalculation.tier?.perGBCost ?? 0);
 
         const tierNameForFallback = (safeCalculation.tier?.name ?? '').toString().toLowerCase();
@@ -3198,7 +3230,6 @@ Total Price: {{total price}}`;
           '{{instances}}': numberOfInstances.toString(),
           '{{Duration of months}}': (duration || 1).toString(),
           '{{Duration_of_months}}': (duration || 1).toString(),
-          '{{Duration of months}}': (duration || 1).toString(), // Space version (duplicate for clarity)
           '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
           '{{duration_months}}': (duration || 1).toString(),
           '{{duration}}': (duration || 1).toString(),
@@ -3399,21 +3430,6 @@ Total Price: {{total price}}`;
             return 'N/A';
           })(),
           
-          // Pricing breakdown - all costs
-          '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
-          '{{user_cost}}': formatCurrency(userCost || 0),
-          '{{userCost}}': formatCurrency(userCost || 0),
-          '{{price_data}}': formatCurrency(dataCost),
-          '{{data_cost}}': formatCurrency(dataCost),
-          '{{dataCost}}': formatCurrency(dataCost),
-          '{{price_migration}}': formatCurrency(migrationCost || 0),
-          '{{migration_cost}}': formatCurrency(migrationCost || 0),
-          '{{migration_price}}': formatCurrency(migrationCost || 0),
-          '{{migrationCost}}': formatCurrency(migrationCost || 0),
-          '{{instance_cost}}': formatCurrency(instanceCost),
-          '{{instanceCost}}': formatCurrency(instanceCost),
-          '{{instance_costs}}': formatCurrency(instanceCost),
-          
           // Per-user cost calculations
           // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
           '{{per_user_cost}}': (() => {
@@ -3479,9 +3495,7 @@ Total Price: {{total price}}`;
             // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
             // use the tier's perGBCost directly
             const tierPerGbRaw = isMulti
-              ? (safeCalculation.contentCalculation?.tier?.perGBCost ??
-                  safeCalculation.tier?.perGBCost ??
-                  0)
+              ? (safeCalculation.tier?.perGBCost ?? 0)
               : (safeCalculation.tier?.perGBCost ?? 0);
 
             const tierNameForFallback = (
@@ -3650,6 +3664,7 @@ Total Price: {{total price}}`;
                   const labels: Record<string, string> = {
                     'slack-to-teams': 'SLACK TO TEAMS',
                     'slack-to-google-chat': 'SLACK TO GOOGLE CHAT',
+                    'google-chat-to-teams': 'GOOGLE CHAT TO TEAMS',
                     'sharefile-to-google-sharedrive': 'SHAREFILE TO GOOGLE SHARED DRIVE',
                     'sharefile-to-google-mydrive': 'SHAREFILE TO GOOGLE MYDRIVE',
                     'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
@@ -4819,11 +4834,17 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           setOriginalDocxAgreement(null);
         }
 
+        if (!processedDocument) {
+          console.error('❌ No processed document available to preview/download');
+          return;
+        }
+        const processedDocumentBlob = processedDocument;
+
         // Store the (now PDF) document for preview and PDF downloads
-        setProcessedAgreement(processedDocument);
+        setProcessedAgreement(processedDocumentBlob);
 
         // Always preview the same blob that will be downloaded
-        const previewUrl = URL.createObjectURL(processedDocument);
+        const previewUrl = URL.createObjectURL(processedDocumentBlob);
         setPreviewUrl(previewUrl);
         setShowInlinePreview(true);
         setShowAgreementPreview(true);
@@ -4831,12 +4852,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         return;
         
         // For DOCX files render with docx-preview to match exact document formatting
-        if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        if (processedDocumentBlob.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           // Open modal first so container exists, then render
           setShowAgreementPreview(true);
           await delayFrame();
           try {
-            await renderDocxPreview(processedDocument);
+            await renderDocxPreview(processedDocumentBlob);
             return;
           } catch (err) {
             console.warn('docx-preview render failed in initial flow, trying mammoth HTML fallback.', err);
@@ -4845,7 +4866,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             console.log('🔄 Converting DOCX to HTML for preview with exact formatting...');
             const mammoth = await import('mammoth');
             
-            const arrayBuffer = await processedDocument.arrayBuffer();
+            const arrayBuffer = await processedDocumentBlob.arrayBuffer();
             const result = await mammoth.convertToHtml({ 
               arrayBuffer,
               styleMap: [
@@ -5075,13 +5096,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           } catch (error) {
             console.error('❌ Error converting DOCX to HTML:', error);
             // Fallback to direct document URL
-            const previewUrl = URL.createObjectURL(processedDocument);
+            const previewUrl = URL.createObjectURL(processedDocumentBlob);
             setPreviewUrl(previewUrl);
             setShowInlinePreview(true);
           }
         } else {
           // For PDF files, use direct URL
-          const previewUrl = URL.createObjectURL(processedDocument);
+          const previewUrl = URL.createObjectURL(processedDocumentBlob);
           setPreviewUrl(previewUrl);
           setShowInlinePreview(true);
         }
@@ -5090,7 +5111,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         try {
           console.log('💾 Saving PDF to MongoDB...');
           const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
-          const base64Data = await documentServiceMongoDB.blobToBase64(processedDocument);
+          const base64Data = await documentServiceMongoDB.blobToBase64(processedDocumentBlob);
           
           // Define variables for the saved document
           const finalCompanyName = clientInfo.company || 'Unknown Company';
@@ -5100,7 +5121,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           const savedDoc = {
             fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
             fileData: base64Data,
-            fileSize: processedDocument.size,
+            fileSize: processedDocumentBlob.size,
             clientName: clientName,
             clientEmail: clientEmail,
             company: finalCompanyName,
