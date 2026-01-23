@@ -1822,6 +1822,7 @@ Total Price: {{total price}}`;
     setShowPlaceholderPreview(true);
   };
 
+  // Handle Word download from the generated agreement
   const handleDownloadAgreement = () => {
     // For Word downloads, prefer the original DOCX if available
     const documentToDownload = originalDocxAgreement || processedAgreement;
@@ -1865,10 +1866,6 @@ Total Price: {{total price}}`;
       });
       
       console.log(`✅ Word document downloaded as ${filename} (${(fileSize / 1024).toFixed(2)} KB)`);
-      
-      // Don't close preview automatically - let user decide when to close
-      // setShowAgreementPreview(false);
-      // setProcessedAgreement(null);
     } catch (error) {
       console.error('❌ Error downloading Word document:', error);
       alert('Failed to download Word document. Please try again.');
@@ -1900,7 +1897,7 @@ Total Price: {{total price}}`;
         const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
         const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
         
-        const savedDoc = {
+        const savedDoc: any = {
           fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
           fileData: base64Data,
           fileSize: pdfBlob.size,
@@ -1917,6 +1914,16 @@ Total Price: {{total price}}`;
             numberOfUsers: configuration?.numberOfUsers || 0
           }
         };
+        
+        // Also save DOCX if available (for Word downloads)
+        if (originalDocxAgreement) {
+          console.log('💾 Also saving DOCX to MongoDB...');
+          const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
+          const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+          const dateStr = new Date().toISOString().split('T')[0];
+          savedDoc.docxFileData = docxBase64;
+          savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
+        }
         
         await documentServiceMongoDB.saveDocument(savedDoc);
         console.log('✅ PDF saved to MongoDB successfully from PDF button');
@@ -2056,21 +2063,7 @@ Total Price: {{total price}}`;
         pdf.save(`agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`);
       } catch (fallbackErr) {
         console.error('❌ Inline capture fallback failed:', fallbackErr);
-        // Last resort: Use the original DOCX file as download
-        try {
-          const url = URL.createObjectURL(processedAgreement as Blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.docx`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-          alert('PDF conversion is not available. The Word document has been downloaded instead. You can convert it to PDF using Microsoft Word or any online converter.');
-        } catch (docxErr) {
-          console.error('❌ DOCX download fallback failed:', docxErr);
-          alert('Unable to download document. Please try again or contact support.');
-        }
+        alert('Unable to download PDF document. Please try again or contact support.');
       }
     }
   };
@@ -2097,7 +2090,7 @@ Total Price: {{total price}}`;
       const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
       const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
       
-      const savedDoc = {
+      const savedDoc: any = {
         fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
         fileData: base64Data,
         fileSize: pdfBlob.size,
@@ -2114,6 +2107,16 @@ Total Price: {{total price}}`;
             numberOfUsers: configuration?.numberOfUsers || 0
           }
         };
+        
+        // Also save DOCX if available (for Word downloads)
+        if (originalDocxAgreement) {
+          console.log('💾 Also saving DOCX to MongoDB for workflow...');
+          const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
+          const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+          const dateStr = new Date().toISOString().split('T')[0];
+          savedDoc.docxFileData = docxBase64;
+          savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
+        }
         
         const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       console.log('✅ PDF saved to MongoDB for workflow:', documentId);
@@ -5118,7 +5121,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           const clientName = clientInfo.clientName || 'Unknown';
           const clientEmail = clientInfo.clientEmail || '';
           
-          const savedDoc = {
+          const savedDoc: any = {
             fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
             fileData: base64Data,
             fileSize: processedDocumentBlob.size,
@@ -5135,6 +5138,16 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               numberOfUsers: finalConfiguration.numberOfUsers
             }
           };
+          
+          // Also save DOCX if available (for Word downloads)
+          if (originalDocxAgreement) {
+            console.log('💾 Also saving DOCX to MongoDB...');
+            const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
+            const sanitizedClientName = (clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+            const dateStr = new Date().toISOString().split('T')[0];
+            savedDoc.docxFileData = docxBase64;
+            savedDoc.docxFileName = `agreement-${sanitizedClientName}-${dateStr}.docx`;
+          }
           
           await documentServiceMongoDB.saveDocument(savedDoc);
           console.log('✅ PDF saved to MongoDB successfully');
@@ -6405,7 +6418,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         className={`text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold ${
                           !processedAgreement ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
-                        title={processedAgreement ? "Download Agreement (Word Document)" : "No agreement available"}
+                        title={processedAgreement ? "Download Word Document" : "No agreement available"}
                       >
                         📥 Word
                       </button>
@@ -6458,7 +6471,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     onClick={() => {
                       setShowAgreementPreview(false);
                       setProcessedAgreement(null);
-                      setOriginalDocxAgreement(null); // Clear original DOCX
                       setIsFullscreen(false);
                       // Reset inline preview when closing agreement modal
                       setShowInlinePreview(false);
@@ -6544,7 +6556,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                                     ? 'bg-gray-400 cursor-not-allowed opacity-50'
                                     : 'bg-green-600 hover:bg-green-700 hover:scale-105'
                                 }`}
-                                title={processedAgreement ? "Download Agreement (Word Document)" : "No agreement available"}
+                                title={processedAgreement ? "Download Word Document" : "No agreement available"}
                               >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -6607,6 +6619,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 {!isFullscreen && !showAgreementPreview && (
                   <div className="bg-white border-t border-gray-200 p-2 flex-shrink-0">
                   <div className="flex gap-2 justify-center flex-wrap">
+                    {/* Download Word button */}
                     <button
                       onClick={handleDownloadAgreement}
                       disabled={!processedAgreement}
@@ -6615,12 +6628,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                           ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                           : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
                       }`}
-                      title={processedAgreement ? "Download Agreement (Word Document)" : "Generate agreement first"}
+                      title={processedAgreement ? "Download Word Document" : "Generate agreement first"}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      📥 Download Agreement
+                      📥 Download Word
                     </button>
                     {/* Download PDF button with functionality */}
                     <button
@@ -6693,7 +6706,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       onClick={() => {
                         setShowAgreementPreview(false);
                         setProcessedAgreement(null);
-                        setOriginalDocxAgreement(null); // Clear original DOCX
                         setShowInlinePreview(false);
                         setIsFullscreen(false);
                         if (previewUrl) {

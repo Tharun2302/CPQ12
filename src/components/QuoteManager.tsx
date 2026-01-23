@@ -166,27 +166,71 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
         documentToDownload = fullDoc;
       }
       
-      // Convert base64 to PDF blob
-      const pdfBlob = documentServiceMongoDB.base64ToBlob(documentToDownload.fileData);
+      // Check if we have stored DOCX file (preferred - original quality)
+      if (documentToDownload.docxFileData && documentToDownload.docxFileName) {
+        console.log('📥 Using stored DOCX file for download...');
+        const docxBlob = documentServiceMongoDB.base64ToBlob(
+          documentToDownload.docxFileData,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        );
+        
+        // Create download link for DOCX
+        const url = URL.createObjectURL(docxBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = documentToDownload.docxFileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        console.log('✅ Word document downloaded successfully (original DOCX)');
+        return;
+      }
       
-      // Create a File object from the blob for conversion
-      const pdfFile = new File([pdfBlob], documentToDownload.fileName || 'document.pdf', {
-        type: 'application/pdf'
-      });
+      // Fallback: Convert PDF to Word format (for older documents without DOCX)
+      console.log('⚠️ No stored DOCX found, converting PDF to Word format...');
       
-      // Convert PDF to Word format
-      console.log('🔄 Converting PDF to Word format...');
-      const wordFile = await convertPdfToWord(pdfFile);
-      
-      // Use the filename from the converted file (already has .rtf extension)
-      // Or generate a custom filename if needed
-      const wordFileName = documentToDownload.fileName 
-        ? documentToDownload.fileName.replace(/\.pdf$/i, '.rtf').replace(/\.(docx|doc)$/i, '.rtf')
-        : wordFile.name;
-      
-      // Download the Word file
-      downloadWordFile(wordFile, wordFileName);
-      console.log('✅ Word document downloaded successfully');
+      try {
+        const pdfBlob = documentServiceMongoDB.base64ToBlob(documentToDownload.fileData);
+        
+        // Create a File object from the blob for conversion
+        const pdfFile = new File([pdfBlob], documentToDownload.fileName || 'document.pdf', {
+          type: 'application/pdf'
+        });
+        
+        // Convert PDF to Word format
+        console.log('🔄 Converting PDF to Word format...');
+        const wordFile = await convertPdfToWord(pdfFile);
+        
+        // Check if conversion produced a meaningful file (not just error message)
+        if (wordFile.size < 1000) {
+          // File is too small, likely just error message
+          throw new Error('PDF to Word conversion produced an empty file. The PDF may contain only images or the conversion service is unavailable.');
+        }
+        
+        // Generate filename with .docx extension
+        const clientName = (documentToDownload.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+        const dateStr = new Date(documentToDownload.generatedDate).toISOString().split('T')[0];
+        const wordFileName = documentToDownload.fileName 
+          ? documentToDownload.fileName.replace(/\.pdf$/i, '.docx').replace(/\.(rtf|doc)$/i, '.docx')
+          : `${clientName}_${dateStr}.docx`;
+        
+        // Download the Word file
+        downloadWordFile(wordFile, wordFileName);
+        console.log('✅ Word document downloaded successfully (converted from PDF)');
+      } catch (conversionError: any) {
+        console.error('❌ PDF to Word conversion failed:', conversionError);
+        alert(
+          'Unable to convert PDF to Word format.\n\n' +
+          'This document was saved before Word format support was added.\n\n' +
+          'Options:\n' +
+          '1. Download the PDF version instead\n' +
+          '2. Generate a new document from the Quote page (new documents include Word format)\n\n' +
+          'Error: ' + (conversionError?.message || 'Unknown error')
+        );
+        throw conversionError;
+      }
     } catch (error) {
       console.error('❌ Error downloading Word document:', error);
       alert('Error downloading Word document. Please try again.');
@@ -1442,32 +1486,36 @@ The client will receive an email with the PDF quote and a link to complete the d
                   )}
                 </div>
                 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 items-stretch">
                   <button
                     onClick={() => handleViewDocument(doc)}
                     className="flex-1 min-w-[80px] px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                   >
-                    <Eye className="w-4 h-4" />
-                    View
+                    <Eye className="w-4 h-4 flex-shrink-0" />
+                    <span>View</span>
                   </button>
                   <button
                     onClick={() => handleDownloadDocument(doc)}
                     className="flex-1 min-w-[80px] px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                   >
-                    <Download className="w-4 h-4" />
-                    PDF
+                    <Download className="w-4 h-4 flex-shrink-0" />
+                    <span>PDF</span>
                   </button>
-                  <button
-                    onClick={() => handleDownloadWordDocument(doc)}
-                    className="flex-1 min-w-[80px] px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
-                    title="Download as Word document (.rtf)"
-                  >
-                    <FileDown className="w-4 h-4" />
-                    Word
-                  </button>
+                  {/* Only show Word download button if DOCX data is available */}
+                  {(doc.docxFileData || doc.docxFileName) && (
+                    <button
+                      onClick={() => handleDownloadWordDocument(doc)}
+                      className="flex-1 min-w-[80px] px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                      title="Download as Word document (.docx)"
+                    >
+                      <FileDown className="w-4 h-4 flex-shrink-0" />
+                      <span>Word</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDeleteDocument(doc.id)}
-                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center justify-center"
+                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center justify-center flex-shrink-0"
+                    title="Delete document"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -2013,7 +2061,7 @@ The client will receive an email with the PDF quote and a link to complete the d
                   <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-6">
                     <div className="text-center mb-4">
                       <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <FileDown className="w-8 h-8 text-blue-600" />
+                        <Download className="w-8 h-8 text-blue-600" />
                       </div>
                       <h3 className="text-xl font-bold text-gray-800 mb-2">Download Merged PDF</h3>
                       <p className="text-gray-600">Click the button below to download the merged PDF with your quote merged into the template.</p>

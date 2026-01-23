@@ -8,6 +8,8 @@ export interface SavedDocument {
   fileName: string;
   fileData: string; // base64 encoded PDF
   fileSize: number;
+  docxFileData?: string; // base64 encoded DOCX (optional, for Word downloads)
+  docxFileName?: string; // DOCX filename (optional)
   clientName: string;
   clientEmail?: string;
   company: string;

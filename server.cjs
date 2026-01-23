@@ -2583,7 +2583,7 @@ app.post('/api/documents', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
-    const { fileName, fileData, fileSize, clientName, clientEmail, company, templateName, quoteId, metadata } = req.body;
+    const { fileName, fileData, fileSize, clientName, clientEmail, company, templateName, quoteId, metadata, docxFileData, docxFileName } = req.body;
 
     if (!fileName || !fileData) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -2593,7 +2593,8 @@ app.post('/api/documents', async (req, res) => {
       fileName,
       company,
       fileSize,
-      clientName
+      clientName,
+      hasDocx: !!docxFileData
     });
     
     console.log('🔍 Document ID generation data:', {
@@ -2605,6 +2606,7 @@ app.post('/api/documents', async (req, res) => {
 
     // Convert base64 to Buffer (same as templates)
     const fileBuffer = Buffer.from(fileData, 'base64');
+    const docxBuffer = docxFileData ? Buffer.from(docxFileData, 'base64') : null;
 
     // Generate document ID with client and company names
     const sanitizeForId = (str) => {
@@ -2634,6 +2636,13 @@ app.post('/api/documents', async (req, res) => {
       createdAt: new Date(),
       status: 'active'
     };
+    
+    // Add DOCX data if available
+    if (docxBuffer && docxFileName) {
+      document.docxFileData = docxBuffer;
+      document.docxFileName = docxFileName;
+      console.log('💾 Also saving DOCX file:', docxFileName, 'Size:', docxBuffer.length);
+    }
 
     const documentsCollection = db.collection('documents');
     const result = await documentsCollection.insertOne(document);
@@ -2749,6 +2758,7 @@ app.get('/api/documents/:id', async (req, res) => {
 
     // Convert Buffer to base64 for frontend
     let base64 = '';
+    let docxBase64 = '';
     try {
       if (document.fileData) {
         if (Buffer.isBuffer(document.fileData)) {
@@ -2762,8 +2772,19 @@ app.get('/api/documents/:id', async (req, res) => {
           base64 = document.fileData;
         }
       }
+      
+      // Also convert DOCX if available
+      if (document.docxFileData) {
+        if (Buffer.isBuffer(document.docxFileData)) {
+          docxBase64 = document.docxFileData.toString('base64');
+        } else if (document.docxFileData.buffer) {
+          docxBase64 = Buffer.from(document.docxFileData.buffer).toString('base64');
+        } else if (typeof document.docxFileData === 'string') {
+          docxBase64 = document.docxFileData;
+        }
+      }
     } catch (e) {
-      console.warn('⚠️ Could not convert single document Buffer to base64 for id:', document.id, e?.message);
+      console.warn('⚠️ Could not convert document Buffer to base64 for id:', document.id, e?.message);
     }
     
     // Serialize dates to strings for frontend compatibility
@@ -2773,6 +2794,12 @@ app.get('/api/documents/:id', async (req, res) => {
       generatedDate: document.generatedDate ? (document.generatedDate instanceof Date ? document.generatedDate.toISOString() : document.generatedDate) : new Date().toISOString(),
       createdAt: document.createdAt ? (document.createdAt instanceof Date ? document.createdAt.toISOString() : document.createdAt) : new Date().toISOString(),
     };
+    
+    // Add DOCX data if available
+    if (docxBase64) {
+      documentWithBase64.docxFileData = docxBase64;
+      documentWithBase64.docxFileName = document.docxFileName;
+    }
 
     res.json({ 
       success: true, 
@@ -4908,7 +4935,7 @@ app.get('/api/documents', async (req, res) => {
     const documents = await db
       .collection('documents')
       .find({})
-      .project({ fileData: 0 }) // exclude large PDF payload
+      .project({ fileData: 0, docxFileData: 0 }) // exclude large PDF and DOCX payloads, but keep docxFileName
       .sort({ createdAt: -1, generatedDate: -1 })
       .limit(limit)
       .skip(skip)

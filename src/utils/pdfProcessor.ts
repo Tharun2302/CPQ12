@@ -4,8 +4,34 @@ import jsPDF from 'jspdf';
 import { saveAs } from 'file-saver';
 import { documentServiceMongoDB, SavedDocument } from '../services/documentServiceMongoDB';
 
-// Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Configure PDF.js worker with multiple fallback CDNs
+// Try multiple sources for better reliability
+if (typeof window !== 'undefined') {
+  const workerSources = [
+    `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`,
+    'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+  ];
+  
+  // Try to set worker source with fallbacks
+  let workerSet = false;
+  for (const workerUrl of workerSources) {
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+      console.log('✅ PDF.js worker configured:', workerUrl);
+      workerSet = true;
+      break;
+    } catch (error) {
+      console.warn(`⚠️ Failed to set worker from ${workerUrl}, trying next...`);
+    }
+  }
+  
+  if (!workerSet) {
+    console.error('❌ Failed to configure PDF.js worker from all sources');
+  }
+}
 
 export interface QuoteData {
   id: string;
@@ -49,28 +75,145 @@ export interface PlaceholderMap {
 }
 
 /**
- * Extract text content from a PDF file
+ * Extract text content from a PDF file (plain text version)
  */
 export async function extractTextFromPDF(pdfFile: File): Promise<string> {
   try {
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    // Try multiple worker sources if current one fails
+    const workerSources = [
+      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`,
+      'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+    ];
     
-    let fullText = '';
+    let lastError: Error | null = null;
     
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ');
-      fullText += pageText + '\n';
+    for (const workerUrl of workerSources) {
+      try {
+        if (typeof window !== 'undefined') {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+          console.log('🔧 Worker configured in extractTextFromPDF:', workerUrl);
+        }
+        
+        const arrayBuffer = await pdfFile.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        
+        let fullText = '';
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(' ');
+          fullText += pageText + '\n';
+        }
+        
+        return fullText;
+      } catch (error: any) {
+        console.warn(`⚠️ Worker ${workerUrl} failed, trying next...`, error?.message);
+        lastError = error;
+        continue;
+      }
     }
     
-    return fullText;
+    throw lastError || new Error('Failed to extract text from PDF - all worker sources failed');
   } catch (error) {
     console.error('Error extracting text from PDF:', error);
     throw new Error('Failed to extract text from PDF');
+  }
+}
+
+/**
+ * Extract text with position and formatting information from PDF
+ */
+export interface TextItem {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  fontName: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+export interface PDFPageContent {
+  pageNumber: number;
+  width: number;
+  height: number;
+  items: TextItem[];
+}
+
+export async function extractTextWithPosition(pdfFile: File): Promise<PDFPageContent[]> {
+  try {
+    // Try multiple worker sources if current one fails
+    const workerSources = [
+      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`,
+      'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+    ];
+    
+    let lastError: Error | null = null;
+    
+    for (const workerUrl of workerSources) {
+      try {
+        if (typeof window !== 'undefined') {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+          console.log('🔧 Worker configured in extractTextWithPosition:', workerUrl);
+        }
+        
+        const arrayBuffer = await pdfFile.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pages: PDFPageContent[] = [];
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1.0 });
+          const textContent = await page.getTextContent();
+          
+          const items: TextItem[] = textContent.items.map((item: any) => {
+            const transform = item.transform || [1, 0, 0, 1, 0, 0];
+            const x = transform[4];
+            const y = viewport.height - transform[5]; // Flip Y coordinate
+            const fontSize = item.height || (item.transform ? Math.abs(transform[0]) : 12);
+            
+            return {
+              text: item.str || '',
+              x: x,
+              y: y,
+              width: item.width || 0,
+              height: item.height || fontSize,
+              fontSize: fontSize,
+              fontName: item.fontName || 'Arial',
+              bold: item.fontName && item.fontName.toLowerCase().includes('bold'),
+              italic: item.fontName && item.fontName.toLowerCase().includes('italic'),
+            };
+          });
+          
+          pages.push({
+            pageNumber: i,
+            width: viewport.width,
+            height: viewport.height,
+            items: items
+          });
+        }
+        
+        return pages;
+      } catch (error: any) {
+        console.warn(`⚠️ Worker ${workerUrl} failed, trying next...`, error?.message);
+        lastError = error;
+        continue;
+      }
+    }
+    
+    throw lastError || new Error('Failed to extract text with position from PDF - all worker sources failed');
+  } catch (error) {
+    console.error('Error extracting text with position from PDF:', error);
+    throw new Error('Failed to extract text with position from PDF');
   }
 }
 
