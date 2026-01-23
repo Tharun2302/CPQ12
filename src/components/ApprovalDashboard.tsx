@@ -487,9 +487,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-white border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-[#4F46E5] shadow-sm hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
                         >
-                          <FileText className="h-4 w-4 text-[#4F46E5]" />
+                          <FileText className="h-4 w-4 text-white" />
                           <span className="sm:hidden">Preview</span>
                           <span className="hidden sm:inline">Preview Doc</span>
                         </button>
