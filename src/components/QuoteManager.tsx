@@ -27,6 +27,7 @@ import { mergeQuoteIntoTemplate, mergeQuoteWithSowTemplate, downloadMergedPDF, c
 import { createTemplateFromPdf } from '../utils/pdfToTemplate';
 import { sanitizeEmailInput } from '../utils/emojiSanitizer';
 import { documentServiceMongoDB, SavedDocument } from '../services/documentServiceMongoDB';
+import { convertPdfToWord, downloadWordFile } from '../utils/pdfToWordConverter';
 
 
 interface QuoteManagerProps {
@@ -148,6 +149,47 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     } catch (error) {
       console.error('❌ Error downloading document:', error);
       alert('Error downloading document. Please try again.');
+    }
+  };
+  
+  // Download a saved document as Word format
+  const handleDownloadWordDocument = async (doc: SavedDocument) => {
+    try {
+      // Fetch full document with fileData if not already present
+      let documentToDownload = doc;
+      if (!doc.fileData) {
+        const fullDoc = await documentServiceMongoDB.getDocument(doc.id);
+        if (!fullDoc || !fullDoc.fileData) {
+          alert('Unable to download document. File data not available.');
+          return;
+        }
+        documentToDownload = fullDoc;
+      }
+      
+      // Convert base64 to PDF blob
+      const pdfBlob = documentServiceMongoDB.base64ToBlob(documentToDownload.fileData);
+      
+      // Create a File object from the blob for conversion
+      const pdfFile = new File([pdfBlob], documentToDownload.fileName || 'document.pdf', {
+        type: 'application/pdf'
+      });
+      
+      // Convert PDF to Word format
+      console.log('🔄 Converting PDF to Word format...');
+      const wordFile = await convertPdfToWord(pdfFile);
+      
+      // Use the filename from the converted file (already has .rtf extension)
+      // Or generate a custom filename if needed
+      const wordFileName = documentToDownload.fileName 
+        ? documentToDownload.fileName.replace(/\.pdf$/i, '.rtf').replace(/\.(docx|doc)$/i, '.rtf')
+        : wordFile.name;
+      
+      // Download the Word file
+      downloadWordFile(wordFile, wordFileName);
+      console.log('✅ Word document downloaded successfully');
+    } catch (error) {
+      console.error('❌ Error downloading Word document:', error);
+      alert('Error downloading Word document. Please try again.');
     }
   };
   
@@ -1400,24 +1442,32 @@ The client will receive an email with the PDF quote and a link to complete the d
                   )}
                 </div>
                 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleViewDocument(doc)}
-                    className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    className="flex-1 min-w-[80px] px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                   >
                     <Eye className="w-4 h-4" />
                     View
                   </button>
                   <button
                     onClick={() => handleDownloadDocument(doc)}
-                    className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    className="flex-1 min-w-[80px] px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                   >
                     <Download className="w-4 h-4" />
-                    Download
+                    PDF
+                  </button>
+                  <button
+                    onClick={() => handleDownloadWordDocument(doc)}
+                    className="flex-1 min-w-[80px] px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    title="Download as Word document (.rtf)"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    Word
                   </button>
                   <button
                     onClick={() => handleDeleteDocument(doc.id)}
-                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center justify-center"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
