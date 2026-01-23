@@ -1,4 +1,4 @@
-const fs = require('fs');
+image.pngconst fs = require('fs');
 const path = require('path');
 
 /**
