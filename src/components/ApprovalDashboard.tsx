@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
+  Check,
   CheckCircle,
   Clock,
   FileCheck,
@@ -14,7 +15,7 @@ import {
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 
-type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected' | 'history';
+type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
 interface ApprovalDashboardProps {
   onStartManualApprovalWorkflow?: () => void;
@@ -25,22 +26,44 @@ const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDat
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-const pctChange = (today: number, yesterday: number) => {
-  if (yesterday === 0) return today === 0 ? 0 : 100;
-  return Math.round(((today - yesterday) / yesterday) * 100);
-};
-
 const badgeClass = (status: string) => {
   switch (status) {
     case 'approved':
-      return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
+      // Vibrant approved (emerald)
+      return 'bg-emerald-600 text-white ring-1 ring-emerald-600';
     case 'denied':
-      return 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
+      // Ruby rejected
+      return 'bg-[#E11D48] text-white ring-1 ring-[#E11D48]';
     case 'in_progress':
-      return 'bg-sky-50 text-sky-700 ring-1 ring-sky-200';
+      return 'bg-sky-500 text-white ring-1 ring-sky-500';
+    case 'pending':
     default:
-      return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200';
+      // High-contrast pending state (Amber #F59E0B) for readability on white backgrounds
+      return 'bg-[#F59E0B] text-gray-900 ring-1 ring-black/10';
   }
+};
+
+const Sparkline: React.FC<{ data: number[]; stroke: string }> = ({ data, stroke }) => {
+  const w = 56;
+  const h = 18;
+  const pad = 2;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = Math.max(max - min, 1);
+
+  const points = data
+    .map((v, i) => {
+      const x = pad + (i * (w - pad * 2)) / Math.max(data.length - 1, 1);
+      const y = h - pad - ((v - min) * (h - pad * 2)) / range;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" className="shrink-0">
+      <polyline points={points} fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" />
+    </svg>
+  );
 };
 
 const getStep = (workflow: any, role: string) => {
@@ -53,12 +76,28 @@ const stepStatusLabel = (status?: string) => {
   return status === 'denied' ? 'rejected' : status.replace('_', ' ');
 };
 
+const stepperDotClass = (idx: number, currentIdx: number, rawStatus?: string) => {
+  const s = rawStatus || 'pending';
+  if (s === 'denied') return 'bg-[#E11D48]';
+  if (s === 'approved') return 'bg-emerald-500';
+  if (idx < currentIdx) return 'bg-emerald-500';
+  if (idx === currentIdx) return 'bg-[#F59E0B]';
+  return 'bg-gray-300';
+};
+
+const stepperLabelClass = (idx: number, currentIdx: number, rawStatus?: string) => {
+  const s = rawStatus || 'pending';
+  if (s === 'denied') return 'text-red-600';
+  if (s === 'approved') return 'text-emerald-700';
+  if (idx === currentIdx) return 'text-gray-900 font-semibold';
+  return 'text-gray-600';
+};
+
 const iconForView: Record<ViewKey, React.ComponentType<{ className?: string }>> = {
   dashboard: ShieldCheck,
   pending: Clock,
   approved: CheckCircle,
   rejected: XCircle,
-  history: FileCheck,
 };
 
 const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualApprovalWorkflow }) => {
@@ -83,15 +122,14 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const normalized = query.trim().toLowerCase();
 
   const {
+    all,
     pending,
     approved,
     rejected,
-    history,
     approvedToday,
-    rejectedToday,
-    trendPendingPct,
-    trendApprovedPct,
-    trendRejectedPct,
+    sparkPending,
+    sparkApproved,
+    sparkRejected,
   } = useMemo(() => {
     const safe = (workflows || []).filter(Boolean);
 
@@ -111,10 +149,21 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     const approvedAll = safe.filter(isApproved).filter(matchesQuery);
     const rejectedAll = safe.filter(isRejected).filter(matchesQuery);
 
-    const historyAll = safe
-      .filter((w: any) => w.status === 'approved' || w.status === 'denied')
+    // Dashboard list: show everything (pending + approved + rejected), prioritized by status then recency.
+    const statusRank = (s: string) => {
+      if (s === 'pending' || s === 'in_progress') return 0;
+      if (s === 'approved') return 1;
+      if (s === 'denied') return 2;
+      return 3;
+    };
+    const allSorted = safe
       .filter(matchesQuery)
-      .sort((a: any, b: any) => +new Date(b.updatedAt || b.createdAt) - +new Date(a.updatedAt || a.createdAt));
+      .sort((a: any, b: any) => {
+        const ra = statusRank(a.status || 'pending');
+        const rb = statusRank(b.status || 'pending');
+        if (ra !== rb) return ra - rb;
+        return +new Date(b.updatedAt || b.createdAt) - +new Date(a.updatedAt || a.createdAt);
+      });
 
     const approvedTodayCount = safe.filter(isApproved).filter((w: any) => {
       const d = new Date(w.updatedAt || w.createdAt);
@@ -126,24 +175,41 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       return isSameDay(d, now);
     }).length;
 
-    const pendingToday = safe.filter(isPending).filter((w: any) => isSameDay(new Date(w.createdAt), now)).length;
-    const pendingYesterday = safe
-      .filter(isPending)
-      .filter((w: any) => isSameDay(new Date(w.createdAt), yesterday0)).length;
+    // 7-day sparklines (today inclusive)
+    const dayKeys = Array.from({ length: 7 }, (_, i) => {
+      const d = startOfDay(new Date(now));
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().slice(0, 10);
+    });
+    const idxFor = (isoDateKey: string) => dayKeys.indexOf(isoDateKey);
+    const sparkP = new Array(7).fill(0);
+    const sparkA = new Array(7).fill(0);
+    const sparkR = new Array(7).fill(0);
 
-    const approvedYesterday = safe.filter(isApproved).filter((w: any) => isSameDay(new Date(w.updatedAt || w.createdAt), yesterday0)).length;
-    const rejectedYesterday = safe.filter(isRejected).filter((w: any) => isSameDay(new Date(w.updatedAt || w.createdAt), yesterday0)).length;
+    for (const w of safe) {
+      const createdKey = w.createdAt ? startOfDay(new Date(w.createdAt)).toISOString().slice(0, 10) : null;
+      const updatedKey = (w.updatedAt || w.createdAt) ? startOfDay(new Date(w.updatedAt || w.createdAt)).toISOString().slice(0, 10) : null;
+
+      if (createdKey) {
+        const idx = idxFor(createdKey);
+        if (idx >= 0 && isPending(w)) sparkP[idx] += 1;
+      }
+      if (updatedKey) {
+        const idx = idxFor(updatedKey);
+        if (idx >= 0 && isApproved(w)) sparkA[idx] += 1;
+        if (idx >= 0 && isRejected(w)) sparkR[idx] += 1;
+      }
+    }
 
     return {
+      all: allSorted,
       pending: pendingAll,
       approved: approvedAll,
       rejected: rejectedAll,
-      history: historyAll,
       approvedToday: approvedTodayCount,
-      rejectedToday: rejectedTodayCount,
-      trendPendingPct: pctChange(pendingToday, pendingYesterday),
-      trendApprovedPct: pctChange(approvedTodayCount, approvedYesterday),
-      trendRejectedPct: pctChange(rejectedTodayCount, rejectedYesterday),
+      sparkPending: sparkP,
+      sparkApproved: sparkA,
+      sparkRejected: sparkR,
     };
   }, [workflows, normalized]);
 
@@ -152,7 +218,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     pending: pending.length,
     approved: approved.length,
     rejected: rejected.length,
-    history: history.length,
   };
 
   const list = useMemo(() => {
@@ -163,26 +228,11 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
         return approved;
       case 'rejected':
         return rejected;
-      case 'history':
-        return history;
       default:
-        // dashboard shows pending first (speedy decision-making)
-        return pending;
+        // dashboard shows all (pending + approved + rejected)
+        return all;
     }
-  }, [activeView, pending, approved, rejected, history]);
-
-  const trendChip = (pct: number) => {
-    const positive = pct >= 0;
-    return (
-      <span
-        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-          positive ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
-        }`}
-      >
-        {positive ? `+${pct}%` : `${pct}%`}
-      </span>
-    );
-  };
+  }, [activeView, all, pending, approved, rejected]);
 
   // Use the existing "View Details" behavior by navigating to the modal in other dashboards.
   const revokeObjectUrlIfAny = () => {
@@ -252,7 +302,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     { key: 'pending', label: 'Pending Approvals' },
     { key: 'approved', label: 'Approved' },
     { key: 'rejected', label: 'Rejected' },
-    { key: 'history', label: 'History / Audit Logs' },
   ];
 
   return (
@@ -260,31 +309,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       <div className="flex">
         {/* Sidebar */}
         <aside className="hidden md:flex w-72 flex-col border-r border-gray-200 bg-white">
-          <div className="px-6 py-6">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 shadow-lg" />
-              <div>
-                <div className="text-gray-900 font-bold text-sm tracking-wide">Approval</div>
-                <div className="text-gray-500 text-xs">Management</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Primary CTA under "Approval Management" */}
-          <div className="px-3 -mt-2 pb-4">
-            <button
-              type="button"
-              onClick={onStartManualApprovalWorkflow}
-              disabled={!onStartManualApprovalWorkflow}
-              className="w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-all bg-indigo-50 text-indigo-900 shadow-sm ring-1 ring-indigo-100 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={onStartManualApprovalWorkflow ? 'Start Manual Approval Workflow' : 'Not available'}
-            >
-              <span className="flex items-center gap-3">
-                <FileCheck className="h-4 w-4 text-indigo-600" />
-                <span className="text-sm font-semibold">Start Manual Approval Workflow</span>
-              </span>
-            </button>
-          </div>
+          <div className="pt-4" />
 
           <nav className="px-3 pb-6 space-y-1">
             {sidebarItems.map((item) => {
@@ -317,6 +342,20 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             })}
           </nav>
 
+          {/* CTA below navigation */}
+          <div className="px-3 pb-6">
+            <button
+              type="button"
+              onClick={onStartManualApprovalWorkflow}
+              disabled={!onStartManualApprovalWorkflow}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#10B981] text-white px-4 py-2.5 text-sm font-semibold shadow-sm hover:bg-[#059669] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              title={onStartManualApprovalWorkflow ? 'Start Manual Approval Workflow' : 'Not available'}
+            >
+              <FileCheck className="h-4 w-4 text-white" />
+              Start Manual Approval
+            </button>
+          </div>
+
           <div className="mt-auto p-4 text-xs text-gray-500">
             Tip: use search to find by deal, quote ID, client, or requester.
           </div>
@@ -324,50 +363,60 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
 
         {/* Main */}
         <main className="flex-1 p-3 sm:p-4">
-          {/* Metric cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            <div className="rounded-xl bg-white border border-gray-200 p-3 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Pending Approvals</div>
-                {trendChip(trendPendingPct)}
-              </div>
-              <div className="mt-2 text-2xl font-extrabold text-gray-900">{pending.length}</div>
-              <div className="mt-1.5 text-gray-600 text-sm flex items-center gap-2">
-                <Clock className="h-4 w-4 text-amber-600" />
-                Queue needing action
-              </div>
-            </div>
+          {activeView === 'dashboard' && (
+            <>
+              {/* Metric cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div className="rounded-xl bg-[#EFF6FF] border border-blue-100 p-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Pending Approvals</div>
+                  </div>
+                  <div className="mt-2 flex items-end justify-between gap-3">
+                    <div className="text-2xl font-extrabold text-gray-900">{pending.length}</div>
+                    <Sparkline data={sparkPending} stroke="#3B82F6" />
+                  </div>
+                  <div className="mt-1.5 text-gray-700 text-sm flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-amber-600" />
+                    Queue needing action
+                  </div>
+                </div>
 
-            <div className="rounded-xl bg-white border border-gray-200 p-3 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Approved Today</div>
-                {trendChip(trendApprovedPct)}
-              </div>
-              <div className="mt-2 text-2xl font-extrabold text-gray-900">{approvedToday}</div>
-              <div className="mt-1.5 text-gray-600 text-sm flex items-center gap-2">
-                <ThumbsUp className="h-4 w-4 text-emerald-600" />
-                Completed approvals
-              </div>
-            </div>
+                <div className="rounded-xl bg-[#ECFDF5] border border-emerald-100 p-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Approved Today</div>
+                  </div>
+                  <div className="mt-2 flex items-end justify-between gap-3">
+                    <div className="text-2xl font-extrabold text-gray-900">{approvedToday}</div>
+                    <Sparkline data={sparkApproved} stroke="#10B981" />
+                  </div>
+                  <div className="mt-1.5 text-gray-700 text-sm flex items-center gap-2">
+                    <ThumbsUp className="h-4 w-4 text-emerald-600" />
+                    Completed approvals
+                  </div>
+                </div>
 
-            <div className="rounded-xl bg-white border border-gray-200 p-3 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Rejected</div>
-                {trendChip(trendRejectedPct)}
+                <div className="rounded-xl bg-[#FEF2F2] border border-red-100 p-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Rejected</div>
+                  </div>
+                  <div className="mt-2 flex items-end justify-between gap-3">
+                    <div className="text-2xl font-extrabold text-red-500">{rejected.length}</div>
+                    <Sparkline data={sparkRejected} stroke="#EF4444" />
+                  </div>
+                  <div className="mt-1.5 text-red-500 text-sm flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-red-500" />
+                    Denied workflows
+                  </div>
+                </div>
               </div>
-              <div className="mt-2 text-2xl font-extrabold text-gray-900">{rejected.length}</div>
-              <div className="mt-1.5 text-gray-600 text-sm flex items-center gap-2">
-                  <XCircle className="h-4 w-4 text-rose-600" />
-                Denied workflows
-              </div>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* List */}
           <div className="mt-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3">
               <div className="text-gray-900 font-bold">
-                {activeView === 'dashboard' ? 'Pending Approvals' : sidebarItems.find((s) => s.key === activeView)?.label}
+                {activeView === 'dashboard' ? 'All Approvals' : sidebarItems.find((s) => s.key === activeView)?.label}
               </div>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
                 <div className="w-full md:w-[420px]">
@@ -401,15 +450,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                 return (
                   <div
                     key={workflow.id}
-                    className="group rounded-xl bg-white border border-gray-200 p-4 shadow-sm hover:shadow-md hover:border-gray-300 transition-all"
+                    className="group rounded-xl bg-white border border-gray-200 p-4 shadow-[0_2px_8px_rgba(15,23,42,0.06)] hover:shadow-[0_6px_18px_rgba(15,23,42,0.10)] hover:border-gray-300 transition-all"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_220px] gap-2">
                         <div className="min-w-0 lg:col-span-1">
-                          <div className="text-gray-900 font-extrabold text-base truncate">
+                          <div className="text-[#4F46E5] font-extrabold text-base truncate">
                             {workflow.documentId || 'Untitled Quote / SOW'}
                           </div>
-                          <div className="mt-1 text-gray-600 text-sm">
+                          <div className="mt-1 text-gray-700 text-sm">
                             Requested by <span className="text-gray-900 font-semibold">{requestedBy}</span>
                           </div>
                         </div>
@@ -419,73 +468,111 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                           <div className="mt-1 text-gray-900 font-semibold">
                             {createdAt ? createdAt.toLocaleDateString('en-GB') : '—'}
                           </div>
-                          <div className="text-gray-500 text-xs">
+                          <div className="text-gray-600 text-xs">
                             {createdAt ? createdAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
                           </div>
                         </div>
 
                         <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
                           <div className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide">Client</div>
-                          <div className="mt-1 text-gray-900 font-semibold truncate">
+                          <div className="mt-1 text-gray-900 font-bold truncate">
                             {workflow.clientName || '—'}
                           </div>
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex items-center gap-2">
+                      <div className="shrink-0 w-[140px] flex flex-col items-stretch gap-2">
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
-                          className="inline-flex items-center gap-2 rounded-lg bg-white border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50 transition-all"
+                          title="Preview document"
+                          aria-label="Preview document"
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-white border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-[#4F46E5] shadow-sm hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
                         >
-                          View Doc
+                          <FileText className="h-4 w-4 text-[#4F46E5]" />
+                          <span className="sm:hidden">Preview</span>
+                          <span className="hidden sm:inline">Preview Doc</span>
                         </button>
-                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ${badgeClass(status)}`}>
+                        <span
+                          className={`w-full inline-flex items-center justify-center rounded-full px-4 py-1 text-sm font-bold whitespace-nowrap ${badgeClass(
+                            status
+                          )}`}
+                          aria-label={`Status: ${String(status).replace('_', ' ')}`}
+                        >
                           {String(status).replace('_', ' ')}
                         </span>
                       </div>
                     </div>
 
                     {/* Approval step summary (Team/Technical/Legal/Deal Desk) */}
-                    <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 p-3">
-                      <div className="flex items-center justify-between">
-                        <div className="text-gray-700 text-xs font-bold uppercase tracking-wide">Approvals</div>
-                        <div className="text-gray-500 text-xs">
-                          Step {workflow.currentStep || 1} / {workflow.totalSteps || (workflow.workflowSteps?.length || 4)}
-                        </div>
-                      </div>
+                    {(() => {
+                      const steps = [
+                        { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
+                        { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
+                        { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
+                        { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskStep?.comments || '' },
+                      ];
 
-                      <div className="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-2">
-                        {[
-                          { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
-                          { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
-                          { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
-                          { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskStep?.comments || '' },
-                        ].map((item) => {
-                          const stepStatus = item.step?.status || 'pending';
-                          return (
-                            <div
-                              key={item.label}
-                              className="rounded-lg bg-white border border-gray-200 px-2 py-2 overflow-hidden"
-                            >
-                              <div className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide leading-tight">
-                                {item.label}
-                              </div>
-                              <div className="mt-2">
-                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${badgeClass(stepStatus)}`}>
-                                  {stepStatusLabel(stepStatus)}
-                                </span>
-                              </div>
-                              <div className="mt-2 text-gray-700 text-xs min-h-[16px]">
-                                <span className="break-words">
-                                  {item.extra || '—'}
-                                </span>
-                              </div>
+                      const currentIdx = Math.max(0, Number(workflow.currentStep || 1) - 1);
+                      const currentItem = steps[currentIdx];
+                      const currentExtra = currentItem?.extra
+                        ? `${currentItem.label}: ${currentItem.extra}`
+                        : `${currentItem?.label || 'Current'}: —`;
+
+                      return (
+                        <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                          <div className="flex items-center justify-between">
+                            <div className="text-gray-700 text-xs font-bold uppercase tracking-wide">Approvals</div>
+                            <div className="text-gray-500 text-xs">
+                              Step {workflow.currentStep || 1} / {workflow.totalSteps || (workflow.workflowSteps?.length || 4)}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          </div>
+
+                          <div className="mt-2 relative">
+                            <div className="absolute left-0 right-0 top-[9px] h-px bg-gray-200" />
+                            <div className="relative z-10 flex items-start justify-between gap-2">
+                              {steps.map((item, idx) => {
+                                const raw = item.step?.status || 'pending';
+                                const who = item.step?.email ? `Email: ${item.step.email}` : null;
+                                const grp = item.step?.group ? `Group: ${item.step.group}` : null;
+                                const cmt = item.step?.comments ? `Comments: ${item.step.comments}` : null;
+                                const tsRaw =
+                                  item.step?.approvedAt ||
+                                  item.step?.completedAt ||
+                                  item.step?.updatedAt ||
+                                  item.step?.createdAt ||
+                                  null;
+                                const ts = tsRaw ? `Time: ${new Date(tsRaw).toLocaleString()}` : null;
+                                const title = [
+                                  `${item.label}: ${stepStatusLabel(raw)}`,
+                                  ...(item.extra ? [`Info: ${item.extra}`] : []),
+                                  ...([who, grp, cmt, ts].filter(Boolean) as string[]),
+                                ].join('\n');
+
+                                const completed =
+                                  raw === 'approved' || (idx < currentIdx && raw !== 'denied');
+                                return (
+                                  <div key={item.label} className="flex-1 min-w-0 flex flex-col items-center" title={title}>
+                                    {completed ? (
+                                      <div className="h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-white flex items-center justify-center">
+                                        <Check className="h-3 w-3 text-white" />
+                                      </div>
+                                    ) : (
+                                      <div className={`h-4 w-4 rounded-full ring-2 ring-white ${stepperDotClass(idx, currentIdx, raw)}`} />
+                                    )}
+                                    <div className={`mt-1 text-[11px] truncate ${stepperLabelClass(idx, currentIdx, raw)}`}>{item.label}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="mt-1 text-xs text-gray-600 truncate" title={currentExtra}>
+                            Current: <span className="text-gray-900 font-semibold">{currentExtra}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {(status === 'approved' || status === 'denied') && (
                       <div className="mt-4">
