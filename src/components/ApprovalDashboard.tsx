@@ -439,6 +439,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <div className="grid grid-cols-1 gap-3">
               {list.map((workflow: any) => {
                 const status = workflow.status || 'pending';
+                const statusLabel = String(status).replace('_', ' ');
                 const requestedBy = workflow.creatorEmail || '—';
                 const createdAt = workflow.createdAt ? new Date(workflow.createdAt) : null;
 
@@ -452,11 +453,21 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     key={workflow.id}
                     className="group rounded-xl bg-white border border-gray-200 p-4 shadow-[0_2px_8px_rgba(15,23,42,0.06)] hover:shadow-[0_6px_18px_rgba(15,23,42,0.10)] hover:border-gray-300 transition-all"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-stretch justify-between gap-3">
                       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_220px] gap-2">
                         <div className="min-w-0 lg:col-span-1">
-                          <div className="text-[#4F46E5] font-extrabold text-base truncate">
-                            {workflow.documentId || 'Untitled Quote / SOW'}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="text-[#4F46E5] font-extrabold text-base truncate min-w-0">
+                              {workflow.documentId || 'Untitled Quote / SOW'}
+                            </div>
+                            <span
+                              className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-bold whitespace-nowrap ${badgeClass(
+                                status
+                              )}`}
+                              aria-label={`Status: ${statusLabel}`}
+                            >
+                              {statusLabel}
+                            </span>
                           </div>
                           <div className="mt-1 text-gray-700 text-sm">
                             Requested by <span className="text-gray-900 font-semibold">{requestedBy}</span>
@@ -481,26 +492,18 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         </div>
                       </div>
 
-                      <div className="shrink-0 w-[140px] flex flex-col items-stretch gap-2">
+                      <div className="shrink-0 w-[140px] flex flex-col items-stretch self-stretch">
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
+                          className="w-full flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
                         >
                           <FileText className="h-4 w-4 text-white" />
                           <span className="sm:hidden">Preview</span>
                           <span className="hidden sm:inline">Preview Doc</span>
                         </button>
-                        <span
-                          className={`w-full inline-flex items-center justify-center rounded-full px-4 py-1 text-sm font-bold whitespace-nowrap ${badgeClass(
-                            status
-                          )}`}
-                          aria-label={`Status: ${String(status).replace('_', ' ')}`}
-                        >
-                          {String(status).replace('_', ' ')}
-                        </span>
                       </div>
                     </div>
 
