@@ -304,38 +304,23 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     }
   };
 
-  const tabs = [
-    { id: 'dashboard', label: 'Admin Dashboard', icon: BarChart3 },
-    { id: 'start', label: 'Start Manual Approval Workflow', icon: FileCheck }
-  ];
-
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6 w-full flex flex-col">
-      <div className="w-full flex-1 space-y-6">
-        {/* Integrated Tab Navigation */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-2">
-          <div className="flex space-x-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-3 px-8 py-4 rounded-xl font-bold text-sm transition-all duration-300 border-0 flex-1 ${
-                  activeTab === tab.id
-                    ? 'bg-sky-200 text-sky-800 shadow-lg transform scale-105'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 hover:shadow-md'
-                }`}
-              >
-                <tab.icon className="w-5 h-5" />
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
+    <div className="min-h-full bg-gradient-to-br from-slate-50 to-blue-50 w-full">
+      <div className="w-full space-y-6">
         {/* Tab Content */}
         {activeTab === 'start' && (
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 flex-1 overflow-auto">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200">
             <div className="p-8 space-y-8">
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('dashboard')}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 bg-gray-100 text-gray-800 shadow-sm hover:bg-gray-200"
+                >
+                  <BarChart3 className="w-5 h-5" />
+                  Back to Dashboard
+                </button>
+              </div>
               {/* Document Information Section */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -524,8 +509,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
 
         {/* Admin Dashboard Tab */}
         {activeTab === 'dashboard' && (
-          <div className="flex-1 overflow-hidden">
-            <ApprovalDashboard />
+          <div className="w-full">
+            <ApprovalDashboard onStartManualApprovalWorkflow={() => setActiveTab('start')} />
           </div>
         )}
       </div>
