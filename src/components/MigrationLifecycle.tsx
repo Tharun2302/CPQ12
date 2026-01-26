@@ -282,147 +282,210 @@ const MigrationLifecycle: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {workflows.map((workflow) => (
-              <div key={workflow.id} className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-                <div className="bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xl font-bold text-white">{workflow.dealName || workflow.clientName}</h3>
-                      <p className="text-indigo-100 text-sm mt-1">
-                        {workflow.companyName} • {workflow.clientName}
-                      </p>
+            {workflows.map((workflow) => {
+              const completedSteps = workflow.steps?.filter(s => s.status === 'approved').length || 0;
+              const totalSteps = workflow.steps?.length || 8;
+              const progressPercentage = (completedSteps / totalSteps) * 100;
+              const currentStepInfo = workflowSteps.find(s => s.step === workflow.currentStep);
+              
+              return (
+                <div key={workflow.id} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                  {/* Header */}
+                  <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 px-6 py-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-2xl font-bold text-white mb-1">{workflow.dealName || workflow.clientName}</h3>
+                        <p className="text-indigo-100 text-sm">
+                          {workflow.companyName} • {workflow.clientName}
+                        </p>
+                        {workflow.dealId && (
+                          <p className="text-indigo-200 text-xs mt-1">Deal ID: {workflow.dealId}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {currentStepInfo && workflow.currentStep <= 8 && (
+                          <button
+                            onClick={() => handleApproveStep(workflow.id, workflow.currentStep)}
+                            className="px-5 py-2.5 bg-white text-purple-600 rounded-lg hover:bg-purple-50 transition-all font-bold text-sm shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                          >
+                            {currentStepInfo.name.toUpperCase()}
+                          </button>
+                        )}
+                        <span className={`px-4 py-2 rounded-lg text-xs font-bold ${getStatusColor(workflow.status)}`}>
+                          {workflow.status.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+                      </div>
                     </div>
-                    <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${getStatusColor(workflow.status)}`}>
-                      {workflow.status.replace(/_/g, ' ').toUpperCase()}
-                    </span>
+                    
+                    {/* Progress Bar */}
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between text-xs text-indigo-100 mb-2">
+                        <span>Progress: {completedSteps} of {totalSteps} steps completed</span>
+                        <span>{Math.round(progressPercentage)}%</span>
+                      </div>
+                      <div className="w-full bg-indigo-400/30 rounded-full h-2.5">
+                        <div 
+                          className="bg-white h-2.5 rounded-full transition-all duration-500"
+                          style={{ width: `${progressPercentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="p-6">
                   {/* Workflow Steps */}
-                  <div className="space-y-4">
-                    {workflowSteps.map((stepInfo, index) => {
-                      const step = workflow.steps?.find(s => s.step === stepInfo.step);
-                      const StepIcon = stepInfo.icon;
-                      const isActive = workflow.currentStep === stepInfo.step;
-                      const isCompleted = step?.status === 'approved' || (workflow.currentStep > stepInfo.step);
-                      
-                      return (
-                        <div
-                          key={stepInfo.step}
-                          className={`flex items-center gap-4 p-4 rounded-lg border-2 ${
-                            isActive
-                              ? 'border-indigo-500 bg-indigo-50'
-                              : isCompleted
-                              ? 'border-green-300 bg-green-50'
-                              : 'border-gray-200 bg-gray-50'
-                          }`}
-                        >
-                          <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
-                            isCompleted
-                              ? 'bg-green-500'
-                              : isActive
-                              ? 'bg-indigo-500'
-                              : 'bg-gray-300'
-                          }`}>
-                            {isCompleted ? (
-                              <CheckCircle className="w-6 h-6 text-white" />
-                            ) : (
-                              <StepIcon className="w-6 h-6 text-white" />
-                            )}
-                          </div>
-                          
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <h4 className="font-semibold text-gray-900">{stepInfo.name}</h4>
-                                <p className="text-sm text-gray-600">{stepInfo.role}</p>
+                  <div className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {workflowSteps.map((stepInfo, index) => {
+                        const step = workflow.steps?.find(s => s.step === stepInfo.step);
+                        const StepIcon = stepInfo.icon;
+                        const isActive = workflow.currentStep === stepInfo.step;
+                        const isCompleted = step?.status === 'approved' || (workflow.currentStep > stepInfo.step);
+                        const isPending = !isActive && !isCompleted;
+                        
+                        return (
+                          <div
+                            key={stepInfo.step}
+                            className={`relative flex flex-col items-start p-5 rounded-xl border-2 transition-all h-full ${
+                              isActive
+                                ? 'border-purple-500 bg-gradient-to-br from-purple-50 to-indigo-50 shadow-lg'
+                                : isCompleted
+                                ? 'border-green-300 bg-green-50/50'
+                                : 'border-gray-200 bg-gray-50/50'
+                            }`}
+                          >
+                            {/* Step Header */}
+                            <div className="flex items-start gap-3 w-full mb-3">
+                              {/* Step Number Badge */}
+                              <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center shadow-md ${
+                                isCompleted
+                                  ? 'bg-gradient-to-br from-green-500 to-green-600'
+                                  : isActive
+                                  ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
+                                  : 'bg-gray-300'
+                              }`}>
+                                {isCompleted ? (
+                                  <CheckCircle className="w-6 h-6 text-white" />
+                                ) : (
+                                  <StepIcon className={`w-6 h-6 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+                                )}
                               </div>
-                              <div className="flex items-center gap-3">
-                                {step?.status === 'approved' && (
-                                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-lg text-sm font-semibold">
-                                    Approved
-                                  </span>
-                                )}
-                                {step?.status === 'denied' && (
-                                  <span className="px-3 py-1 bg-red-100 text-red-800 rounded-lg text-sm font-semibold">
-                                    Denied
-                                  </span>
-                                )}
-                                {isActive && step?.status === 'pending' && (
+                              
+                              {/* Step Title and Role */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <h4 className={`font-bold text-sm ${
+                                    isActive ? 'text-purple-900' : isCompleted ? 'text-green-900' : 'text-gray-700'
+                                  }`}>
+                                    {stepInfo.name}
+                                  </h4>
+                                  {isActive && (
+                                    <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-md text-xs font-semibold animate-pulse">
+                                      ACTIVE
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-600">{stepInfo.role}</p>
+                              </div>
+                            </div>
+                            
+                            {/* Step Content */}
+                            <div className="w-full space-y-3">
+                              {/* Step-specific inputs */}
+                              {stepInfo.step === 4 && isActive && (
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium text-gray-700 block">Number of Servers:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="Enter number"
+                                    value={workflow.numberOfServers || ''}
+                                    onChange={(e) => {
+                                      const value = parseInt(e.target.value);
+                                      if (!isNaN(value) && value > 0) {
+                                        handleUpdateServers(workflow.id, value);
+                                      }
+                                    }}
+                                    className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                  />
+                                </div>
+                              )}
+                              {stepInfo.step === 5 && isActive && (
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium text-gray-700 block">Servers Built:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="Enter number"
+                                    value={workflow.serversBuilt || ''}
+                                    onChange={(e) => {
+                                      const value = parseInt(e.target.value);
+                                      if (!isNaN(value) && value > 0) {
+                                        handleUpdateServersBuilt(workflow.id, value);
+                                      }
+                                    }}
+                                    className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                  />
+                                </div>
+                              )}
+                              
+                              {/* Status and Timestamp */}
+                              {step?.status === 'approved' && (
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle className="w-4 h-4 text-green-600" />
+                                  <span className="text-xs font-semibold text-green-800">Approved</span>
+                                </div>
+                              )}
+                              {step?.status === 'denied' && (
+                                <div className="flex items-center gap-2">
+                                  <X className="w-4 h-4 text-red-600" />
+                                  <span className="text-xs font-semibold text-red-800">Denied</span>
+                                </div>
+                              )}
+                              {step?.timestamp && (
+                                <p className="text-xs text-gray-500">
+                                  ✓ {new Date(step.timestamp).toLocaleString()}
+                                </p>
+                              )}
+                              {step?.comments && (
+                                <p className="text-xs text-gray-600 italic">💬 {step.comments}</p>
+                              )}
+                              
+                              {/* Action Buttons */}
+                              <div className="pt-2">
+                                {isActive && step?.status === 'pending' && stepInfo.step !== 4 && stepInfo.step !== 5 && stepInfo.step !== 6 && (
                                   <button
                                     onClick={() => handleApproveStep(workflow.id, stepInfo.step)}
-                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
+                                    className="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg"
                                   >
                                     Approve
                                   </button>
-                                )}
-                                {stepInfo.step === 4 && isActive && (
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="number"
-                                      placeholder="No. of Servers"
-                                      value={workflow.numberOfServers || ''}
-                                      onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        if (!isNaN(value) && value > 0) {
-                                          handleUpdateServers(workflow.id, value);
-                                        }
-                                      }}
-                                      className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                                    />
-                                  </div>
-                                )}
-                                {stepInfo.step === 5 && isActive && (
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="number"
-                                      placeholder="Servers Built"
-                                      value={workflow.serversBuilt || ''}
-                                      onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        if (!isNaN(value) && value > 0) {
-                                          handleUpdateServersBuilt(workflow.id, value);
-                                        }
-                                      }}
-                                      className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                                    />
-                                  </div>
                                 )}
                                 {stepInfo.step === 6 && isActive && (
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => handleQAStatus(workflow.id, 'passed')}
-                                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-semibold"
+                                      className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all text-sm font-bold shadow-md hover:shadow-lg"
                                     >
-                                      Pass
+                                      ✓ Pass
                                     </button>
                                     <button
                                       onClick={() => handleQAStatus(workflow.id, 'failed')}
-                                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-semibold"
+                                      className="flex-1 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition-all text-sm font-bold shadow-md hover:shadow-lg"
                                     >
-                                      Fail
+                                      ✗ Fail
                                     </button>
                                   </div>
                                 )}
                               </div>
                             </div>
-                            {step?.comments && (
-                              <p className="text-sm text-gray-600 mt-2">Comments: {step.comments}</p>
-                            )}
-                            {step?.timestamp && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                {new Date(step.timestamp).toLocaleString()}
-                              </p>
-                            )}
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
