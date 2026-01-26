@@ -246,18 +246,9 @@ const MigrationLifecycle: React.FC = () => {
       {/* Header */}
       <div className="bg-white shadow-lg border-b border-gray-200 ml-64">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900">Migration Lifecycle Management</h1>
-              <p className="text-xl text-gray-600 mt-2">Manage migration approval workflow and infrastructure lifecycle</p>
-            </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md font-semibold"
-            >
-              <Play className="w-5 h-5" />
-              Start New Workflow
-            </button>
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900">Migration Lifecycle Management</h1>
+            <p className="text-xl text-gray-600 mt-2">Manage migration approval workflow and infrastructure lifecycle</p>
           </div>
         </div>
       </div>

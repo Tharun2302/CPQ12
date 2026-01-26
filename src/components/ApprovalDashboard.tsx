@@ -11,9 +11,12 @@ import {
   ThumbsUp,
   X,
   XCircle,
+  Menu,
+  ChevronLeft,
 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import Navigation from './Navigation';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -108,6 +111,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
 
   const {
@@ -306,8 +310,32 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
 
   return (
     <div className="w-full min-h-screen overflow-hidden bg-white">
-      <div className="flex">
-        {/* Sidebar */}
+      {/* Main Navigation Sidebar - Hidden by default on approval page */}
+      {isSidebarVisible && (
+        <div className="fixed left-0 top-0 h-full z-50">
+          <Navigation currentTab="approval" />
+        </div>
+      )}
+      
+      {/* Toggle Button */}
+      <button
+        onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+        className={`fixed top-4 z-50 p-2 rounded-lg shadow-lg transition-all duration-300 ${
+          isSidebarVisible 
+            ? 'left-[260px] bg-purple-600 text-white hover:bg-purple-700' 
+            : 'left-4 bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+        title={isSidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'}
+      >
+        {isSidebarVisible ? (
+          <ChevronLeft className="w-5 h-5" />
+        ) : (
+          <Menu className="w-5 h-5" />
+        )}
+      </button>
+
+      <div className="flex transition-all duration-300" style={{ marginLeft: isSidebarVisible ? '256px' : '0' }}>
+        {/* Internal Sidebar for Approval Dashboard */}
         <aside className="hidden md:flex w-72 flex-col border-r border-gray-200 bg-white">
           <div className="pt-4" />
 

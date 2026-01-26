@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, Navigate, useNavigate } from 'react-router-dom';
 import Navigation from './Navigation';
 import ConfigurationForm from './ConfigurationForm';
@@ -14,7 +14,7 @@ import ApprovalWorkflow from './ApprovalWorkflow';
 import ExhibitManager from './ExhibitManager';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
-import { FileText } from 'lucide-react';
+import { FileText, Menu, ChevronLeft } from 'lucide-react';
 
 interface DashboardProps {
   // All the props that were previously in App component
@@ -129,6 +129,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [isSidebarVisible, setIsSidebarVisible] = useState(false);
 
   // Navigation state to track current session
   const [navigationState, setNavigationState] = React.useState({
@@ -557,14 +558,50 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  // Hide sidebar by default when on approval tab
+  useEffect(() => {
+    if (currentTab === 'approval') {
+      setIsSidebarVisible(false);
+    }
+  }, [currentTab]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
-      {!isSignatureForm && <Navigation currentTab={currentTab} />}
+      {/* Navigation Sidebar - Hidden by default on approval tab */}
+      {!isSignatureForm && currentTab !== 'approval' && <Navigation currentTab={currentTab} />}
+      {!isSignatureForm && currentTab === 'approval' && isSidebarVisible && (
+        <div className="fixed left-0 top-0 h-full z-50">
+          <Navigation currentTab={currentTab} />
+        </div>
+      )}
+      
+      {/* Toggle Button - Only show on approval tab */}
+      {!isSignatureForm && currentTab === 'approval' && (
+        <button
+          onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+          className={`fixed top-4 z-50 p-2 rounded-lg shadow-lg transition-all duration-300 ${
+            isSidebarVisible 
+              ? 'left-[260px] bg-purple-600 text-white hover:bg-purple-700' 
+              : 'left-4 bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+          }`}
+          title={isSidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'}
+        >
+          {isSidebarVisible ? (
+            <ChevronLeft className="w-5 h-5" />
+          ) : (
+            <Menu className="w-5 h-5" />
+          )}
+        </button>
+      )}
       
       <main
         className={`${
           isSignatureForm ? 'max-w-6xl' : currentTab === 'approval' ? 'max-w-full' : 'max-w-7xl'
-        } mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-10 ${!isSignatureForm ? 'lg:ml-64' : ''}`}
+        } mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-10 transition-all duration-300 ${
+          !isSignatureForm && currentTab === 'approval' 
+            ? (isSidebarVisible ? 'lg:ml-64' : 'lg:ml-0')
+            : (!isSignatureForm ? 'lg:ml-64' : '')
+        }`}
       >
         {renderTabContent()}
       </main>
