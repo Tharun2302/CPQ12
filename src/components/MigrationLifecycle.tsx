@@ -394,37 +394,57 @@ const MigrationLifecycle: React.FC = () => {
                               {stepInfo.step === 4 && isActive && (
                                 <div className="space-y-2">
                                   <label className="text-xs font-medium text-gray-700 block">Number of Servers:</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    placeholder="Enter number"
-                                    value={workflow.numberOfServers || ''}
-                                    onChange={(e) => {
-                                      const value = parseInt(e.target.value);
-                                      if (!isNaN(value) && value > 0) {
-                                        handleUpdateServers(workflow.id, value);
-                                      }
-                                    }}
-                                    className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                                  />
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      placeholder="Enter number"
+                                      value={workflow.numberOfServers || ''}
+                                      onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        if (!isNaN(value) && value > 0) {
+                                          handleUpdateServers(workflow.id, value);
+                                        }
+                                      }}
+                                      className="flex-1 px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    />
+                                    {workflow.numberOfServers && workflow.numberOfServers > 0 && (
+                                      <button
+                                        onClick={() => handleApproveStep(workflow.id, 4)}
+                                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg"
+                                      >
+                                        Approve
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                               {stepInfo.step === 5 && isActive && (
                                 <div className="space-y-2">
                                   <label className="text-xs font-medium text-gray-700 block">Servers Built:</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    placeholder="Enter number"
-                                    value={workflow.serversBuilt || ''}
-                                    onChange={(e) => {
-                                      const value = parseInt(e.target.value);
-                                      if (!isNaN(value) && value > 0) {
-                                        handleUpdateServersBuilt(workflow.id, value);
-                                      }
-                                    }}
-                                    className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                                  />
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      placeholder="Enter number"
+                                      value={workflow.serversBuilt || ''}
+                                      onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        if (!isNaN(value) && value > 0) {
+                                          handleUpdateServersBuilt(workflow.id, value);
+                                        }
+                                      }}
+                                      className="flex-1 px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    />
+                                    {workflow.serversBuilt && workflow.serversBuilt > 0 && (
+                                      <button
+                                        onClick={() => handleApproveStep(workflow.id, 5)}
+                                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all text-sm font-bold shadow-md hover:shadow-lg"
+                                      >
+                                        Approve
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                               

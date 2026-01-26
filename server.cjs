@@ -4041,94 +4041,103 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     // Automatically create Migration Lifecycle workflow after Deal Desk notification
     try {
       if (db && workflowData.workflowId) {
-        const approvalWorkflow = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
+        // Check if Migration Lifecycle workflow already exists for this approval workflow
+        const existingMigrationWorkflow = await db.collection('migration_lifecycle_workflows').findOne({ 
+          approvalWorkflowId: workflowData.workflowId 
+        });
         
-        if (approvalWorkflow) {
-          // Extract client and company information from approval workflow
-          const clientName = workflowData.clientName || approvalWorkflow.clientName || 'Unknown Client';
-          const companyName = approvalWorkflow.companyName || clientName;
-          const dealId = workflowData.documentId || approvalWorkflow.documentId || '';
-          const dealName = `${clientName} - ${dealId}`;
+        if (existingMigrationWorkflow) {
+          console.log(`ℹ️ Migration Lifecycle workflow already exists for approval workflow ${workflowData.workflowId} - skipping creation`);
+        } else {
+          const approvalWorkflow = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
           
-          // Try to get customer email from document metadata
-          let customerEmail = 'anushreddydasari@gmail.com';
-          if (dealId) {
-            try {
-              const document = await db.collection('documents').findOne({ id: dealId });
-              if (document && document.client_email) {
-                customerEmail = document.client_email;
-              } else if (document && document.clientEmail) {
-                customerEmail = document.clientEmail;
+          if (approvalWorkflow) {
+            // Extract client and company information from approval workflow
+            const clientName = workflowData.clientName || approvalWorkflow.clientName || 'Unknown Client';
+            const companyName = approvalWorkflow.companyName || clientName;
+            const dealId = workflowData.documentId || approvalWorkflow.documentId || '';
+            const dealName = `${clientName} - ${dealId}`;
+            
+            // Try to get customer email from document metadata
+            let customerEmail = 'anushreddydasari@gmail.com';
+            if (dealId) {
+              try {
+                const document = await db.collection('documents').findOne({ id: dealId });
+                if (document && document.client_email) {
+                  customerEmail = document.client_email;
+                } else if (document && document.clientEmail) {
+                  customerEmail = document.clientEmail;
+                }
+              } catch (docError) {
+                console.log('⚠️ Could not fetch customer email from document, using default');
               }
-            } catch (docError) {
-              console.log('⚠️ Could not fetch customer email from document, using default');
             }
-          }
-          
-          // Fallback: try to get from workflow steps (Client Notification step)
-          if (customerEmail === 'anushreddydasari@gmail.com') {
-            const customerStep = approvalWorkflow.workflowSteps?.find(step => 
-              step.role === 'Client' || step.role === 'Customer'
-            );
-            if (customerStep?.email) {
-              customerEmail = customerStep.email;
+            
+            // Fallback: try to get from workflow steps (Client Notification step)
+            if (customerEmail === 'anushreddydasari@gmail.com') {
+              const customerStep = approvalWorkflow.workflowSteps?.find(step => 
+                step.role === 'Client' || step.role === 'Customer'
+              );
+              if (customerStep?.email) {
+                customerEmail = customerStep.email;
+              }
             }
-          }
-          
-          // All approval emails go to anushreddydasari@gmail.com as requested
-          const notificationEmail = 'anushreddydasari@gmail.com';
-          
-          const migrationWorkflowId = `migration-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          
-          const migrationWorkflow = {
-            id: migrationWorkflowId,
-            dealId: dealId,
-            dealName: dealName,
-            clientName: clientName,
-            companyName: companyName,
-            accountManagerEmail: notificationEmail,
-            customerEmail: customerEmail,
-            migrationManagerEmail: notificationEmail,
-            approvalWorkflowId: workflowData.workflowId, // Link back to approval workflow
-            status: 'migration_manager_approval',
-            currentStep: 1,
-            numberOfServers: null,
-            serversBuilt: null,
-            qaStatus: null,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            steps: [
-              { step: 1, name: 'Migration Manager Approval', role: 'Migration Manager', email: notificationEmail, status: 'pending' },
-              { step: 2, name: 'Account Manager Approval', role: 'Account Manager', email: notificationEmail, status: 'pending' },
-              { step: 3, name: 'Customer OK', role: 'Customer', email: customerEmail, status: 'pending' },
-              { step: 4, name: 'Migration Manager - No. of Servers', role: 'Migration Manager', email: notificationEmail, status: 'pending' },
-              { step: 5, name: 'Infrateam - Servers Built', role: 'Infrateam', email: notificationEmail, status: 'pending' },
-              { step: 6, name: 'QA', role: 'QA', email: notificationEmail, status: 'pending' },
-              { step: 7, name: 'Migration Manager - Final', role: 'Migration Manager', email: notificationEmail, status: 'pending' },
-              { step: 8, name: 'End (Infra)', role: 'Completed', email: notificationEmail, status: 'pending' },
-            ]
-          };
+            
+            // All approval emails go to anushreddydasari@gmail.com as requested
+            const notificationEmail = 'anushreddydasari@gmail.com';
+            
+            const migrationWorkflowId = `migration-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
+            const migrationWorkflow = {
+              id: migrationWorkflowId,
+              dealId: dealId,
+              dealName: dealName,
+              clientName: clientName,
+              companyName: companyName,
+              accountManagerEmail: notificationEmail,
+              customerEmail: customerEmail,
+              migrationManagerEmail: notificationEmail,
+              approvalWorkflowId: workflowData.workflowId, // Link back to approval workflow
+              status: 'migration_manager_approval',
+              currentStep: 1,
+              numberOfServers: null,
+              serversBuilt: null,
+              qaStatus: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              steps: [
+                { step: 1, name: 'Migration Manager Approval', role: 'Migration Manager', email: notificationEmail, status: 'pending' },
+                { step: 2, name: 'Account Manager Approval', role: 'Account Manager', email: notificationEmail, status: 'pending' },
+                { step: 3, name: 'Customer OK', role: 'Customer', email: customerEmail, status: 'pending' },
+                { step: 4, name: 'Migration Manager - No. of Servers', role: 'Migration Manager', email: notificationEmail, status: 'pending' },
+                { step: 5, name: 'Infrateam - Servers Built', role: 'Infrateam', email: notificationEmail, status: 'pending' },
+                { step: 6, name: 'QA', role: 'QA', email: notificationEmail, status: 'pending' },
+                { step: 7, name: 'Migration Manager - Final', role: 'Migration Manager', email: notificationEmail, status: 'pending' },
+                { step: 8, name: 'End (Infra)', role: 'Completed', email: notificationEmail, status: 'pending' },
+              ]
+            };
 
-          await db.collection('migration_lifecycle_workflows').insertOne(migrationWorkflow);
-          console.log(`✅ Migration Lifecycle workflow automatically created: ${migrationWorkflowId}`);
+            await db.collection('migration_lifecycle_workflows').insertOne(migrationWorkflow);
+            console.log(`✅ Migration Lifecycle workflow automatically created: ${migrationWorkflowId}`);
 
-          // Send email to Migration Manager for first approval
-          if (isEmailConfigured) {
-            try {
-              const actionUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/migration-lifecycle`;
-              const emailHtml = generateMigrationLifecycleEmailHTML(
-                migrationWorkflow, 
-                'Migration Lifecycle Started - Migration Manager Approval Required', 
-                actionUrl
-              );
-              await sendEmail(
-                notificationEmail,
-                `Migration Lifecycle Started: ${dealName}`,
-                emailHtml
-              );
-              console.log(`✅ Migration Manager approval email sent to ${notificationEmail}`);
-            } catch (emailError) {
-              console.error('❌ Failed to send Migration Manager email:', emailError);
+            // Send email to Migration Manager for first approval
+            if (isEmailConfigured) {
+              try {
+                const actionUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/migration-lifecycle`;
+                const emailHtml = generateMigrationLifecycleEmailHTML(
+                  migrationWorkflow, 
+                  'Migration Lifecycle Started - Migration Manager Approval Required', 
+                  actionUrl
+                );
+                await sendEmail(
+                  notificationEmail,
+                  `Migration Lifecycle Started: ${dealName}`,
+                  emailHtml
+                );
+                console.log(`✅ Migration Manager approval email sent to ${notificationEmail}`);
+              } catch (emailError) {
+                console.error('❌ Failed to send Migration Manager email:', emailError);
+              }
             }
           }
         }
@@ -5854,6 +5863,11 @@ app.put('/api/migration-lifecycle/workflows/:id/servers', async (req, res) => {
     const { id } = req.params;
     const { numberOfServers } = req.body;
 
+    const workflow = await db.collection('migration_lifecycle_workflows').findOne({ id });
+    if (!workflow) {
+      return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+
     await db.collection('migration_lifecycle_workflows').updateOne(
       { id },
       { 
@@ -5864,7 +5878,7 @@ app.put('/api/migration-lifecycle/workflows/:id/servers', async (req, res) => {
       }
     );
 
-    res.json({ success: true });
+    res.json({ success: true, workflow });
   } catch (error) {
     console.error('❌ Error updating servers:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -5881,6 +5895,11 @@ app.put('/api/migration-lifecycle/workflows/:id/servers-built', async (req, res)
     const { id } = req.params;
     const { serversBuilt } = req.body;
 
+    const workflow = await db.collection('migration_lifecycle_workflows').findOne({ id });
+    if (!workflow) {
+      return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+
     await db.collection('migration_lifecycle_workflows').updateOne(
       { id },
       { 
@@ -5891,7 +5910,7 @@ app.put('/api/migration-lifecycle/workflows/:id/servers-built', async (req, res)
       }
     );
 
-    res.json({ success: true });
+    res.json({ success: true, workflow });
   } catch (error) {
     console.error('❌ Error updating servers built:', error);
     res.status(500).json({ success: false, error: error.message });
