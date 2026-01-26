@@ -17,6 +17,10 @@ const TechnicalTeamApprovalDashboard = lazy(() => import('./components/Technical
 const LegalTeamApprovalDashboard = lazy(() => import('./components/LegalTeamApprovalDashboard'));
 const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashboard'));
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
+const MigrationManagerDashboard = lazy(() => import('./components/MigrationManagerDashboard'));
+const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
+const MigrationMonitoringDashboard = lazy(() => import('./components/MigrationMonitoringDashboard'));
+const MigrationLifecycle = lazy(() => import('./components/MigrationLifecycle'));
 
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
@@ -1896,6 +1900,30 @@ function App() {
               } />
               <Route path="/client-notification" element={
                 <ClientNotification />
+              } />
+              <Route path="/migration-manager" element={
+                <ProtectedRoute>
+                  <MigrationManagerDashboard 
+                    managerEmail="migration.manager@cloudfuze.com"
+                  />
+                </ProtectedRoute>
+              } />
+              <Route path="/infrateam" element={
+                <ProtectedRoute>
+                  <InfrateamDashboard 
+                    teamEmail="infrateam@cloudfuze.com"
+                  />
+                </ProtectedRoute>
+              } />
+              <Route path="/migration-monitoring" element={
+                <ProtectedRoute>
+                  <MigrationMonitoringDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/migration-lifecycle" element={
+                <ProtectedRoute>
+                  <MigrationLifecycle />
+                </ProtectedRoute>
               } />
 
              {/* Main app tabs without /dashboard prefix */}

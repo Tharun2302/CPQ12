@@ -561,7 +561,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
       {!isSignatureForm && <Navigation currentTab={currentTab} />}
       
-      <main className={`${isSignatureForm ? 'max-w-6xl' : 'max-w-7xl'} mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-10`}>
+      <main className={`${isSignatureForm ? 'max-w-6xl' : 'max-w-7xl'} mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-10 ${!isSignatureForm ? 'lg:ml-64' : ''}`}>
         {renderTabContent()}
       </main>
     </div>
