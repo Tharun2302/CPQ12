@@ -194,10 +194,19 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
 
   // Automatic team selection logic based on logged-in user's email
   const getAutoSelectedTeam = (amount: number = 0, clientName: string = ''): string => {
+    // If user manually selected a team, use that
+    if (useManualSelection) {
+      return manualTeamSelection;
+    }
+    
     const authorizedTeam = getUserAuthorizedTeam();
     
     if (authorizedTeam) {
       console.log(`✅ Auto-selected team ${authorizedTeam} based on logged-in user: ${loggedInUserEmail}`);
+      // Initialize manual selection to authorized team
+      if (manualTeamSelection === 'SMB') {
+        setManualTeamSelection(authorizedTeam);
+      }
       return authorizedTeam;
     }
     
@@ -262,8 +271,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [newRecipientEmail, setNewRecipientEmail] = useState<string>('');
   const [newAuthorizedSenderEmail, setNewAuthorizedSenderEmail] = useState<string>('');
 
-  // State for manual team selection (when user is not authorized)
+  // State for manual team selection (can override auto-selection)
   const [manualTeamSelection, setManualTeamSelection] = useState<string>('SMB');
+  const [useManualSelection, setUseManualSelection] = useState<boolean>(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestingTeam, setRequestingTeam] = useState<string>('');
   const [requestMessage, setRequestMessage] = useState<string>('');
@@ -444,8 +454,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         selectedDoc?.amount ??
         0;
 
-      // Automatically determine team based on amount/client
-      const autoSelectedTeam = getAutoSelectedTeam(amount, clientName);
+      // Get selected team (manual override or auto-selected)
+      const autoSelectedTeam = useManualSelection ? manualTeamSelection : getAutoSelectedTeam(amount, clientName);
       const teamEmail = getTeamApprovalEmail(autoSelectedTeam);
       if (!teamEmail) {
         alert('Team Approval email not configured. Please configure team settings.');
@@ -727,19 +737,53 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                           );
                         }
                         
-                        // User is authorized - show normal display
+                        // User is authorized - show normal display with option to change
                         return (
-                          <>
-                            <div className="text-sm font-semibold text-gray-900">
-                              Selected Team: <span className="text-purple-600">{selectedTeam}</span>
+                          <div className="space-y-3">
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900 mb-2">
+                                Selected Team: <span className="text-purple-600">{selectedTeam}</span>
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Team Lead: {getTeamApprovalEmail(selectedTeam) || 'Not configured'}
+                              </div>
+                              <div className="text-xs text-blue-600 mt-1 font-semibold">
+                                ✓ You are authorized to send approvals to this team
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-600 mt-1">
-                              Team Lead: {getTeamApprovalEmail(selectedTeam) || 'Not configured'}
+                            
+                            {/* Option to change team */}
+                            <div className="pt-2 border-t border-gray-200">
+                              <button
+                                type="button"
+                                onClick={() => setUseManualSelection(!useManualSelection)}
+                                className="text-xs text-purple-600 hover:text-purple-700 font-semibold"
+                              >
+                                {useManualSelection ? '✓ Using manual selection' : 'Change Team'}
+                              </button>
+                              
+                              {useManualSelection && (
+                                <div className="mt-2">
+                                  <select
+                                    value={manualTeamSelection}
+                                    onChange={(e) => {
+                                      setManualTeamSelection(e.target.value);
+                                    }}
+                                    className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                                  >
+                                    <option value="SMB">SMB ({teamApprovalSettings.teamLeads.SMB})</option>
+                                    <option value="AM">AM ({teamApprovalSettings.teamLeads.AM})</option>
+                                    <option value="ENT">ENT ({teamApprovalSettings.teamLeads.ENT})</option>
+                                    <option value="DEV">DEV ({teamApprovalSettings.teamLeads.DEV})</option>
+                                    <option value="DEV2">DEV2 ({teamApprovalSettings.teamLeads.DEV2})</option>
+                                  </select>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    Selected: {manualTeamSelection} - {getTeamApprovalEmail(manualTeamSelection)}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                            <div className="text-xs text-blue-600 mt-1 font-semibold">
-                              ✓ You are authorized to send approvals to this team
-                            </div>
-                          </>
+                          </div>
                         );
                       })()}
                       
