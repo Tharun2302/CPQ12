@@ -6078,5 +6078,169 @@ app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
   }
 });
 
+// ============================================
+// Authorization Request API
+// ============================================
+
+// POST /api/send-authorization-request - Send authorization request email to team lead and save to MongoDB
+app.post('/api/send-authorization-request', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        error: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { requesterEmail, requesterName, teamLeadEmail, teamName, message } = req.body;
+
+    if (!requesterEmail || !teamLeadEmail || !teamName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: requesterEmail, teamLeadEmail, teamName'
+      });
+    }
+
+    // Save authorization request to MongoDB
+    if (db) {
+      try {
+        const requestsCollection = db.collection('authorization_requests');
+        const requestDoc = {
+          requesterEmail,
+          requesterName: requesterName || requesterEmail.split('@')[0],
+          teamLeadEmail,
+          teamName: teamName.toUpperCase(),
+          message: message || '',
+          status: 'pending', // pending, approved, rejected
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        await requestsCollection.insertOne(requestDoc);
+        console.log(`✅ Authorization request saved to MongoDB for ${requesterEmail}`);
+      } catch (dbError) {
+        console.error('❌ Error saving authorization request to MongoDB:', dbError);
+        // Continue even if DB save fails - still send email
+      }
+    }
+
+    // Send email to team lead
+    const emailSubject = `Authorization Request for ${teamName} Team Approval Workflows`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #4F46E5;">Authorization Request</h2>
+        <p><strong>${requesterName}</strong> (${requesterEmail}) is requesting authorization to send approval workflows to the <strong>${teamName}</strong> team.</p>
+        
+        <div style="background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0;"><strong>Message:</strong></p>
+          <p style="margin: 10px 0 0 0;">${message || 'No message provided.'}</p>
+        </div>
+        
+        <p>To authorize this user:</p>
+        <ol>
+          <li>Go to the Approval Workflow page</li>
+          <li>Click "Edit Settings"</li>
+          <li>Select the ${teamName} team tab</li>
+          <li>Add <strong>${requesterEmail}</strong> to the "Authorized Senders" list</li>
+        </ol>
+        
+        <p style="color: #6B7280; font-size: 12px; margin-top: 30px;">
+          This is an automated email from the CPQ Approval System.
+        </p>
+      </div>
+    `;
+
+    const msg = {
+      to: teamLeadEmail,
+      from: EMAIL_FROM,
+      subject: emailSubject,
+      html: emailHtml,
+    };
+
+    await sgMail.send(msg);
+    console.log(`✅ Authorization request email sent to ${teamLeadEmail} for ${requesterEmail}`);
+
+    res.json({
+      success: true,
+      message: 'Authorization request sent successfully and saved to database'
+    });
+  } catch (error) {
+    console.error('❌ Error sending authorization request email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to send authorization request email'
+    });
+  }
+});
+
+// GET /api/authorization-requests - Get authorization request history
+app.get('/api/authorization-requests', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const { teamLeadEmail, requesterEmail, status, teamName } = req.query;
+    const requestsCollection = db.collection('authorization_requests');
+    
+    // Build query filter
+    const filter = {};
+    if (teamLeadEmail) filter.teamLeadEmail = teamLeadEmail;
+    if (requesterEmail) filter.requesterEmail = requesterEmail;
+    if (status) filter.status = status;
+    if (teamName) filter.teamName = teamName.toUpperCase();
+
+    const requests = await requestsCollection
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+
+    res.json({ success: true, data: requests });
+  } catch (error) {
+    console.error('❌ Error fetching authorization requests:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/authorization-requests/:id/status - Update authorization request status
+app.put('/api/authorization-requests/:id/status', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body; // 'pending', 'approved', 'rejected'
+
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid status. Must be: pending, approved, or rejected' 
+      });
+    }
+
+    const requestsCollection = db.collection('authorization_requests');
+    const result = await requestsCollection.updateOne(
+      { _id: id },
+      { 
+        $set: { 
+          status,
+          updatedAt: new Date().toISOString()
+        }
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Request not found' });
+    }
+
+    res.json({ success: true, message: 'Request status updated' });
+  } catch (error) {
+    console.error('❌ Error updating authorization request status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Start the server
 startServer();

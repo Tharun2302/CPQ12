@@ -26,89 +26,228 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     role4Email: 'salesops@cloudfuze.com'
   });
 
-  // Team Approval emails mapping - loaded from localStorage or defaults
+  // Team Approval settings - loaded from MongoDB API
   const [teamApprovalSettings, setTeamApprovalSettings] = useState<{
     teamLeads: Record<string, string>;
     additionalRecipients: Record<string, string[]>; // Keep for backward compatibility
     authorizedSenders: Record<string, string[]>; // People who can send approval emails to this team lead
-  }>(() => {
-    try {
-      const saved = localStorage.getItem('cpq_team_approval_settings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Migrate old data: if authorizedSenders doesn't exist, initialize it
-        if (!parsed.authorizedSenders) {
-          parsed.authorizedSenders = {
-            SMB: [],
-            AM: [],
-            ENT: [],
-            DEV: [],
-            DEV2: [],
-          };
-        }
-        return parsed;
-      }
-    } catch {}
-    // Default settings
-    return {
-      teamLeads: {
-        SMB: 'chitradip.saha@cloudfuze.com',
-        AM: 'joy.prakash@cloudfuze.com',
-        ENT: 'anthony@cloudfuze.com',
-        DEV: 'anushreddydasari@gmail.com',
-        DEV2: 'raya.durai@cloudfuze.com',
-      },
-      additionalRecipients: {
-        SMB: [],
-        AM: [],
-        ENT: [],
-        DEV: [],
-        DEV2: [],
-      },
-      authorizedSenders: {
-        SMB: [],
-        AM: [],
-        ENT: [],
-        DEV: [],
-        DEV2: [],
-      }
-    };
+  }>({
+    teamLeads: {
+      SMB: 'chitradip.saha@cloudfuze.com',
+      AM: 'joy.prakash@cloudfuze.com',
+      ENT: 'anthony@cloudfuze.com',
+      DEV: 'anushreddydasari@gmail.com',
+      DEV2: 'raya.durai@cloudfuze.com',
+    },
+    additionalRecipients: {
+      SMB: [],
+      AM: [],
+      ENT: [],
+      DEV: [],
+      DEV2: [],
+    },
+    authorizedSenders: {
+      SMB: [],
+      AM: [],
+      ENT: [],
+      DEV: [],
+      DEV2: [],
+    }
   });
 
-  // Save settings to localStorage whenever they change
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  // Load settings from MongoDB API on component mount
   useEffect(() => {
-    try {
-      localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
-    } catch {}
-  }, [teamApprovalSettings]);
+    const loadSettings = async () => {
+      try {
+        setIsLoadingSettings(true);
+        setSettingsError(null);
+        
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+          // Migrate old data: ensure authorizedSenders exists
+          if (!result.data.authorizedSenders) {
+            result.data.authorizedSenders = {
+              SMB: [],
+              AM: [],
+              ENT: [],
+              DEV: [],
+              DEV2: [],
+            };
+          }
+          setTeamApprovalSettings(result.data);
+          
+          // Also save to localStorage as backup/cache
+          try {
+            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(result.data));
+          } catch {}
+        } else {
+          // Try loading from localStorage as fallback
+          try {
+            const saved = localStorage.getItem('cpq_team_approval_settings');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (!parsed.authorizedSenders) {
+                parsed.authorizedSenders = {
+                  SMB: [], AM: [], ENT: [], DEV: [], DEV2: [],
+                };
+              }
+              setTeamApprovalSettings(parsed);
+            }
+          } catch {}
+        }
+      } catch (error) {
+        console.error('Error loading team approval settings:', error);
+        setSettingsError('Failed to load settings. Using defaults.');
+        
+        // Fallback to localStorage
+        try {
+          const saved = localStorage.getItem('cpq_team_approval_settings');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (!parsed.authorizedSenders) {
+              parsed.authorizedSenders = {
+                SMB: [], AM: [], ENT: [], DEV: [], DEV2: [],
+              };
+            }
+            setTeamApprovalSettings(parsed);
+          }
+        } catch {}
+      } finally {
+        setIsLoadingSettings(false);
+      }
+    };
+
+    loadSettings();
+  }, []);
+
+  // Save settings to MongoDB API whenever they change (with debounce)
+  useEffect(() => {
+    if (isLoadingSettings) return; // Don't save on initial load
+    
+    const saveSettings = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(teamApprovalSettings),
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          console.log('✅ Team approval settings saved to MongoDB');
+          // Also save to localStorage as backup/cache
+          try {
+            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
+          } catch {}
+        } else {
+          console.error('Failed to save settings to MongoDB:', result.error);
+          // Fallback: save to localStorage
+          try {
+            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
+          } catch {}
+        }
+      } catch (error) {
+        console.error('Error saving team approval settings:', error);
+        // Fallback: save to localStorage
+        try {
+          localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
+        } catch {}
+      }
+    };
+
+    // Debounce: wait 1 second after last change before saving
+    const timeoutId = setTimeout(saveSettings, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [teamApprovalSettings, isLoadingSettings]);
 
   // Get logged-in user's email
   const currentUser = getCurrentUser();
   const loggedInUserEmail = currentUser?.email || '';
 
-  // Automatic team selection logic based on logged-in user's email
-  const getAutoSelectedTeam = (amount: number = 0, clientName: string = ''): string => {
-    // If user is logged in, check if their email matches any team's authorized senders
-    if (loggedInUserEmail) {
-      // Check each team's authorized senders list
-      for (const [team, senders] of Object.entries(teamApprovalSettings.authorizedSenders || {})) {
-        if (Array.isArray(senders) && senders.includes(loggedInUserEmail)) {
-          console.log(`✅ Auto-selected team ${team} based on logged-in user: ${loggedInUserEmail}`);
-          return team;
-        }
-      }
-      
-      // Also check if logged-in user is a team lead
-      for (const [team, leadEmail] of Object.entries(teamApprovalSettings.teamLeads || {})) {
-        if (leadEmail === loggedInUserEmail) {
-          console.log(`✅ Auto-selected team ${team} - user is the team lead`);
-          return team;
-        }
+  // Check if user is authorized for any team
+  const getUserAuthorizedTeam = (): string | null => {
+    if (!loggedInUserEmail) return null;
+    
+    // Check each team's authorized senders list
+    for (const [team, senders] of Object.entries(teamApprovalSettings.authorizedSenders || {})) {
+      if (Array.isArray(senders) && senders.includes(loggedInUserEmail)) {
+        return team;
       }
     }
     
-    // Default to SMB if no match found
-    return 'SMB';
+    // Also check if logged-in user is a team lead
+    for (const [team, leadEmail] of Object.entries(teamApprovalSettings.teamLeads || {})) {
+      if (leadEmail === loggedInUserEmail) {
+        return team;
+      }
+    }
+    
+    return null;
+  };
+
+  // Automatic team selection logic based on logged-in user's email
+  const getAutoSelectedTeam = (amount: number = 0, clientName: string = ''): string => {
+    const authorizedTeam = getUserAuthorizedTeam();
+    
+    if (authorizedTeam) {
+      console.log(`✅ Auto-selected team ${authorizedTeam} based on logged-in user: ${loggedInUserEmail}`);
+      return authorizedTeam;
+    }
+    
+    // If user is not authorized, use manual selection (defaults to SMB)
+    return manualTeamSelection;
+  };
+
+  // Handle sending authorization request to team lead
+  const handleSendAuthorizationRequest = async () => {
+    if (!requestingTeam || !loggedInUserEmail) return;
+
+    setIsSendingRequest(true);
+    try {
+      const teamLeadEmail = teamApprovalSettings.teamLeads[requestingTeam];
+      if (!teamLeadEmail) {
+        alert('Team lead email not found for this team.');
+        setIsSendingRequest(false);
+        return;
+      }
+
+      const backendUrl = BACKEND_URL || 'http://localhost:3001';
+      const response = await fetch(`${backendUrl}/api/send-authorization-request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requesterEmail: loggedInUserEmail,
+          requesterName: currentUser?.name || loggedInUserEmail.split('@')[0],
+          teamLeadEmail: teamLeadEmail,
+          teamName: requestingTeam,
+          message: requestMessage || `Hi, I would like to request authorization to send approval workflows to the ${requestingTeam} team.`,
+        }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        alert(`✅ Authorization request sent to ${teamLeadEmail} for ${requestingTeam} team. The request has been saved to the database.`);
+        setShowRequestModal(false);
+        setRequestingTeam('');
+        setRequestMessage('');
+      } else {
+        alert('Failed to send request. Please try again or contact the team lead directly.');
+      }
+    } catch (error) {
+      console.error('Error sending authorization request:', error);
+      alert('Failed to send request. Please try again or contact the team lead directly.');
+    } finally {
+      setIsSendingRequest(false);
+    }
   };
 
   // Get team approval email
@@ -122,6 +261,13 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [editingTeam, setEditingTeam] = useState<string>('SMB');
   const [newRecipientEmail, setNewRecipientEmail] = useState<string>('');
   const [newAuthorizedSenderEmail, setNewAuthorizedSenderEmail] = useState<string>('');
+
+  // State for manual team selection (when user is not authorized)
+  const [manualTeamSelection, setManualTeamSelection] = useState<string>('SMB');
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [requestingTeam, setRequestingTeam] = useState<string>('');
+  const [requestMessage, setRequestMessage] = useState<string>('');
+  const [isSendingRequest, setIsSendingRequest] = useState(false);
 
   // Auto-suggest logged-in user when opening settings
   useEffect(() => {
@@ -527,20 +673,85 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 </p>
                 <div className="bg-white rounded-lg p-3 border border-purple-200">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        Selected Team: <span className="text-purple-600">{getAutoSelectedTeam()}</span>
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">
-                        Team Lead: {getTeamApprovalEmail(getAutoSelectedTeam()) || 'Not configured'}
-                      </div>
-                      {loggedInUserEmail && (
-                        <div className="text-xs text-blue-600 mt-1 font-semibold">
-                          {teamApprovalSettings.authorizedSenders[getAutoSelectedTeam()]?.includes(loggedInUserEmail) || 
-                           teamApprovalSettings.teamLeads[getAutoSelectedTeam()] === loggedInUserEmail
-                            ? '✓ You are authorized to send approvals to this team'
-                            : 'Auto-selected based on workflow'}
-                        </div>
+                    <div className="flex-1">
+                      {loggedInUserEmail && (() => {
+                        const authorizedTeam = getUserAuthorizedTeam();
+                        const selectedTeam = getAutoSelectedTeam();
+                        const isAuthorized = authorizedTeam === selectedTeam;
+                        
+                        if (!authorizedTeam) {
+                          // User not authorized - show manual selection dropdown
+                          return (
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-2">
+                                  Select Team (You are not authorized by any team)
+                                </label>
+                                <select
+                                  value={manualTeamSelection}
+                                  onChange={(e) => setManualTeamSelection(e.target.value)}
+                                  className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                                >
+                                  <option value="SMB">SMB ({teamApprovalSettings.teamLeads.SMB})</option>
+                                  <option value="AM">AM ({teamApprovalSettings.teamLeads.AM})</option>
+                                  <option value="ENT">ENT ({teamApprovalSettings.teamLeads.ENT})</option>
+                                  <option value="DEV">DEV ({teamApprovalSettings.teamLeads.DEV})</option>
+                                  <option value="DEV2">DEV2 ({teamApprovalSettings.teamLeads.DEV2})</option>
+                                </select>
+                              </div>
+                              <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                                <div className="text-xs text-amber-800 font-semibold mb-1">
+                                  ⚠️ Not Authorized
+                                </div>
+                                <div className="text-xs text-amber-700 mb-2">
+                                  You are not authorized by any team leader. Select a team above or request authorization.
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRequestingTeam(manualTeamSelection);
+                                    setShowRequestModal(true);
+                                  }}
+                                  className="w-full px-3 py-1.5 text-xs font-semibold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                                >
+                                  Request Authorization from {manualTeamSelection} Team Lead
+                                </button>
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Selected Team: <span className="text-purple-600 font-semibold">{selectedTeam}</span>
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Team Lead: {getTeamApprovalEmail(selectedTeam) || 'Not configured'}
+                              </div>
+                            </div>
+                          );
+                        }
+                        
+                        // User is authorized - show normal display
+                        return (
+                          <>
+                            <div className="text-sm font-semibold text-gray-900">
+                              Selected Team: <span className="text-purple-600">{selectedTeam}</span>
+                            </div>
+                            <div className="text-xs text-gray-600 mt-1">
+                              Team Lead: {getTeamApprovalEmail(selectedTeam) || 'Not configured'}
+                            </div>
+                            <div className="text-xs text-blue-600 mt-1 font-semibold">
+                              ✓ You are authorized to send approvals to this team
+                            </div>
+                          </>
+                        );
+                      })()}
+                      
+                      {!loggedInUserEmail && (
+                        <>
+                          <div className="text-sm font-semibold text-gray-900">
+                            Selected Team: <span className="text-purple-600">{getAutoSelectedTeam()}</span>
+                          </div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            Team Lead: {getTeamApprovalEmail(getAutoSelectedTeam()) || 'Not configured'}
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -829,6 +1040,94 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
               >
                 Save Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Authorization Request Modal */}
+      {showRequestModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
+              <div className="flex items-center gap-3">
+                <Users className="w-5 h-5 text-purple-600" />
+                <h2 className="text-lg font-extrabold text-gray-900">Request Authorization</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRequestModal(false);
+                  setRequestingTeam('');
+                  setRequestMessage('');
+                }}
+                className="inline-flex items-center justify-center h-8 w-8 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Requesting authorization for: <span className="text-purple-600">{requestingTeam} Team</span>
+                </label>
+                <p className="text-xs text-gray-600">
+                  Team Lead: {teamApprovalSettings.teamLeads[requestingTeam] || 'Not configured'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Your Message (Optional)
+                </label>
+                <textarea
+                  value={requestMessage}
+                  onChange={(e) => setRequestMessage(e.target.value)}
+                  placeholder={`Hi, I would like to request authorization to send approval workflows to the ${requestingTeam} team.`}
+                  className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white min-h-[100px]"
+                  rows={4}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  A request email will be sent to the team lead with your message.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRequestModal(false);
+                  setRequestingTeam('');
+                  setRequestMessage('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSendAuthorizationRequest}
+                disabled={isSendingRequest}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isSendingRequest ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Users className="w-4 h-4" />
+                    Send Request
+                  </>
+                )}
               </button>
             </div>
           </div>
