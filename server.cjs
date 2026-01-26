@@ -5960,5 +5960,123 @@ app.put('/api/migration-lifecycle/workflows/:id/qa', async (req, res) => {
   }
 });
 
+// ============================================
+// Team Approval Settings API (MongoDB)
+// ============================================
+
+// GET /api/team-approval-settings - Get all team approval settings
+app.get('/api/team-approval-settings', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const settingsCollection = db.collection('team_approval_settings');
+    
+    // Get settings (there should be only one document)
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+    
+    if (settings) {
+      // Remove MongoDB _id and return the settings
+      const { _id, ...settingsData } = settings;
+      return res.json({ success: true, data: settingsData });
+    } else {
+      // Return default settings if none exist
+      const defaultSettings = {
+        teamLeads: {
+          SMB: 'chitradip.saha@cloudfuze.com',
+          AM: 'joy.prakash@cloudfuze.com',
+          ENT: 'anthony@cloudfuze.com',
+          DEV: 'anushreddydasari@gmail.com',
+          DEV2: 'raya.durai@cloudfuze.com',
+        },
+        additionalRecipients: {
+          SMB: [],
+          AM: [],
+          ENT: [],
+          DEV: [],
+          DEV2: [],
+        },
+        authorizedSenders: {
+          SMB: [],
+          AM: [],
+          ENT: [],
+          DEV: [],
+          DEV2: [],
+        }
+      };
+      return res.json({ success: true, data: defaultSettings });
+    }
+  } catch (error) {
+    console.error('❌ Error fetching team approval settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/team-approval-settings - Update team approval settings
+app.put('/api/team-approval-settings', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const settingsCollection = db.collection('team_approval_settings');
+    const newSettings = req.body;
+
+    // Validate structure
+    if (!newSettings.teamLeads || !newSettings.authorizedSenders) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid settings structure. Must include teamLeads and authorizedSenders.' 
+      });
+    }
+
+    // Upsert (update or insert) the settings document
+    await settingsCollection.updateOne(
+      { _id: 'main' },
+      { 
+        $set: {
+          ...newSettings,
+          updatedAt: new Date().toISOString()
+        }
+      },
+      { upsert: true }
+    );
+
+    console.log('✅ Team approval settings updated in MongoDB');
+    res.json({ success: true, message: 'Settings saved successfully' });
+  } catch (error) {
+    console.error('❌ Error updating team approval settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/team-approval-settings/team/:teamName - Get settings for a specific team
+app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const teamName = req.params.teamName.toUpperCase();
+    const settingsCollection = db.collection('team_approval_settings');
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+
+    if (settings) {
+      const teamSettings = {
+        teamLead: settings.teamLeads?.[teamName] || '',
+        authorizedSenders: settings.authorizedSenders?.[teamName] || [],
+        additionalRecipients: settings.additionalRecipients?.[teamName] || []
+      };
+      return res.json({ success: true, data: teamSettings });
+    } else {
+      return res.json({ success: true, data: { teamLead: '', authorizedSenders: [], additionalRecipients: [] } });
+    }
+  } catch (error) {
+    console.error('❌ Error fetching team settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Start the server
 startServer();
