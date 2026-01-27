@@ -35,10 +35,23 @@ export class MicrosoftAuth {
   }
 
   private static async createCodeChallenge(verifier: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    const digest = await window.crypto.subtle.digest('SHA-256', data);
-    return this.base64UrlEncode(digest);
+    // Check if crypto.subtle is available (requires secure context/HTTPS)
+    if (!window.crypto || !window.crypto.subtle) {
+      const errorMsg = 'Crypto API not available. Microsoft authentication requires a secure context (HTTPS). ' +
+        'If you are using a self-signed certificate, please accept it in your browser or use a valid SSL certificate.';
+      console.error('❌', errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(verifier);
+      const digest = await window.crypto.subtle.digest('SHA-256', data);
+      return this.base64UrlEncode(digest);
+    } catch (error) {
+      console.error('❌ Error creating code challenge:', error);
+      throw new Error('Failed to create PKCE code challenge. Please ensure you are using HTTPS with a valid certificate.');
+    }
   }
 
   static isConfigured(): boolean {
@@ -46,9 +59,17 @@ export class MicrosoftAuth {
   }
 
   static async getAuthUrl(): Promise<string> {
-    const codeVerifier = this.generateRandomString(64);
-    const codeChallenge = await this.createCodeChallenge(codeVerifier);
-    sessionStorage.setItem('ms_pkce_verifier', codeVerifier);
+    let codeVerifier: string;
+    let codeChallenge: string;
+    
+    try {
+      codeVerifier = this.generateRandomString(64);
+      codeChallenge = await this.createCodeChallenge(codeVerifier);
+      sessionStorage.setItem('ms_pkce_verifier', codeVerifier);
+    } catch (error) {
+      console.error('❌ PKCE generation failed:', error);
+      throw error; // Re-throw to be handled by caller
+    }
 
     const params = new URLSearchParams({
       client_id: this.CLIENT_ID,
@@ -149,6 +170,12 @@ export class MicrosoftAuth {
         };
 
         window.addEventListener('message', messageListener);
+      }).catch((error) => {
+        console.error('❌ Failed to generate auth URL:', error);
+        alert('Microsoft authentication requires HTTPS with a valid SSL certificate. ' +
+          'Please ensure your development server is using HTTPS with a trusted certificate, ' +
+          'or accept the self-signed certificate in your browser settings.');
+        resolve(null);
       });
     });
   }
