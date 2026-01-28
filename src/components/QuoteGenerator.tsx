@@ -1308,68 +1308,7 @@ Quote ID: ${quoteData.id}
             try {
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
-              
-              // Sort exhibits: Included first, then Not Included
-              // Within each group: sort by category (messaging first, then content) and displayOrder
-              const sortExhibits = async (ids: string[]) => {
-                try {
-                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
-                  if (!metaResp.ok) return ids;
-                  const metaData = await metaResp.json();
-                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
-                  
-                  // Separate into Included and Not Included
-                  const included: Array<{id: string, exhibit: any}> = [];
-                  const notIncluded: Array<{id: string, exhibit: any}> = [];
-                  
-                  ids.forEach((id) => {
-                    const ex = lookup.get(id) as any;
-                    if (!ex) return;
-                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    // Check for various "not included" patterns (with/without spaces, different cases)
-                    const isNotIncluded = text.includes('not included') ||
-                                        text.includes('not include') ||
-                                        text.includes('notincluded') ||
-                                        text.includes('notinclude') ||
-                                        text.includes('not-include') ||
-                                        text.includes('not-included');
-                    if (isNotIncluded) {
-                      notIncluded.push({ id, exhibit: ex });
-                    } else {
-                      included.push({ id, exhibit: ex });
-                    }
-                  });
-                  
-                  // Sort within each group: category (messaging first, then content), then displayOrder
-                  const categoryOrder = (cat: string) => {
-                    const normalized = (cat || 'content').toLowerCase();
-                    if (normalized === 'messaging' || normalized === 'message') return 1;
-                    if (normalized === 'content') return 2;
-                    return 3; // email or others
-                  };
-                  
-                  included.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  notIncluded.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  // Return: All Included first, then All Not Included
-                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
-                } catch {
-                  return ids;
-                }
-              };
-
-              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
-
-              // Fetch exhibit metadata for grouping
+              // Fetch exhibit metadata once (used for: de-dupe, sort order, and merger grouping)
               const exhibitMetadata: Array<{ name: string; category?: string }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
               let allExhibits: any[] = [];
@@ -1380,6 +1319,94 @@ Quote ID: ${quoteData.id}
                 }
               }
 
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                // Remove "not included" variants so Included/Not Included can share the same base
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by a stable "migration key" so we don't merge the same exhibit content twice
+              // when the UI selection contains multiple IDs representing the same migration.
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const desc = formatExhibitDescription(ex, configuration);
+                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
+                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
+                const category = (ex?.category || 'content').toLowerCase();
+                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
+                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
+                if (seenKeys.has(key)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    key
+                  });
+                  continue;
+                }
+                seenKeys.add(key);
+                dedupedIds.push(id);
+              }
+
+              // Sort exhibits: Included first, then Not Included; within each group: category and displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sortIds = (ids: string[]) => {
+                const included: Array<{ id: string; exhibit: any }> = [];
+                const notIncluded: Array<{ id: string; exhibit: any }> = [];
+                for (const id of ids) {
+                  const ex = lookup.get(id);
+                  if (!ex) continue;
+                  (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+                }
+                const sorter = (a: any, b: any) => {
+                  const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                  if (catDiff !== 0) return catDiff;
+                  return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                };
+                included.sort(sorter);
+                notIncluded.sort(sorter);
+                return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+              };
+
+              const sortedExhibits = sortIds(dedupedIds);
+
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
@@ -1389,7 +1416,7 @@ Quote ID: ${quoteData.id}
                   exhibitBlobs.push(blob);
                   
                   // Get exhibit metadata
-                  const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                  const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                   if (exhibit) {
                     exhibitMetadata.push({
                       name: exhibit.name || '',
@@ -4836,66 +4863,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
               
-              // Sort exhibits: Included first, then Not Included
-              // Within each group: sort by category (messaging first, then content) and displayOrder
-              const sortExhibits = async (ids: string[]) => {
-                try {
-                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
-                  if (!metaResp.ok) return ids;
-                  const metaData = await metaResp.json();
-                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
-                  
-                  // Separate into Included and Not Included
-                  const included: Array<{id: string, exhibit: any}> = [];
-                  const notIncluded: Array<{id: string, exhibit: any}> = [];
-                  
-                  ids.forEach((id) => {
-                    const ex = lookup.get(id) as any;
-                    if (!ex) return;
-                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    // Check for various "not included" patterns (with/without spaces, different cases)
-                    const isNotIncluded = text.includes('not included') ||
-                                        text.includes('not include') ||
-                                        text.includes('notincluded') ||
-                                        text.includes('notinclude') ||
-                                        text.includes('not-include') ||
-                                        text.includes('not-included');
-                    if (isNotIncluded) {
-                      notIncluded.push({ id, exhibit: ex });
-                    } else {
-                      included.push({ id, exhibit: ex });
-                    }
-                  });
-                  
-                  // Sort within each group: category (messaging first, then content), then displayOrder
-                  const categoryOrder = (cat: string) => {
-                    const normalized = (cat || 'content').toLowerCase();
-                    if (normalized === 'messaging' || normalized === 'message') return 1;
-                    if (normalized === 'content') return 2;
-                    return 3; // email or others
-                  };
-                  
-                  included.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  notIncluded.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  // Return: All Included first, then All Not Included
-                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
-                } catch {
-                  return ids;
-                }
-              };
-
-              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
-
               // Fetch exhibit metadata for grouping
               const exhibitMetadata: Array<{ name: string; category?: string }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
@@ -4907,11 +4874,95 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 }
               }
 
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by stable "migration key" before fetching/merging blobs
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  // Keep unknown IDs (but they may be skipped later if metadata is required)
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const desc = formatExhibitDescription(ex, configuration);
+                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
+                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
+                const category = (ex?.category || 'content').toLowerCase();
+                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
+                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
+                if (seenKeys.has(key)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    key
+                  });
+                  continue;
+                }
+                seenKeys.add(key);
+                dedupedIds.push(id);
+              }
+
+              // Sort exhibits: Included first, then Not Included; within each group: category + displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sorter = (a: any, b: any) => {
+                const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                if (catDiff !== 0) return catDiff;
+                return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+              };
+
+              const included: Array<{ id: string; exhibit: any }> = [];
+              const notIncluded: Array<{ id: string; exhibit: any }> = [];
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+              }
+              included.sort(sorter);
+              notIncluded.sort(sorter);
+              const sortedExhibits = [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 
                 // Get exhibit metadata FIRST (before fetching file)
-                const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                 if (!exhibit) {
                   console.warn(`⚠️ Exhibit ${exhibitId} not found in metadata, skipping`);
                   continue;

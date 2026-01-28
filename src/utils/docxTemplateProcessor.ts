@@ -1306,7 +1306,6 @@ export class DocxTemplateProcessor {
       // Duration variations
       '{{Duration of months}}': duration,
       '{{Duration_of_months}}': duration,  // CRITICAL: Underscore version found in template
-      '{{Duration of months}}': duration, // Space version (duplicate for clarity)
       '{{Suration_of_months}}': duration,  // Handle typo version
       '{{duration_months}}': duration,
       '{{duration}}': duration,
@@ -1333,24 +1332,6 @@ export class DocxTemplateProcessor {
       '{{migrationType}}': migrationType,
       '{{migration}}': migrationType,
 
-      // Shared Server/Instance description (exact token used by some templates)
-      // NOTE: keep as empty string when not applicable; do NOT default to "N/A"
-      '{{server_descriptions}}':
-        (data as any)['{{server_descriptions}}'] ||
-        (data as any)['{{serverDescriptions}}'] ||
-        (data as any)['{{server descriptions}}'] ||
-        '',
-      '{{serverDescriptions}}':
-        (data as any)['{{serverDescriptions}}'] ||
-        (data as any)['{{server_descriptions}}'] ||
-        (data as any)['{{server descriptions}}'] ||
-        '',
-      '{{server descriptions}}':
-        (data as any)['{{server descriptions}}'] ||
-        (data as any)['{{server_descriptions}}'] ||
-        (data as any)['{{serverDescriptions}}'] ||
-        '',
-      
       // Instance validity text - now handled within server_descriptions
       // Set to empty string to prevent duplicate display
       '{{instance_validity_text}}': '',
@@ -1407,7 +1388,6 @@ export class DocxTemplateProcessor {
       // Additional common tokens
       '{{price_data}}': data['{{price_data}}'] || '$0.00',
       '{{data_cost}}': data['{{price_data}}'] || '$0.00',
-      '{{instance_cost}}': (data as any)['{{instance_cost}}'] || '$0.00',
       '{{quoteId}}': data.quoteId || 'N/A',
       '{{quote_id}}': data.quoteId || 'N/A',
       '{{planName}}': data.planName || 'Basic',
