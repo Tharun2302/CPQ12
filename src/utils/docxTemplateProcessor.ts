@@ -425,7 +425,10 @@ export class DocxTemplateProcessor {
         'messaging_migration_cost': processedData['{{messaging_migration_cost}}'] || processedData['{{messagingMigrationCost}}'] || '$0.00',
         'messagingMigrationCost': processedData['{{messagingMigrationCost}}'] || processedData['{{messaging_migration_cost}}'] || '$0.00',
         // Message count token (for backward compatibility)
-        'message_count': processedData['{{message_count}}'] || processedData['{{messaging_messages}}'] || processedData['{{messages}}'] || '0'
+        'message_count': processedData['{{message_count}}'] || processedData['{{messaging_messages}}'] || processedData['{{messages}}'] || '0',
+        // Server instance cost breakdown (Multi combination)
+        'server_instance_cost_breakdown': processedData['{{server_instance_cost_breakdown}}'] || '',
+        'server_descriptions': processedData['{{server_descriptions}}'] || processedData['{{serverDescriptions}}'] || ''
       };
       
       // Add common tokens to docxtemplater data
@@ -460,6 +463,8 @@ export class DocxTemplateProcessor {
         console.log('  per_user_cost:', docxtemplaterData['per_user_cost']);
         console.log('  data_size:', docxtemplaterData['data_size']);
         console.log('  per_data_cost:', docxtemplaterData['per_data_cost']);
+        console.log('  server_instance_cost_breakdown:', docxtemplaterData['server_instance_cost_breakdown']);
+        console.log('  server_descriptions:', docxtemplaterData['server_descriptions']);
         
         // CRITICAL: Final validation before rendering
         console.log('🔍 FINAL VALIDATION BEFORE RENDERING:');
@@ -524,6 +529,56 @@ export class DocxTemplateProcessor {
           }
         } catch (cleanupErr) {
           console.warn('⚠️ Could not post-process DOCX to remove Discount rows:', cleanupErr);
+        }
+
+        // ========================================================================
+        // Remove ONLY the *extra template* validity artifacts, without touching
+        // the per-server validity we now embed in {{server_descriptions}}.
+        //
+        // Safe removals (standalone-only):
+        // - "Instance Valid for <n> Month(s)"
+        // - "Instance Valid for <n>" (some templates place the word "Months" outside the token)
+        // - "Valid for <n>" / "Valid for <n> Months Month" (duplicate Month)
+        // NOTE: Do NOT remove orphan "Month(s)" / "s" text runs globally, because Word may split
+        // the *legit* server_descriptions line into multiple runs (e.g., "Months" in its own run).
+        // We only remove whole paragraphs when the paragraph's visible text is JUST the unwanted line.
+        // ========================================================================
+        try {
+          const zipAfter = doc.getZip();
+          const xmlPath = 'word/document.xml';
+          const originalXml = zipAfter.file(xmlPath)?.asText() || '';
+          if (originalXml) {
+            const stripTagsLower = (xml: string) =>
+              xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+            const paraRegex = /<w:p[\s\S]*?<\/w:p>/gi;
+            let updatedXml = originalXml.replace(paraRegex, (para) => {
+              const textRaw = stripTagsLower(para);
+              // Normalize punctuation that often surrounds these lines in templates
+              const text = textRaw
+                .replace(/[()]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                // common bullet/leader characters at start of a line
+                .replace(/^[\u2022•\-–—\s]+/, '')
+                .trim();
+
+              // Standalone-only removals (must match the entire paragraph text)
+              if (/^instance valid for \d+(?: months?)?$/.test(text)) return '';
+              if (/^valid for \d+(?: months?)?$/.test(text)) return '';
+              if (/^valid for \d+ months? month$/.test(text)) return '';
+              if (/^instance valid for \d+ months? month$/.test(text)) return '';
+
+              return para;
+            });
+
+            if (updatedXml !== originalXml) {
+              zipAfter.file(xmlPath, updatedXml);
+              console.log('🧹 Removed extra template validity artifacts (standalone only)');
+            }
+          }
+        } catch (instanceCleanupErr) {
+          console.warn('⚠️ Could not post-process DOCX to remove standalone validity artifacts:', instanceCleanupErr);
         }
 
         // Always remove fully empty table rows (common cause of "blank rows" in pricing tables)
@@ -1021,6 +1076,20 @@ export class DocxTemplateProcessor {
       processedData.exhibits = [];
       console.log('ℹ️ DOCX PROCESSOR: No exhibits array found; defaulting to []');
     }
+
+    // CRITICAL: Pass through servers array for dynamic table loops ({{#servers}} ... {{/servers}})
+    // Similar to exhibits, this allows multi-combination agreements to show one row per server/combination
+    const servers = (data as any)?.servers;
+    if (Array.isArray(servers)) {
+      processedData.servers = servers;
+      console.log('✅ DOCX PROCESSOR: servers array copied to processedData', {
+        length: servers.length,
+        sample: servers[0]
+      });
+    } else {
+      processedData.servers = [];
+      console.log('ℹ️ DOCX PROCESSOR: No servers array found; defaulting to []');
+    }
     
     // Extract core values with fallbacks - EXACT tokens from template
     console.log('🔍 DOCX PROCESSOR: Company name sources:');
@@ -1215,6 +1284,13 @@ export class DocxTemplateProcessor {
       '{{user_cost}}': userCost,
       '{{userCost}}': userCost,
       '{{usersCost}}': userCost,
+
+      // Shared Server/Instance (Multi combination) tokens
+      // IMPORTANT: These are custom tokens set by QuoteGenerator.tsx and must be passed through as-is.
+      '{{server_descriptions}}': (data as any)['{{server_descriptions}}'] || (data as any)['{{serverDescriptions}}'] || '',
+      '{{serverDescriptions}}': (data as any)['{{serverDescriptions}}'] || (data as any)['{{server_descriptions}}'] || '',
+      '{{server descriptions}}': (data as any)['{{server descriptions}}'] || (data as any)['{{server_descriptions}}'] || '',
+      '{{server_instance_cost_breakdown}}': (data as any)['{{server_instance_cost_breakdown}}'] || '',
       
       // Per-user cost variations - fixed to match pricing display
       // NOTE: Use {{user_cost}} (not {{users_cost}}) because {{users_cost}} now includes data cost
@@ -1230,7 +1306,6 @@ export class DocxTemplateProcessor {
       // Duration variations
       '{{Duration of months}}': duration,
       '{{Duration_of_months}}': duration,  // CRITICAL: Underscore version found in template
-      '{{Duration of months}}': duration, // Space version (duplicate for clarity)
       '{{Suration_of_months}}': duration,  // Handle typo version
       '{{duration_months}}': duration,
       '{{duration}}': duration,
@@ -1257,23 +1332,16 @@ export class DocxTemplateProcessor {
       '{{migrationType}}': migrationType,
       '{{migration}}': migrationType,
 
-      // Shared Server/Instance description (exact token used by some templates)
-      // NOTE: keep as empty string when not applicable; do NOT default to "N/A"
-      '{{server_descriptions}}':
-        (data as any)['{{server_descriptions}}'] ||
-        (data as any)['{{serverDescriptions}}'] ||
-        (data as any)['{{server descriptions}}'] ||
-        '',
-      '{{serverDescriptions}}':
-        (data as any)['{{serverDescriptions}}'] ||
-        (data as any)['{{server_descriptions}}'] ||
-        (data as any)['{{server descriptions}}'] ||
-        '',
-      '{{server descriptions}}':
-        (data as any)['{{server descriptions}}'] ||
-        (data as any)['{{server_descriptions}}'] ||
-        (data as any)['{{serverDescriptions}}'] ||
-        '',
+      // Instance validity text - now handled within server_descriptions
+      // Set to empty string to prevent duplicate display
+      '{{instance_validity_text}}': '',
+      '{{instance validity text}}': '',
+      '{{instanceValidityText}}': '',
+      
+      // Duration validity text - for Managed Migration Service row
+      '{{duration_validity_text}}': (data as any)['{{duration_validity_text}}'] || '',
+      '{{duration validity text}}': (data as any)['{{duration validity text}}'] || '',
+      '{{durationValidityText}}': (data as any)['{{durationValidityText}}'] || '',
       
       // Client variations
       '{{clientName}}': clientName,
@@ -1320,7 +1388,6 @@ export class DocxTemplateProcessor {
       // Additional common tokens
       '{{price_data}}': data['{{price_data}}'] || '$0.00',
       '{{data_cost}}': data['{{price_data}}'] || '$0.00',
-      '{{instance_cost}}': (data as any)['{{instance_cost}}'] || '$0.00',
       '{{quoteId}}': data.quoteId || 'N/A',
       '{{quote_id}}': data.quoteId || 'N/A',
       '{{planName}}': data.planName || 'Basic',

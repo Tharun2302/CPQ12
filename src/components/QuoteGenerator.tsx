@@ -1075,7 +1075,7 @@ Quote ID: ${quoteData.id}
           '{{duration}}': (duration || 1).toString(),
           // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
           '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
-          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
@@ -1308,68 +1308,7 @@ Quote ID: ${quoteData.id}
             try {
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
-              
-              // Sort exhibits: Included first, then Not Included
-              // Within each group: sort by category (messaging first, then content) and displayOrder
-              const sortExhibits = async (ids: string[]) => {
-                try {
-                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
-                  if (!metaResp.ok) return ids;
-                  const metaData = await metaResp.json();
-                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
-                  
-                  // Separate into Included and Not Included
-                  const included: Array<{id: string, exhibit: any}> = [];
-                  const notIncluded: Array<{id: string, exhibit: any}> = [];
-                  
-                  ids.forEach((id) => {
-                    const ex = lookup.get(id) as any;
-                    if (!ex) return;
-                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    // Check for various "not included" patterns (with/without spaces, different cases)
-                    const isNotIncluded = text.includes('not included') ||
-                                        text.includes('not include') ||
-                                        text.includes('notincluded') ||
-                                        text.includes('notinclude') ||
-                                        text.includes('not-include') ||
-                                        text.includes('not-included');
-                    if (isNotIncluded) {
-                      notIncluded.push({ id, exhibit: ex });
-                    } else {
-                      included.push({ id, exhibit: ex });
-                    }
-                  });
-                  
-                  // Sort within each group: category (messaging first, then content), then displayOrder
-                  const categoryOrder = (cat: string) => {
-                    const normalized = (cat || 'content').toLowerCase();
-                    if (normalized === 'messaging' || normalized === 'message') return 1;
-                    if (normalized === 'content') return 2;
-                    return 3; // email or others
-                  };
-                  
-                  included.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  notIncluded.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  // Return: All Included first, then All Not Included
-                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
-                } catch {
-                  return ids;
-                }
-              };
-
-              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
-
-              // Fetch exhibit metadata for grouping
+              // Fetch exhibit metadata once (used for: de-dupe, sort order, and merger grouping)
               const exhibitMetadata: Array<{ name: string; category?: string }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
               let allExhibits: any[] = [];
@@ -1380,6 +1319,94 @@ Quote ID: ${quoteData.id}
                 }
               }
 
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                // Remove "not included" variants so Included/Not Included can share the same base
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by a stable "migration key" so we don't merge the same exhibit content twice
+              // when the UI selection contains multiple IDs representing the same migration.
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const desc = formatExhibitDescription(ex, configuration);
+                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
+                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
+                const category = (ex?.category || 'content').toLowerCase();
+                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
+                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
+                if (seenKeys.has(key)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    key
+                  });
+                  continue;
+                }
+                seenKeys.add(key);
+                dedupedIds.push(id);
+              }
+
+              // Sort exhibits: Included first, then Not Included; within each group: category and displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sortIds = (ids: string[]) => {
+                const included: Array<{ id: string; exhibit: any }> = [];
+                const notIncluded: Array<{ id: string; exhibit: any }> = [];
+                for (const id of ids) {
+                  const ex = lookup.get(id);
+                  if (!ex) continue;
+                  (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+                }
+                const sorter = (a: any, b: any) => {
+                  const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                  if (catDiff !== 0) return catDiff;
+                  return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                };
+                included.sort(sorter);
+                notIncluded.sort(sorter);
+                return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+              };
+
+              const sortedExhibits = sortIds(dedupedIds);
+
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
@@ -1389,7 +1416,7 @@ Quote ID: ${quoteData.id}
                   exhibitBlobs.push(blob);
                   
                   // Get exhibit metadata
-                  const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                  const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                   if (exhibit) {
                     exhibitMetadata.push({
                       name: exhibit.name || '',
@@ -3238,7 +3265,7 @@ Total Price: {{total price}}`;
           '{{duration}}': (duration || 1).toString(),
           // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
           '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
-          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
@@ -4296,63 +4323,96 @@ Total Price: {{total price}}`;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const cfg: any = configuration as any;
 
-            type ServerLine = { instances: number; instanceType: string; kind: 'data' | 'email' };
-            const entries: ServerLine[] = [];
+            // Option A (final): SEPARATE lines per exhibit/config.
+            // No SUM, no MAX:
+            // - Every email/content/messaging config becomes its own server line
+            // - Each line uses that config's own duration
+            type ServerLine = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName?: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+            const linesData: ServerLine[] = [];
 
-            const pushEntries = (list: any[] | undefined, kind: 'data' | 'email') => {
+            const addLinesFromList = (list: any[] | undefined, kind: ServerLine['kind']) => {
               if (!Array.isArray(list)) return;
               for (const item of list) {
                 const instances = Number(item?.numberOfInstances ?? 0);
                 const instanceType = String(item?.instanceType ?? '').trim();
+                const months = Number(item?.duration ?? 0);
                 if (!instanceType) continue;
-                // Default to 1 if template expects a count and config omitted it
-                entries.push({ instances: instances > 0 ? instances : 1, instanceType, kind });
+                linesData.push({
+                  kind,
+                  exhibitName: (item?.exhibitName ?? item?.combinationName ?? item?.name ?? '').toString().trim() || undefined,
+                  instances: instances > 0 ? instances : 1,
+                  instanceType,
+                  months: Number.isFinite(months) && months > 0 ? months : 1
+                });
               }
             };
 
-            // Historically, Shared Server/Instance row describes "data migration" + "email migration".
-            // Treat Messaging + Content as "data migration" (both are data moves), and Email as "email migration".
-            pushEntries(cfg.emailConfigs ?? [], 'email');
-            pushEntries(cfg.contentConfigs ?? [], 'data');
-            pushEntries(cfg.messagingConfigs ?? [], 'data');
+            // Newer shape (arrays)
+            addLinesFromList(cfg.emailConfigs ?? [], 'email');
+            addLinesFromList(cfg.contentConfigs ?? [], 'content');
+            addLinesFromList(cfg.messagingConfigs ?? [], 'messaging');
 
-            // Backward compatibility: if arrays aren't present, fall back to single configs.
-            if (entries.length === 0) {
+            // Legacy single-config fallback (only if arrays aren't present)
+            if (linesData.length === 0) {
               if (cfg.emailConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'email',
+                  exhibitName: (cfg.emailConfig?.exhibitName ?? cfg.emailConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.emailConfig?.instanceType),
-                  kind: 'email'
+                  months: Number(cfg.emailConfig?.duration ?? 0) || 1
                 });
               }
               if (cfg.contentConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'content',
+                  exhibitName: (cfg.contentConfig?.exhibitName ?? cfg.contentConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.contentConfig?.instanceType),
-                  kind: 'data'
+                  months: Number(cfg.contentConfig?.duration ?? 0) || 1
                 });
               }
               if (cfg.messagingConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'messaging',
+                  exhibitName: (cfg.messagingConfig?.exhibitName ?? cfg.messagingConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.messagingConfig?.instanceType),
-                  kind: 'data'
+                  months: Number(cfg.messagingConfig?.duration ?? 0) || 1
                 });
               }
             }
 
-            // Render in the exact style:
-            // 1
-            // Small server for email migration
-            // -------------------------------
-            // 1
-            // Standard server for data migration
+            // Render server descriptions WITHOUT "Instance Valid for X Months"
+            // (the template may still have a separate "Instance Valid for {{Duration_of_months}}" line,
+            // which is cleaned up in docxTemplateProcessor after rendering).
+            // Format: "X X Type server for Y migration" on line 1, then combination name in bold on line 2
             const separator = '----------------------------------------';
             const lines: string[] = [];
-            entries.forEach((e, idx) => {
+            linesData.forEach((p, idx) => {
               if (idx > 0) lines.push(separator);
-              lines.push(String(e.instances));
-              lines.push(`${e.instanceType} server for ${e.kind === 'email' ? 'email migration' : 'data migration'}`);
+              
+              // Line 1: server description
+              lines.push(
+                `${p.instances} X ${p.instanceType} server for ${
+                  p.kind === 'email'
+                    ? 'email migration'
+                    : p.kind === 'messaging'
+                      ? 'messaging migration'
+                      : 'data migration'
+                }`
+              );
+              
+              // Line 2: combination name in bold (if available)
+              if (p.exhibitName) {
+                lines.push(`**${p.exhibitName}**`);
+              }
             });
 
             return lines.join('\n');
@@ -4366,6 +4426,165 @@ Total Price: {{total price}}`;
         templateData['{{server_descriptions}}'] = serverDescriptions;
         templateData['{{serverDescriptions}}'] = serverDescriptions; // optional camelCase variant
         templateData['{{server descriptions}}'] = serverDescriptions; // optional space variant
+
+        // Build servers array for template loop (Multi combination)
+        // This creates a loopable array so the template can generate one row per server/combination
+        try {
+          if (configuration?.migrationType === 'Multi combination') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const calcAny: any = (calculation || safeCalculation) as any;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfgAny: any = configuration as any;
+
+            const getInstanceCostFor = (
+              kind: 'email' | 'content' | 'messaging',
+              comboName: string
+            ): number => {
+              const list =
+                kind === 'email'
+                  ? (calcAny.emailCombinationBreakdowns || [])
+                  : kind === 'content'
+                    ? (calcAny.contentCombinationBreakdowns || [])
+                    : (calcAny.messagingCombinationBreakdowns || []);
+
+              const target = (comboName || '').toString().trim().toLowerCase();
+              const hit = list.find((b: any) => (b?.combinationName || '').toString().trim().toLowerCase() === target);
+              return Number(hit?.instanceCost ?? 0) || 0;
+            };
+
+            // Robust fallback: compute instance cost directly from config when breakdown name matching isn't available.
+            // This prevents blank pricing when configs don't carry `exhibitName` but do carry `name/combinationName`.
+            const computeInstanceCost = (instanceType: string, durationMonths: number, instances: number): number => {
+              const type = (instanceType || 'Standard').toString().trim();
+              const months = Number(durationMonths || 0) > 0 ? Number(durationMonths) : 1;
+              const count = Number(instances || 0) > 0 ? Number(instances) : 1;
+              return getInstanceTypeCost(type) * months * count;
+            };
+
+            type ServerItem = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+
+            const items: ServerItem[] = [
+              ...(cfgAny.emailConfigs || []).map((c: any) => ({
+                kind: 'email' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.contentConfigs || []).map((c: any) => ({
+                kind: 'content' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.messagingConfigs || []).map((c: any) => ({
+                kind: 'messaging' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+            ].filter((x) => x.instanceType.trim() !== '');
+
+            // Fallback to single-config legacy shape
+            if (items.length === 0) {
+              if (cfgAny.emailConfig?.instanceType) {
+                items.push({
+                  kind: 'email',
+                  exhibitName: (cfgAny.emailConfig.exhibitName ?? cfgAny.emailConfig.combinationName ?? cfgAny.emailConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.emailConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.emailConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.emailConfig.duration || 0)
+                });
+              }
+              if (cfgAny.contentConfig?.instanceType) {
+                items.push({
+                  kind: 'content',
+                  exhibitName: (cfgAny.contentConfig.exhibitName ?? cfgAny.contentConfig.combinationName ?? cfgAny.contentConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.contentConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.contentConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.contentConfig.duration || 0)
+                });
+              }
+              if (cfgAny.messagingConfig?.instanceType) {
+                items.push({
+                  kind: 'messaging',
+                  exhibitName: (cfgAny.messagingConfig.exhibitName ?? cfgAny.messagingConfig.combinationName ?? cfgAny.messagingConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.messagingConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.messagingConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.messagingConfig.duration || 0)
+                });
+              }
+            }
+
+            // Build servers array for docxtemplater loop
+            const serversArray = items.map((it, idx) => {
+              const name = (it.exhibitName || '').trim();
+              // Keep normal spaces. If you see large gaps in Word/PDF, fix the DOCX cell alignment
+              // (use Center/Left, not Justify/Distributed) rather than forcing non-breaking spaces,
+              // which can cause ugly mid-word wrapping in narrow cells.
+              const displayName = name.replace(/\s+/g, ' ').trim();
+              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
+              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
+              const months = Number(it.months || 0) > 0 ? Number(it.months) : 1;
+              const migrationType =
+                it.kind === 'email'
+                  ? 'email migration'
+                  : it.kind === 'messaging'
+                    ? 'messaging migration'
+                    : 'data migration';
+              const displayServerDescription = `${it.instances} X ${it.instanceType} server for ${migrationType}`;
+
+              return {
+                serverDescription: displayServerDescription,
+                combinationName: displayName || '(unknown)',
+                serverPrice: formatCurrency(cost),
+                // Per-server duration (use this in template instead of {{Duration_of_months}} if you want each row's own months)
+                serverMonths: months,
+                // Template helpers
+                isLast: idx === items.length - 1
+              };
+            });
+
+            console.log('✅ Servers array for template:', serversArray);
+            (templateData as any).servers = serversArray;
+
+            // Also keep the old format for backward compatibility
+            const lines: string[] = [];
+            let total = 0;
+            
+            for (const it of items) {
+              const name = (it.exhibitName || '').trim();
+              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
+              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
+              total += cost;
+              lines.push(formatCurrency(cost));
+            }
+            
+            // Append total as last line (no label), if we have at least one server line
+            if (lines.length > 0) {
+              lines.push(formatCurrency(total));
+            }
+
+            // Add extra spacing between amounts for better visual alignment in the DOCX/PDF preview.
+            // Two blank lines between each amount => three newline characters between entries.
+            templateData['{{server_instance_cost_breakdown}}'] = lines.join('\n\n\n');
+          } else {
+            templateData['{{server_instance_cost_breakdown}}'] = '';
+            (templateData as any).servers = [];
+          }
+        } catch (e) {
+          console.warn('⚠️ Unable to build servers array:', e);
+          templateData['{{server_instance_cost_breakdown}}'] = '';
+          (templateData as any).servers = [];
+        }
         
         console.log('📋 Template data for DOCX processing:', templateData);
         
@@ -4644,66 +4863,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
               
-              // Sort exhibits: Included first, then Not Included
-              // Within each group: sort by category (messaging first, then content) and displayOrder
-              const sortExhibits = async (ids: string[]) => {
-                try {
-                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
-                  if (!metaResp.ok) return ids;
-                  const metaData = await metaResp.json();
-                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
-                  
-                  // Separate into Included and Not Included
-                  const included: Array<{id: string, exhibit: any}> = [];
-                  const notIncluded: Array<{id: string, exhibit: any}> = [];
-                  
-                  ids.forEach((id) => {
-                    const ex = lookup.get(id) as any;
-                    if (!ex) return;
-                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    // Check for various "not included" patterns (with/without spaces, different cases)
-                    const isNotIncluded = text.includes('not included') ||
-                                        text.includes('not include') ||
-                                        text.includes('notincluded') ||
-                                        text.includes('notinclude') ||
-                                        text.includes('not-include') ||
-                                        text.includes('not-included');
-                    if (isNotIncluded) {
-                      notIncluded.push({ id, exhibit: ex });
-                    } else {
-                      included.push({ id, exhibit: ex });
-                    }
-                  });
-                  
-                  // Sort within each group: category (messaging first, then content), then displayOrder
-                  const categoryOrder = (cat: string) => {
-                    const normalized = (cat || 'content').toLowerCase();
-                    if (normalized === 'messaging' || normalized === 'message') return 1;
-                    if (normalized === 'content') return 2;
-                    return 3; // email or others
-                  };
-                  
-                  included.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  notIncluded.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  // Return: All Included first, then All Not Included
-                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
-                } catch {
-                  return ids;
-                }
-              };
-
-              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
-
               // Fetch exhibit metadata for grouping
               const exhibitMetadata: Array<{ name: string; category?: string }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
@@ -4715,11 +4874,95 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 }
               }
 
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by stable "migration key" before fetching/merging blobs
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  // Keep unknown IDs (but they may be skipped later if metadata is required)
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const desc = formatExhibitDescription(ex, configuration);
+                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
+                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
+                const category = (ex?.category || 'content').toLowerCase();
+                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
+                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
+                if (seenKeys.has(key)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    key
+                  });
+                  continue;
+                }
+                seenKeys.add(key);
+                dedupedIds.push(id);
+              }
+
+              // Sort exhibits: Included first, then Not Included; within each group: category + displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sorter = (a: any, b: any) => {
+                const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                if (catDiff !== 0) return catDiff;
+                return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+              };
+
+              const included: Array<{ id: string; exhibit: any }> = [];
+              const notIncluded: Array<{ id: string; exhibit: any }> = [];
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+              }
+              included.sort(sorter);
+              notIncluded.sort(sorter);
+              const sortedExhibits = [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 
                 // Get exhibit metadata FIRST (before fetching file)
-                const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                 if (!exhibit) {
                   console.warn(`⚠️ Exhibit ${exhibitId} not found in metadata, skipping`);
                   continue;

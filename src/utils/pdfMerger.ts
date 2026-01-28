@@ -1683,7 +1683,8 @@ export const createTemplatePreviewHTML = async (
       '{{Duration of months}}': effectiveDurationMonths.toString(),
       '{{total price}}': formatCurrency(quote.calculation.totalCost),
       '{{duration_validity_text}}': `Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
-      '{{instance_validity_text}}': `Instance Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
+      '{{instance_validity_text}}': '',
+      '{{server_descriptions}}': 'Server instance details',
       
       // Additional mappings for compatibility
       '{{company_name}}': quote.company || 'Company Name',
@@ -2016,7 +2017,8 @@ const extractQuoteValues = (quote: Quote) => {
     'Duration of months': effectiveDurationMonths.toString(),
     'total price': formatCurrency(quote.calculation.totalCost),
     'duration_validity_text': `Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
-    'instance_validity_text': `Instance Valid for ${effectiveDurationMonths} Month${effectiveDurationMonths === 1 ? '' : 's'}`,
+    'instance_validity_text': '',
+    'server_descriptions': 'Server instance details',
     
     // Additional placeholders for compatibility
     company_name: quote.company || 'Company Name',
@@ -3261,10 +3263,8 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
               <td style="border: 2px solid #ddd; padding: 16px; font-weight: 600; font-size: 15px; color: #333; vertical-align: top;">
                 Shared Server/Instance
               </td>
-              <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top;">
-                1 X Shared Instance in a High-End Enterprise Server<br><br>
-                <hr style="border: none; border-top: 2px dashed #ccc; margin: 15px 0;">
-                <strong>{{instance_validity_text}}</strong>
+              <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top; white-space: pre-line;">
+                {{server_descriptions}}
               </td>
               <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top;">
                 Managed Migration<br>One-Time
