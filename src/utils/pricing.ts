@@ -141,10 +141,12 @@ function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier)
   const migrationCost = Math.max(floor, s38);
   let totalCost = userCost + dataCost + instanceCost + migrationCost;
   
+  // Skip minimum for Multi combination (minimum will be applied to overall total)
+  const isMultiCombination = config.combination?.startsWith('multi-combination-');
   const MINIMUM_TOTAL = 2500;
   let adjustedUserCost = userCost;
   
-  if (totalCost < MINIMUM_TOTAL) {
+  if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
     const deficit = MINIMUM_TOTAL - totalCost;
     adjustedUserCost = userCost + deficit;
     totalCost = MINIMUM_TOTAL;
@@ -295,10 +297,12 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
 
   let totalCost = userCost + dataCost + instanceCost + migrationCost;
   
+  // Skip minimum for Multi combination (minimum will be applied to overall total)
+  const isMultiCombination = config.combination?.startsWith('multi-combination-');
   const MINIMUM_TOTAL = 2500;
   let adjustedUserCost = userCost;
   
-  if (totalCost < MINIMUM_TOTAL) {
+  if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
     const deficit = MINIMUM_TOTAL - totalCost;
     adjustedUserCost = userCost + deficit;
     totalCost = MINIMUM_TOTAL;
@@ -402,11 +406,13 @@ function calculateEmailPricing(config: ConfigurationData, tier: PricingTier): Pr
   // Total cost
   let totalCost = userCost + dataCost + instanceCost + migrationCost;
   
+  // Skip minimum for Multi combination (minimum will be applied to overall total)
+  const isMultiCombination = config.combination?.startsWith('multi-combination-');
   // Apply $2500 minimum by adjusting user cost only
   const MINIMUM_TOTAL = 2500;
   let adjustedUserCost = userCost;
   
-  if (totalCost < MINIMUM_TOTAL) {
+  if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
     const deficit = MINIMUM_TOTAL - totalCost;
     adjustedUserCost = userCost + deficit;
     totalCost = MINIMUM_TOTAL;
@@ -682,14 +688,33 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       (contentCalculation?.instanceCost || 0) +
       (emailCalculation?.instanceCost || 0);
 
-    console.log('📊 Multi combination - Combined total:', totalCombined);
+    console.log('📊 Multi combination - Combined total (before minimum):', totalCombined);
+
+    // Apply $2500 minimum to OVERALL Multi combination total
+    const MINIMUM_TOTAL = 2500;
+    let adjustedCombinedUserCost = combinedUserCost;
+    let finalTotal = totalCombined;
+    
+    if (totalCombined < MINIMUM_TOTAL) {
+      const deficit = MINIMUM_TOTAL - totalCombined;
+      adjustedCombinedUserCost = combinedUserCost + deficit;
+      finalTotal = MINIMUM_TOTAL;
+      
+      console.log('💰 Applied $2500 minimum to Multi combination overall total:', {
+        originalTotal: totalCombined,
+        originalUserCost: combinedUserCost,
+        deficit,
+        adjustedUserCost: adjustedCombinedUserCost,
+        finalTotal: MINIMUM_TOTAL
+      });
+    }
 
     return {
-      userCost: combinedUserCost,
+      userCost: adjustedCombinedUserCost,
       dataCost: combinedDataCost,
       migrationCost: combinedMigrationCost,
       instanceCost: combinedInstanceCost,
-      totalCost: totalCombined,
+      totalCost: finalTotal,
       tier,
       messagingCalculation,
       contentCalculation,

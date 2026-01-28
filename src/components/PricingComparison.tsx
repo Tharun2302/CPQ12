@@ -19,20 +19,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   // Track selected tier per combination (key: combinationName, value: tier name)
   const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>({});
 
-  const totalUsers = useMemo(() => {
-    if (!configuration) return 0;
-    if (configuration.migrationType === 'Multi combination') {
-      const sumUsers = (arr?: Array<{ numberOfUsers: number }>) =>
-        arr?.reduce((acc, item) => acc + (item.numberOfUsers || 0), 0) || 0;
-      return (
-        sumUsers(configuration.messagingConfigs) +
-        sumUsers(configuration.contentConfigs) +
-        sumUsers(configuration.emailConfigs)
-      );
-    }
-    return configuration.numberOfUsers || 0;
-  }, [configuration]);
-
   // Initialize selected tiers with the current calculation tier (Standard by default)
   useEffect(() => {
     if (configuration?.migrationType === 'Multi combination' && calculations.length > 0) {
@@ -348,31 +334,49 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         {filteredCalculations.map((calc) => {
           // For Multi combination, recalculate total based on this plan's tier
           let planTotal = calc.totalCost;
+          let originalTotalBeforeMinimum = planTotal;
+          let isSingleCombination = false;
+          
           if (configuration?.migrationType === 'Multi combination') {
             planTotal = 0;
             
+            // Count how many combination types are selected
+            const hasMessaging = calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0;
+            const hasContent = calc.contentCombinationBreakdowns && calc.contentCombinationBreakdowns.length > 0;
+            const hasEmail = calc.emailCombinationBreakdowns && calc.emailCombinationBreakdowns.length > 0;
+            const combinationCount = (hasMessaging ? 1 : 0) + (hasContent ? 1 : 0) + (hasEmail ? 1 : 0);
+            isSingleCombination = combinationCount === 1;
+            
             // Sum messaging combinations
-            if (calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0) {
-              calc.messagingCombinationBreakdowns.forEach(breakdown => {
+            if (hasMessaging) {
+              calc.messagingCombinationBreakdowns!.forEach(breakdown => {
                 const pricing = getCombinationPricing(breakdown.combinationName, 'messaging', breakdown, calc.tier);
                 planTotal += pricing.totalCost;
               });
             }
             
             // Sum content combinations
-            if (calc.contentCombinationBreakdowns && calc.contentCombinationBreakdowns.length > 0) {
-              calc.contentCombinationBreakdowns.forEach(breakdown => {
+            if (hasContent) {
+              calc.contentCombinationBreakdowns!.forEach(breakdown => {
                 const pricing = getCombinationPricing(breakdown.combinationName, 'content', breakdown, calc.tier);
                 planTotal += pricing.totalCost;
               });
             }
             
             // Sum email combinations
-            if (calc.emailCombinationBreakdowns && calc.emailCombinationBreakdowns.length > 0) {
-              calc.emailCombinationBreakdowns.forEach(breakdown => {
+            if (hasEmail) {
+              calc.emailCombinationBreakdowns!.forEach(breakdown => {
                 const pricing = getCombinationPricing(breakdown.combinationName, 'email', breakdown, calc.tier);
                 planTotal += pricing.totalCost;
               });
+            }
+            
+            originalTotalBeforeMinimum = planTotal;
+            
+            // Apply $2500 minimum to overall Multi combination total
+            const MINIMUM_TOTAL = 2500;
+            if (planTotal < MINIMUM_TOTAL) {
+              planTotal = MINIMUM_TOTAL;
             }
           }
           
@@ -412,10 +416,22 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </div>
                 ) : (
                   <div>
-                    <div className="text-4xl font-bold mb-2 text-gray-900">
-                      {formatCurrency(planTotal)}
-                    </div>
-                    <div className="text-sm text-gray-600 font-medium">Total project cost</div>
+                    {/* Show original price if single combination below minimum, otherwise show adjusted price */}
+                    {configuration?.migrationType === 'Multi combination' && isSingleCombination && originalTotalBeforeMinimum < 2500 ? (
+                      <>
+                        <div className="text-4xl font-bold mb-2 text-red-600">
+                          {formatCurrency(originalTotalBeforeMinimum)}
+                        </div>
+                        <div className="text-sm text-red-600 font-medium">Total project cost (Below minimum)</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-4xl font-bold mb-2 text-gray-900">
+                          {formatCurrency(planTotal)}
+                        </div>
+                        <div className="text-sm text-gray-600 font-medium">Total project cost</div>
+                      </>
+                    )}
                     {discount > 0 && planTotal < 2500 && (
                       <div className="text-xs text-amber-600 mt-1">
                         Discount available for orders above $2,500
@@ -433,19 +449,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       <p className="text-sm text-purple-800 font-bold text-center">
                         🔀 Multi Combination Pricing Breakdown
                       </p>
-                    </div>
-
-                    <div className="space-y-2 mb-4 bg-white/70 border border-purple-200 rounded-lg p-4">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700">Per user cost:</span>
-                        <span className="font-bold text-gray-900">
-                          {totalUsers > 0 ? `${formatCurrency(calc.userCost / totalUsers)}/user` : 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700">Total users (all combinations):</span>
-                        <span className="font-bold text-gray-900">{totalUsers || 0}</span>
-                      </div>
                     </div>
 
                     {/* Messaging Section - show individual combinations if available */}
@@ -799,7 +802,14 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
 
               <button
-                onClick={() => onSelectTier(calc)}
+                onClick={() => {
+                  // Check if single combination below $2500 in Multi combination
+                  if (configuration?.migrationType === 'Multi combination' && isSingleCombination && originalTotalBeforeMinimum < 2500) {
+                    alert('Below $2,500 not applicable. Please select additional combinations or adjust your configuration to meet the minimum requirement of $2,500.');
+                    return;
+                  }
+                  onSelectTier(calc);
+                }}
                 className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group ${
                   configuration?.combination === 'overage-agreement'
                     ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
@@ -811,6 +821,15 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   {configuration?.combination === 'overage-agreement' ? 'Select Overage Agreement' : `Select ${calc.tier.name}`}
                 </span>
               </button>
+              
+              {/* Show warning if single combination below minimum */}
+              {configuration?.migrationType === 'Multi combination' && isSingleCombination && originalTotalBeforeMinimum < 2500 && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-700 font-medium text-center">
+                    ⚠️ Below $2,500 not applicable. Please select additional combinations.
+                  </p>
+                </div>
+              )}
             </div>
           );
         })}
