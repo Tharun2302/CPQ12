@@ -1075,7 +1075,7 @@ Quote ID: ${quoteData.id}
           '{{duration}}': (duration || 1).toString(),
           // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
           '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
-          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
@@ -3238,7 +3238,7 @@ Total Price: {{total price}}`;
           '{{duration}}': (duration || 1).toString(),
           // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
           '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
-          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
@@ -4296,63 +4296,96 @@ Total Price: {{total price}}`;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const cfg: any = configuration as any;
 
-            type ServerLine = { instances: number; instanceType: string; kind: 'data' | 'email' };
-            const entries: ServerLine[] = [];
+            // Option A (final): SEPARATE lines per exhibit/config.
+            // No SUM, no MAX:
+            // - Every email/content/messaging config becomes its own server line
+            // - Each line uses that config's own duration
+            type ServerLine = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName?: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+            const linesData: ServerLine[] = [];
 
-            const pushEntries = (list: any[] | undefined, kind: 'data' | 'email') => {
+            const addLinesFromList = (list: any[] | undefined, kind: ServerLine['kind']) => {
               if (!Array.isArray(list)) return;
               for (const item of list) {
                 const instances = Number(item?.numberOfInstances ?? 0);
                 const instanceType = String(item?.instanceType ?? '').trim();
+                const months = Number(item?.duration ?? 0);
                 if (!instanceType) continue;
-                // Default to 1 if template expects a count and config omitted it
-                entries.push({ instances: instances > 0 ? instances : 1, instanceType, kind });
+                linesData.push({
+                  kind,
+                  exhibitName: (item?.exhibitName ?? item?.combinationName ?? item?.name ?? '').toString().trim() || undefined,
+                  instances: instances > 0 ? instances : 1,
+                  instanceType,
+                  months: Number.isFinite(months) && months > 0 ? months : 1
+                });
               }
             };
 
-            // Historically, Shared Server/Instance row describes "data migration" + "email migration".
-            // Treat Messaging + Content as "data migration" (both are data moves), and Email as "email migration".
-            pushEntries(cfg.emailConfigs ?? [], 'email');
-            pushEntries(cfg.contentConfigs ?? [], 'data');
-            pushEntries(cfg.messagingConfigs ?? [], 'data');
+            // Newer shape (arrays)
+            addLinesFromList(cfg.emailConfigs ?? [], 'email');
+            addLinesFromList(cfg.contentConfigs ?? [], 'content');
+            addLinesFromList(cfg.messagingConfigs ?? [], 'messaging');
 
-            // Backward compatibility: if arrays aren't present, fall back to single configs.
-            if (entries.length === 0) {
+            // Legacy single-config fallback (only if arrays aren't present)
+            if (linesData.length === 0) {
               if (cfg.emailConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'email',
+                  exhibitName: (cfg.emailConfig?.exhibitName ?? cfg.emailConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.emailConfig?.instanceType),
-                  kind: 'email'
+                  months: Number(cfg.emailConfig?.duration ?? 0) || 1
                 });
               }
               if (cfg.contentConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'content',
+                  exhibitName: (cfg.contentConfig?.exhibitName ?? cfg.contentConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.contentConfig?.instanceType),
-                  kind: 'data'
+                  months: Number(cfg.contentConfig?.duration ?? 0) || 1
                 });
               }
               if (cfg.messagingConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'messaging',
+                  exhibitName: (cfg.messagingConfig?.exhibitName ?? cfg.messagingConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.messagingConfig?.instanceType),
-                  kind: 'data'
+                  months: Number(cfg.messagingConfig?.duration ?? 0) || 1
                 });
               }
             }
 
-            // Render in the exact style:
-            // 1
-            // Small server for email migration
-            // -------------------------------
-            // 1
-            // Standard server for data migration
+            // Render server descriptions WITHOUT "Instance Valid for X Months"
+            // (the template may still have a separate "Instance Valid for {{Duration_of_months}}" line,
+            // which is cleaned up in docxTemplateProcessor after rendering).
+            // Format: "X X Type server for Y migration" on line 1, then combination name in bold on line 2
             const separator = '----------------------------------------';
             const lines: string[] = [];
-            entries.forEach((e, idx) => {
+            linesData.forEach((p, idx) => {
               if (idx > 0) lines.push(separator);
-              lines.push(String(e.instances));
-              lines.push(`${e.instanceType} server for ${e.kind === 'email' ? 'email migration' : 'data migration'}`);
+              
+              // Line 1: server description
+              lines.push(
+                `${p.instances} X ${p.instanceType} server for ${
+                  p.kind === 'email'
+                    ? 'email migration'
+                    : p.kind === 'messaging'
+                      ? 'messaging migration'
+                      : 'data migration'
+                }`
+              );
+              
+              // Line 2: combination name in bold (if available)
+              if (p.exhibitName) {
+                lines.push(`**${p.exhibitName}**`);
+              }
             });
 
             return lines.join('\n');
@@ -4366,6 +4399,165 @@ Total Price: {{total price}}`;
         templateData['{{server_descriptions}}'] = serverDescriptions;
         templateData['{{serverDescriptions}}'] = serverDescriptions; // optional camelCase variant
         templateData['{{server descriptions}}'] = serverDescriptions; // optional space variant
+
+        // Build servers array for template loop (Multi combination)
+        // This creates a loopable array so the template can generate one row per server/combination
+        try {
+          if (configuration?.migrationType === 'Multi combination') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const calcAny: any = (calculation || safeCalculation) as any;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfgAny: any = configuration as any;
+
+            const getInstanceCostFor = (
+              kind: 'email' | 'content' | 'messaging',
+              comboName: string
+            ): number => {
+              const list =
+                kind === 'email'
+                  ? (calcAny.emailCombinationBreakdowns || [])
+                  : kind === 'content'
+                    ? (calcAny.contentCombinationBreakdowns || [])
+                    : (calcAny.messagingCombinationBreakdowns || []);
+
+              const target = (comboName || '').toString().trim().toLowerCase();
+              const hit = list.find((b: any) => (b?.combinationName || '').toString().trim().toLowerCase() === target);
+              return Number(hit?.instanceCost ?? 0) || 0;
+            };
+
+            // Robust fallback: compute instance cost directly from config when breakdown name matching isn't available.
+            // This prevents blank pricing when configs don't carry `exhibitName` but do carry `name/combinationName`.
+            const computeInstanceCost = (instanceType: string, durationMonths: number, instances: number): number => {
+              const type = (instanceType || 'Standard').toString().trim();
+              const months = Number(durationMonths || 0) > 0 ? Number(durationMonths) : 1;
+              const count = Number(instances || 0) > 0 ? Number(instances) : 1;
+              return getInstanceTypeCost(type) * months * count;
+            };
+
+            type ServerItem = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+
+            const items: ServerItem[] = [
+              ...(cfgAny.emailConfigs || []).map((c: any) => ({
+                kind: 'email' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.contentConfigs || []).map((c: any) => ({
+                kind: 'content' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.messagingConfigs || []).map((c: any) => ({
+                kind: 'messaging' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+            ].filter((x) => x.instanceType.trim() !== '');
+
+            // Fallback to single-config legacy shape
+            if (items.length === 0) {
+              if (cfgAny.emailConfig?.instanceType) {
+                items.push({
+                  kind: 'email',
+                  exhibitName: (cfgAny.emailConfig.exhibitName ?? cfgAny.emailConfig.combinationName ?? cfgAny.emailConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.emailConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.emailConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.emailConfig.duration || 0)
+                });
+              }
+              if (cfgAny.contentConfig?.instanceType) {
+                items.push({
+                  kind: 'content',
+                  exhibitName: (cfgAny.contentConfig.exhibitName ?? cfgAny.contentConfig.combinationName ?? cfgAny.contentConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.contentConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.contentConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.contentConfig.duration || 0)
+                });
+              }
+              if (cfgAny.messagingConfig?.instanceType) {
+                items.push({
+                  kind: 'messaging',
+                  exhibitName: (cfgAny.messagingConfig.exhibitName ?? cfgAny.messagingConfig.combinationName ?? cfgAny.messagingConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.messagingConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.messagingConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.messagingConfig.duration || 0)
+                });
+              }
+            }
+
+            // Build servers array for docxtemplater loop
+            const serversArray = items.map((it, idx) => {
+              const name = (it.exhibitName || '').trim();
+              // Keep normal spaces. If you see large gaps in Word/PDF, fix the DOCX cell alignment
+              // (use Center/Left, not Justify/Distributed) rather than forcing non-breaking spaces,
+              // which can cause ugly mid-word wrapping in narrow cells.
+              const displayName = name.replace(/\s+/g, ' ').trim();
+              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
+              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
+              const months = Number(it.months || 0) > 0 ? Number(it.months) : 1;
+              const migrationType =
+                it.kind === 'email'
+                  ? 'email migration'
+                  : it.kind === 'messaging'
+                    ? 'messaging migration'
+                    : 'data migration';
+              const displayServerDescription = `${it.instances} X ${it.instanceType} server for ${migrationType}`;
+
+              return {
+                serverDescription: displayServerDescription,
+                combinationName: displayName || '(unknown)',
+                serverPrice: formatCurrency(cost),
+                // Per-server duration (use this in template instead of {{Duration_of_months}} if you want each row's own months)
+                serverMonths: months,
+                // Template helpers
+                isLast: idx === items.length - 1
+              };
+            });
+
+            console.log('✅ Servers array for template:', serversArray);
+            (templateData as any).servers = serversArray;
+
+            // Also keep the old format for backward compatibility
+            const lines: string[] = [];
+            let total = 0;
+            
+            for (const it of items) {
+              const name = (it.exhibitName || '').trim();
+              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
+              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
+              total += cost;
+              lines.push(formatCurrency(cost));
+            }
+            
+            // Append total as last line (no label), if we have at least one server line
+            if (lines.length > 0) {
+              lines.push(formatCurrency(total));
+            }
+
+            // Add extra spacing between amounts for better visual alignment in the DOCX/PDF preview.
+            // Two blank lines between each amount => three newline characters between entries.
+            templateData['{{server_instance_cost_breakdown}}'] = lines.join('\n\n\n');
+          } else {
+            templateData['{{server_instance_cost_breakdown}}'] = '';
+            (templateData as any).servers = [];
+          }
+        } catch (e) {
+          console.warn('⚠️ Unable to build servers array:', e);
+          templateData['{{server_instance_cost_breakdown}}'] = '';
+          (templateData as any).servers = [];
+        }
         
         console.log('📋 Template data for DOCX processing:', templateData);
         

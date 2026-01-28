@@ -7,9 +7,12 @@ import type { ConfigurationData } from '../types/pricing';
  * `messagingConfig/contentConfig` OR the newer `messagingConfigs/contentConfigs` arrays),
  * and sometimes in top-level `duration`.
  *
- * For Multi combination, we SUM durations across ALL selected exhibit configs
- * (Messaging + Content + Email), across every per-combination entry. Falls back to top-level
- * duration if nested durations are missing.
+ * For Multi combination, we use the OVERALL duration for the agreement (MAX duration across
+ * all selected exhibit configs: Messaging + Content + Email). This matches how the agreement
+ * should read (one "validity" value for the whole contract), and avoids inflated "sum of months"
+ * when multiple migrations run in parallel.
+ *
+ * Falls back to top-level duration if nested durations are missing.
  */
 export function getEffectiveDurationMonths(configuration?: ConfigurationData | null): number {
   if (!configuration) return 0;
@@ -17,25 +20,30 @@ export function getEffectiveDurationMonths(configuration?: ConfigurationData | n
   const top = Number(configuration.duration || 0);
   if (configuration.migrationType !== 'Multi combination') return top;
 
-  const sum = (nums: number[]) => nums.reduce((acc, n) => acc + (Number.isFinite(n) ? n : 0), 0);
+  const max = (nums: number[]) =>
+    nums.reduce((acc, n) => {
+      const v = Number(n);
+      return Number.isFinite(v) && v > acc ? v : acc;
+    }, 0);
 
-  // Newer shape (arrays): sum across every per-combination config
-  const msgArraySum = sum((configuration.messagingConfigs || []).map((c) => Number(c?.duration || 0)));
-  const contentArraySum = sum((configuration.contentConfigs || []).map((c) => Number(c?.duration || 0)));
-  const emailArraySum = sum((configuration.emailConfigs || []).map((c) => Number(c?.duration || 0)));
+  // Newer shape (arrays): overall = max across every per-combination config
+  const msgArrayMax = max((configuration.messagingConfigs || []).map((c) => Number(c?.duration || 0)));
+  const contentArrayMax = max((configuration.contentConfigs || []).map((c) => Number(c?.duration || 0)));
+  const emailArrayMax = max((configuration.emailConfigs || []).map((c) => Number(c?.duration || 0)));
 
-  const arrayTotal = msgArraySum + contentArraySum + emailArraySum;
+  const arrayOverall = Math.max(msgArrayMax, contentArrayMax, emailArrayMax);
 
   // Legacy single-config fallback
-  const legacyTotal =
-    Number(configuration.messagingConfig?.duration || 0) +
-    Number(configuration.contentConfig?.duration || 0) +
-    Number((configuration as any).emailConfig?.duration || 0);
+  const legacyOverall = Math.max(
+    Number(configuration.messagingConfig?.duration || 0),
+    Number(configuration.contentConfig?.duration || 0),
+    Number((configuration as any).emailConfig?.duration || 0)
+  );
 
   // For Multi combination:
-  // If nested configs exist, use their sum; otherwise use top-level duration.
-  if (arrayTotal > 0) return arrayTotal;
-  if (legacyTotal > 0) return legacyTotal;
+  // If nested configs exist, use their overall max; otherwise use top-level duration.
+  if (arrayOverall > 0) return arrayOverall;
+  if (legacyOverall > 0) return legacyOverall;
   return top;
 }
 
