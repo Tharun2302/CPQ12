@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
 import { formatCurrency, PRICING_TIERS, calculateCombinationPricing } from '../utils/pricing';
 
@@ -7,17 +8,42 @@ interface PricingComparisonProps {
   recommendedTier: PricingCalculation;
   onSelectTier: (calculation: PricingCalculation) => void;
   configuration?: ConfigurationData;
+  selectedTier?: PricingCalculation | null; // Add selectedTier prop to know which plan is selected
 }
 
 const PricingComparison: React.FC<PricingComparisonProps> = ({
   calculations,
   onSelectTier,
-  configuration
+  configuration,
+  selectedTier
 }) => {
   const [discount, setDiscount] = useState<number>(0);
   
   // Track selected tier per combination (key: combinationName, value: tier name)
-  const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>({});
+  // Load from sessionStorage on mount to persist across navigation
+  const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>(() => {
+    try {
+      const saved = sessionStorage.getItem('cpq_selected_tiers_per_combination');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        console.log('📋 Restored per-combination tier selections:', parsed);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('Could not load per-combination tiers:', e);
+    }
+    return {};
+  });
+
+  // Save per-combination tier selections to sessionStorage whenever they change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('cpq_selected_tiers_per_combination', JSON.stringify(selectedTiersPerCombination));
+      console.log('💾 Saved per-combination tier selections:', selectedTiersPerCombination);
+    } catch (e) {
+      console.warn('Could not save per-combination tiers:', e);
+    }
+  }, [selectedTiersPerCombination]);
 
   // Initialize selected tiers with the current calculation tier (Standard by default)
   useEffect(() => {
@@ -37,7 +63,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       });
       
       setSelectedTiersPerCombination(prev => {
-        // Only set if not already set (preserve user selections)
+        // Only set if not already set (preserve user selections from sessionStorage)
         const updated = { ...prev };
         Object.keys(initialTiers).forEach(key => {
           if (!updated[key]) {
@@ -386,22 +412,36 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             originalTotalBeforeMinimum > 0 &&
             originalTotalBeforeMinimum < 2500;
           
+          // Check if this plan is currently selected
+          const isSelected = selectedTier?.tier?.name === calc.tier.name;
+          
           return (
             <div
               key={calc.tier.id}
-              className={`relative rounded-2xl border-2 border-gray-200 bg-white p-8 transition-all duration-500 hover:shadow-2xl transform hover:-translate-y-2 hover:border-blue-300 ${
+              className={`relative rounded-2xl border-2 p-8 transition-all duration-500 hover:shadow-2xl transform hover:-translate-y-2 ${
+                isSelected
+                  ? 'border-blue-500 bg-blue-50/50 shadow-lg' // Highlight selected plan
+                  : 'border-gray-200 bg-white hover:border-blue-300'
+              } ${
                 filteredCalculations.length === 2 ? 'w-full max-w-sm' : 'w-full max-w-sm'
               }`}
             >
 
               <div className="text-center mb-6">
+                {/* Selected indicator */}
+                {isSelected && (
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-blue-600" />
+                    <span className="text-sm font-semibold text-blue-600">Selected</span>
+                  </div>
+                )}
                 {/* Special heading for overage agreement */}
                 {configuration?.combination === 'overage-agreement' ? (
-                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
+                  <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     Overage Agreement
                   </h3>
                 ) : (
-                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
+                  <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     {calc.tier.name}
                   </h3>
                 )}

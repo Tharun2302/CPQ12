@@ -4057,12 +4057,15 @@ Total Price: {{total price}}`;
           }
         }
         
-        // Build exhibit rows for the template (ONE row per selected migration, not per exhibit file)
-        // This prevents duplicates when a single migration has multiple exhibit files (Included/Not Included/etc).
+        // Store expanded exhibit IDs for use in document merging (includes both Include and Not Include variants)
+        let expandedExhibitIdsForMerge: string[] = [];
+        
+        // Build exhibit rows for the template.
+        // Plan-based rule: when a plan (Basic/Standard/Advanced) is selected, include BOTH "Include" and "Not Include"
+        // exhibit variants for that plan for each selected combination (e.g. Basic Include + Basic Not Include).
         try {
           // In Multi combination, the per-exhibit configs (messagingConfigs/contentConfigs/emailConfigs)
           // are the most reliable source of which combinations are selected.
-          // Some flows can have `selectedExhibits` missing/stale, which would cause only 1 row to render.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const cfgAny: any = configuration as any;
           const idsFromSelection = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
@@ -4072,7 +4075,7 @@ Total Price: {{total price}}`;
             ...(cfgAny.emailConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
           ].filter(Boolean);
 
-          const exhibitIds = Array.from(new Set([...idsFromSelection, ...idsFromConfigs]));
+          let exhibitIds = Array.from(new Set([...idsFromSelection, ...idsFromConfigs]));
 
           const exhibitsData: Array<{
             exhibitType: string;
@@ -4087,12 +4090,206 @@ Total Price: {{total price}}`;
               const exhibitDataResponse = await exhibitResponse.json();
               const allExhibits = exhibitDataResponse?.exhibits || [];
 
+              // Helper: extract base combination from exhibit (e.g. "slack-to-teams" from "slack-to-teams-include-basic")
+              const getBaseCombination = (ex: any): string => {
+                const primary = ex?.combinations?.[0];
+                if (!primary || primary === 'all') return '';
+                let base = String(primary).toLowerCase();
+                base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+                base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+                base = base.replace(/-+$/, '').trim();
+                return base;
+              };
+              // Helper: get plan from exhibit (Basic/Standard/Advanced)
+              const getPlanFromExhibit = (ex: any): string => {
+                const pt = (ex?.planType || '').toLowerCase();
+                if (pt === 'basic' || pt === 'standard' || pt === 'advanced') {
+                  return pt.charAt(0).toUpperCase() + pt.slice(1);
+                }
+                const name = (ex?.name || '').toLowerCase();
+                if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'Basic';
+                if (name.includes('standard') && !name.includes('advanced')) return 'Standard';
+                if (name.includes('advanced')) return 'Advanced';
+                return '';
+              };
+
+              const selectedPlanName = (calculation || safeCalculation)?.tier?.name ?? '';
+              const selectedPlanLower = selectedPlanName.toLowerCase();
+
+              console.log('🔍 Exhibit expansion debug:', {
+                selectedPlanName,
+                selectedPlanLower,
+                initialExhibitIds: exhibitIds.length,
+                totalExhibits: allExhibits.length
+              });
+
+              // Build set of selected (category, baseCombination) from ALL configured combinations
+              // Use messagingConfigs, contentConfigs, emailConfigs to get ALL selected combinations
+              // This ensures all combinations appear in the agreement, not just the ones in initial exhibitIds
+              const selectedCombinationKeys = new Set<string>();
+              
+              // First, add combinations from configured exhibits (most reliable source)
+              const allConfiguredExhibitIds = [
+                ...(cfgAny.messagingConfigs || []).map((c: any) => c?.exhibitId),
+                ...(cfgAny.contentConfigs || []).map((c: any) => c?.exhibitId),
+                ...(cfgAny.emailConfigs || []).map((c: any) => c?.exhibitId),
+              ].filter(Boolean);
+              
+              // Also include from selectedExhibits to catch any manually selected exhibits
+              const allSelectedIds = Array.from(new Set([...exhibitIds, ...allConfiguredExhibitIds]));
+              
+              for (const exhibitId of allSelectedIds) {
+                const ex = allExhibits.find((e: any) => e?._id?.toString() === exhibitId?.toString());
+                if (!ex) continue;
+                const category = (ex.category || 'content').toLowerCase();
+                const baseCombo = getBaseCombination(ex);
+                if (baseCombo) {
+                  const key = `${category}|${baseCombo}`;
+                  selectedCombinationKeys.add(key);
+                }
+              }
+              
+              // Also extract combination names directly from config exhibitName fields
+              // This is the PRIMARY source - configs represent the actual selected combinations
+              const configCombinationNames = new Set<string>();
+              
+              // Helper to normalize combination name (same logic as ConfigurationForm extractCombinationName)
+              const normalizeCombinationName = (name: string): string => {
+                let normalized = String(name).trim();
+                
+                // Remove common suffixes like:
+                // - " Standard Plan - Included Features"
+                // - " Advanced Plan - Included Features"
+                // - " Basic Plan - Not Included Features"
+                const patterns = [
+                  /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i,
+                  /\s+Plan\s*-\s*.*$/i,
+                  /\s+-\s*Included\s+Features$/i,
+                  /\s+-\s*Not\s+Included\s+Features$/i,
+                  /\s+-\s*.*$/i,
+                ];
+                
+                let cleaned = normalized;
+                for (const pattern of patterns) {
+                  cleaned = cleaned.replace(pattern, '');
+                }
+                
+                // Also handle dash-separated format (e.g., "slack-to-teams")
+                cleaned = cleaned.toLowerCase()
+                  .replace(/-(basic|standard|advanced|premium|enterprise)$/, '')
+                  .replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '')
+                  .replace(/-+$/, '')
+                  .trim();
+                
+                return cleaned || normalized.toLowerCase();
+              };
+              
+              // Extract from messagingConfigs
+              (cfgAny.messagingConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    configCombinationNames.add(`messaging|${normalized}`);
+                    console.log('📋 Added messaging combination from config:', c.exhibitName, '→', normalized);
+                  }
+                }
+              });
+              
+              // Extract from contentConfigs
+              (cfgAny.contentConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    configCombinationNames.add(`content|${normalized}`);
+                    console.log('📋 Added content combination from config:', c.exhibitName, '→', normalized);
+                  }
+                }
+              });
+              
+              // Extract from emailConfigs
+              (cfgAny.emailConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    configCombinationNames.add(`email|${normalized}`);
+                    console.log('📋 Added email combination from config:', c.exhibitName, '→', normalized);
+                  }
+                }
+              });
+              
+              // Merge config-based combination names into selectedCombinationKeys (these are the source of truth)
+              configCombinationNames.forEach(key => {
+                selectedCombinationKeys.add(key);
+                console.log('✅ Added combination key from configs:', key);
+              });
+
+              console.log('🔍 Selected combination keys (from all sources):', {
+                fromExhibitIds: Array.from(selectedCombinationKeys).filter(k => !configCombinationNames.has(k)),
+                fromConfigs: Array.from(configCombinationNames),
+                total: Array.from(selectedCombinationKeys),
+                count: selectedCombinationKeys.size,
+                messagingConfigs: (cfgAny.messagingConfigs || []).length,
+                contentConfigs: (cfgAny.contentConfigs || []).length,
+                emailConfigs: (cfgAny.emailConfigs || []).length
+              });
+
+              // Expand: for each selected (category, combination), add ALL exhibits that match that combination
+              // AND the selected plan (Basic/Standard/Advanced), including BOTH Include and Not Include variants.
+              // IMPORTANT: Build fresh set with only exhibits matching selected plan (don't keep exhibits from other plans).
+              if (selectedPlanName && selectedCombinationKeys.size > 0) {
+                const expandedIds = new Set<string>();
+                const matchedExhibits: Array<{ id: string; name: string; plan: string; combo: string }> = [];
+                const skippedExhibits: Array<{ name: string; reason: string }> = [];
+                
+                for (const ex of allExhibits) {
+                  const category = (ex.category || 'content').toLowerCase();
+                  const baseCombo = getBaseCombination(ex);
+                  if (!baseCombo) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: 'no base combination' });
+                    continue;
+                  }
+                  const key = `${category}|${baseCombo}`;
+                  if (!selectedCombinationKeys.has(key)) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `combination mismatch: ${key}` });
+                    continue; // Skip if not selected combination
+                  }
+                  const exhibitPlan = getPlanFromExhibit(ex);
+                  if (!exhibitPlan || exhibitPlan.toLowerCase() !== selectedPlanLower) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${selectedPlanLower}` });
+                    continue; // Skip if plan doesn't match
+                  }
+                  expandedIds.add(ex._id?.toString?.() ?? '');
+                  matchedExhibits.push({ id: ex._id?.toString?.() ?? '', name: ex.name || '', plan: exhibitPlan, combo: baseCombo });
+                }
+                
+                console.log('✅ Exhibit expansion results:', {
+                  matchedCount: matchedExhibits.length,
+                  matchedExhibits: matchedExhibits.map(e => `${e.name} (${e.plan})`),
+                  skippedCount: skippedExhibits.length,
+                  skippedSample: skippedExhibits.slice(0, 5)
+                });
+                
+                exhibitIds = Array.from(expandedIds);
+                // Store expanded IDs for document merging (includes both Include and Not Include)
+                expandedExhibitIdsForMerge = Array.from(expandedIds);
+              } else {
+                console.warn('⚠️ Exhibit expansion skipped:', {
+                  hasPlan: !!selectedPlanName,
+                  hasCombinations: selectedCombinationKeys.size > 0,
+                  selectedPlanName,
+                  combinationKeysCount: selectedCombinationKeys.size
+                });
+                // If expansion didn't run, use original exhibitIds for merging
+                expandedExhibitIdsForMerge = exhibitIds;
+              }
+
               type ExhibitRowGroup = {
                 category: string;
-                displayName: string; // cleaned name like "Slack to Teams"
+                displayName: string;
                 exhibit: any;
               };
 
+              // One row per exhibit (so both Include and Not Include appear when plan-based expansion is used)
               const byGroupKey = new Map<string, ExhibitRowGroup>();
 
               for (const exhibitId of exhibitIds) {
@@ -4100,36 +4297,12 @@ Total Price: {{total price}}`;
                 if (!exhibit) continue;
 
                 const category = (exhibit.category || 'content').toLowerCase();
-                const desc = formatExhibitDescription(exhibit, configuration);
-                const displayName = (desc.split('\n')[0] || exhibit.name || '').trim();
+                // Use full exhibit name so "Slack To Teams - Basic Include" and "Slack To Teams - Basic Not Include" both show
+                const displayName = (exhibit.name || '').trim();
                 if (!displayName) continue;
 
-                const key = `${category}|${displayName.toLowerCase()}`;
-
-                // Prefer an "Included" version if we see both Included/Not Included files for the same migration.
-                const exhibitNameLower = (exhibit.name || '').toLowerCase();
-                const isNotIncluded = exhibitNameLower.includes('not included') ||
-                  exhibitNameLower.includes('not include') ||
-                  exhibitNameLower.includes('notincluded') ||
-                  exhibitNameLower.includes('notinclude') ||
-                  exhibitNameLower.includes('not-include') ||
-                  exhibitNameLower.includes('not-included');
-
-                const existing = byGroupKey.get(key);
-                if (!existing) {
-                  byGroupKey.set(key, { category, displayName, exhibit });
-                } else {
-                  const existingNameLower = (existing.exhibit?.name || '').toLowerCase();
-                  const existingIsNotIncluded = existingNameLower.includes('not included') ||
-                    existingNameLower.includes('not include') ||
-                    existingNameLower.includes('notincluded') ||
-                    existingNameLower.includes('notinclude') ||
-                    existingNameLower.includes('not-include') ||
-                    existingNameLower.includes('not-included');
-                  if (existingIsNotIncluded && !isNotIncluded) {
-                    byGroupKey.set(key, { category, displayName, exhibit });
-                  }
-                }
+                const key = `${category}|${exhibitId}`;
+                byGroupKey.set(key, { category, displayName, exhibit });
               }
 
               // Sort in a stable order: messaging → content → email → others, then name
@@ -4151,6 +4324,7 @@ Total Price: {{total price}}`;
                 // Use per-combination config + breakdowns in Multi combination for accurate price/details.
                 const category = g.category;
                 const combinationName = g.displayName;
+                const shortCombinationName = (formatExhibitDescription(g.exhibit, configuration).split('\n')[0] || combinationName).trim();
 
                 let exhibitConfig: any = configuration;
                 if (configuration?.migrationType === 'Multi combination') {
@@ -4158,18 +4332,21 @@ Total Price: {{total price}}`;
                   if (category === 'messaging' || category === 'message') {
                     exhibitConfig =
                       (configuration as any).messagingConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
+                      (configuration as any).messagingConfigs?.find((c: any) => c.exhibitName === shortCombinationName) ||
                       (configuration as any).messagingConfigs?.find((c: any) => c.exhibitName === combinationName) ||
                       (configuration as any).messagingConfig ||
                       configuration;
                   } else if (category === 'content') {
                     exhibitConfig =
                       (configuration as any).contentConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
+                      (configuration as any).contentConfigs?.find((c: any) => c.exhibitName === shortCombinationName) ||
                       (configuration as any).contentConfigs?.find((c: any) => c.exhibitName === combinationName) ||
                       (configuration as any).contentConfig ||
                       configuration;
                   } else if (category === 'email') {
                     exhibitConfig =
                       (configuration as any).emailConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
+                      (configuration as any).emailConfigs?.find((c: any) => c.exhibitName === shortCombinationName) ||
                       (configuration as any).emailConfigs?.find((c: any) => c.exhibitName === combinationName) ||
                       (configuration as any).emailConfig ||
                       configuration;
@@ -4178,7 +4355,7 @@ Total Price: {{total price}}`;
 
                 let price = 0;
                 if (configuration?.migrationType === 'Multi combination') {
-                  const breakdownName = exhibitConfig?.exhibitName || combinationName;
+                  const breakdownName = exhibitConfig?.exhibitName || shortCombinationName;
                   if (category === 'messaging' || category === 'message') {
                     price =
                       (calculation || safeCalculation)?.messagingCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName)
@@ -4199,9 +4376,14 @@ Total Price: {{total price}}`;
                   price = calculateExhibitPrice(g.exhibit, configuration, calculation || safeCalculation, exhibitConfig);
                 }
 
+                const baseDesc = formatExhibitDescription(g.exhibit, configuration, exhibitConfig);
+                const descFirstLine = g.displayName;
+                const descRest = baseDesc.split('\n').slice(1).join('\n');
+                const exhibitDesc = descRest ? `${descFirstLine}\n${descRest}` : descFirstLine;
+
                 exhibitsData.push({
                   exhibitType: 'CloudFuze X-Change Data Migration',
-                  exhibitDesc: formatExhibitDescription(g.exhibit, configuration, exhibitConfig),
+                  exhibitDesc,
                   exhibitPlan: (calculation || safeCalculation)?.tier?.name || 'Standard',
                   exhibitPrice: formatCurrency(price),
                 });
@@ -4210,9 +4392,16 @@ Total Price: {{total price}}`;
           }
 
           (templateData as any).exhibits = exhibitsData;
+          
+          // If expansion didn't happen (no plan selected), use original exhibitIds for merging
+          if (expandedExhibitIdsForMerge.length === 0) {
+            expandedExhibitIdsForMerge = exhibitIds;
+          }
         } catch (e) {
           console.warn('⚠️ Unable to build exhibit rows for template, continuing without exhibit rows:', e);
           (templateData as any).exhibits = [];
+          // Fallback: use original selectedExhibits if expansion failed
+          expandedExhibitIdsForMerge = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
         }
         
         console.log('🔍 TEMPLATE DATA CREATED:');
@@ -4851,12 +5040,21 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.log('📄 Processed DOCX type:', result.processedDocx.type);
           
           // Merge selected exhibits ONLY for Multi combination migration type
-          const uniqueSelectedExhibitsForMerge = Array.from(
-            new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean))
-          );
+          // Use expanded exhibit IDs (includes both Include and Not Include variants based on plan selection)
+          const uniqueSelectedExhibitsForMerge = expandedExhibitIdsForMerge.length > 0
+            ? Array.from(new Set(expandedExhibitIdsForMerge.map((id) => (id ?? '').toString()).filter(Boolean)))
+            : Array.from(new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean)));
+          
+          console.log('📎 Using exhibit IDs for merge:', {
+            expandedCount: expandedExhibitIdsForMerge.length,
+            usingExpanded: expandedExhibitIdsForMerge.length > 0,
+            uniqueForMerge: uniqueSelectedExhibitsForMerge.length
+          });
+          
           if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
             console.log('📎 Fetching and merging selected exhibits for Multi combination...', {
               raw: selectedExhibits,
+              expanded: expandedExhibitIdsForMerge,
               unique: uniqueSelectedExhibitsForMerge
             });
             
