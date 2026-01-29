@@ -3716,6 +3716,7 @@ Total Price: {{total price}}`;
                     'onedrive-to-onedrive': 'ONEDRIVE TO ONEDRIVE',
                     'onedrive-to-google-mydrive': 'ONEDRIVE TO GOOGLE MYDRIVE',
                     'sharepoint-online-to-egnyte': 'SHAREPOINT ONLINE TO EGNYTE',
+                    'sharepoint-online-to-google-sharedrive': 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE',
                     'egnyte-to-google': 'EGNYTE TO GOOGLE',
                     'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
                     'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT',
