@@ -564,9 +564,13 @@ export class DocxTemplateProcessor {
                 .trim();
 
               // Standalone-only removals (must match the entire paragraph text)
+              //
+              // IMPORTANT:
+              // Many templates intentionally use "Valid for {{Duration_of_months}} Months" in the
+              // **Managed Migration Service** row. We must NOT remove that line.
+              //
+              // So we only remove the instance-specific variants here.
               if (/^instance valid for \d+(?: months?)?$/.test(text)) return '';
-              if (/^valid for \d+(?: months?)?$/.test(text)) return '';
-              if (/^valid for \d+ months? month$/.test(text)) return '';
               if (/^instance valid for \d+ months? month$/.test(text)) return '';
 
               return para;
