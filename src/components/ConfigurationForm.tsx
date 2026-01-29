@@ -534,7 +534,18 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           migrationType: parsed.migrationType || ('' as any),
           dataSizeGB: typeof parsed.dataSizeGB === 'number' ? parsed.dataSizeGB : 1,
           messages: typeof parsed.messages === 'number' ? parsed.messages : 1,
-          combination: parsed.combination || '' // Preserve previously selected combination
+          combination: parsed.combination || '', // Preserve previously selected combination
+          // Restore per-combination configs (messagingConfigs, contentConfigs, emailConfigs)
+          messagingConfigs: parsed.messagingConfigs || [],
+          contentConfigs: parsed.contentConfigs || [],
+          emailConfigs: parsed.emailConfigs || [],
+          // Restore legacy single configs for backward compatibility
+          messagingConfig: parsed.messagingConfig,
+          contentConfig: parsed.contentConfig,
+          emailConfig: parsed.emailConfig,
+          // Restore other fields
+          startDate: parsed.startDate,
+          endDate: parsed.endDate
         } as ConfigurationData;
         
         console.log('📋 === CRITICAL CHECK ===');
@@ -543,8 +554,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         console.log('📋 ========================');
         
         setConfig(merged);
-        onConfigurationChange(merged);
-        console.log('📋 Configuration set and parent notified');
+        // Use setTimeout to avoid React warning about updating parent during render
+        setTimeout(() => {
+          onConfigurationChange(merged);
+          console.log('📋 Configuration set and parent notified');
+        }, 0);
         
         // Force combination sync after config is loaded
         if (merged.combination && merged.combination !== '') {
@@ -553,6 +567,29 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         }
         
         console.log('📋 === CONFIGURATION LOADING END ===');
+        
+        // Also restore tier selections (plan selections) for each combination
+        try {
+          // First, try to restore from ConfigurationForm's own storage (by exhibitId)
+          const savedTiers = sessionStorage.getItem('cpq_combination_tiers');
+          if (savedTiers) {
+            const parsedTiers = JSON.parse(savedTiers);
+            if (parsedTiers.messagingTiers) {
+              setMessagingTiers(parsedTiers.messagingTiers);
+              console.log('📋 Restored messaging tiers (by exhibitId):', parsedTiers.messagingTiers);
+            }
+            if (parsedTiers.contentTiers) {
+              setContentTiers(parsedTiers.contentTiers);
+              console.log('📋 Restored content tiers (by exhibitId):', parsedTiers.contentTiers);
+            }
+            if (parsedTiers.emailTiers) {
+              setEmailTiers(parsedTiers.emailTiers);
+              console.log('📋 Restored email tiers (by exhibitId):', parsedTiers.emailTiers);
+            }
+          }
+        } catch (tierError) {
+          console.warn('📋 Could not restore tier selections:', tierError);
+        }
       } else {
         console.log('📋 No session configuration found, starting with empty project configuration fields');
       }
@@ -609,6 +646,103 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     // Mark that we've completed the initial load
     setIsInitialLoad(false);
   }, []); // Run only once on mount
+
+  // Also restore tier selections from PricingComparison (by combinationName) after config is loaded
+  // This handles cases where user selected plans in PricingComparison component
+  useEffect(() => {
+    if (config.migrationType === 'Multi combination' && (config.messagingConfigs?.length || config.contentConfigs?.length || config.emailConfigs?.length)) {
+      try {
+        const pricingTiers = sessionStorage.getItem('cpq_selected_tiers_per_combination');
+        if (pricingTiers) {
+          const parsedPricingTiers = JSON.parse(pricingTiers);
+          console.log('📋 Found PricingComparison tier selections:', parsedPricingTiers);
+          
+          // Map combinationName → exhibitId for messaging configs
+          if (config.messagingConfigs && config.messagingConfigs.length > 0) {
+            const messagingTiersMap: Record<string, PricingTier> = {};
+            config.messagingConfigs.forEach(cfg => {
+              const tierName = parsedPricingTiers[cfg.exhibitName];
+              if (tierName) {
+                const tier = PRICING_TIERS.find(t => t.name === tierName);
+                if (tier) {
+                  messagingTiersMap[cfg.exhibitId] = tier;
+                }
+              }
+            });
+            if (Object.keys(messagingTiersMap).length > 0) {
+              setMessagingTiers(prev => {
+                // Only update if not already set (preserve existing selections)
+                const updated = { ...prev };
+                Object.keys(messagingTiersMap).forEach(key => {
+                  if (!updated[key]) {
+                    updated[key] = messagingTiersMap[key];
+                  }
+                });
+                return updated;
+              });
+              console.log('📋 Mapped PricingComparison tiers to messaging exhibitIds:', messagingTiersMap);
+            }
+          }
+          
+          // Map combinationName → exhibitId for content configs
+          if (config.contentConfigs && config.contentConfigs.length > 0) {
+            const contentTiersMap: Record<string, PricingTier> = {};
+            config.contentConfigs.forEach(cfg => {
+              const tierName = parsedPricingTiers[cfg.exhibitName];
+              if (tierName) {
+                const tier = PRICING_TIERS.find(t => t.name === tierName);
+                if (tier) {
+                  contentTiersMap[cfg.exhibitId] = tier;
+                }
+              }
+            });
+            if (Object.keys(contentTiersMap).length > 0) {
+              setContentTiers(prev => {
+                // Only update if not already set (preserve existing selections)
+                const updated = { ...prev };
+                Object.keys(contentTiersMap).forEach(key => {
+                  if (!updated[key]) {
+                    updated[key] = contentTiersMap[key];
+                  }
+                });
+                return updated;
+              });
+              console.log('📋 Mapped PricingComparison tiers to content exhibitIds:', contentTiersMap);
+            }
+          }
+          
+          // Map combinationName → exhibitId for email configs
+          if (config.emailConfigs && config.emailConfigs.length > 0) {
+            const emailTiersMap: Record<string, PricingTier> = {};
+            config.emailConfigs.forEach(cfg => {
+              const tierName = parsedPricingTiers[cfg.exhibitName];
+              if (tierName) {
+                const tier = PRICING_TIERS.find(t => t.name === tierName);
+                if (tier) {
+                  emailTiersMap[cfg.exhibitId] = tier;
+                }
+              }
+            });
+            if (Object.keys(emailTiersMap).length > 0) {
+              setEmailTiers(prev => {
+                // Only update if not already set (preserve existing selections)
+                const updated = { ...prev };
+                Object.keys(emailTiersMap).forEach(key => {
+                  if (!updated[key]) {
+                    updated[key] = emailTiersMap[key];
+                  }
+                });
+                return updated;
+              });
+              console.log('📋 Mapped PricingComparison tiers to email exhibitIds:', emailTiersMap);
+            }
+          }
+        }
+      } catch (tierError) {
+        console.warn('📋 Could not map PricingComparison tier selections:', tierError);
+      }
+    }
+  }, [config.migrationType, config.messagingConfigs, config.contentConfigs, config.emailConfigs]);
 
   // Clear validation errors when dealData has valid values
   useEffect(() => {
@@ -1817,6 +1951,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                                     i === messagingIndex ? { ...cfg, numberOfUsers: numValue } : cfg
                                   ),
                                 };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
                                 onConfigurationChange(newConfig);
                                 return newConfig;
                               });
@@ -1850,6 +1990,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                                     i === messagingIndex ? { ...cfg, numberOfInstances: numValue } : cfg
                                   ),
                                 };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
                                 onConfigurationChange(newConfig);
                                 return newConfig;
                               });
@@ -1883,6 +2029,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                                     i === messagingIndex ? { ...cfg, messages: numValue } : cfg
                                   ),
                                 };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
                                 onConfigurationChange(newConfig);
                                 return newConfig;
                               });
@@ -1916,6 +2068,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                                     i === messagingIndex ? { ...cfg, instanceType: value } : cfg
                                   ),
                                 };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
                                 onConfigurationChange(newConfig);
                                 return newConfig;
                               });
@@ -1952,6 +2110,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                                     i === messagingIndex ? { ...cfg, duration: numValue } : cfg
                                   ),
                                 };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
                                 onConfigurationChange(newConfig);
                                 return newConfig;
                               });
@@ -1972,10 +2136,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           value={currentTier.name}
                           onChange={(e) => {
                             const selectedTier = PRICING_TIERS.find(t => t.name === e.target.value) || PRICING_TIERS[1];
-                            setMessagingTiers(prev => ({
-                              ...prev,
-                              [messagingCfg.exhibitId]: selectedTier
-                            }));
+                            setMessagingTiers(prev => {
+                              const updated = {
+                                ...prev,
+                                [messagingCfg.exhibitId]: selectedTier
+                              };
+                              // Save tier selections to sessionStorage
+                              try {
+                                const savedTiers = sessionStorage.getItem('cpq_combination_tiers');
+                                const tiersData = savedTiers ? JSON.parse(savedTiers) : {};
+                                tiersData.messagingTiers = updated;
+                                sessionStorage.setItem('cpq_combination_tiers', JSON.stringify(tiersData));
+                              } catch (e) {
+                                console.warn('Could not save messaging tiers:', e);
+                              }
+                              return updated;
+                            });
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
@@ -2099,12 +2275,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                  i === contentIndex ? { ...cfg, numberOfUsers: numValue } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                    i === contentIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                             placeholder="Enter number of users"
@@ -2128,12 +2314,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                  i === contentIndex ? { ...cfg, numberOfInstances: numValue } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                    i === contentIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                             placeholder="Enter number of instances"
@@ -2157,12 +2353,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                  i === contentIndex ? { ...cfg, dataSizeGB: numValue } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                    i === contentIndex ? { ...cfg, dataSizeGB: numValue } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                             placeholder="Enter data size in GB"
@@ -2186,12 +2392,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             value={contentCfg.instanceType || 'Small'}
                             onChange={(e) => {
                               const value = e.target.value as any;
-                              setConfig(prev => ({
-                                ...prev,
-                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                  i === contentIndex ? { ...cfg, instanceType: value } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                    i === contentIndex ? { ...cfg, instanceType: value } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                           >
@@ -2218,12 +2434,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
-                                  i === contentIndex ? { ...cfg, duration: numValue } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  contentConfigs: (prev.contentConfigs || []).map((cfg, i) =>
+                                    i === contentIndex ? { ...cfg, duration: numValue } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                             placeholder="Enter duration"
@@ -2241,10 +2467,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           value={currentTier.name}
                           onChange={(e) => {
                             const selectedTier = PRICING_TIERS.find(t => t.name === e.target.value) || PRICING_TIERS[1];
-                            setContentTiers(prev => ({
-                              ...prev,
-                              [contentCfg.exhibitId]: selectedTier
-                            }));
+                            setContentTiers(prev => {
+                              const updated = {
+                                ...prev,
+                                [contentCfg.exhibitId]: selectedTier
+                              };
+                              // Save tier selections to sessionStorage
+                              try {
+                                const savedTiers = sessionStorage.getItem('cpq_combination_tiers');
+                                const tiersData = savedTiers ? JSON.parse(savedTiers) : {};
+                                tiersData.contentTiers = updated;
+                                sessionStorage.setItem('cpq_combination_tiers', JSON.stringify(tiersData));
+                              } catch (e) {
+                                console.warn('Could not save content tiers:', e);
+                              }
+                              return updated;
+                            });
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         >
@@ -2370,12 +2608,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                  i === emailIndex ? { ...cfg, numberOfUsers: numValue } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                    i === emailIndex ? { ...cfg, numberOfUsers: numValue } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                             placeholder="Enter number of mailboxes"
@@ -2399,12 +2647,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                  i === emailIndex ? { ...cfg, numberOfInstances: numValue } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                    i === emailIndex ? { ...cfg, numberOfInstances: numValue } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                             placeholder="Enter number of instances"
@@ -2489,12 +2747,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = value === '' ? 0 : parseInt(value) || 0;
-                              setConfig(prev => ({
-                                ...prev,
-                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                  i === emailIndex ? { ...cfg, duration: numValue } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                    i === emailIndex ? { ...cfg, duration: numValue } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                             placeholder="Enter duration"
@@ -2512,10 +2780,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           value={currentTier.name}
                           onChange={(e) => {
                             const selectedTier = PRICING_TIERS.find(t => t.name === e.target.value) || PRICING_TIERS[1];
-                            setEmailTiers(prev => ({
-                              ...prev,
-                              [emailCfg.exhibitId]: selectedTier
-                            }));
+                            setEmailTiers(prev => {
+                              const updated = {
+                                ...prev,
+                                [emailCfg.exhibitId]: selectedTier
+                              };
+                              // Save tier selections to sessionStorage
+                              try {
+                                const savedTiers = sessionStorage.getItem('cpq_combination_tiers');
+                                const tiersData = savedTiers ? JSON.parse(savedTiers) : {};
+                                tiersData.emailTiers = updated;
+                                sessionStorage.setItem('cpq_combination_tiers', JSON.stringify(tiersData));
+                              } catch (e) {
+                                console.warn('Could not save email tiers:', e);
+                              }
+                              return updated;
+                            });
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                         >

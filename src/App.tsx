@@ -39,6 +39,7 @@ function App() {
   const [showPricing, setShowPricing] = useState(false);
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(PRICING_TIERS);
   const [selectedExhibits, setSelectedExhibits] = useState<string[]>([]);
+  const [isRestoringState, setIsRestoringState] = useState(false); // Flag to prevent clearing during restoration
 
   // Initialize Microsoft Clarity (production only) - Defer to improve LCP
   useEffect(() => {
@@ -1233,11 +1234,35 @@ function App() {
       console.log('🔄 Migration type changed, resetting pricing display');
       setShowPricing(false);
       
-      // Clear exhibits if switching away from Multi combination
-      if (config.migrationType !== 'Multi combination') {
-        console.log('🔄 Migration type changed from Multi combination, clearing exhibits');
+      // Don't clear exhibits if we're in the middle of restoring state
+      if (isRestoringState) {
+        console.log('🔄 State restoration in progress - skipping exhibit clearing during migration type change');
+        return;
+      }
+      
+      // Only clear exhibits if switching AWAY from Multi combination (not when staying in Multi combination)
+      // IMPORTANT: Don't clear if previous migrationType was empty/null (initial load or restoration)
+      const wasMultiCombination = configuration?.migrationType === 'Multi combination';
+      const isNowMultiCombination = config.migrationType === 'Multi combination';
+      // Check if migrationType is empty/null (can happen during initialization)
+      const wasEmpty = !configuration?.migrationType;
+      const isNowEmpty = !config.migrationType;
+      
+      if (wasMultiCombination && !isNowMultiCombination && !wasEmpty && !isNowEmpty) {
+        // Only clear if explicitly switching to a different migration type (not empty/null)
+        console.log('🔄 Migration type changed FROM Multi combination TO', config.migrationType, '- clearing exhibits');
         setSelectedExhibits([]);
         localStorage.removeItem('cpq_selected_exhibits');
+        sessionStorage.removeItem('cpq_selected_exhibits');
+      } else if (isNowMultiCombination) {
+        // When staying in Multi combination, preserve exhibits
+        console.log('🔄 Staying in Multi combination - preserving selected exhibits');
+      } else if (wasEmpty && isNowMultiCombination) {
+        // Initial load or restoration - don't clear exhibits
+        console.log('🔄 Restoring to Multi combination - preserving existing exhibits');
+      } else if (wasEmpty && isNowEmpty) {
+        // Configuration is being restored/initialized - don't clear exhibits yet
+        console.log('🔄 Configuration being initialized - preserving exhibits during restoration');
       }
     }
     
@@ -1284,25 +1309,54 @@ function App() {
       });
     }
     setSelectedExhibits(normalized);
+    // Save to both localStorage (for persistence across sessions) and sessionStorage (for current session)
     localStorage.setItem('cpq_selected_exhibits', JSON.stringify(normalized));
+    try {
+      sessionStorage.setItem('cpq_selected_exhibits', JSON.stringify(normalized));
+    } catch (e) {
+      console.warn('Could not save exhibits to sessionStorage:', e);
+    }
     console.log('📎 Exhibits selection changed:', { raw: exhibitIds, normalized });
   }, []);
 
-  // Restore exhibits from localStorage
+  // Restore exhibits from sessionStorage (preferred) or localStorage (fallback)
   useEffect(() => {
-    const saved = localStorage.getItem('cpq_selected_exhibits');
+    setIsRestoringState(true); // Set flag to prevent clearing during restoration
+    
+    // First try sessionStorage (for current session navigation)
+    let saved = sessionStorage.getItem('cpq_selected_exhibits');
+    let source = 'sessionStorage';
+    
+    // Fallback to localStorage if sessionStorage doesn't have it
+    if (!saved) {
+      saved = localStorage.getItem('cpq_selected_exhibits');
+      source = 'localStorage';
+    }
+    
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         const normalized = Array.from(
           new Set((Array.isArray(parsed) ? parsed : []).map((id) => (id ?? '').toString()).filter(Boolean))
         );
-        setSelectedExhibits(normalized);
-        console.log('♻️ Restored selected exhibits:', { parsed, normalized });
+        if (normalized.length > 0) {
+          setSelectedExhibits(normalized);
+          console.log(`♻️ Restored ${normalized.length} selected exhibits from ${source}:`, normalized);
+        } else {
+          console.log(`📎 No exhibits found in ${source}`);
+        }
       } catch (e) {
         console.error('Error parsing saved exhibits:', e);
       }
+    } else {
+      console.log('📎 No saved exhibits found in sessionStorage or localStorage');
     }
+    
+    // Clear restoration flag after a short delay to allow configuration to restore
+    setTimeout(() => {
+      setIsRestoringState(false);
+      console.log('✅ Restoration complete - clearing protection flag');
+    }, 2000);
   }, []);
 
   // Auto-select a template based on chosen tier and configuration
