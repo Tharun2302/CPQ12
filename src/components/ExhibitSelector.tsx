@@ -434,26 +434,36 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                   const someExhibitsSelected = item.exhibits.some(ex => selectedExhibits.includes(ex._id));
                   const hasRequired = item.exhibits.some(ex => ex.isRequired);
                   const fileCount = item.exhibits.length;
-                  const isSelected = isGroup ? allExhibitsSelected : selectedExhibits.includes(item.exhibits[0]._id);
+                  // For groups: treat as selected if ANY child is selected (since a "migration" is conceptually one selection).
+                  const isSelected = isGroup ? someExhibitsSelected : selectedExhibits.includes(item.exhibits[0]._id);
                   const isExpanded = isGroup ? expandedGroups.has(item.id) : false;
 
                   const handleClick = () => {
                     if (isGroup) {
-                      // Toggle all non-required exhibits in the group
+                      // IMPORTANT: A group represents ONE migration, but it may have multiple exhibit files
+                      // (Included/Not Included, plan variants, etc).
+                      // Clicking the group should select ONLY ONE preferred exhibit to avoid duplicate rows in the agreement.
                       const nonRequiredExhibits = item.exhibits.filter(ex => !ex.isRequired);
-                      if (allExhibitsSelected) {
-                        // Deselect all
-                        onExhibitsChange(selectedExhibits.filter(id => 
-                          !nonRequiredExhibits.some(ex => ex._id === id)
-                        ));
+                      const notIncludedRegex = /(not\s*included|not\s*include|notincluded|notinclude|not-include|not-included)/i;
+                      const includedRegex = /\bincluded\b/i;
+                      const byDisplayOrder = nonRequiredExhibits.slice().sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+                      // Prefer "Included" over "Not Included" when both exist.
+                      const preferred =
+                        byDisplayOrder.find(ex => includedRegex.test(ex.name || '') && !notIncludedRegex.test(ex.name || '')) ||
+                        byDisplayOrder.find(ex => !notIncludedRegex.test(ex.name || '')) ||
+                        byDisplayOrder[0];
+
+                      if (!preferred) return;
+
+                      if (someExhibitsSelected) {
+                        // Deselect all non-required exhibits in the group
+                        onExhibitsChange(
+                          selectedExhibits.filter(id => !nonRequiredExhibits.some(ex => ex._id === id))
+                        );
                       } else {
-                        // Select all
-                        const newIds = nonRequiredExhibits
-                          .filter(ex => !selectedExhibits.includes(ex._id))
-                          .map(ex => ex._id);
-                        if (newIds.length > 0) {
-                          onExhibitsChange([...selectedExhibits, ...newIds]);
-                        }
+                        // Select ONLY the preferred exhibit
+                        onExhibitsChange([...selectedExhibits, preferred._id]);
                       }
                     } else {
                       toggleExhibit(item.exhibits[0]._id, item.exhibits[0].isRequired);
@@ -505,9 +515,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                             isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
                           }`}
                         >
-                          {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                          {/* For groups, show an indeterminate mark when partially selected, check when fully selected */}
+                          {!isGroup && isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                          {isGroup && allExhibitsSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
                           {isGroup && someExhibitsSelected && !allExhibitsSelected && (
-                            <div className="w-1.5 h-1.5 bg-purple-500 rounded-sm" />
+                            <div className="w-2 h-0.5 bg-white rounded-sm" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
