@@ -3261,7 +3261,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
             </tr>
             <tr style="background: white;">
               <td style="border: 2px solid #ddd; padding: 16px; font-weight: 600; font-size: 15px; color: #333; vertical-align: top;">
-                Shared Server/Instance
+                Instance Type
               </td>
               <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top; white-space: pre-line;">
                 {{server_descriptions}}
