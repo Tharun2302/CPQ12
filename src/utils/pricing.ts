@@ -951,7 +951,7 @@ export function getInstanceTypeCost(instanceType: string): number {
     case 'Large':
       return 2000;
     case 'Extra Large':
-      return 3500;
+      return 5000;
     default:
       return 500;
   }
