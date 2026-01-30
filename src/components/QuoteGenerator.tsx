@@ -1003,8 +1003,48 @@ Quote ID: ${quoteData.id}
           const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
             cache: 'no-store'
           });
-          if (!fr.ok) return null;
+          if (!fr.ok) {
+            console.warn(`⚠️ Template fetch failed with status ${fr.status}: ${fr.statusText}`);
+            return null;
+          }
+          
+          // Check if the response is actually a file (not JSON error)
+          const contentType = fr.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errorData = await fr.json();
+            console.warn('⚠️ Backend returned JSON instead of file:', errorData);
+            return null;
+          }
+          
           const blob = await fr.blob();
+          
+          // Check for empty blob
+          if (blob.size === 0) {
+            console.warn('⚠️ Template file is empty, falling back to cached file');
+            return null;
+          }
+          
+          // Validate that the blob is actually a DOCX file (ZIP signature: PK)
+          const arrayBuffer = await blob.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          // Check for ZIP signature (0x50 0x4B = "PK")
+          if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
+            // Try to detect what we actually got
+            const textDecoder = new TextDecoder('utf-8');
+            const preview = textDecoder.decode(uint8Array.slice(0, Math.min(100, uint8Array.length)));
+            console.error('❌ Invalid file signature. File preview:', preview);
+            
+            if (preview.toLowerCase().includes('<html') || preview.toLowerCase().includes('<!doctype')) {
+              console.error('❌ Backend returned HTML instead of DOCX file');
+            } else if (preview.includes('{') && preview.includes('"error"')) {
+              console.error('❌ Backend returned JSON error:', preview);
+            }
+            
+            console.warn('⚠️ Fetched file is not a valid DOCX file, falling back to cached file');
+            return null;
+          }
+          
           return new File(
             [blob],
             selectedTemplate.fileName || selectedTemplate.file?.name || 'template.docx',
@@ -1023,6 +1063,20 @@ Quote ID: ${quoteData.id}
 
       const latestTemplateFile = await fetchLatestTemplateFile();
       const templateFileForEmail = latestTemplateFile || selectedTemplate?.file || null;
+
+      // Validate template file if we're going to use it
+      if (templateFileForEmail) {
+        console.log('📄 Using template file for email:', {
+          name: templateFileForEmail.name,
+          size: templateFileForEmail.size,
+          type: templateFileForEmail.type,
+          source: latestTemplateFile ? 'backend' : 'cached'
+        });
+
+        if (templateFileForEmail.size === 0) {
+          throw new Error('Template file is empty. Please re-select the template or contact support.');
+        }
+      }
 
       if (!agreementBlob && templateFileForEmail && templateFileForEmail.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
@@ -3011,8 +3065,48 @@ Total Price: {{total price}}`;
           const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
             cache: 'no-store'
           });
-          if (!fr.ok) return null;
+          if (!fr.ok) {
+            console.warn(`⚠️ Template fetch failed with status ${fr.status}: ${fr.statusText}`);
+            return null;
+          }
+          
+          // Check if the response is actually a file (not JSON error)
+          const contentType = fr.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errorData = await fr.json();
+            console.warn('⚠️ Backend returned JSON instead of file:', errorData);
+            return null;
+          }
+          
           const blob = await fr.blob();
+          
+          // Check for empty blob
+          if (blob.size === 0) {
+            console.warn('⚠️ Template file is empty, falling back to cached file');
+            return null;
+          }
+          
+          // Validate that the blob is actually a DOCX file (ZIP signature: PK)
+          const arrayBuffer = await blob.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          // Check for ZIP signature (0x50 0x4B = "PK")
+          if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
+            // Try to detect what we actually got
+            const textDecoder = new TextDecoder('utf-8');
+            const preview = textDecoder.decode(uint8Array.slice(0, Math.min(100, uint8Array.length)));
+            console.error('❌ Invalid file signature. File preview:', preview);
+            
+            if (preview.toLowerCase().includes('<html') || preview.toLowerCase().includes('<!doctype')) {
+              console.error('❌ Backend returned HTML instead of DOCX file');
+            } else if (preview.includes('{') && preview.includes('"error"')) {
+              console.error('❌ Backend returned JSON error:', preview);
+            }
+            
+            console.warn('⚠️ Fetched file is not a valid DOCX file, falling back to cached file');
+            return null;
+          }
+          
           return new File(
             [blob],
             selectedTemplate.fileName || selectedTemplate.file?.name || 'template.docx',
@@ -3031,6 +3125,23 @@ Total Price: {{total price}}`;
 
       const latestTemplateFile = await fetchLatestTemplateFile();
       const templateFileForAgreement = latestTemplateFile || selectedTemplate.file;
+
+      // Validate that we have a template file
+      if (!templateFileForAgreement) {
+        throw new Error('No template file available. Please select a template and try again.');
+      }
+
+      // Validate that the template file is not empty
+      if (templateFileForAgreement.size === 0) {
+        throw new Error('Template file is empty. Please re-select the template or contact support.');
+      }
+
+      console.log('📄 Using template file:', {
+        name: templateFileForAgreement.name,
+        size: templateFileForAgreement.size,
+        type: templateFileForAgreement.type,
+        source: latestTemplateFile ? 'backend' : 'cached'
+      });
 
       // Process based on template file type - DOCX is now the primary method
       if (templateFileForAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
@@ -5424,6 +5535,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('📄 Processed document type:', processedDocument.type);
 
         // For DOCX, store the original before converting to PDF for preview
+        let isPdfConversionSuccessful = false;
         if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           // Store original DOCX for Word downloads
           setOriginalDocxAgreement(processedDocument);
@@ -5434,13 +5546,22 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             const { templateService } = await import('../utils/templateService');
             const pdfBlob = await templateService.convertDocxToPdf(processedDocument);
             console.log('✅ DOCX converted to PDF for preview. Size:', pdfBlob.size, 'bytes');
-            processedDocument = pdfBlob;
+            
+            // Verify the PDF is not empty
+            if (pdfBlob && pdfBlob.size > 0) {
+              processedDocument = pdfBlob;
+              isPdfConversionSuccessful = true;
+            } else {
+              console.warn('⚠️ PDF blob is empty, will render DOCX directly');
+            }
           } catch (error) {
-            console.error('❌ Failed to convert DOCX to PDF for preview. Falling back to original blob.', error);
+            console.error('❌ Failed to convert DOCX to PDF for preview. Will render DOCX directly.', error);
+            isPdfConversionSuccessful = false;
           }
         } else {
           // For PDF templates, clear the original DOCX since we don't have one
           setOriginalDocxAgreement(null);
+          isPdfConversionSuccessful = true; // PDF templates don't need conversion
         }
 
         if (!processedDocument) {
@@ -5449,16 +5570,20 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         }
         const processedDocumentBlob = processedDocument;
 
-        // Store the (now PDF) document for preview and PDF downloads
+        // Store the document for preview and downloads
         setProcessedAgreement(processedDocumentBlob);
 
-        // Always preview the same blob that will be downloaded
-        const previewUrl = URL.createObjectURL(processedDocumentBlob);
-        setPreviewUrl(previewUrl);
-        setShowInlinePreview(true);
-        setShowAgreementPreview(true);
-        console.log('🔗 Preview URL created for processed agreement (PDF-based):', previewUrl);
-        return;
+        // If PDF conversion succeeded, show PDF in iframe
+        if (isPdfConversionSuccessful && processedDocumentBlob.type === 'application/pdf') {
+          const previewUrl = URL.createObjectURL(processedDocumentBlob);
+          setPreviewUrl(previewUrl);
+          setShowInlinePreview(true);
+          setShowAgreementPreview(true);
+          console.log('🔗 Preview URL created for PDF:', previewUrl);
+          return;
+        }
+        
+        // Otherwise, render DOCX directly (don't return early)
         
         // For DOCX files render with docx-preview to match exact document formatting
         if (processedDocumentBlob.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {

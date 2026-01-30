@@ -114,6 +114,40 @@ export class DocxTemplateProcessor {
   }
 
   /**
+   * Helper function to access ZIP files with both path separators (cross-platform)
+   * Windows DOCX files may use backslashes, Unix uses forward slashes
+   */
+  private getZipFile(zip: any, path: string): any {
+    // Try forward slash first (standard)
+    let file = zip.files[path];
+    if (file) return file;
+    
+    // Try backslash (Windows)
+    const backslashPath = path.replace(/\//g, '\\');
+    file = zip.files[backslashPath];
+    if (file) return file;
+    
+    // Not found
+    return null;
+  }
+
+  /**
+   * Helper function to read ZIP file text with both path separators
+   */
+  private getZipFileText(zip: any, path: string): string {
+    const file = this.getZipFile(zip, path);
+    return file ? file.asText() : '';
+  }
+
+  /**
+   * Helper function to write to ZIP file (always use forward slash for writing)
+   */
+  private setZipFile(zip: any, path: string, content: string): void {
+    // Always use forward slash for writing (PizZip normalizes internally)
+    zip.file(path, content);
+  }
+
+  /**
    * Static method for easy access
    */
   public static async processDocxTemplate(
@@ -156,7 +190,20 @@ export class DocxTemplateProcessor {
       // Check if the file starts with ZIP signature (PK)
       const uint8Array = new Uint8Array(templateBytes);
       if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
-        throw new Error('Template file is not a valid ZIP/DOCX file (missing ZIP signature)');
+        // Log the first few bytes to help diagnose the issue
+        const firstBytes = Array.from(uint8Array.slice(0, Math.min(20, uint8Array.length)))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(' ');
+        console.error('❌ File signature check failed. First bytes:', firstBytes);
+        
+        // Check if it looks like HTML (common when backend returns an error page)
+        const textDecoder = new TextDecoder('utf-8');
+        const firstChars = textDecoder.decode(uint8Array.slice(0, Math.min(100, uint8Array.length)));
+        if (firstChars.toLowerCase().includes('<html') || firstChars.toLowerCase().includes('<!doctype')) {
+          throw new Error('Template file appears to be an HTML page, not a DOCX file. The backend may have returned an error page instead of the file.');
+        }
+        
+        throw new Error(`Template file is not a valid ZIP/DOCX file (missing ZIP signature). File may be corrupted or not a DOCX file.`);
       }
       
       let zip;
@@ -165,16 +212,32 @@ export class DocxTemplateProcessor {
         console.log('📦 ZIP file created, files:', Object.keys(zip.files));
       } catch (zipError) {
         console.error('❌ PizZip creation failed:', zipError);
-        throw new Error(`Failed to parse DOCX file as ZIP: ${zipError instanceof Error ? zipError.message : 'Unknown error'}`);
+        
+        // Try to detect what kind of file this is
+        const textDecoder = new TextDecoder('utf-8');
+        const filePreview = textDecoder.decode(uint8Array.slice(0, Math.min(200, uint8Array.length)));
+        console.error('❌ File preview:', filePreview);
+        
+        throw new Error(`Failed to parse DOCX file as ZIP: ${zipError instanceof Error ? zipError.message : 'Unknown error'}. The file may be corrupted or not a valid DOCX file.`);
       }
       
       // Check if this is a valid DOCX file
-      if (!zip.files['word/document.xml']) {
-        throw new Error('Invalid DOCX file: missing word/document.xml');
+      // Note: Handle both forward slashes (/) and backslashes (\) for cross-platform compatibility
+      const hasDocumentXml = zip.files['word/document.xml'] || zip.files['word\\document.xml'];
+      
+      if (!hasDocumentXml) {
+        const availableFiles = Object.keys(zip.files).join(', ');
+        console.error('❌ DOCX validation failed. Available files in ZIP:', availableFiles);
+        throw new Error(`Invalid DOCX file: missing word/document.xml. Available files: ${availableFiles || 'none'}. This may be a corrupted DOCX file or a different type of ZIP archive.`);
       }
       
-      // Check if the document contains template placeholders
-      const documentXml = zip.files['word/document.xml'].asText();
+      console.log('✅ Found word/document.xml in DOCX archive');
+      
+      // Get the correct document.xml file (handle both path separators for cross-platform compatibility)
+      const documentXml = this.getZipFileText(zip, 'word/document.xml');
+      if (!documentXml) {
+        throw new Error('Could not access word/document.xml after validation');
+      }
       const hasPlaceholders = documentXml.includes('{{') && documentXml.includes('}}');
       
       console.log('🔍 Document contains placeholders:', hasPlaceholders);
@@ -243,10 +306,11 @@ export class DocxTemplateProcessor {
       // This causes Docxtemplater to throw "Unclosed tag" errors. We fix such
       // cases by inserting the missing brace and a space.
       try {
-        const originalXml = zip.files['word/document.xml'].asText();
+        const originalXml = documentXml;
         const fixedXml = originalXml.replace(/\{\{([^}]+)\}([A-Za-z])/g, '{{$1}} $2');
         if (fixedXml !== originalXml) {
-          zip.file('word/document.xml', fixedXml);
+          // Use helper function for cross-platform compatibility
+          this.setZipFile(zip, 'word/document.xml', fixedXml);
           console.log('🩹 Auto-fixed malformed placeholders in document.xml (missing \"}\" before text).');
         }
       } catch (autoFixErr) {
@@ -257,8 +321,37 @@ export class DocxTemplateProcessor {
       // The fallback will be triggered if processing fails
       console.log('🔄 Attempting to process template with Docxtemplater...');
       
-      // Create docxtemplater instance with custom delimiters to match template format
-      const doc = new Docxtemplater(zip, {
+      // CRITICAL FIX: Normalize all ZIP paths to forward slashes for cross-platform compatibility
+      // Windows DOCX files may have backslash paths which confuse Docxtemplater
+      const normalizedZip = new PizZip();
+      Object.keys(zip.files).forEach((path) => {
+        const normalizedPath = path.replace(/\\/g, '/');
+        const file = zip.files[path];
+        if (file.dir) {
+          normalizedZip.folder(normalizedPath);
+          return;
+        }
+
+        // In the browser, PizZip file objects typically expose `asUint8Array()` or `asBinary()`.
+        // Be defensive: some builds won't have `asNodeBuffer`.
+        const content =
+          typeof file.asUint8Array === 'function'
+            ? file.asUint8Array()
+            : typeof file.asBinary === 'function'
+              ? file.asBinary()
+              : typeof file.asText === 'function'
+                ? file.asText()
+                : '';
+
+        // Mark binary when content is binary-like to avoid corruption (esp. images).
+        const isBinary = typeof content !== 'string';
+        normalizedZip.file(normalizedPath, content as any, { binary: isBinary });
+      });
+      
+      console.log('✅ ZIP paths normalized for Docxtemplater. Files:', Object.keys(normalizedZip.files).slice(0, 10));
+      
+      // Create docxtemplater instance with normalized ZIP and custom delimiters
+      const doc = new Docxtemplater(normalizedZip, {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: {
@@ -487,7 +580,7 @@ export class DocxTemplateProcessor {
           if (!discountApplied) {
             const zipAfter = doc.getZip();
             const xmlPath = 'word/document.xml';
-            const originalXml = zipAfter.file(xmlPath)?.asText() || '';
+            const originalXml = this.getZipFileText(zipAfter, xmlPath);
 
             // Helper to strip any XML tags to check human text
             const stripTags = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -514,16 +607,16 @@ export class DocxTemplateProcessor {
             });
 
             if (cleanedXml !== originalXml) {
-              zipAfter.file(xmlPath, cleanedXml);
+              this.setZipFile(zipAfter, xmlPath, cleanedXml);
               console.log('🧹 Removed Discount/empty rows because discount is not applied');
             }
 
             // Fallback: if any isolated "Discount" text remains (not in a table), blank it
-            let fallbackXml = zipAfter.file(xmlPath)?.asText() || cleanedXml;
+            let fallbackXml = this.getZipFileText(zipAfter, xmlPath) || cleanedXml;
             const discountTextRun = /<w:t[^>]*>\s*Discount\s*<\/w:t>/gi;
             if (discountTextRun.test(fallbackXml)) {
               fallbackXml = fallbackXml.replace(discountTextRun, '<w:t></w:t>');
-              zipAfter.file(xmlPath, fallbackXml);
+              this.setZipFile(zipAfter, xmlPath, fallbackXml);
               console.log('🧹 Fallback applied: stripped remaining "Discount" text runs');
             }
           }
@@ -546,7 +639,7 @@ export class DocxTemplateProcessor {
         try {
           const zipAfter = doc.getZip();
           const xmlPath = 'word/document.xml';
-          const originalXml = zipAfter.file(xmlPath)?.asText() || '';
+          const originalXml = this.getZipFileText(zipAfter, xmlPath);
           if (originalXml) {
             const stripTagsLower = (xml: string) =>
               xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -577,7 +670,7 @@ export class DocxTemplateProcessor {
             });
 
             if (updatedXml !== originalXml) {
-              zipAfter.file(xmlPath, updatedXml);
+              this.setZipFile(zipAfter, xmlPath, updatedXml);
               console.log('🧹 Removed extra template validity artifacts (standalone only)');
             }
           }
@@ -590,7 +683,7 @@ export class DocxTemplateProcessor {
         try {
           const zipAfter = doc.getZip();
           const xmlPath = 'word/document.xml';
-          const originalXml = zipAfter.file(xmlPath)?.asText() || '';
+          const originalXml = this.getZipFileText(zipAfter, xmlPath);
           if (originalXml) {
             const stripTags = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
             const rowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
@@ -604,7 +697,7 @@ export class DocxTemplateProcessor {
               return row;
             });
             if (cleanedXml !== originalXml) {
-              zipAfter.file(xmlPath, cleanedXml);
+              this.setZipFile(zipAfter, xmlPath, cleanedXml);
               console.log('🧹 Removed fully empty table rows from document.xml');
             }
           }
@@ -613,7 +706,7 @@ export class DocxTemplateProcessor {
         }
         
         // CRITICAL: Log the final processed document to verify tokens were replaced
-        const finalDocumentXml = zip.file('word/document.xml')?.asText() || '';
+        const finalDocumentXml = this.getZipFileText(doc.getZip(), 'word/document.xml');
         const finalCleanText = this.extractTextFromDocxXml(finalDocumentXml);
         console.log('🔍 FINAL DOCUMENT TEXT (first 1000 chars):', finalCleanText.substring(0, 1000));
         
@@ -629,7 +722,7 @@ export class DocxTemplateProcessor {
           console.log('🔧 Attempting to remove "undefined" strings from document...');
           const zipAfter = doc.getZip();
           const xmlPath = 'word/document.xml';
-          let documentXml = zipAfter.file(xmlPath)?.asText() || '';
+          let documentXml = this.getZipFileText(zipAfter, xmlPath);
           
           // Replace "undefined" with empty string or appropriate fallback
           // This handles cases where tokens weren't replaced properly
@@ -640,7 +733,7 @@ export class DocxTemplateProcessor {
           documentXml = documentXml.replace(/\{\{[^}]+\}\}/g, '');
           
           if (documentXml !== originalXml) {
-            zipAfter.file(xmlPath, documentXml);
+            this.setZipFile(zipAfter, xmlPath, documentXml);
             console.log('✅ Removed "undefined" strings and unreplaced tokens from document');
           }
           
@@ -693,7 +786,7 @@ export class DocxTemplateProcessor {
       // CRITICAL: Final cleanup - remove any "undefined" strings from the document before generating
       const finalZip = doc.getZip();
       const finalXmlPath = 'word/document.xml';
-      let finalDocumentXml = finalZip.file(finalXmlPath)?.asText() || '';
+      let finalDocumentXml = this.getZipFileText(finalZip, finalXmlPath);
       const originalFinalXml = finalDocumentXml;
       
       // Remove "undefined" strings (case-insensitive)
@@ -765,7 +858,7 @@ export class DocxTemplateProcessor {
       }
       
       if (finalDocumentXml !== originalFinalXml) {
-        finalZip.file(finalXmlPath, finalDocumentXml);
+        this.setZipFile(finalZip, finalXmlPath, finalDocumentXml);
         console.log('✅ Final cleanup: Removed "undefined" strings and unreplaced tokens');
       }
       
@@ -793,7 +886,7 @@ export class DocxTemplateProcessor {
       console.log('🔍 VERIFYING TOKEN REPLACEMENT IN FINAL DOCUMENT:');
       try {
         let finalZip = new PizZip(bufferArrayBuffer);
-        let finalDocumentXml = finalZip.file('word/document.xml')?.asText();
+        let finalDocumentXml = this.getZipFileText(finalZip, 'word/document.xml');
         if (finalDocumentXml) {
           const finalCleanText = this.extractTextFromDocxXml(finalDocumentXml);
           console.log('🔍 Final document text preview:', finalCleanText.substring(0, 500) + '...');
@@ -810,7 +903,7 @@ export class DocxTemplateProcessor {
             cleanedXml = cleanedXml.replace(/\{\{[^}]+\}\}/g, '');
             
             if (cleanedXml !== finalDocumentXml) {
-              finalZip.file('word/document.xml', cleanedXml);
+              this.setZipFile(finalZip, 'word/document.xml', cleanedXml);
               // Regenerate buffer with cleaned XML
               buffer = finalZip.generate({
                 type: 'blob',
@@ -905,12 +998,12 @@ export class DocxTemplateProcessor {
 
             if (modifiedXml !== finalDocumentXml) {
               console.log('🧹 Final cleanup: removed Discount/N/A blocks in post-pack stage');
-              finalZip.file('word/document.xml', modifiedXml);
+              this.setZipFile(finalZip, 'word/document.xml', modifiedXml);
               // Also clean headers and footers if they contain specific discount content
               Object.keys(finalZip.files).forEach((fileName) => {
-                if (/^word\/(header\d+\.xml|footer\d+\.xml)$/i.test(fileName)) {
+                if (/^word\/(header\d+\.xml|footer\d+\.xml)$/i.test(fileName) || /^word\\(header\d+\.xml|footer\d+\.xml)$/i.test(fileName)) {
                   try {
-                    const xml = finalZip.file(fileName)?.asText() || '';
+                    const xml = this.getZipFileText(finalZip, fileName);
                     if (!xml) return;
                     
                     // Use the same precise cleanup for headers/footers
@@ -943,7 +1036,7 @@ export class DocxTemplateProcessor {
                     });
                     
                     if (cleaned !== xml) {
-                      finalZip.file(fileName, cleaned);
+                      this.setZipFile(finalZip, fileName, cleaned);
                       console.log(`🧹 Cleaned header/footer: ${fileName}`);
                     }
                   } catch {}
@@ -1960,7 +2053,7 @@ Quote ID: ${templateData.quoteId}
       const zip = new PizZip(templateBytes);
       
       // Extract document.xml
-      const documentXml = zip.file('word/document.xml')?.asText();
+      const documentXml = this.getZipFileText(zip, 'word/document.xml');
       if (!documentXml) {
         throw new Error('Could not extract document content');
       }

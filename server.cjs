@@ -1876,6 +1876,16 @@ app.get('/api/templates/:id/file', async (req, res) => {
       contentType = 'application/pdf';
     }
     
+    // Check if template has fileData
+    if (!template.fileData) {
+      console.error('❌ Template has no fileData:', template.id);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Template file data is missing',
+        message: `Template ${template.id} exists but has no file data. Please re-upload the template.`
+      });
+    }
+    
     // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
     let fileBuffer;
     if (Buffer.isBuffer(template.fileData)) {
@@ -1887,8 +1897,42 @@ app.get('/api/templates/:id/file', async (req, res) => {
       // Base64 string
       fileBuffer = Buffer.from(template.fileData, 'base64');
     } else {
+      console.error('❌ Unsupported fileData format for template:', template.id, typeof template.fileData);
       throw new Error('Unsupported template fileData format');
     }
+    
+    // Validate that the buffer is not empty
+    if (fileBuffer.length === 0) {
+      console.error('❌ Template file buffer is empty:', template.id);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Template file is empty',
+        message: `Template ${template.id} file data is empty. Please re-upload the template.`
+      });
+    }
+    
+    // Validate DOCX signature for DOCX files (ZIP signature: PK)
+    if (contentType.includes('wordprocessingml')) {
+      if (fileBuffer.length < 4 || fileBuffer[0] !== 0x50 || fileBuffer[1] !== 0x4B) {
+        console.error('❌ Template file is not a valid DOCX (missing ZIP signature):', template.id);
+        // Log first bytes for debugging
+        const firstBytes = fileBuffer.slice(0, Math.min(20, fileBuffer.length)).toString('hex');
+        console.error('   First bytes:', firstBytes);
+        
+        return res.status(500).json({ 
+          success: false, 
+          error: 'Template file is corrupted',
+          message: `Template ${template.id} file is not a valid DOCX file (missing ZIP signature). Please re-upload the template.`
+        });
+      }
+    }
+    
+    console.log('✅ Sending template file:', {
+      id: template.id,
+      fileName: template.fileName,
+      size: fileBuffer.length,
+      contentType
+    });
     
     res.set({
       'Content-Type': contentType,
@@ -2871,7 +2915,6 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       const fs = require('fs');
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpq-'));
       const inputPath = path.join(tmpDir, `${uuidv4()}.docx`);
-      const outputPath = path.join(tmpDir, `${uuidv4()}.pdf`);
       
       // Write DOCX to temp file
       fs.writeFileSync(inputPath, req.file.buffer);
@@ -2881,14 +2924,39 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       const isWindows = os.platform() === 'win32';
       const sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
       console.log('📄 Using LibreOffice:', sofficeCmd);
+      const sofficeCwd = isWindows ? path.dirname(sofficeCmd) : process.cwd();
+
+      // Use an isolated LibreOffice profile to avoid "profile locked"/corruption issues
+      const loProfileDir = path.join(tmpDir, 'lo-profile');
+      try { fs.mkdirSync(loProfileDir, { recursive: true }); } catch {}
+      const toFileUri = (p) => {
+        const norm = p.replace(/\\/g, '/');
+        return norm.match(/^[A-Za-z]:\//) ? `file:///${norm}` : `file://${norm}`;
+      };
+      const userInstallationArg = `-env:UserInstallation=${toFileUri(loProfileDir)}`;
       
       const { spawn } = require('child_process');
-      const conversion = spawn(sofficeCmd, [
+      const conversionArgs = [
         '--headless',
+        '--nologo',
+        '--nofirststartwizard',
+        '--norestore',
+        userInstallationArg,
         '--convert-to', 'pdf',
         '--outdir', tmpDir,
         inputPath
-      ], { stdio: 'pipe' });
+      ];
+      console.log('📄 LibreOffice args:', conversionArgs);
+
+      const conversion = spawn(sofficeCmd, conversionArgs, {
+        stdio: 'pipe',
+        cwd: sofficeCwd,
+        env: {
+          ...process.env,
+          // Help LibreOffice find its bundled DLLs on Windows when launched from Node
+          PATH: isWindows ? `${sofficeCwd};${process.env.PATH || ''}` : (process.env.PATH || '')
+        }
+      });
       
       let stdout = '';
       let stderr = '';
@@ -2922,6 +2990,7 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
           // Cleanup
           try { fs.unlinkSync(inputPath); } catch {}
           try { fs.unlinkSync(expectedPdfPath); } catch {}
+          try { fs.rmSync(loProfileDir, { recursive: true, force: true }); } catch {}
           try { fs.rmdirSync(tmpDir); } catch {}
           
           resolve(pdfBuffer);
