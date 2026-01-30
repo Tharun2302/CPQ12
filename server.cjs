@@ -2147,6 +2147,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       category,
       combinations,
       planType = '',
+      includeType = '',
       displayOrder,
       keywords,
       isRequired = false
@@ -2175,6 +2176,12 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
         success: false, 
         error: `Invalid plan type: ${planType}. Must be one of: Basic, Standard, or Advanced.` 
       });
+    }
+
+    // Include type: included | notincluded (from upload selection)
+    let finalIncludeType = (includeType && String(includeType).trim().toLowerCase()) || '';
+    if (finalIncludeType && finalIncludeType !== 'included' && finalIncludeType !== 'notincluded') {
+      return res.status(400).json({ success: false, error: 'includeType must be "included" or "notincluded".' });
     }
 
     // Parse combinations FIRST (needed for name generation)
@@ -2227,6 +2234,17 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
     // Convert file to base64
     const fileData = req.file.buffer.toString('base64');
 
+    // Derive includeType from combination if not provided (for backward compatibility)
+    if (!finalIncludeType && combinationsArray.length > 0 && combinationsArray[0] !== 'all') {
+      const combo = String(combinationsArray[0]).toLowerCase();
+      if (combo.includes('notincluded') || combo.includes('not-include') || combo.includes('not include')) {
+        finalIncludeType = 'notincluded';
+      } else {
+        finalIncludeType = 'included';
+      }
+    }
+    if (!finalIncludeType) finalIncludeType = 'included';
+
     // Create exhibit document
     const exhibitDoc = {
       name: finalName,
@@ -2238,6 +2256,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       combinations: combinationsArray.length > 0 ? combinationsArray : ['all'],
       category: category.toLowerCase(),
       planType: planType ? planType.toLowerCase() : '', // Store plan type (basic, standard, advanced)
+      includeType: finalIncludeType, // included | notincluded (from upload selection)
       displayOrder: displayOrder ? parseInt(displayOrder) : 999,
       keywords: keywordsArray,
       isRequired: isRequired === true || isRequired === 'true',
@@ -2423,6 +2442,13 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
         });
       }
       updateData.planType = planTypeValue;
+    }
+    if (req.body.includeType !== undefined) {
+      const includeTypeValue = (req.body.includeType && String(req.body.includeType).trim().toLowerCase()) || '';
+      if (includeTypeValue && includeTypeValue !== 'included' && includeTypeValue !== 'notincluded') {
+        return res.status(400).json({ success: false, error: 'includeType must be "included" or "notincluded".' });
+      }
+      updateData.includeType = includeTypeValue || (existing.includeType || 'included');
     }
     if (req.body.displayOrder) updateData.displayOrder = parseInt(req.body.displayOrder);
     if (req.body.isRequired !== undefined) {
@@ -6025,6 +6051,288 @@ app.put('/api/migration-lifecycle/workflows/:id/qa', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('❌ Error updating QA status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// Team Approval Settings API (MongoDB)
+// ============================================
+
+// GET /api/team-approval-settings - Get all team approval settings
+app.get('/api/team-approval-settings', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const settingsCollection = db.collection('team_approval_settings');
+    
+    // Get settings (there should be only one document)
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+    
+    if (settings) {
+      // Remove MongoDB _id and return the settings
+      const { _id, ...settingsData } = settings;
+      return res.json({ success: true, data: settingsData });
+    } else {
+      // Return default settings if none exist
+      const defaultSettings = {
+        teamLeads: {
+          SMB: 'chitradip.saha@cloudfuze.com',
+          AM: 'joy.prakash@cloudfuze.com',
+          ENT: 'anthony@cloudfuze.com',
+          DEV: 'anushreddydasari@gmail.com',
+          DEV2: 'raya.durai@cloudfuze.com',
+        },
+        additionalRecipients: {
+          SMB: [],
+          AM: [],
+          ENT: [],
+          DEV: [],
+          DEV2: [],
+        },
+        authorizedSenders: {
+          SMB: [],
+          AM: [],
+          ENT: [],
+          DEV: [],
+          DEV2: [],
+        }
+      };
+      return res.json({ success: true, data: defaultSettings });
+    }
+  } catch (error) {
+    console.error('❌ Error fetching team approval settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/team-approval-settings - Update team approval settings
+app.put('/api/team-approval-settings', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const settingsCollection = db.collection('team_approval_settings');
+    const newSettings = req.body;
+
+    // Validate structure
+    if (!newSettings.teamLeads || !newSettings.authorizedSenders) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid settings structure. Must include teamLeads and authorizedSenders.' 
+      });
+    }
+
+    // Upsert (update or insert) the settings document
+    await settingsCollection.updateOne(
+      { _id: 'main' },
+      { 
+        $set: {
+          ...newSettings,
+          updatedAt: new Date().toISOString()
+        }
+      },
+      { upsert: true }
+    );
+
+    console.log('✅ Team approval settings updated in MongoDB');
+    res.json({ success: true, message: 'Settings saved successfully' });
+  } catch (error) {
+    console.error('❌ Error updating team approval settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/team-approval-settings/team/:teamName - Get settings for a specific team
+app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const teamName = req.params.teamName.toUpperCase();
+    const settingsCollection = db.collection('team_approval_settings');
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+
+    if (settings) {
+      const teamSettings = {
+        teamLead: settings.teamLeads?.[teamName] || '',
+        authorizedSenders: settings.authorizedSenders?.[teamName] || [],
+        additionalRecipients: settings.additionalRecipients?.[teamName] || []
+      };
+      return res.json({ success: true, data: teamSettings });
+    } else {
+      return res.json({ success: true, data: { teamLead: '', authorizedSenders: [], additionalRecipients: [] } });
+    }
+  } catch (error) {
+    console.error('❌ Error fetching team settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// Authorization Request API
+// ============================================
+
+// POST /api/send-authorization-request - Send authorization request email to team lead and save to MongoDB
+app.post('/api/send-authorization-request', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        error: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { requesterEmail, requesterName, teamLeadEmail, teamName, message } = req.body;
+
+    if (!requesterEmail || !teamLeadEmail || !teamName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: requesterEmail, teamLeadEmail, teamName'
+      });
+    }
+
+    // Save authorization request to MongoDB
+    if (db) {
+      try {
+        const requestsCollection = db.collection('authorization_requests');
+        const requestDoc = {
+          requesterEmail,
+          requesterName: requesterName || requesterEmail.split('@')[0],
+          teamLeadEmail,
+          teamName: teamName.toUpperCase(),
+          message: message || '',
+          status: 'pending', // pending, approved, rejected
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        await requestsCollection.insertOne(requestDoc);
+        console.log(`✅ Authorization request saved to MongoDB for ${requesterEmail}`);
+      } catch (dbError) {
+        console.error('❌ Error saving authorization request to MongoDB:', dbError);
+        // Continue even if DB save fails - still send email
+      }
+    }
+
+    // Send email to team lead
+    const emailSubject = `Authorization Request for ${teamName} Team Approval Workflows`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #4F46E5;">Authorization Request</h2>
+        <p><strong>${requesterName}</strong> (${requesterEmail}) is requesting authorization to send approval workflows to the <strong>${teamName}</strong> team.</p>
+        
+        <div style="background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0;"><strong>Message:</strong></p>
+          <p style="margin: 10px 0 0 0;">${message || 'No message provided.'}</p>
+        </div>
+        
+        <p>To authorize this user:</p>
+        <ol>
+          <li>Go to the Approval Workflow page</li>
+          <li>Click "Edit Settings"</li>
+          <li>Select the ${teamName} team tab</li>
+          <li>Add <strong>${requesterEmail}</strong> to the "Authorized Senders" list</li>
+        </ol>
+        
+        <p style="color: #6B7280; font-size: 12px; margin-top: 30px;">
+          This is an automated email from the CPQ Approval System.
+        </p>
+      </div>
+    `;
+
+    const msg = {
+      to: teamLeadEmail,
+      from: EMAIL_FROM,
+      subject: emailSubject,
+      html: emailHtml,
+    };
+
+    await sgMail.send(msg);
+    console.log(`✅ Authorization request email sent to ${teamLeadEmail} for ${requesterEmail}`);
+
+    res.json({
+      success: true,
+      message: 'Authorization request sent successfully and saved to database'
+    });
+  } catch (error) {
+    console.error('❌ Error sending authorization request email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to send authorization request email'
+    });
+  }
+});
+
+// GET /api/authorization-requests - Get authorization request history
+app.get('/api/authorization-requests', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const { teamLeadEmail, requesterEmail, status, teamName } = req.query;
+    const requestsCollection = db.collection('authorization_requests');
+    
+    // Build query filter
+    const filter = {};
+    if (teamLeadEmail) filter.teamLeadEmail = teamLeadEmail;
+    if (requesterEmail) filter.requesterEmail = requesterEmail;
+    if (status) filter.status = status;
+    if (teamName) filter.teamName = teamName.toUpperCase();
+
+    const requests = await requestsCollection
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+
+    res.json({ success: true, data: requests });
+  } catch (error) {
+    console.error('❌ Error fetching authorization requests:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/authorization-requests/:id/status - Update authorization request status
+app.put('/api/authorization-requests/:id/status', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body; // 'pending', 'approved', 'rejected'
+
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid status. Must be: pending, approved, or rejected' 
+      });
+    }
+
+    const requestsCollection = db.collection('authorization_requests');
+    const result = await requestsCollection.updateOne(
+      { _id: id },
+      { 
+        $set: { 
+          status,
+          updatedAt: new Date().toISOString()
+        }
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Request not found' });
+    }
+
+    res.json({ success: true, message: 'Request status updated' });
+  } catch (error) {
+    console.error('❌ Error updating authorization request status:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

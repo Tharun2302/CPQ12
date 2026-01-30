@@ -290,10 +290,23 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
   };
  
   const createCodeChallenge = async (verifier: string): Promise<string> => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    const digest = await window.crypto.subtle.digest('SHA-256', data);
-    return base64UrlEncode(digest);
+    // Check if crypto.subtle is available (requires secure context/HTTPS)
+    if (!window.crypto || !window.crypto.subtle) {
+      const errorMsg = 'Crypto API not available. Microsoft authentication requires a secure context (HTTPS). ' +
+        'If you are using a self-signed certificate, please accept it in your browser or use a valid SSL certificate.';
+      console.error('❌', errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(verifier);
+      const digest = await window.crypto.subtle.digest('SHA-256', data);
+      return base64UrlEncode(digest);
+    } catch (error) {
+      console.error('❌ Error creating code challenge:', error);
+      throw new Error('Failed to create PKCE code challenge. Please ensure you are using HTTPS with a valid certificate.');
+    }
   };
  
   const signup = async (_userData: SignUpData): Promise<boolean> => {
@@ -333,11 +346,25 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       const state = Math.random().toString(36).substring(2, 15);
  
       // PKCE: generate code verifier and challenge
-      const codeVerifier = generateRandomString(64);
-      const codeChallenge = await createCodeChallenge(codeVerifier);
-      // Use localStorage so the popup callback window can access it
-      localStorage.setItem('msal_code_verifier', codeVerifier);
- 
+      let codeVerifier: string | null = null;
+      let codeChallenge: string | null = null;
+      
+      try {
+        codeVerifier = generateRandomString(64);
+        codeChallenge = await createCodeChallenge(codeVerifier);
+        // Use localStorage so the popup callback window can access it
+        localStorage.setItem('msal_code_verifier', codeVerifier);
+      } catch (error) {
+        console.error('❌ PKCE generation failed:', error);
+        // Show user-friendly error
+        alert('Microsoft authentication requires HTTPS with a valid SSL certificate. ' +
+          'Please ensure your development server is using HTTPS with a trusted certificate, ' +
+          'or accept the self-signed certificate in your browser settings.');
+        setLoading(false);
+        return false;
+      }
+
+      // Build auth URL with PKCE
       const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
         `client_id=${clientId}&` +
         `response_type=code&` +
@@ -345,7 +372,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         `scope=${scopes}&` +
         `response_mode=query&` +
         `state=${state}&` +
-        `code_challenge=${encodeURIComponent(codeChallenge)}&` +
+        `code_challenge=${encodeURIComponent(codeChallenge!)}&` +
         `code_challenge_method=S256&` +
         `prompt=select_account`;
  

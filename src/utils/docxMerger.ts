@@ -59,13 +59,13 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
  * Merges multiple DOCX files into one, grouped by Included/Not Included
  * @param mainDocx - The main processed template DOCX blob
  * @param exhibitDocxBlobs - Array of exhibit DOCX blobs to append
- * @param exhibitMetadata - Optional array of exhibit metadata (name, category) for grouping
+ * @param exhibitMetadata - Optional array of exhibit metadata (name, category, includeType) for grouping
  * @returns Promise<Blob> - The merged DOCX file
  */
 export async function mergeDocxFiles(
   mainDocx: Blob,
   exhibitDocxBlobs: Blob[],
-  exhibitMetadata?: Array<{ name: string; category?: string }>
+  exhibitMetadata?: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }>
 ): Promise<Blob> {
   try {
     console.log('📎 Starting DOCX merge...', {
@@ -105,51 +105,50 @@ export async function mergeDocxFiles(
     if (exhibitMetadata && exhibitMetadata.length === exhibitDocxBlobs.length) {
       groupedExhibits = { included: [], notIncluded: [] };
       exhibitMetadata.forEach((meta, index) => {
+        // Use stored includeType from upload selection when present
+        if (meta.includeType === 'notincluded') {
+          groupedExhibits!.notIncluded.push(index);
+          console.log(`   📌 [${index}] "${meta.name}" → NOT INCLUDED (from includeType)`);
+          return;
+        }
+        if (meta.includeType === 'included') {
+          groupedExhibits!.included.push(index);
+          console.log(`   📌 [${index}] "${meta.name}" → INCLUDED (from includeType)`);
+          return;
+        }
+        // Fallback: infer from name for older exhibits without includeType
         const nameLower = meta.name.toLowerCase();
-        // Check for various "not included" patterns (with/without spaces, different cases, dashes)
-        // Pattern: "not - include", "not - included", "not include", "not included", etc.
-        // Use regex to handle variations with spaces, dashes, and different word boundaries
-        // More comprehensive pattern matching for "not included" variations
-        // Check for "not" followed by optional spaces/dashes and "include" (with or without 'd')
         const hasNot = nameLower.includes('not');
         const hasInclude = nameLower.includes('include');
-        
-        // If it has both "not" and "include", check the pattern more carefully
         let isNotIncluded = false;
         if (hasNot && hasInclude) {
-          // Check various patterns - use lookahead to avoid requiring a character after "include"
           const patterns = [
-            /not\s+included/i,                    // "not included"
-            /not\s+include(?!d)/i,                // "not include" (not followed by 'd')
-            /not\s*-\s*include(?!d)/i,            // "not - include" or "not-include" (not followed by 'd')
-            /not\s*-\s*included/i,                // "not - included" or "not-included"
-            /notincluded/i,                       // "notincluded"
-            /notinclude(?!d)/i,                   // "notinclude" (not followed by 'd')
-            /not\s*-\s*include\b/i                // "not - include" (word boundary, more flexible)
+            /not\s+included/i,
+            /not\s+include(?!d)/i,
+            /not\s*-\s*include(?!d)/i,
+            /not\s*-\s*included/i,
+            /notincluded/i,
+            /notinclude(?!d)/i,
+            /not\s*-\s*include\b/i
           ];
-          
           isNotIncluded = patterns.some(pattern => pattern.test(nameLower));
-          
-          // Fallback: If "not" appears before "include" and it's not "included", it's likely "not include"
           if (!isNotIncluded) {
             const notIndex = nameLower.indexOf('not');
             const includeIndex = nameLower.indexOf('include');
             if (notIndex !== -1 && includeIndex !== -1 && notIndex < includeIndex) {
-              // Check if it's "included" (with 'd') - if not, it's "not include"
-              const afterInclude = nameLower.substring(includeIndex + 7); // "include" is 7 chars
+              const afterInclude = nameLower.substring(includeIndex + 7);
               if (!afterInclude.startsWith('d')) {
                 isNotIncluded = true;
               }
             }
           }
         }
-        
         if (isNotIncluded) {
           groupedExhibits!.notIncluded.push(index);
-          console.log(`   📌 [${index}] "${meta.name}" → NOT INCLUDED`);
+          console.log(`   📌 [${index}] "${meta.name}" → NOT INCLUDED (from name)`);
         } else {
           groupedExhibits!.included.push(index);
-          console.log(`   📌 [${index}] "${meta.name}" → INCLUDED`);
+          console.log(`   📌 [${index}] "${meta.name}" → INCLUDED (from name)`);
         }
       });
       console.log('📋 Grouped exhibits:', {
