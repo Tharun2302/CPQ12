@@ -69,16 +69,14 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         const result = await response.json();
         
         if (result.success && result.data) {
-          // Migrate old data: ensure authorizedSenders exists
-          if (!result.data.authorizedSenders) {
-            result.data.authorizedSenders = {
-              SMB: [],
-              AM: [],
-              ENT: [],
-              DEV: [],
-              DEV2: [],
-            };
-          }
+          // Migrate old data: ensure authorizedSenders and additionalRecipients exist for every team
+          const teamIds = Object.keys(result.data.teamLeads || {});
+          if (!result.data.authorizedSenders) result.data.authorizedSenders = {};
+          if (!result.data.additionalRecipients) result.data.additionalRecipients = {};
+          teamIds.forEach((k) => {
+            if (!Array.isArray(result.data.authorizedSenders[k])) result.data.authorizedSenders[k] = [];
+            if (!Array.isArray(result.data.additionalRecipients[k])) result.data.additionalRecipients[k] = [];
+          });
           setTeamApprovalSettings(result.data);
           
           // Also save to localStorage as backup/cache
@@ -91,11 +89,13 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
             const saved = localStorage.getItem('cpq_team_approval_settings');
             if (saved) {
               const parsed = JSON.parse(saved);
-              if (!parsed.authorizedSenders) {
-                parsed.authorizedSenders = {
-                  SMB: [], AM: [], ENT: [], DEV: [], DEV2: [],
-                };
-              }
+              const teamIds = Object.keys(parsed.teamLeads || {});
+              if (!parsed.authorizedSenders) parsed.authorizedSenders = {};
+              if (!parsed.additionalRecipients) parsed.additionalRecipients = {};
+              teamIds.forEach((k) => {
+                if (!Array.isArray(parsed.authorizedSenders[k])) parsed.authorizedSenders[k] = [];
+                if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
+              });
               setTeamApprovalSettings(parsed);
             }
           } catch {}
@@ -109,11 +109,13 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
           const saved = localStorage.getItem('cpq_team_approval_settings');
           if (saved) {
             const parsed = JSON.parse(saved);
-            if (!parsed.authorizedSenders) {
-              parsed.authorizedSenders = {
-                SMB: [], AM: [], ENT: [], DEV: [], DEV2: [],
-              };
-            }
+            const teamIds = Object.keys(parsed.teamLeads || {});
+            if (!parsed.authorizedSenders) parsed.authorizedSenders = {};
+            if (!parsed.additionalRecipients) parsed.additionalRecipients = {};
+            teamIds.forEach((k) => {
+              if (!Array.isArray(parsed.authorizedSenders[k])) parsed.authorizedSenders[k] = [];
+              if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
+            });
             setTeamApprovalSettings(parsed);
           }
         } catch {}
@@ -262,7 +264,52 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   // Get team approval email
   const getTeamApprovalEmail = (team: string): string => {
     const key = (team || '').toUpperCase();
-    return teamApprovalSettings.teamLeads[key] || '';
+    return teamApprovalSettings.teamLeads?.[key] ?? '';
+  };
+
+  const teamIds = Object.keys(teamApprovalSettings.teamLeads || {});
+
+  const handleAddTeam = () => {
+    const code = newTeamCode.trim().toUpperCase();
+    if (!code) {
+      alert('Please enter a team code (e.g. DEV3).');
+      return;
+    }
+    if (!/^[A-Za-z0-9_]+$/.test(code)) {
+      alert('Team code can only contain letters, numbers, and underscores.');
+      return;
+    }
+    if (teamApprovalSettings.teamLeads?.[code] !== undefined) {
+      alert(`Team "${code}" already exists.`);
+      return;
+    }
+    setTeamApprovalSettings((prev) => ({
+      ...prev,
+      teamLeads: { ...prev.teamLeads, [code]: '' },
+      authorizedSenders: { ...prev.authorizedSenders, [code]: [] },
+      additionalRecipients: { ...prev.additionalRecipients, [code]: [] },
+    }));
+    setEditingTeam(code);
+    setNewTeamCode('');
+    setShowAddTeamInput(false);
+  };
+
+  const handleRemoveTeam = () => {
+    const ids = Object.keys(teamApprovalSettings.teamLeads || {});
+    if (ids.length <= 1) {
+      alert('Cannot remove the last team. At least one team is required.');
+      return;
+    }
+    if (!window.confirm(`Remove team "${editingTeam}"? This cannot be undone.`)) return;
+    const next = ids.find((t) => t !== editingTeam) || ids[0];
+    setTeamApprovalSettings((prev) => {
+      const { [editingTeam]: _lead, ...teamLeads } = prev.teamLeads || {};
+      const { [editingTeam]: _senders, ...authorizedSenders } = prev.authorizedSenders || {};
+      const { [editingTeam]: _recips, ...additionalRecipients } = prev.additionalRecipients || {};
+      return { ...prev, teamLeads, authorizedSenders, additionalRecipients };
+    });
+    setEditingTeam(next);
+    setManualTeamSelection((current) => (current === editingTeam ? next : current));
   };
 
   // State for settings modal
@@ -270,6 +317,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [editingTeam, setEditingTeam] = useState<string>('SMB');
   const [newRecipientEmail, setNewRecipientEmail] = useState<string>('');
   const [newAuthorizedSenderEmail, setNewAuthorizedSenderEmail] = useState<string>('');
+  const [newTeamCode, setNewTeamCode] = useState<string>('');
+  const [showAddTeamInput, setShowAddTeamInput] = useState(false);
 
   // State for manual team selection (can override auto-selection)
   const [manualTeamSelection, setManualTeamSelection] = useState<string>('SMB');
@@ -293,6 +342,15 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       }
     }
   }, [showSettingsModal, editingTeam, loggedInUserEmail, teamApprovalSettings]);
+
+  // Keep editingTeam and manualTeamSelection valid when team list changes (e.g. load from API)
+  useEffect(() => {
+    const ids = Object.keys(teamApprovalSettings.teamLeads || {});
+    if (ids.length === 0) return;
+    const first = ids[0];
+    if (!ids.includes(editingTeam)) setEditingTeam(first);
+    if (!ids.includes(manualTeamSelection)) setManualTeamSelection(first);
+  }, [teamApprovalSettings]);
 
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
@@ -702,11 +760,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                                   onChange={(e) => setManualTeamSelection(e.target.value)}
                                   className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
                                 >
-                                  <option value="SMB">SMB ({teamApprovalSettings.teamLeads.SMB})</option>
-                                  <option value="AM">AM ({teamApprovalSettings.teamLeads.AM})</option>
-                                  <option value="ENT">ENT ({teamApprovalSettings.teamLeads.ENT})</option>
-                                  <option value="DEV">DEV ({teamApprovalSettings.teamLeads.DEV})</option>
-                                  <option value="DEV2">DEV2 ({teamApprovalSettings.teamLeads.DEV2})</option>
+                                  {teamIds.map((team) => (
+                                    <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
+                                  ))}
                                 </select>
                               </div>
                               <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg">
@@ -771,11 +827,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                                     }}
                                     className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
                                   >
-                                    <option value="SMB">SMB ({teamApprovalSettings.teamLeads.SMB})</option>
-                                    <option value="AM">AM ({teamApprovalSettings.teamLeads.AM})</option>
-                                    <option value="ENT">ENT ({teamApprovalSettings.teamLeads.ENT})</option>
-                                    <option value="DEV">DEV ({teamApprovalSettings.teamLeads.DEV})</option>
-                                    <option value="DEV2">DEV2 ({teamApprovalSettings.teamLeads.DEV2})</option>
+                                    {teamIds.map((team) => (
+                                      <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
+                                    ))}
                                   </select>
                                   <p className="text-xs text-gray-500 mt-1">
                                     Selected: {manualTeamSelection} - {getTeamApprovalEmail(manualTeamSelection)}
@@ -913,8 +967,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
             <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-6">
                 {/* Team Selection Tabs */}
-                <div className="flex gap-2 border-b border-gray-200">
-                  {['SMB', 'AM', 'ENT', 'DEV', 'DEV2'].map((team) => (
+                <div className="flex flex-wrap items-center gap-2 border-b border-gray-200">
+                  {teamIds.map((team) => (
                     <button
                       key={team}
                       type="button"
@@ -928,32 +982,71 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                       {team}
                     </button>
                   ))}
+                  {showAddTeamInput ? (
+                    <div className="flex items-center gap-2 pb-2">
+                      <input
+                        type="text"
+                        value={newTeamCode}
+                        onChange={(e) => setNewTeamCode(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTeam())}
+                        placeholder="e.g. DEV3"
+                        className="px-2 py-1 text-sm border border-gray-300 rounded w-24"
+                        autoFocus
+                      />
+                      <button type="button" onClick={handleAddTeam} className="px-2 py-1 text-sm font-semibold text-white bg-purple-600 rounded hover:bg-purple-700">
+                        Add
+                      </button>
+                      <button type="button" onClick={() => { setShowAddTeamInput(false); setNewTeamCode(''); }} className="px-2 py-1 text-sm text-gray-600 hover:text-gray-800">
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddTeamInput(true)}
+                      className="px-3 py-2 text-sm font-semibold text-purple-600 border border-purple-300 rounded hover:bg-purple-50 transition-colors"
+                    >
+                      + Add team
+                    </button>
+                  )}
                 </div>
 
                 {/* Current Team Settings */}
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Team Lead Email ({editingTeam})
-                    </label>
-                    <input
-                      type="email"
-                      value={teamApprovalSettings.teamLeads[editingTeam] || ''}
-                      onChange={(e) => {
-                        setTeamApprovalSettings(prev => ({
-                          ...prev,
-                          teamLeads: {
-                            ...prev.teamLeads,
-                            [editingTeam]: e.target.value
-                          }
-                        }));
-                      }}
-                      className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                      placeholder="team.lead@cloudfuze.com"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      This email will receive approval requests for {editingTeam} team workflows.
-                    </p>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                        Team Lead Email ({editingTeam})
+                      </label>
+                      <input
+                        type="email"
+                        value={teamApprovalSettings.teamLeads[editingTeam] || ''}
+                        onChange={(e) => {
+                          setTeamApprovalSettings(prev => ({
+                            ...prev,
+                            teamLeads: {
+                              ...prev.teamLeads,
+                              [editingTeam]: e.target.value
+                            }
+                          }));
+                        }}
+                        className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                        placeholder="team.lead@cloudfuze.com"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        This email will receive approval requests for {editingTeam} team workflows.
+                      </p>
+                    </div>
+                    {teamIds.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveTeam}
+                        className="mt-6 px-3 py-1.5 text-xs font-semibold text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors whitespace-nowrap"
+                        aria-label={`Remove team ${editingTeam}`}
+                      >
+                        Remove team
+                      </button>
+                    )}
                   </div>
 
                     {/* Authorized Senders - People who can send approval emails to this team lead */}
