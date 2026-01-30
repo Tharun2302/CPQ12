@@ -1334,7 +1334,7 @@ Quote ID: ${quoteData.id}
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
               // Fetch exhibit metadata once (used for: de-dupe, sort order, and merger grouping)
-              const exhibitMetadata: Array<{ name: string; category?: string }> = [];
+              const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
               let allExhibits: any[] = [];
               if (metaResp.ok) {
@@ -1349,6 +1349,8 @@ Quote ID: ${quoteData.id}
               );
 
               const isNotIncludedExhibit = (ex: any): boolean => {
+                if (ex?.includeType === 'notincluded') return true;
+                if (ex?.includeType === 'included') return false;
                 const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
                 return text.includes('not included') ||
                   text.includes('not include') ||
@@ -1440,12 +1442,13 @@ Quote ID: ${quoteData.id}
                   const blob = await response.blob();
                   exhibitBlobs.push(blob);
                   
-                  // Get exhibit metadata
+                  // Get exhibit metadata (includeType from upload selection; used by merger)
                   const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                   if (exhibit) {
                     exhibitMetadata.push({
                       name: exhibit.name || '',
-                      category: exhibit.category || ''
+                      category: exhibit.category || '',
+                      includeType: (exhibit.includeType === 'notincluded' || exhibit.includeType === 'included') ? exhibit.includeType : undefined
                     });
                   }
                   
@@ -5227,7 +5230,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               const exhibitBlobs: Blob[] = [];
               
               // Fetch exhibit metadata for grouping
-              const exhibitMetadata: Array<{ name: string; category?: string }> = [];
+              const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
               let allExhibits: any[] = [];
               if (metaResp.ok) {
@@ -5242,6 +5245,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               );
 
               const isNotIncludedExhibit = (ex: any): boolean => {
+                if (ex?.includeType === 'notincluded') return true;
+                if (ex?.includeType === 'included') return false;
                 const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
                 return text.includes('not included') ||
                   text.includes('not include') ||
@@ -5340,7 +5345,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   exhibitBlobs.push(blob);
                   exhibitMetadata.push({
                     name: exhibit.name || '',
-                    category: exhibit.category || ''
+                    category: exhibit.category || '',
+                    includeType: (exhibit.includeType === 'notincluded' || exhibit.includeType === 'included') ? exhibit.includeType : undefined
                   });
                   console.log(`✅ Fetched exhibit ${exhibitId}: "${exhibit.name}" (${blob.size} bytes)`);
                 } else {

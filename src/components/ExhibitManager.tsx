@@ -14,7 +14,7 @@ import {
   Info
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { detectFromFilename, getCombinationsForCategory, DetectedMetadata } from '../utils/exhibitAutoDetect';
+import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
 import '../assets/docx-preview.css';
 
 // Helper function to generate name from combination
@@ -47,6 +47,7 @@ interface Exhibit {
   displayOrder: number;
   keywords: string[];
   isRequired: boolean;
+  includeType?: 'included' | 'notincluded'; // from upload selection; used by agreement merger
   createdAt: string;
   updatedAt: string;
 }
@@ -66,7 +67,6 @@ const ExhibitManager: React.FC = () => {
 
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [detectedMetadata, setDetectedMetadata] = useState<DetectedMetadata | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -81,6 +81,8 @@ const ExhibitManager: React.FC = () => {
   const [useCustomCombination, setUseCustomCombination] = useState(false);
   const [customCombination, setCustomCombination] = useState('');
   const [selectedFolder, setSelectedFolder] = useState<string>('');
+  const [combinationFolderSearch, setCombinationFolderSearch] = useState('');
+  const [combinationDropdownOpen, setCombinationDropdownOpen] = useState(false);
   const [createNewFolder, setCreateNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -161,7 +163,7 @@ const ExhibitManager: React.FC = () => {
     }
   };
 
-  // Handle file upload
+  // Handle file upload - manual only; no auto-detection from filename
   const handleFileSelect = (file: File) => {
     if (!file.name.toLowerCase().endsWith('.docx')) {
       setUploadError('Please upload a DOCX file');
@@ -170,34 +172,19 @@ const ExhibitManager: React.FC = () => {
 
     setUploadFile(file);
     setUploadError(null);
+    setUseCustomCombination(false);
+    setCustomCombination('');
 
-    // Auto-detect metadata from filename
-    const detected = detectFromFilename(file.name);
-    setDetectedMetadata(detected);
-
-    // Check if detected combination is in predefined list
-    const availableCombos = getCombinationsForCategory(detected.category);
-    const isPredefined = detected.combination && availableCombos.some(c => c.value === detected.combination);
-    
-    // If combination is detected but not predefined, enable custom combination mode
-    if (detected.combination && !isPredefined) {
-      setUseCustomCombination(true);
-      setCustomCombination(detected.combination);
-    } else {
-      setUseCustomCombination(false);
-      setCustomCombination('');
-    }
-
-    // Populate form with detected values
+    // Default/empty form - user selects category, combination, plan, include type manually
     setFormData({
-      name: detected.name,
+      name: '',
       description: '',
-      category: detected.category,
-      combination: isPredefined ? detected.combination : '',
-      plan: detected.plan as 'basic' | 'standard' | 'advanced' | '',
-      includeType: detected.type as 'included' | 'notincluded' | '', // Auto-populate from detection
-      displayOrder: detected.displayOrder,
-      keywords: detected.keywords,
+      category: 'content',
+      combination: '',
+      plan: '',
+      includeType: '',
+      displayOrder: 999,
+      keywords: [],
       isRequired: false,
     });
   };
@@ -283,8 +270,8 @@ const ExhibitManager: React.FC = () => {
       } else if (useCustomCombination && customCombination) {
         finalCombination = customCombination.toLowerCase().replace(/\s+/g, '-');
         
-        // Extract plan type from custom combination if not already set in form
-        let extractedPlan = formData.plan || detectedMetadata?.plan || '';
+        // Use form values; optionally parse plan/type from custom combination string if not set in form
+        let extractedPlan = formData.plan || '';
         if (!extractedPlan) {
           const comboLower = customCombination.toLowerCase();
           if (comboLower.includes('basic') && !comboLower.includes('standard') && !comboLower.includes('advanced')) {
@@ -296,8 +283,7 @@ const ExhibitManager: React.FC = () => {
           }
         }
         
-        // Extract include/notinclude from custom combination if not already detected
-        let extractedType = detectedMetadata?.type || '';
+        let extractedType = formData.includeType || '';
         if (!extractedType) {
           const comboLower = customCombination.toLowerCase();
           if (comboLower.includes('include') && !comboLower.includes('not')) {
@@ -307,10 +293,8 @@ const ExhibitManager: React.FC = () => {
           }
         }
         
-        // For custom combinations, append include/notinclude and plan type if detected
-        // This allows: testing-to-production + include + basic → testing-to-production-include-basic
-        const detectedType = extractedType || detectedMetadata?.type || '';
-        const planType = extractedPlan || formData.plan || detectedMetadata?.plan || '';
+        const detectedType = extractedType;
+        const planType = extractedPlan || formData.plan || '';
         
         // Only append if not already in the custom combination string
         if (detectedType && !finalCombination.includes(detectedType) && !finalCombination.includes('include')) {
@@ -331,7 +315,7 @@ const ExhibitManager: React.FC = () => {
           return;
         }
         
-        const planType = formData.plan || detectedMetadata?.plan || '';
+        const planType = formData.plan || '';
         
         // Only append if not already in the combination string
         if (detectedType && !finalCombination.includes(detectedType) && !finalCombination.includes('include')) {
@@ -399,7 +383,7 @@ const ExhibitManager: React.FC = () => {
         }
       }
       
-      const finalPlanType = formData.plan || detectedMetadata?.plan || '';
+      const finalPlanType = formData.plan || '';
       
       const formDataToSend = new FormData();
       formDataToSend.append('file', uploadFile);
@@ -408,6 +392,7 @@ const ExhibitManager: React.FC = () => {
       formDataToSend.append('category', formData.category);
       formDataToSend.append('combinations', JSON.stringify([finalCombination || 'all']));
       formDataToSend.append('planType', finalPlanType); // Send plan type separately
+      formDataToSend.append('includeType', formData.includeType || 'included'); // Include / Not Include from upload
       formDataToSend.append('displayOrder', formData.displayOrder.toString());
       formDataToSend.append('keywords', JSON.stringify(formData.keywords));
       formDataToSend.append('isRequired', formData.isRequired.toString());
@@ -490,7 +475,7 @@ const ExhibitManager: React.FC = () => {
       category: exhibit.category,
       combination: isPredefined ? exhibitCombination : '',
       plan: (exhibit as any).planType || detectedPlan || '',
-      includeType: detectedIncludeType, // Populate from exhibit
+      includeType: exhibit.includeType || detectedIncludeType, // Prefer stored includeType from upload
       displayOrder: exhibit.displayOrder,
       keywords: exhibit.keywords,
       isRequired: exhibit.isRequired,
@@ -511,7 +496,6 @@ const ExhibitManager: React.FC = () => {
     }
     
     setUploadFile(null);
-    setDetectedMetadata(null);
     setShowEditModal(true);
   };
 
@@ -647,6 +631,7 @@ const ExhibitManager: React.FC = () => {
       formDataToSend.append('category', formData.category);
       formDataToSend.append('combinations', JSON.stringify([finalCombination || 'all']));
       formDataToSend.append('planType', finalPlanType);
+      formDataToSend.append('includeType', formData.includeType || 'included');
       formDataToSend.append('displayOrder', formData.displayOrder.toString());
       formDataToSend.append('keywords', JSON.stringify(formData.keywords));
       formDataToSend.append('isRequired', formData.isRequired.toString());
@@ -822,7 +807,6 @@ const ExhibitManager: React.FC = () => {
   // Reset form
   const resetForm = () => {
     setUploadFile(null);
-    setDetectedMetadata(null);
     setFormData({
       name: '',
       description: '',
@@ -837,6 +821,8 @@ const ExhibitManager: React.FC = () => {
     setUseCustomCombination(false);
     setCustomCombination('');
     setSelectedFolder('');
+    setCombinationFolderSearch('');
+    setCombinationDropdownOpen(false);
     setCreateNewFolder(false);
     setNewFolderName('');
     setUploadError(null);
@@ -899,6 +885,13 @@ const ExhibitManager: React.FC = () => {
     });
     return Array.from(folderSet).sort();
   }, [exhibits]);
+
+  // Filter combination folders by search (for "Select existing combination" dropdown)
+  const filteredAvailableFolders = useMemo(() => {
+    const term = (combinationFolderSearch || '').trim().toLowerCase();
+    if (!term) return availableFolders;
+    return availableFolders.filter((folder) => folder.toLowerCase().includes(term));
+  }, [availableFolders, combinationFolderSearch]);
 
   return (
     <div className="p-6">
@@ -1033,6 +1026,7 @@ const ExhibitManager: React.FC = () => {
                   <X className="w-6 h-6" />
                 </button>
               </div>
+              <p className="text-sm text-gray-600 mb-4">Select category, combination, plan and include type.</p>
 
               {/* How to Use Guide */}
               {showUploadGuide && (
@@ -1196,50 +1190,59 @@ const ExhibitManager: React.FC = () => {
                       </p>
                     </div>
                   ) : (
-                    <div>
-                      <select
-                        value={selectedFolder}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={selectedFolder || combinationFolderSearch}
                         onChange={(e) => {
-                          const folderName = e.target.value;
-                          setSelectedFolder(folderName);
-                          
-                          if (folderName) {
-                            // Convert folder name back to combination format
-                            const combinationValue = folderName
-                              .toLowerCase()
-                              .replace(/\s+/g, '-');
-                            
-                            // Check if it's a predefined combination
-                            const availableCombos = getCombinationsForCategory(formData.category);
-                            const isPredefined = availableCombos.some(c => c.value === combinationValue);
-                            
-                            if (isPredefined) {
-                              setUseCustomCombination(false);
-                              setCustomCombination('');
-                              setFormData({ ...formData, combination: combinationValue });
-                            } else {
-                              setUseCustomCombination(true);
-                              setCustomCombination(folderName);
-                              setFormData({ ...formData, combination: combinationValue });
-                            }
-                          }
+                          setCombinationFolderSearch(e.target.value);
+                          setSelectedFolder('');
                         }}
+                        onFocus={() => setCombinationDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setCombinationDropdownOpen(false), 200)}
+                        placeholder="Search or select existing combination"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         required
-                      >
-                        <option value="">Select existing combination</option>
-                        {availableFolders.length > 0 ? (
-                          availableFolders.map((folder) => (
-                            <option key={folder} value={folder}>
-                              {folder}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="" disabled>No existing combinations. Check "Create new combination folder" to add one.</option>
-                        )}
-                      </select>
+                        autoComplete="off"
+                      />
+                      {combinationDropdownOpen && (
+                        <ul className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                          {filteredAvailableFolders.length > 0 ? (
+                            filteredAvailableFolders.map((folder) => (
+                              <li
+                                key={folder}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setSelectedFolder(folder);
+                                  setCombinationFolderSearch('');
+                                  setCombinationDropdownOpen(false);
+                                  const combinationValue = folder.toLowerCase().replace(/\s+/g, '-');
+                                  const availableCombos = getCombinationsForCategory(formData.category);
+                                  const isPredefined = availableCombos.some(c => c.value === combinationValue);
+                                  if (isPredefined) {
+                                    setUseCustomCombination(false);
+                                    setCustomCombination('');
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  } else {
+                                    setUseCustomCombination(true);
+                                    setCustomCombination(folder);
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  }
+                                }}
+                                className="px-3 py-2 cursor-pointer hover:bg-blue-50 text-sm"
+                              >
+                                {folder}
+                              </li>
+                            ))
+                          ) : (
+                            <li className="px-3 py-2 text-gray-500 text-sm">
+                              {availableFolders.length > 0 ? 'No matches. Try a different search.' : 'No existing combinations. Check "Create new combination folder" to add one.'}
+                            </li>
+                          )}
+                        </ul>
+                      )}
                       <p className="mt-1 text-xs text-gray-500">
-                        Select an existing combination folder to group this exhibit with others.
+                        Search or select an existing combination folder to group this exhibit with others.
                       </p>
                     </div>
                   )}
@@ -1468,50 +1471,59 @@ const ExhibitManager: React.FC = () => {
                       </p>
                     </div>
                   ) : (
-                    <div>
-                      <select
-                        value={selectedFolder}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={selectedFolder || combinationFolderSearch}
                         onChange={(e) => {
-                          const folderName = e.target.value;
-                          setSelectedFolder(folderName);
-                          
-                          if (folderName) {
-                            // Convert folder name back to combination format
-                            const combinationValue = folderName
-                              .toLowerCase()
-                              .replace(/\s+/g, '-');
-                            
-                            // Check if it's a predefined combination
-                            const availableCombos = getCombinationsForCategory(formData.category);
-                            const isPredefined = availableCombos.some(c => c.value === combinationValue);
-                            
-                            if (isPredefined) {
-                              setUseCustomCombination(false);
-                              setCustomCombination('');
-                              setFormData({ ...formData, combination: combinationValue });
-                            } else {
-                              setUseCustomCombination(true);
-                              setCustomCombination(folderName);
-                              setFormData({ ...formData, combination: combinationValue });
-                            }
-                          }
+                          setCombinationFolderSearch(e.target.value);
+                          setSelectedFolder('');
                         }}
+                        onFocus={() => setCombinationDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setCombinationDropdownOpen(false), 200)}
+                        placeholder="Search or select existing combination"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         required
-                      >
-                        <option value="">Select existing combination</option>
-                        {availableFolders.length > 0 ? (
-                          availableFolders.map((folder) => (
-                            <option key={folder} value={folder}>
-                              {folder}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="" disabled>No existing combinations. Check "Create new combination folder" to add one.</option>
-                        )}
-                      </select>
+                        autoComplete="off"
+                      />
+                      {combinationDropdownOpen && (
+                        <ul className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                          {filteredAvailableFolders.length > 0 ? (
+                            filteredAvailableFolders.map((folder) => (
+                              <li
+                                key={folder}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setSelectedFolder(folder);
+                                  setCombinationFolderSearch('');
+                                  setCombinationDropdownOpen(false);
+                                  const combinationValue = folder.toLowerCase().replace(/\s+/g, '-');
+                                  const availableCombos = getCombinationsForCategory(formData.category);
+                                  const isPredefined = availableCombos.some(c => c.value === combinationValue);
+                                  if (isPredefined) {
+                                    setUseCustomCombination(false);
+                                    setCustomCombination('');
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  } else {
+                                    setUseCustomCombination(true);
+                                    setCustomCombination(folder);
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  }
+                                }}
+                                className="px-3 py-2 cursor-pointer hover:bg-blue-50 text-sm"
+                              >
+                                {folder}
+                              </li>
+                            ))
+                          ) : (
+                            <li className="px-3 py-2 text-gray-500 text-sm">
+                              {availableFolders.length > 0 ? 'No matches. Try a different search.' : 'No existing combinations. Check "Create new combination folder" to add one.'}
+                            </li>
+                          )}
+                        </ul>
+                      )}
                       <p className="mt-1 text-xs text-gray-500">
-                        Select an existing combination folder to group this exhibit with others.
+                        Search or select an existing combination folder to group this exhibit with others.
                       </p>
                     </div>
                   )}

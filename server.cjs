@@ -2103,6 +2103,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       category,
       combinations,
       planType = '',
+      includeType = '',
       displayOrder,
       keywords,
       isRequired = false
@@ -2131,6 +2132,12 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
         success: false, 
         error: `Invalid plan type: ${planType}. Must be one of: Basic, Standard, or Advanced.` 
       });
+    }
+
+    // Include type: included | notincluded (from upload selection)
+    let finalIncludeType = (includeType && String(includeType).trim().toLowerCase()) || '';
+    if (finalIncludeType && finalIncludeType !== 'included' && finalIncludeType !== 'notincluded') {
+      return res.status(400).json({ success: false, error: 'includeType must be "included" or "notincluded".' });
     }
 
     // Parse combinations FIRST (needed for name generation)
@@ -2183,6 +2190,17 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
     // Convert file to base64
     const fileData = req.file.buffer.toString('base64');
 
+    // Derive includeType from combination if not provided (for backward compatibility)
+    if (!finalIncludeType && combinationsArray.length > 0 && combinationsArray[0] !== 'all') {
+      const combo = String(combinationsArray[0]).toLowerCase();
+      if (combo.includes('notincluded') || combo.includes('not-include') || combo.includes('not include')) {
+        finalIncludeType = 'notincluded';
+      } else {
+        finalIncludeType = 'included';
+      }
+    }
+    if (!finalIncludeType) finalIncludeType = 'included';
+
     // Create exhibit document
     const exhibitDoc = {
       name: finalName,
@@ -2194,6 +2212,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       combinations: combinationsArray.length > 0 ? combinationsArray : ['all'],
       category: category.toLowerCase(),
       planType: planType ? planType.toLowerCase() : '', // Store plan type (basic, standard, advanced)
+      includeType: finalIncludeType, // included | notincluded (from upload selection)
       displayOrder: displayOrder ? parseInt(displayOrder) : 999,
       keywords: keywordsArray,
       isRequired: isRequired === true || isRequired === 'true',
@@ -2379,6 +2398,13 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
         });
       }
       updateData.planType = planTypeValue;
+    }
+    if (req.body.includeType !== undefined) {
+      const includeTypeValue = (req.body.includeType && String(req.body.includeType).trim().toLowerCase()) || '';
+      if (includeTypeValue && includeTypeValue !== 'included' && includeTypeValue !== 'notincluded') {
+        return res.status(400).json({ success: false, error: 'includeType must be "included" or "notincluded".' });
+      }
+      updateData.includeType = includeTypeValue || (existing.includeType || 'included');
     }
     if (req.body.displayOrder) updateData.displayOrder = parseInt(req.body.displayOrder);
     if (req.body.isRequired !== undefined) {
