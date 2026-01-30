@@ -37,6 +37,52 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     loadExhibits();
   }, []); // Load all exhibits once on mount, regardless of combination
 
+  // Validate restored selectedExhibits against loaded exhibits
+  // This ensures restored selections are preserved even if they're restored after exhibits load
+  useEffect(() => {
+    // Only validate if we have both selections and exhibits loaded
+    if (selectedExhibits.length > 0 && exhibits.length > 0) {
+      const allExhibitIds = exhibits.map(ex => ex._id);
+      const validSelections = selectedExhibits.filter(id => allExhibitIds.includes(id));
+      const invalidSelections = selectedExhibits.filter(id => !allExhibitIds.includes(id));
+      
+      // Check if validation is needed
+      const needsCleanup = invalidSelections.length > 0;
+      const requiredIds = exhibits.filter(ex => ex.isRequired).map(ex => ex._id);
+      const missingRequired = requiredIds.filter(id => !validSelections.includes(id));
+      const needsRequired = missingRequired.length > 0;
+      
+      if (needsCleanup || needsRequired) {
+        console.log('📎 ExhibitSelector: Validating restored selectedExhibits:', {
+          count: selectedExhibits.length,
+          validCount: validSelections.length,
+          invalidCount: invalidSelections.length,
+          missingRequiredCount: missingRequired.length,
+          totalExhibitsLoaded: exhibits.length
+        });
+        
+        if (needsCleanup) {
+          console.log('⚠️ Removing invalid exhibit IDs:', invalidSelections);
+        }
+        if (needsRequired) {
+          console.log('➕ Adding missing required exhibits:', missingRequired);
+        }
+        
+        // Build final selection: valid selections + missing required
+        const finalSelection = [...new Set([...validSelections, ...missingRequired])];
+        
+        // Only update if selection actually changed
+        if (JSON.stringify(finalSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
+          onExhibitsChange(finalSelection);
+          console.log('✅ Validated and updated exhibit selection');
+        }
+      } else {
+        // All selections are valid and required are included - no action needed
+        console.log('✅ All selected exhibits are valid and required exhibits are included');
+      }
+    }
+  }, [selectedExhibits, exhibits.length, onExhibitsChange]); // Re-validate when either changes
+
   const loadExhibits = async () => {
     try {
       setLoading(true);
@@ -57,27 +103,59 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           
           // Auto-select required exhibits and clean up previously selected exhibits that are no longer required
           if (data.exhibits && data.exhibits.length > 0) {
-            const requiredIds = data.exhibits
+            const requiredIds: string[] = data.exhibits
               .filter((ex: Exhibit) => ex.isRequired)
               .map((ex: Exhibit) => ex._id);
             
             const allExhibitIds = data.exhibits.map((ex: Exhibit) => ex._id);
             
-            // Remove any selected exhibits that no longer exist or are no longer required
+            // Remove any selected exhibits that no longer exist
             const validSelections = selectedExhibits.filter(id => allExhibitIds.includes(id));
             
-            // Add required exhibits to the selection
+            // Check if user has manually selected exhibits (not just required ones)
+            // If they have selections beyond required exhibits, preserve them
+            const hasUserSelections = validSelections.length > 0 && 
+              validSelections.some(id => !requiredIds.includes(id));
+            
+            // Add required exhibits to the selection (always include required)
             const newSelection = [...new Set([...validSelections, ...requiredIds])];
             
-            // Only update if the selection changed
-            if (JSON.stringify(newSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
-              console.log('🔄 Updating exhibit selection:', { 
+            // Only update if:
+            // 1. Selection actually changed AND
+            // 2. Either there are no user selections OR we're just adding required exhibits
+            const selectionChanged = JSON.stringify(newSelection.sort()) !== JSON.stringify(selectedExhibits.sort());
+            
+            // IMPORTANT: If user has selections (restored or manually selected), preserve them
+            if (hasUserSelections) {
+              // User has selections - preserve them but ensure required are included
+              console.log('📎 Preserving user selections during exhibit load:', {
+                userSelections: validSelections,
+                requiredIds,
+                newSelection,
+                willAddMissingRequired: requiredIds.filter((id: string) => !validSelections.includes(id)).length > 0
+              });
+              // Only update if we need to add required exhibits that aren't already selected
+              const missingRequired = requiredIds.filter((id: string) => !validSelections.includes(id));
+              if (missingRequired.length > 0) {
+                const finalSelection = [...new Set([...validSelections, ...missingRequired])];
+                onExhibitsChange(finalSelection);
+              }
+              // Don't overwrite user selections with just required exhibits
+            } else if (selectionChanged && validSelections.length === 0) {
+              // No user selections - just add required exhibits
+              console.log('🔄 No user selections, adding required exhibits:', { 
                 previous: selectedExhibits, 
                 newSelection, 
                 requiredIds,
                 removedInvalid: selectedExhibits.filter(id => !allExhibitIds.includes(id))
               });
               onExhibitsChange(newSelection);
+            } else {
+              console.log('⏭️ Skipping exhibit selection update - no changes needed:', {
+                hasUserSelections,
+                validSelectionsCount: validSelections.length,
+                selectionChanged
+              });
             }
           }
         }
@@ -135,17 +213,25 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     });
   }, [exhibits, selectedTier]);
 
-  // Auto-select only matching tier exhibits when tier changes
+  // Auto-select ALL matching tier exhibits when tier changes
+  // When a plan (Basic/Standard/Advanced) is selected, automatically select ALL exhibits for that plan
+  // This includes both "Include" and "Not Include" variants for all combinations
   useEffect(() => {
-    if (!selectedTier?.tier?.name) {
-      return; // No tier selected, don't filter
+    if (!selectedTier?.tier?.name || exhibits.length === 0) {
+      return; // No tier selected or exhibits not loaded yet
     }
 
     const tierName = selectedTier.tier.name.toLowerCase();
     
-    // Filter all exhibits by tier (not just Slack to Teams)
+    // Find ALL exhibits that match the selected tier (both Include and Not Include variants)
     const matchingExhibitIds = exhibits
       .filter(ex => {
+        // First check planType field (most reliable)
+        if (ex.planType) {
+          return ex.planType.toLowerCase() === tierName;
+        }
+        
+        // Fallback: Check exhibit name for plan type
         const exhibitName = ex.name.toLowerCase();
         const hasStandard = exhibitName.includes('standard');
         const hasAdvanced = exhibitName.includes('advanced');
@@ -153,7 +239,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         const hasPremium = exhibitName.includes('premium');
         const hasEnterprise = exhibitName.includes('enterprise');
         
-        // If exhibit has a plan type, check if it matches selected tier
+        // If exhibit has a plan type in name, check if it matches selected tier
         if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
           if (tierName === 'basic') {
             return hasBasic && !hasStandard && !hasAdvanced;
@@ -169,22 +255,79 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           return false;
         }
         
-        // Keep exhibits without explicit plan type (generic exhibits)
-        return true;
+        // Don't auto-select exhibits without explicit plan type (generic exhibits)
+        // User must manually select these
+        return false;
       })
-      .map(ex => ex._id)
-      .filter(id => selectedExhibits.includes(id)); // Only keep currently selected exhibits that match tier
+      .map(ex => ex._id);
+
+    // Always include required exhibits (they should always be selected)
+    const requiredExhibitIds = exhibits
+      .filter(ex => ex.isRequired)
+      .map(ex => ex._id);
+
+    // Combine: matching tier exhibits + required exhibits + keep any manually selected exhibits without plan types
+    const exhibitsWithoutPlanType = selectedExhibits.filter(id => {
+      const ex = exhibits.find(e => e._id === id);
+      if (!ex) return false;
+      // Keep if it doesn't have a plan type (user manually selected generic exhibits)
+      if (!ex.planType) {
+        const name = ex.name.toLowerCase();
+        const hasPlanInName = name.includes('basic') || name.includes('standard') || 
+                             name.includes('advanced') || name.includes('premium') || 
+                             name.includes('enterprise');
+        return !hasPlanInName;
+      }
+      return false;
+    });
+
+    // Final selection: matching tier exhibits + required + manually selected generic exhibits
+    const finalSelection = Array.from(new Set([
+      ...matchingExhibitIds,
+      ...requiredExhibitIds,
+      ...exhibitsWithoutPlanType
+    ]));
 
     // Only update if the selection would change
-    if (JSON.stringify(matchingExhibitIds.sort()) !== JSON.stringify(selectedExhibits.sort())) {
-      console.log('🔄 Auto-filtering exhibits for tier:', tierName, {
-        currentSelection: selectedExhibits,
-        filteredSelection: matchingExhibitIds,
-        removed: selectedExhibits.filter(id => !matchingExhibitIds.includes(id))
+    if (JSON.stringify(finalSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
+      const matchingExhibitNames = exhibits
+        .filter(ex => matchingExhibitIds.includes(ex._id))
+        .map(ex => ({ name: ex.name, planType: ex.planType, id: ex._id }));
+      
+      console.log('✅ Auto-selecting exhibits for tier:', tierName, {
+        matchingCount: matchingExhibitIds.length,
+        requiredCount: requiredExhibitIds.length,
+        genericCount: exhibitsWithoutPlanType.length,
+        totalSelected: finalSelection.length,
+        previousSelectionCount: selectedExhibits.length,
+        matchingExhibits: matchingExhibitNames.slice(0, 10), // Show first 10 for debugging
+        allMatchingExhibitNames: matchingExhibitNames.map(e => e.name)
       });
-      onExhibitsChange(matchingExhibitIds);
+      
+      // Log which exhibits are being added/removed
+      const added = finalSelection.filter(id => !selectedExhibits.includes(id));
+      const removed = selectedExhibits.filter(id => !finalSelection.includes(id));
+      if (added.length > 0) {
+        console.log('➕ Adding exhibits:', added.map(id => {
+          const ex = exhibits.find(e => e._id === id);
+          return ex ? ex.name : id;
+        }));
+      }
+      if (removed.length > 0) {
+        console.log('➖ Removing exhibits:', removed.map(id => {
+          const ex = exhibits.find(e => e._id === id);
+          return ex ? ex.name : id;
+        }));
+      }
+      
+      onExhibitsChange(finalSelection);
+    } else {
+      console.log('✅ Exhibits already match selected tier:', tierName, {
+        currentSelectionCount: selectedExhibits.length,
+        matchingCount: matchingExhibitIds.length
+      });
     }
-  }, [selectedTier, exhibits, selectedExhibits, onExhibitsChange]);
+  }, [selectedTier, exhibits.length, onExhibitsChange]); // Removed selectedExhibits from deps to avoid infinite loop
 
   // Filter exhibits by search query
   const searchFilteredExhibits = useMemo(() => {
@@ -356,7 +499,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         {/* Header Section */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+            <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
               <ArrowRight className="w-3.5 h-3.5 text-white" />
             </div>
             <div>
@@ -384,7 +527,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
               placeholder="Search migration types..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
+              className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
             />
           </div>
         </div>
@@ -396,7 +539,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             <button
               type="button"
               onClick={() => navigate('/exhibits')}
-              className="text-purple-600 hover:text-purple-700 underline font-medium"
+              className="text-blue-600 hover:text-blue-700 underline font-medium"
             >
               go to Exhibits
             </button>
@@ -412,7 +555,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             No exhibits found for this combination yet. Add exhibit DOCX files in <code className="font-mono">CPQ12/backend-exhibits/</code> and restart backend seeding.
           </div>
         ) : (
-          <div className="bg-purple-50/30 rounded-lg border border-purple-200 p-4">
+          <div className="bg-blue-50/30 rounded-lg border border-blue-200 p-4">
             <div className="mb-3">
               <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
             </div>
@@ -434,26 +577,36 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                   const someExhibitsSelected = item.exhibits.some(ex => selectedExhibits.includes(ex._id));
                   const hasRequired = item.exhibits.some(ex => ex.isRequired);
                   const fileCount = item.exhibits.length;
-                  const isSelected = isGroup ? allExhibitsSelected : selectedExhibits.includes(item.exhibits[0]._id);
+                  // For groups: treat as selected if ANY child is selected (since a "migration" is conceptually one selection).
+                  const isSelected = isGroup ? someExhibitsSelected : selectedExhibits.includes(item.exhibits[0]._id);
                   const isExpanded = isGroup ? expandedGroups.has(item.id) : false;
 
                   const handleClick = () => {
                     if (isGroup) {
-                      // Toggle all non-required exhibits in the group
+                      // IMPORTANT: A group represents ONE migration, but it may have multiple exhibit files
+                      // (Included/Not Included, plan variants: Basic, Standard, Advanced, etc).
+                      // Clicking the group should select ALL exhibits in the group (all Include + Not Include variants for all plans).
+                      // The agreement generation will later filter by selected plan, but here we select all variants.
                       const nonRequiredExhibits = item.exhibits.filter(ex => !ex.isRequired);
-                      if (allExhibitsSelected) {
-                        // Deselect all
-                        onExhibitsChange(selectedExhibits.filter(id => 
-                          !nonRequiredExhibits.some(ex => ex._id === id)
-                        ));
+                      const requiredExhibits = item.exhibits.filter(ex => ex.isRequired);
+                      const requiredIds = requiredExhibits.map(ex => ex._id);
+                      const nonRequiredIds = nonRequiredExhibits.map(ex => ex._id);
+
+                      if (someExhibitsSelected) {
+                        // Deselect all non-required exhibits in the group
+                        onExhibitsChange(
+                          selectedExhibits.filter(id => !nonRequiredIds.includes(id))
+                        );
                       } else {
-                        // Select all
-                        const newIds = nonRequiredExhibits
-                          .filter(ex => !selectedExhibits.includes(ex._id))
-                          .map(ex => ex._id);
-                        if (newIds.length > 0) {
-                          onExhibitsChange([...selectedExhibits, ...newIds]);
-                        }
+                        // Select ALL exhibits in the group (all Include + Not Include variants for all plans)
+                        const allGroupIds = [...requiredIds, ...nonRequiredIds];
+                        const newSelection = [...new Set([...selectedExhibits, ...allGroupIds])];
+                        onExhibitsChange(newSelection);
+                        console.log('✅ Selected all variants in group:', {
+                          groupName: item.name,
+                          selectedCount: allGroupIds.length,
+                          exhibits: item.exhibits.map(ex => ex.name)
+                        });
                       }
                     } else {
                       toggleExhibit(item.exhibits[0]._id, item.exhibits[0].isRequired);
@@ -468,8 +621,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                       disabled={hasRequired && isGroup}
                       className={`w-full text-left p-2.5 rounded-lg border transition-all ${
                         isSelected
-                          ? 'border-purple-500 bg-white shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-gray-50'
+                          ? 'border-blue-500 bg-white shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-gray-50'
                       } ${hasRequired && isGroup ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
                     >
                       <div className="flex items-center gap-2.5">
@@ -502,12 +655,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                         </div>
                         <div
                           className={`w-4 h-4 border-2 flex items-center justify-center flex-shrink-0 ${
-                            isSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
+                            isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300 bg-white'
                           }`}
                         >
-                          {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                          {/* For groups, show an indeterminate mark when partially selected, check when fully selected */}
+                          {!isGroup && isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                          {isGroup && allExhibitsSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
                           {isGroup && someExhibitsSelected && !allExhibitsSelected && (
-                            <div className="w-1.5 h-1.5 bg-purple-500 rounded-sm" />
+                            <div className="w-2 h-0.5 bg-white rounded-sm" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -542,14 +697,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                                   disabled={ex.isRequired}
                                   className={`w-full text-left px-2.5 py-2 rounded-md border transition-all ${
                                     isExSelected
-                                      ? 'border-purple-400 bg-white'
-                                      : 'border-gray-200 bg-white hover:border-purple-200 hover:bg-gray-50'
+                                      ? 'border-blue-400 bg-white'
+                                      : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50'
                                   } ${ex.isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
                                 >
                                   <div className="flex items-center gap-2">
                                     <div
                                       className={`w-4 h-4 border-2 flex items-center justify-center flex-shrink-0 ${
-                                        isExSelected ? 'border-purple-500 bg-purple-500' : 'border-gray-300 bg-white'
+                                        isExSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300 bg-white'
                                       }`}
                                     >
                                       {isExSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}

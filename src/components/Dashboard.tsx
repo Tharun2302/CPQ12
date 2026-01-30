@@ -202,6 +202,37 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
   }, []);
 
+  // Save session state whenever selectedExhibits or configuration changes (so it's always up to date)
+  useEffect(() => {
+    const currentSessionState = {
+      configuration,
+      calculations,
+      selectedTier,
+      showPricing,
+      currentClientInfo,
+      configureContactInfo,
+      selectedExhibits
+    };
+    
+    try {
+      const navigationStateToSave = {
+        previousTab: navigationState.currentTab,
+        currentTab: currentTab,
+        sessionState: currentSessionState,
+        timestamp: Date.now()
+      };
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navigationStateToSave));
+      if (selectedExhibits.length > 0) {
+        console.log('💾 Auto-saved navigation state (selectedExhibits changed):', {
+          exhibitCount: selectedExhibits.length,
+          tab: currentTab
+        });
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not auto-save navigation state:', error);
+    }
+  }, [selectedExhibits, configuration, selectedTier, currentTab]);
+
   // Sync state with URL changes
   useEffect(() => {
     const newTab = getCurrentTab();
@@ -215,11 +246,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       currentTab: newTab,
       isNavigating: false
     }));
+    
+    // Restore session state when navigating to a new tab
+    restoreSessionState();
   }, [location.pathname]);
 
   // Restore session state on component mount
   useEffect(() => {
     console.log('🔄 Dashboard mounted, checking for saved session state');
+    console.log('🔄 Current selectedExhibits prop:', selectedExhibits);
     restoreSessionState();
   }, []);
 
@@ -234,17 +269,24 @@ const Dashboard: React.FC<DashboardProps> = ({
       selectedTier,
       showPricing,
       currentClientInfo,
-      configureContactInfo
+      configureContactInfo,
+      selectedExhibits // Include selected exhibits in navigation state
     };
     
     // Store session state in sessionStorage for persistence
     try {
-      sessionStorage.setItem('cpq_navigation_state', JSON.stringify({
+      const navigationStateToSave = {
         previousTab: navigationState.currentTab,
         currentTab: tab,
         sessionState: currentSessionState,
         timestamp: Date.now()
-      }));
+      };
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navigationStateToSave));
+      console.log('💾 Saved navigation state with selectedExhibits:', {
+        exhibitCount: selectedExhibits.length,
+        exhibitIds: selectedExhibits.slice(0, 3), // Log first 3 for debugging
+        tab: tab
+      });
     } catch (error) {
       console.warn('⚠️ Could not save navigation state:', error);
     }
@@ -275,10 +317,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       const savedState = sessionStorage.getItem('cpq_navigation_state');
       if (savedState) {
         const parsed = JSON.parse(savedState);
-        console.log('🔄 Restoring session state:', parsed);
+        console.log('🔄 Restoring session state:', {
+          hasCalculations: !!parsed.sessionState.calculations,
+          hasSelectedTier: !!parsed.sessionState.selectedTier,
+          hasSelectedExhibits: !!parsed.sessionState.selectedExhibits,
+          exhibitCount: parsed.sessionState.selectedExhibits?.length || 0
+        });
         
-        // Restore state if it's recent (within 5 minutes)
-        if (Date.now() - parsed.timestamp < 300000) {
+        // Restore state if it's recent (within 30 minutes - increased from 5 minutes)
+        if (Date.now() - parsed.timestamp < 1800000) {
           // Let ConfigurationForm handle all configuration loading - don't restore from navigation state
           // This prevents conflicts between cpq_navigation_state and cpq_configuration_session
           console.log('🔄 Skipping configuration restoration - letting ConfigurationForm handle it');
@@ -298,7 +345,36 @@ const Dashboard: React.FC<DashboardProps> = ({
           if (parsed.sessionState.configureContactInfo) {
             setConfigureContactInfo(parsed.sessionState.configureContactInfo);
           }
+          // Restore selected exhibits if available
+          if (parsed.sessionState.selectedExhibits && Array.isArray(parsed.sessionState.selectedExhibits)) {
+            if (parsed.sessionState.selectedExhibits.length > 0) {
+              console.log('📎 Restoring selected exhibits from navigation state:', {
+                count: parsed.sessionState.selectedExhibits.length,
+                ids: parsed.sessionState.selectedExhibits.slice(0, 5), // Show first 5
+                currentPropCount: selectedExhibits.length,
+                willRestore: parsed.sessionState.selectedExhibits.length !== selectedExhibits.length
+              });
+              // Only restore if different from current (avoid unnecessary updates)
+              if (JSON.stringify(parsed.sessionState.selectedExhibits.sort()) !== JSON.stringify(selectedExhibits.sort())) {
+                onExhibitsChange(parsed.sessionState.selectedExhibits);
+                console.log('✅ Selected exhibits restored via onExhibitsChange');
+              } else {
+                console.log('⏭️ Selected exhibits already match, skipping restoration');
+              }
+            } else {
+              console.log('📎 Selected exhibits array exists but is empty in navigation state');
+            }
+          } else {
+            console.log('📎 No selectedExhibits found in navigation state:', {
+              hasSelectedExhibits: !!parsed.sessionState.selectedExhibits,
+              isArray: Array.isArray(parsed.sessionState.selectedExhibits)
+            });
+          }
+        } else {
+          console.log('⏰ Navigation state is too old (older than 5 minutes), not restoring');
         }
+      } else {
+        console.log('📎 No navigation state found in sessionStorage');
       }
     } catch (error) {
       console.warn('⚠️ Could not restore session state:', error);
@@ -419,6 +495,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 recommendedTier={getRecommendedTier(calculations)}
                 onSelectTier={handleSelectTierWithNavigation}
                 configuration={configuration}
+                selectedTier={selectedTier}
               />
             )}
           </div>

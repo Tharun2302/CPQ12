@@ -100,6 +100,31 @@ function getCategoryDisplayName(category: string): string {
   }
 }
 
+// Normalize exhibit display name for agreement table: avoid "Basic Plan - Basic Include", show " - Basic - Included Features"
+function normalizeExhibitDisplayNameForTable(rawName: string): string {
+  let name = (rawName || '').trim();
+  if (!name) return name;
+  // "Slack to Teams Basic Plan - Basic Include" → "Slack to Teams - Basic - Included Features"
+  // "Slack to Teams Basic Plan - Basic Not Include" → "Slack to Teams - Basic - Not Included Features"
+  const planTypes = ['Basic', 'Standard', 'Advanced', 'Premium', 'Enterprise'];
+  for (const plan of planTypes) {
+    const re = new RegExp(`\\s+${plan}\\s+Plan\\s*-\\s*${plan}\\s+(Include)(\\s+Features?)?$`, 'i');
+    if (re.test(name)) {
+      name = name.replace(re, ` - ${plan} - Included Features`);
+      break;
+    }
+    const reNot = new RegExp(`\\s+${plan}\\s+Plan\\s*-\\s*${plan}\\s+(Not\\s+Include)(\\s+Features?)?$`, 'i');
+    if (reNot.test(name)) {
+      name = name.replace(reNot, ` - ${plan} - Not Included Features`);
+      break;
+    }
+  }
+  // Fallback: " - Basic Include" → " - Basic - Included Features", " - Basic Not Include" → " - Basic - Not Included Features"
+  name = name.replace(/\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)\s+Include(\s+Features?)?$/i, ' - $1 - Included Features');
+  name = name.replace(/\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)\s+Not\s+Include(\s+Features?)?$/i, ' - $1 - Not Included Features');
+  return name.trim();
+}
+
 // Helper function to format exhibit description with configuration details
 function formatExhibitDescription(exhibit: any, configuration: ConfigurationData, exhibitConfig?: any): string {
   const category = (exhibit.category || 'content').toLowerCase();
@@ -1372,7 +1397,7 @@ Quote ID: ${quoteData.id}
           '{{duration}}': (duration || 1).toString(),
           // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
           '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
-          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
@@ -1605,69 +1630,8 @@ Quote ID: ${quoteData.id}
             try {
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
-              
-              // Sort exhibits: Included first, then Not Included
-              // Within each group: sort by category (messaging first, then content) and displayOrder
-              const sortExhibits = async (ids: string[]) => {
-                try {
-                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
-                  if (!metaResp.ok) return ids;
-                  const metaData = await metaResp.json();
-                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
-                  
-                  // Separate into Included and Not Included
-                  const included: Array<{id: string, exhibit: any}> = [];
-                  const notIncluded: Array<{id: string, exhibit: any}> = [];
-                  
-                  ids.forEach((id) => {
-                    const ex = lookup.get(id) as any;
-                    if (!ex) return;
-                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    // Check for various "not included" patterns (with/without spaces, different cases)
-                    const isNotIncluded = text.includes('not included') ||
-                                        text.includes('not include') ||
-                                        text.includes('notincluded') ||
-                                        text.includes('notinclude') ||
-                                        text.includes('not-include') ||
-                                        text.includes('not-included');
-                    if (isNotIncluded) {
-                      notIncluded.push({ id, exhibit: ex });
-                    } else {
-                      included.push({ id, exhibit: ex });
-                    }
-                  });
-                  
-                  // Sort within each group: category (messaging first, then content), then displayOrder
-                  const categoryOrder = (cat: string) => {
-                    const normalized = (cat || 'content').toLowerCase();
-                    if (normalized === 'messaging' || normalized === 'message') return 1;
-                    if (normalized === 'content') return 2;
-                    return 3; // email or others
-                  };
-                  
-                  included.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  notIncluded.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  // Return: All Included first, then All Not Included
-                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
-                } catch {
-                  return ids;
-                }
-              };
-
-              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
-
-              // Fetch exhibit metadata for grouping
-              const exhibitMetadata: Array<{ name: string; category?: string }> = [];
+              // Fetch exhibit metadata once (used for: de-dupe, sort order, and merger grouping)
+              const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
               let allExhibits: any[] = [];
               if (metaResp.ok) {
@@ -1677,6 +1641,96 @@ Quote ID: ${quoteData.id}
                 }
               }
 
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                if (ex?.includeType === 'notincluded') return true;
+                if (ex?.includeType === 'included') return false;
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                // Remove "not included" variants so Included/Not Included can share the same base
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by a stable "migration key" so we don't merge the same exhibit content twice
+              // when the UI selection contains multiple IDs representing the same migration.
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const desc = formatExhibitDescription(ex, configuration);
+                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
+                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
+                const category = (ex?.category || 'content').toLowerCase();
+                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
+                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
+                if (seenKeys.has(key)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    key
+                  });
+                  continue;
+                }
+                seenKeys.add(key);
+                dedupedIds.push(id);
+              }
+
+              // Sort exhibits: Included first, then Not Included; within each group: category and displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sortIds = (ids: string[]) => {
+                const included: Array<{ id: string; exhibit: any }> = [];
+                const notIncluded: Array<{ id: string; exhibit: any }> = [];
+                for (const id of ids) {
+                  const ex = lookup.get(id);
+                  if (!ex) continue;
+                  (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+                }
+                const sorter = (a: any, b: any) => {
+                  const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                  if (catDiff !== 0) return catDiff;
+                  return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                };
+                included.sort(sorter);
+                notIncluded.sort(sorter);
+                return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+              };
+
+              const sortedExhibits = sortIds(dedupedIds);
+
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
@@ -1685,12 +1739,13 @@ Quote ID: ${quoteData.id}
                   const blob = await response.blob();
                   exhibitBlobs.push(blob);
                   
-                  // Get exhibit metadata
-                  const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                  // Get exhibit metadata (includeType from upload selection; used by merger)
+                  const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                   if (exhibit) {
                     exhibitMetadata.push({
                       name: exhibit.name || '',
-                      category: exhibit.category || ''
+                      category: exhibit.category || '',
+                      includeType: (exhibit.includeType === 'notincluded' || exhibit.includeType === 'included') ? exhibit.includeType : undefined
                     });
                   }
                   
@@ -3539,7 +3594,7 @@ Total Price: {{total price}}`;
           '{{duration}}': (duration || 1).toString(),
           // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
           '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
-          '{{instance_validity_text}}': `Instance Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
@@ -3990,6 +4045,7 @@ Total Price: {{total price}}`;
                     'onedrive-to-onedrive': 'ONEDRIVE TO ONEDRIVE',
                     'onedrive-to-google-mydrive': 'ONEDRIVE TO GOOGLE MYDRIVE',
                     'sharepoint-online-to-egnyte': 'SHAREPOINT ONLINE TO EGNYTE',
+                    'sharepoint-online-to-google-sharedrive': 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE',
                     'egnyte-to-google': 'EGNYTE TO GOOGLE',
                     'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
                     'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT',
@@ -4330,12 +4386,15 @@ Total Price: {{total price}}`;
           }
         }
         
-        // Build exhibit rows for the template (ONE row per selected migration, not per exhibit file)
-        // This prevents duplicates when a single migration has multiple exhibit files (Included/Not Included/etc).
+        // Store expanded exhibit IDs for use in document merging (includes both Include and Not Include variants)
+        let expandedExhibitIdsForMerge: string[] = [];
+        
+        // Build exhibit rows for the template.
+        // Plan-based rule: when a plan (Basic/Standard/Advanced) is selected, include BOTH "Include" and "Not Include"
+        // exhibit variants for that plan for each selected combination (e.g. Basic Include + Basic Not Include).
         try {
           // In Multi combination, the per-exhibit configs (messagingConfigs/contentConfigs/emailConfigs)
           // are the most reliable source of which combinations are selected.
-          // Some flows can have `selectedExhibits` missing/stale, which would cause only 1 row to render.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const cfgAny: any = configuration as any;
           const idsFromSelection = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
@@ -4345,7 +4404,7 @@ Total Price: {{total price}}`;
             ...(cfgAny.emailConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
           ].filter(Boolean);
 
-          const exhibitIds = Array.from(new Set([...idsFromSelection, ...idsFromConfigs]));
+          let exhibitIds = Array.from(new Set([...idsFromSelection, ...idsFromConfigs]));
 
           const exhibitsData: Array<{
             exhibitType: string;
@@ -4360,52 +4419,333 @@ Total Price: {{total price}}`;
               const exhibitDataResponse = await exhibitResponse.json();
               const allExhibits = exhibitDataResponse?.exhibits || [];
 
-              type ExhibitRowGroup = {
-                category: string;
-                displayName: string; // cleaned name like "Slack to Teams"
-                exhibit: any;
+              // Helper: extract base combination from exhibit (e.g. "slack-to-teams" from "slack-to-teams-include-basic")
+              const getBaseCombination = (ex: any): string => {
+                const primary = ex?.combinations?.[0];
+                if (!primary || primary === 'all') return '';
+                let base = String(primary).toLowerCase();
+                base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+                base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+                base = base.replace(/-+$/, '').trim();
+                return base;
+              };
+              // Helper: get plan from exhibit (Basic/Standard/Advanced)
+              const getPlanFromExhibit = (ex: any): string => {
+                const pt = (ex?.planType || '').toLowerCase();
+                if (pt === 'basic' || pt === 'standard' || pt === 'advanced') {
+                  return pt.charAt(0).toUpperCase() + pt.slice(1);
+                }
+                const name = (ex?.name || '').toLowerCase();
+                if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'Basic';
+                if (name.includes('standard') && !name.includes('advanced')) return 'Standard';
+                if (name.includes('advanced')) return 'Advanced';
+                return '';
               };
 
-              const byGroupKey = new Map<string, ExhibitRowGroup>();
+              const selectedPlanName = (calculation || safeCalculation)?.tier?.name ?? '';
+              const selectedPlanLower = selectedPlanName.toLowerCase();
 
-              for (const exhibitId of exhibitIds) {
-                const exhibit = allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId);
-                if (!exhibit) continue;
+              console.log('🔍 Exhibit expansion debug:', {
+                selectedPlanName,
+                selectedPlanLower,
+                initialExhibitIds: exhibitIds.length,
+                totalExhibits: allExhibits.length
+              });
 
-                const category = (exhibit.category || 'content').toLowerCase();
-                const desc = formatExhibitDescription(exhibit, configuration);
-                const displayName = (desc.split('\n')[0] || exhibit.name || '').trim();
-                if (!displayName) continue;
-
-                const key = `${category}|${displayName.toLowerCase()}`;
-
-                // Prefer an "Included" version if we see both Included/Not Included files for the same migration.
-                const exhibitNameLower = (exhibit.name || '').toLowerCase();
-                const isNotIncluded = exhibitNameLower.includes('not included') ||
-                  exhibitNameLower.includes('not include') ||
-                  exhibitNameLower.includes('notincluded') ||
-                  exhibitNameLower.includes('notinclude') ||
-                  exhibitNameLower.includes('not-include') ||
-                  exhibitNameLower.includes('not-included');
-
-                const existing = byGroupKey.get(key);
-                if (!existing) {
-                  byGroupKey.set(key, { category, displayName, exhibit });
-                } else {
-                  const existingNameLower = (existing.exhibit?.name || '').toLowerCase();
-                  const existingIsNotIncluded = existingNameLower.includes('not included') ||
-                    existingNameLower.includes('not include') ||
-                    existingNameLower.includes('notincluded') ||
-                    existingNameLower.includes('notinclude') ||
-                    existingNameLower.includes('not-include') ||
-                    existingNameLower.includes('not-included');
-                  if (existingIsNotIncluded && !isNotIncluded) {
-                    byGroupKey.set(key, { category, displayName, exhibit });
+              // Build set of selected (category, baseCombination) from ALL configured combinations
+              // Use messagingConfigs, contentConfigs, emailConfigs to get ALL selected combinations
+              // This ensures all combinations appear in the agreement, not just the ones in initial exhibitIds
+              const selectedCombinationKeys = new Set<string>();
+              
+              // First, add combinations from configured exhibits (most reliable source)
+              const allConfiguredExhibitIds = [
+                ...(cfgAny.messagingConfigs || []).map((c: any) => c?.exhibitId),
+                ...(cfgAny.contentConfigs || []).map((c: any) => c?.exhibitId),
+                ...(cfgAny.emailConfigs || []).map((c: any) => c?.exhibitId),
+              ].filter(Boolean);
+              
+              // Also include from selectedExhibits to catch any manually selected exhibits
+              const allSelectedIds = Array.from(new Set([...exhibitIds, ...allConfiguredExhibitIds]));
+              
+              for (const exhibitId of allSelectedIds) {
+                const ex = allExhibits.find((e: any) => e?._id?.toString() === exhibitId?.toString());
+                if (!ex) continue;
+                const category = (ex.category || 'content').toLowerCase();
+                const baseCombo = getBaseCombination(ex);
+                if (baseCombo) {
+                  const key = `${category}|${baseCombo}`;
+                  selectedCombinationKeys.add(key);
+                }
+              }
+              
+              // Also extract combination names directly from config exhibitName fields
+              // This is the PRIMARY source - configs represent the actual selected combinations
+              const configCombinationNames = new Set<string>();
+              
+              // Helper to normalize combination name (same logic as ConfigurationForm extractCombinationName)
+              const normalizeCombinationName = (name: string): string => {
+                let normalized = String(name).trim();
+                
+                // Remove common suffixes like:
+                // - " Standard Plan - Included Features"
+                // - " Advanced Plan - Included Features"
+                // - " Basic Plan - Not Included Features"
+                const patterns = [
+                  /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i,
+                  /\s+Plan\s*-\s*.*$/i,
+                  /\s+-\s*Included\s+Features$/i,
+                  /\s+-\s*Not\s+Included\s+Features$/i,
+                  /\s+-\s*.*$/i,
+                ];
+                
+                let cleaned = normalized;
+                for (const pattern of patterns) {
+                  cleaned = cleaned.replace(pattern, '');
+                }
+                
+                // Also handle dash-separated format (e.g., "slack-to-teams")
+                cleaned = cleaned.toLowerCase()
+                  .replace(/-(basic|standard|advanced|premium|enterprise)$/, '')
+                  .replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '')
+                  .replace(/-+$/, '')
+                  .trim();
+                
+                return cleaned || normalized.toLowerCase();
+              };
+              
+              // Helper: keys in expansion loop use getBaseCombination format (dashes, e.g. "slack-to-teams")
+              const toDashedKey = (category: string, normalized: string) =>
+                `${category}|${normalized.replace(/\s+/g, '-').toLowerCase()}`;
+              
+              // Extract from messagingConfigs - add key in SAME format as getBaseCombination (dashes) so expansion matches
+              (cfgAny.messagingConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    const key = toDashedKey('messaging', normalized);
+                    selectedCombinationKeys.add(key);
+                    configCombinationNames.add(`messaging|${normalized}`);
+                    console.log('📋 Added messaging combination from config:', c.exhibitName, '→', key);
                   }
+                }
+              });
+              
+              // Extract from contentConfigs
+              (cfgAny.contentConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    const key = toDashedKey('content', normalized);
+                    selectedCombinationKeys.add(key);
+                    configCombinationNames.add(`content|${normalized}`);
+                    console.log('📋 Added content combination from config:', c.exhibitName, '→', key);
+                  }
+                }
+              });
+              
+              // Extract from emailConfigs
+              (cfgAny.emailConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    const key = toDashedKey('email', normalized);
+                    selectedCombinationKeys.add(key);
+                    configCombinationNames.add(`email|${normalized}`);
+                    console.log('📋 Added email combination from config:', c.exhibitName, '→', key);
+                  }
+                }
+              });
+
+              console.log('🔍 Selected combination keys (from all sources):', {
+                fromExhibitIds: Array.from(selectedCombinationKeys).filter(k => !configCombinationNames.has(k)),
+                fromConfigs: Array.from(configCombinationNames),
+                total: Array.from(selectedCombinationKeys),
+                count: selectedCombinationKeys.size,
+                messagingConfigs: (cfgAny.messagingConfigs || []).length,
+                contentConfigs: (cfgAny.contentConfigs || []).length,
+                emailConfigs: (cfgAny.emailConfigs || []).length
+              });
+
+              // Expand: for each selected (category, combination), add ALL exhibits that match that combination
+              // AND the selected plan (Basic/Standard/Advanced), including BOTH Include and Not Include variants.
+              // IMPORTANT: Build fresh set with only exhibits matching selected plan (don't keep exhibits from other plans).
+              if (selectedPlanName && selectedCombinationKeys.size > 0) {
+                const expandedIds = new Set<string>();
+                const matchedExhibits: Array<{ id: string; name: string; plan: string; combo: string }> = [];
+                const skippedExhibits: Array<{ name: string; reason: string }> = [];
+                
+                for (const ex of allExhibits) {
+                  const category = (ex.category || 'content').toLowerCase();
+                  const baseCombo = getBaseCombination(ex);
+                  if (!baseCombo) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: 'no base combination' });
+                    continue;
+                  }
+                  const key = `${category}|${baseCombo}`;
+                  if (!selectedCombinationKeys.has(key)) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `combination mismatch: ${key}` });
+                    continue; // Skip if not selected combination
+                  }
+                  const exhibitPlan = getPlanFromExhibit(ex);
+                  if (!exhibitPlan || exhibitPlan.toLowerCase() !== selectedPlanLower) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${selectedPlanLower}` });
+                    continue; // Skip if plan doesn't match
+                  }
+                  expandedIds.add(ex._id?.toString?.() ?? '');
+                  matchedExhibits.push({ id: ex._id?.toString?.() ?? '', name: ex.name || '', plan: exhibitPlan, combo: baseCombo });
+                }
+                
+                console.log('✅ Exhibit expansion results:', {
+                  matchedCount: matchedExhibits.length,
+                  matchedExhibits: matchedExhibits.map(e => `${e.name} (${e.plan})`),
+                  skippedCount: skippedExhibits.length,
+                  skippedSample: skippedExhibits.slice(0, 5)
+                });
+                
+                exhibitIds = Array.from(expandedIds);
+                // Store expanded IDs for document merging (includes both Include and Not Include)
+                expandedExhibitIdsForMerge = Array.from(expandedIds);
+              } else {
+                console.warn('⚠️ Exhibit expansion skipped:', {
+                  hasPlan: !!selectedPlanName,
+                  hasCombinations: selectedCombinationKeys.size > 0,
+                  selectedPlanName,
+                  combinationKeysCount: selectedCombinationKeys.size
+                });
+                // If expansion didn't run, use original exhibitIds for merging
+                expandedExhibitIdsForMerge = exhibitIds;
+              }
+
+              // CRITICAL: When we have configs, ensure merge list includes ALL combinations from configs.
+              // Build merge IDs directly from each config so we never miss a combination (e.g. 5 configs -> 5+ exhibit docs).
+              const configCount = (cfgAny.messagingConfigs?.length || 0) + (cfgAny.contentConfigs?.length || 0) + (cfgAny.emailConfigs?.length || 0);
+              if (configCount > 0 && allExhibits.length > 0) {
+                const mergeIdsFromConfigs = new Set<string>();
+                const configDetails: Array<{ configName: string; exhibitId: string; found: boolean; matched: number }> = [];
+                
+                const addForConfig = (list: any[] | undefined) => {
+                  if (!Array.isArray(list)) return;
+                  for (const cfg of list) {
+                    const configName = (cfg?.exhibitName ?? cfg?.combinationName ?? 'unknown').toString();
+                    const primaryId = (cfg?.exhibitId ?? '').toString();
+                    if (!primaryId) {
+                      console.warn(`⚠️ Config has no exhibitId: ${configName}`);
+                      continue;
+                    }
+                    const primaryEx = allExhibits.find((e: any) => (e?._id ?? '').toString() === primaryId);
+                    if (!primaryEx) {
+                      console.warn(`⚠️ Config exhibit not found in allExhibits: ${configName} (ID: ${primaryId})`, {
+                        totalExhibits: allExhibits.length,
+                        sampleIds: allExhibits.slice(0, 5).map((e: any) => ({
+                          id: e?._id?.toString(),
+                          name: e?.name,
+                          category: e?.category
+                        }))
+                      });
+                      // Still add the ID - it might exist but not be in this fetch
+                      mergeIdsFromConfigs.add(primaryId);
+                      configDetails.push({ configName, exhibitId: primaryId, found: false, matched: 1 });
+                      continue;
+                    }
+                    const category = (primaryEx.category || 'content').toLowerCase();
+                    const baseCombo = getBaseCombination(primaryEx);
+                    if (!baseCombo) {
+                      console.warn(`⚠️ Config exhibit has no base combo: ${configName} (ID: ${primaryId}, name: ${primaryEx.name})`);
+                      mergeIdsFromConfigs.add(primaryId);
+                      configDetails.push({ configName, exhibitId: primaryId, found: true, matched: 1 });
+                      continue;
+                    }
+                    const planLower = (selectedPlanName || getPlanFromExhibit(primaryEx) || '').toLowerCase();
+                    const matchedIds: string[] = [];
+                    let matchedCount = 0;
+                    
+                    // First try: match by category, baseCombo, and plan
+                    for (const ex of allExhibits) {
+                      const exCat = (ex.category || 'content').toLowerCase();
+                      const exBase = getBaseCombination(ex);
+                      if (exCat !== category || exBase !== baseCombo) continue;
+                      if (planLower) {
+                        const exPlan = getPlanFromExhibit(ex).toLowerCase();
+                        if (exPlan === planLower) {
+                          const exId = (ex._id ?? '').toString();
+                          mergeIdsFromConfigs.add(exId);
+                          matchedIds.push(exId);
+                          matchedCount++;
+                        }
+                      } else {
+                        const exId = (ex._id ?? '').toString();
+                        mergeIdsFromConfigs.add(exId);
+                        matchedIds.push(exId);
+                        matchedCount++;
+                      }
+                    }
+                    
+                    // FALLBACK: If no matches found, find ALL exhibits for this combination (ignore plan filter)
+                    if (matchedCount === 0) {
+                      console.warn(`⚠️ Config merge FAILED: ${configName} → found 0 matching exhibits, using fallback (ignoring plan filter)`, {
+                        category,
+                        baseCombo,
+                        plan: planLower || 'any',
+                        primaryExName: primaryEx.name,
+                        primaryExId: primaryId
+                      });
+                      
+                      for (const ex of allExhibits) {
+                        const exCat = (ex.category || 'content').toLowerCase();
+                        const exBase = getBaseCombination(ex);
+                        if (exCat === category && exBase === baseCombo) {
+                          const exId = (ex._id ?? '').toString();
+                          mergeIdsFromConfigs.add(exId);
+                          matchedIds.push(exId);
+                          matchedCount++;
+                        }
+                      }
+                      
+                      if (matchedCount === 0) {
+                        // Last resort: add the primary exhibit ID
+                        mergeIdsFromConfigs.add(primaryId);
+                        console.warn(`⚠️ Fallback also found 0 exhibits, adding primary exhibit ID only: ${primaryId}`);
+                        matchedCount = 1;
+                      } else {
+                        console.log(`✅ Fallback found ${matchedCount} exhibits for ${configName} (ignoring plan filter)`);
+                      }
+                    } else {
+                      console.log(`📎 Config merge: ${configName} → found ${matchedCount} exhibits`, {
+                        category,
+                        baseCombo,
+                        plan: planLower || 'any',
+                        matchedIds: matchedIds.slice(0, 5)
+                      });
+                    }
+                    
+                    configDetails.push({ configName, exhibitId: primaryId, found: true, matched: matchedCount });
+                  }
+                };
+                addForConfig(cfgAny.messagingConfigs);
+                addForConfig(cfgAny.contentConfigs);
+                addForConfig(cfgAny.emailConfigs);
+                if (mergeIdsFromConfigs.size > 0) {
+                  const prevMergeCount = expandedExhibitIdsForMerge.length;
+                  expandedExhibitIdsForMerge = Array.from(new Set([...expandedExhibitIdsForMerge, ...mergeIdsFromConfigs]));
+                  console.log('📎 Merge list from configs (ensure all combinations):', {
+                    previousCount: prevMergeCount,
+                    addedFromConfigs: mergeIdsFromConfigs.size,
+                    totalMergeIds: expandedExhibitIdsForMerge.length,
+                    configCount,
+                    configDetails: configDetails.map(c => `${c.configName}: ${c.matched} exhibits`),
+                    allMergeIds: Array.from(mergeIdsFromConfigs).slice(0, 10)
+                  });
+                } else {
+                  console.warn('⚠️ No merge IDs found from configs!', {
+                    configCount,
+                    allExhibitsCount: allExhibits.length,
+                    configDetails
+                  });
                 }
               }
 
-              // Sort in a stable order: messaging → content → email → others, then name
+              // One row per COMBINATION (like third image: "Slack to Teams", "Outlook to Gmail", "OneDrive to OneDrive")
+              // Not one row per exhibit variant (no separate "Included Features" / "Not Included Features" rows)
               const categoryOrder = (cat: string) => {
                 const c = (cat || '').toLowerCase();
                 if (c === 'messaging' || c === 'message') return 1;
@@ -4413,41 +4753,53 @@ Total Price: {{total price}}`;
                 if (c === 'email') return 3;
                 return 4;
               };
+              type ConfigRow = { category: string; displayName: string; exhibitConfig: any; exhibit?: any };
+              const configRows: ConfigRow[] = [];
 
-              const groups = Array.from(byGroupKey.values()).sort((a, b) => {
+              const addRowsFromConfigs = (list: any[] | undefined, category: string) => {
+                if (!Array.isArray(list)) return;
+                for (const cfg of list) {
+                  const displayName = (cfg?.exhibitName ?? cfg?.combinationName ?? '').toString().trim();
+                  if (!displayName) continue;
+                  const exhibitId = cfg?.exhibitId;
+                  const exhibit = exhibitId ? allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId?.toString()) : undefined;
+                  configRows.push({ category, displayName, exhibitConfig: cfg, exhibit: exhibit || undefined });
+                }
+              };
+
+              addRowsFromConfigs((configuration as any).messagingConfigs, 'messaging');
+              addRowsFromConfigs((configuration as any).contentConfigs, 'content');
+              addRowsFromConfigs((configuration as any).emailConfigs, 'email');
+
+              // If no configs (e.g. single migration type), fall back to one row per exhibit but group by base combination
+              if (configRows.length === 0 && exhibitIds.length > 0) {
+                const byComboKey = new Map<string, { category: string; displayName: string; exhibit: any }>();
+                for (const exhibitId of exhibitIds) {
+                  const exhibit = allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId);
+                  if (!exhibit) continue;
+                  const category = (exhibit.category || 'content').toLowerCase();
+                  const baseCombo = getBaseCombination(exhibit);
+                  const displayName = baseCombo
+                    ? baseCombo.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+                    : (exhibit.name || '').trim();
+                  if (!displayName) continue;
+                  const key = `${category}|${(baseCombo || displayName).toLowerCase()}`;
+                  if (!byComboKey.has(key)) byComboKey.set(key, { category, displayName, exhibit });
+                }
+                byComboKey.forEach((v) => configRows.push({ category: v.category, displayName: v.displayName, exhibitConfig: configuration, exhibit: v.exhibit }));
+              }
+
+              const sortedRows = [...configRows].sort((a, b) => {
                 const cd = categoryOrder(a.category) - categoryOrder(b.category);
                 if (cd !== 0) return cd;
                 return a.displayName.localeCompare(b.displayName);
               });
 
-              for (const g of groups) {
-                // Use per-combination config + breakdowns in Multi combination for accurate price/details.
-                const category = g.category;
-                const combinationName = g.displayName;
-
-                let exhibitConfig: any = configuration;
-                if (configuration?.migrationType === 'Multi combination') {
-                  const exhibitId = g.exhibit?._id?.toString?.() || '';
-                  if (category === 'messaging' || category === 'message') {
-                    exhibitConfig =
-                      (configuration as any).messagingConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
-                      (configuration as any).messagingConfigs?.find((c: any) => c.exhibitName === combinationName) ||
-                      (configuration as any).messagingConfig ||
-                      configuration;
-                  } else if (category === 'content') {
-                    exhibitConfig =
-                      (configuration as any).contentConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
-                      (configuration as any).contentConfigs?.find((c: any) => c.exhibitName === combinationName) ||
-                      (configuration as any).contentConfig ||
-                      configuration;
-                  } else if (category === 'email') {
-                    exhibitConfig =
-                      (configuration as any).emailConfigs?.find((c: any) => c.exhibitId === exhibitId) ||
-                      (configuration as any).emailConfigs?.find((c: any) => c.exhibitName === combinationName) ||
-                      (configuration as any).emailConfig ||
-                      configuration;
-                  }
-                }
+              for (const row of sortedRows) {
+                const category = row.category;
+                const combinationName = row.displayName;
+                const exhibitConfig = row.exhibitConfig;
+                const exhibit = row.exhibit;
 
                 let price = 0;
                 if (configuration?.migrationType === 'Multi combination') {
@@ -4467,14 +4819,20 @@ Total Price: {{total price}}`;
                   }
                 }
 
-                // Fallback if breakdown not available
-                if (!price || price <= 0) {
-                  price = calculateExhibitPrice(g.exhibit, configuration, calculation || safeCalculation, exhibitConfig);
+                if ((!price || price <= 0) && exhibit) {
+                  price = calculateExhibitPrice(exhibit, configuration, calculation || safeCalculation, exhibitConfig);
                 }
+
+                const baseDesc = exhibit
+                  ? formatExhibitDescription(exhibit, configuration, exhibitConfig)
+                  : `${combinationName}\n---------------------------------\nConfigured migration`;
+                const descFirstLine = combinationName;
+                const descRest = baseDesc.split('\n').slice(1).join('\n');
+                const exhibitDesc = descRest ? `${descFirstLine}\n${descRest}` : descFirstLine;
 
                 exhibitsData.push({
                   exhibitType: 'CloudFuze X-Change Data Migration',
-                  exhibitDesc: formatExhibitDescription(g.exhibit, configuration, exhibitConfig),
+                  exhibitDesc,
                   exhibitPlan: (calculation || safeCalculation)?.tier?.name || 'Standard',
                   exhibitPrice: formatCurrency(price),
                 });
@@ -4483,9 +4841,35 @@ Total Price: {{total price}}`;
           }
 
           (templateData as any).exhibits = exhibitsData;
+          
+          // First-page exhibits list/summary so the front page can show what exhibits are included
+          const exhibitsListText = exhibitsData.length > 0
+            ? exhibitsData.map((e: { exhibitType?: string; exhibitDesc?: string; exhibitPlan?: string }, i: number) => {
+                const title = (e.exhibitDesc || '').split('\n')[0].trim() || e.exhibitType || `Exhibit ${i + 1}`;
+                return `EXHIBIT ${i + 1}: ${title}`;
+              }).join('; ')
+            : 'None';
+          const exhibitsSummaryText = exhibitsData.length > 0
+            ? exhibitsData.map((e: { exhibitDesc?: string }, i: number) => (e.exhibitDesc || '').split('\n')[0].trim() || `Exhibit ${i + 1}`).join(', ')
+            : 'None';
+          templateData['{{exhibits_list}}'] = exhibitsListText;
+          templateData['{{exhibits_summary}}'] = exhibitsSummaryText;
+          templateData['{{exhibits_list_text}}'] = exhibitsListText;
+          templateData['{{exhibits_count}}'] = exhibitsData.length.toString();
+          
+          // If expansion didn't happen (no plan selected), use original exhibitIds for merging
+          if (expandedExhibitIdsForMerge.length === 0) {
+            expandedExhibitIdsForMerge = exhibitIds;
+          }
         } catch (e) {
           console.warn('⚠️ Unable to build exhibit rows for template, continuing without exhibit rows:', e);
           (templateData as any).exhibits = [];
+          templateData['{{exhibits_list}}'] = 'None';
+          templateData['{{exhibits_summary}}'] = 'None';
+          templateData['{{exhibits_list_text}}'] = 'None';
+          templateData['{{exhibits_count}}'] = '0';
+          // Fallback: use original selectedExhibits if expansion failed
+          expandedExhibitIdsForMerge = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
         }
         
         console.log('🔍 TEMPLATE DATA CREATED:');
@@ -4597,63 +4981,96 @@ Total Price: {{total price}}`;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const cfg: any = configuration as any;
 
-            type ServerLine = { instances: number; instanceType: string; kind: 'data' | 'email' };
-            const entries: ServerLine[] = [];
+            // Option A (final): SEPARATE lines per exhibit/config.
+            // No SUM, no MAX:
+            // - Every email/content/messaging config becomes its own server line
+            // - Each line uses that config's own duration
+            type ServerLine = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName?: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+            const linesData: ServerLine[] = [];
 
-            const pushEntries = (list: any[] | undefined, kind: 'data' | 'email') => {
+            const addLinesFromList = (list: any[] | undefined, kind: ServerLine['kind']) => {
               if (!Array.isArray(list)) return;
               for (const item of list) {
                 const instances = Number(item?.numberOfInstances ?? 0);
                 const instanceType = String(item?.instanceType ?? '').trim();
+                const months = Number(item?.duration ?? 0);
                 if (!instanceType) continue;
-                // Default to 1 if template expects a count and config omitted it
-                entries.push({ instances: instances > 0 ? instances : 1, instanceType, kind });
+                linesData.push({
+                  kind,
+                  exhibitName: (item?.exhibitName ?? item?.combinationName ?? item?.name ?? '').toString().trim() || undefined,
+                  instances: instances > 0 ? instances : 1,
+                  instanceType,
+                  months: Number.isFinite(months) && months > 0 ? months : 1
+                });
               }
             };
 
-            // Historically, Shared Server/Instance row describes "data migration" + "email migration".
-            // Treat Messaging + Content as "data migration" (both are data moves), and Email as "email migration".
-            pushEntries(cfg.emailConfigs ?? [], 'email');
-            pushEntries(cfg.contentConfigs ?? [], 'data');
-            pushEntries(cfg.messagingConfigs ?? [], 'data');
+            // Newer shape (arrays)
+            addLinesFromList(cfg.emailConfigs ?? [], 'email');
+            addLinesFromList(cfg.contentConfigs ?? [], 'content');
+            addLinesFromList(cfg.messagingConfigs ?? [], 'messaging');
 
-            // Backward compatibility: if arrays aren't present, fall back to single configs.
-            if (entries.length === 0) {
+            // Legacy single-config fallback (only if arrays aren't present)
+            if (linesData.length === 0) {
               if (cfg.emailConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'email',
+                  exhibitName: (cfg.emailConfig?.exhibitName ?? cfg.emailConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.emailConfig?.instanceType),
-                  kind: 'email'
+                  months: Number(cfg.emailConfig?.duration ?? 0) || 1
                 });
               }
               if (cfg.contentConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'content',
+                  exhibitName: (cfg.contentConfig?.exhibitName ?? cfg.contentConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.contentConfig?.instanceType),
-                  kind: 'data'
+                  months: Number(cfg.contentConfig?.duration ?? 0) || 1
                 });
               }
               if (cfg.messagingConfig?.instanceType) {
-                entries.push({
-                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1),
+                linesData.push({
+                  kind: 'messaging',
+                  exhibitName: (cfg.messagingConfig?.exhibitName ?? cfg.messagingConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1) || 1,
                   instanceType: String(cfg.messagingConfig?.instanceType),
-                  kind: 'data'
+                  months: Number(cfg.messagingConfig?.duration ?? 0) || 1
                 });
               }
             }
 
-            // Render in the exact style:
-            // 1
-            // Small server for email migration
-            // -------------------------------
-            // 1
-            // Standard server for data migration
+            // Render server descriptions WITHOUT "Instance Valid for X Months"
+            // (the template may still have a separate "Instance Valid for {{Duration_of_months}}" line,
+            // which is cleaned up in docxTemplateProcessor after rendering).
+            // Format: "X X Type server for Y migration" on line 1, then combination name in bold on line 2
             const separator = '----------------------------------------';
             const lines: string[] = [];
-            entries.forEach((e, idx) => {
+            linesData.forEach((p, idx) => {
               if (idx > 0) lines.push(separator);
-              lines.push(String(e.instances));
-              lines.push(`${e.instanceType} server for ${e.kind === 'email' ? 'email migration' : 'data migration'}`);
+              
+              // Line 1: server description
+              lines.push(
+                `${p.instances} X ${p.instanceType} server for ${
+                  p.kind === 'email'
+                    ? 'email migration'
+                    : p.kind === 'messaging'
+                      ? 'messaging migration'
+                      : 'data migration'
+                }`
+              );
+              
+              // Line 2: combination name in bold (if available)
+              if (p.exhibitName) {
+                lines.push(`**${p.exhibitName}**`);
+              }
             });
 
             return lines.join('\n');
@@ -4667,6 +5084,165 @@ Total Price: {{total price}}`;
         templateData['{{server_descriptions}}'] = serverDescriptions;
         templateData['{{serverDescriptions}}'] = serverDescriptions; // optional camelCase variant
         templateData['{{server descriptions}}'] = serverDescriptions; // optional space variant
+
+        // Build servers array for template loop (Multi combination)
+        // This creates a loopable array so the template can generate one row per server/combination
+        try {
+          if (configuration?.migrationType === 'Multi combination') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const calcAny: any = (calculation || safeCalculation) as any;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfgAny: any = configuration as any;
+
+            const getInstanceCostFor = (
+              kind: 'email' | 'content' | 'messaging',
+              comboName: string
+            ): number => {
+              const list =
+                kind === 'email'
+                  ? (calcAny.emailCombinationBreakdowns || [])
+                  : kind === 'content'
+                    ? (calcAny.contentCombinationBreakdowns || [])
+                    : (calcAny.messagingCombinationBreakdowns || []);
+
+              const target = (comboName || '').toString().trim().toLowerCase();
+              const hit = list.find((b: any) => (b?.combinationName || '').toString().trim().toLowerCase() === target);
+              return Number(hit?.instanceCost ?? 0) || 0;
+            };
+
+            // Robust fallback: compute instance cost directly from config when breakdown name matching isn't available.
+            // This prevents blank pricing when configs don't carry `exhibitName` but do carry `name/combinationName`.
+            const computeInstanceCost = (instanceType: string, durationMonths: number, instances: number): number => {
+              const type = (instanceType || 'Standard').toString().trim();
+              const months = Number(durationMonths || 0) > 0 ? Number(durationMonths) : 1;
+              const count = Number(instances || 0) > 0 ? Number(instances) : 1;
+              return getInstanceTypeCost(type) * months * count;
+            };
+
+            type ServerItem = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+
+            const items: ServerItem[] = [
+              ...(cfgAny.emailConfigs || []).map((c: any) => ({
+                kind: 'email' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.contentConfigs || []).map((c: any) => ({
+                kind: 'content' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.messagingConfigs || []).map((c: any) => ({
+                kind: 'messaging' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+            ].filter((x) => x.instanceType.trim() !== '');
+
+            // Fallback to single-config legacy shape
+            if (items.length === 0) {
+              if (cfgAny.emailConfig?.instanceType) {
+                items.push({
+                  kind: 'email',
+                  exhibitName: (cfgAny.emailConfig.exhibitName ?? cfgAny.emailConfig.combinationName ?? cfgAny.emailConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.emailConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.emailConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.emailConfig.duration || 0)
+                });
+              }
+              if (cfgAny.contentConfig?.instanceType) {
+                items.push({
+                  kind: 'content',
+                  exhibitName: (cfgAny.contentConfig.exhibitName ?? cfgAny.contentConfig.combinationName ?? cfgAny.contentConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.contentConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.contentConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.contentConfig.duration || 0)
+                });
+              }
+              if (cfgAny.messagingConfig?.instanceType) {
+                items.push({
+                  kind: 'messaging',
+                  exhibitName: (cfgAny.messagingConfig.exhibitName ?? cfgAny.messagingConfig.combinationName ?? cfgAny.messagingConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.messagingConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.messagingConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.messagingConfig.duration || 0)
+                });
+              }
+            }
+
+            // Build servers array for docxtemplater loop
+            const serversArray = items.map((it, idx) => {
+              const name = (it.exhibitName || '').trim();
+              // Keep normal spaces. If you see large gaps in Word/PDF, fix the DOCX cell alignment
+              // (use Center/Left, not Justify/Distributed) rather than forcing non-breaking spaces,
+              // which can cause ugly mid-word wrapping in narrow cells.
+              const displayName = name.replace(/\s+/g, ' ').trim();
+              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
+              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
+              const months = Number(it.months || 0) > 0 ? Number(it.months) : 1;
+              const migrationType =
+                it.kind === 'email'
+                  ? 'email migration'
+                  : it.kind === 'messaging'
+                    ? 'messaging migration'
+                    : 'data migration';
+              const displayServerDescription = `${it.instances} X ${it.instanceType} server for ${migrationType}`;
+
+              return {
+                serverDescription: displayServerDescription,
+                combinationName: displayName || '(unknown)',
+                serverPrice: formatCurrency(cost),
+                // Per-server duration (use this in template instead of {{Duration_of_months}} if you want each row's own months)
+                serverMonths: months,
+                // Template helpers
+                isLast: idx === items.length - 1
+              };
+            });
+
+            console.log('✅ Servers array for template:', serversArray);
+            (templateData as any).servers = serversArray;
+
+            // Also keep the old format for backward compatibility
+            const lines: string[] = [];
+            let total = 0;
+            
+            for (const it of items) {
+              const name = (it.exhibitName || '').trim();
+              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
+              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
+              total += cost;
+              lines.push(formatCurrency(cost));
+            }
+            
+            // Append total as last line (no label), if we have at least one server line
+            if (lines.length > 0) {
+              lines.push(formatCurrency(total));
+            }
+
+            // Add extra spacing between amounts for better visual alignment in the DOCX/PDF preview.
+            // Two blank lines between each amount => three newline characters between entries.
+            templateData['{{server_instance_cost_breakdown}}'] = lines.join('\n\n\n');
+          } else {
+            templateData['{{server_instance_cost_breakdown}}'] = '';
+            (templateData as any).servers = [];
+          }
+        } catch (e) {
+          console.warn('⚠️ Unable to build servers array:', e);
+          templateData['{{server_instance_cost_breakdown}}'] = '';
+          (templateData as any).servers = [];
+        }
         
         console.log('📋 Template data for DOCX processing:', templateData);
         
@@ -4932,12 +5508,21 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.log('📄 Processed DOCX type:', result.processedDocx.type);
           
           // Merge selected exhibits ONLY for Multi combination migration type
-          const uniqueSelectedExhibitsForMerge = Array.from(
-            new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean))
-          );
+          // Use expanded exhibit IDs (includes both Include and Not Include variants based on plan selection)
+          const uniqueSelectedExhibitsForMerge = expandedExhibitIdsForMerge.length > 0
+            ? Array.from(new Set(expandedExhibitIdsForMerge.map((id) => (id ?? '').toString()).filter(Boolean)))
+            : Array.from(new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean)));
+          
+          console.log('📎 Using exhibit IDs for merge:', {
+            expandedCount: expandedExhibitIdsForMerge.length,
+            usingExpanded: expandedExhibitIdsForMerge.length > 0,
+            uniqueForMerge: uniqueSelectedExhibitsForMerge.length
+          });
+          
           if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
             console.log('📎 Fetching and merging selected exhibits for Multi combination...', {
               raw: selectedExhibits,
+              expanded: expandedExhibitIdsForMerge,
               unique: uniqueSelectedExhibitsForMerge
             });
             
@@ -4945,68 +5530,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               // Fetch all exhibit files
               const exhibitBlobs: Blob[] = [];
               
-              // Sort exhibits: Included first, then Not Included
-              // Within each group: sort by category (messaging first, then content) and displayOrder
-              const sortExhibits = async (ids: string[]) => {
-                try {
-                  const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
-                  if (!metaResp.ok) return ids;
-                  const metaData = await metaResp.json();
-                  const lookup = new Map((metaData.exhibits || []).map((ex: any) => [ex._id, ex]));
-                  
-                  // Separate into Included and Not Included
-                  const included: Array<{id: string, exhibit: any}> = [];
-                  const notIncluded: Array<{id: string, exhibit: any}> = [];
-                  
-                  ids.forEach((id) => {
-                    const ex = lookup.get(id) as any;
-                    if (!ex) return;
-                    const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
-                    // Check for various "not included" patterns (with/without spaces, different cases)
-                    const isNotIncluded = text.includes('not included') ||
-                                        text.includes('not include') ||
-                                        text.includes('notincluded') ||
-                                        text.includes('notinclude') ||
-                                        text.includes('not-include') ||
-                                        text.includes('not-included');
-                    if (isNotIncluded) {
-                      notIncluded.push({ id, exhibit: ex });
-                    } else {
-                      included.push({ id, exhibit: ex });
-                    }
-                  });
-                  
-                  // Sort within each group: category (messaging first, then content), then displayOrder
-                  const categoryOrder = (cat: string) => {
-                    const normalized = (cat || 'content').toLowerCase();
-                    if (normalized === 'messaging' || normalized === 'message') return 1;
-                    if (normalized === 'content') return 2;
-                    return 3; // email or others
-                  };
-                  
-                  included.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  notIncluded.sort((a, b) => {
-                    const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
-                    if (catDiff !== 0) return catDiff;
-                    return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
-                  });
-                  
-                  // Return: All Included first, then All Not Included
-                  return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
-                } catch {
-                  return ids;
-                }
-              };
-
-              const sortedExhibits = await sortExhibits(uniqueSelectedExhibitsForMerge);
-
               // Fetch exhibit metadata for grouping
-              const exhibitMetadata: Array<{ name: string; category?: string }> = [];
+              const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
               let allExhibits: any[] = [];
               if (metaResp.ok) {
@@ -5016,11 +5541,97 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 }
               }
 
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                if (ex?.includeType === 'notincluded') return true;
+                if (ex?.includeType === 'included') return false;
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by stable "migration key" before fetching/merging blobs
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  // Keep unknown IDs (but they may be skipped later if metadata is required)
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const desc = formatExhibitDescription(ex, configuration);
+                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
+                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
+                const category = (ex?.category || 'content').toLowerCase();
+                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
+                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
+                if (seenKeys.has(key)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    key
+                  });
+                  continue;
+                }
+                seenKeys.add(key);
+                dedupedIds.push(id);
+              }
+
+              // Sort exhibits: Included first, then Not Included; within each group: category + displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sorter = (a: any, b: any) => {
+                const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                if (catDiff !== 0) return catDiff;
+                return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+              };
+
+              const included: Array<{ id: string; exhibit: any }> = [];
+              const notIncluded: Array<{ id: string; exhibit: any }> = [];
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+              }
+              included.sort(sorter);
+              notIncluded.sort(sorter);
+              const sortedExhibits = [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 
                 // Get exhibit metadata FIRST (before fetching file)
-                const exhibit = allExhibits.find((ex: any) => ex._id === exhibitId);
+                const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                 if (!exhibit) {
                   console.warn(`⚠️ Exhibit ${exhibitId} not found in metadata, skipping`);
                   continue;
@@ -5035,7 +5646,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   exhibitBlobs.push(blob);
                   exhibitMetadata.push({
                     name: exhibit.name || '',
-                    category: exhibit.category || ''
+                    category: exhibit.category || '',
+                    includeType: (exhibit.includeType === 'notincluded' || exhibit.includeType === 'included') ? exhibit.includeType : undefined
                   });
                   console.log(`✅ Fetched exhibit ${exhibitId}: "${exhibit.name}" (${blob.size} bytes)`);
                 } else {

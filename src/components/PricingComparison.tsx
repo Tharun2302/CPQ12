@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
 import { formatCurrency, PRICING_TIERS, calculateCombinationPricing } from '../utils/pricing';
 
@@ -7,31 +8,42 @@ interface PricingComparisonProps {
   recommendedTier: PricingCalculation;
   onSelectTier: (calculation: PricingCalculation) => void;
   configuration?: ConfigurationData;
+  selectedTier?: PricingCalculation | null; // Add selectedTier prop to know which plan is selected
 }
 
 const PricingComparison: React.FC<PricingComparisonProps> = ({
   calculations,
   onSelectTier,
-  configuration
+  configuration,
+  selectedTier
 }) => {
   const [discount, setDiscount] = useState<number>(0);
   
   // Track selected tier per combination (key: combinationName, value: tier name)
-  const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>({});
-
-  const totalUsers = useMemo(() => {
-    if (!configuration) return 0;
-    if (configuration.migrationType === 'Multi combination') {
-      const sumUsers = (arr?: Array<{ numberOfUsers: number }>) =>
-        arr?.reduce((acc, item) => acc + (item.numberOfUsers || 0), 0) || 0;
-      return (
-        sumUsers(configuration.messagingConfigs) +
-        sumUsers(configuration.contentConfigs) +
-        sumUsers(configuration.emailConfigs)
-      );
+  // Load from sessionStorage on mount to persist across navigation
+  const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>(() => {
+    try {
+      const saved = sessionStorage.getItem('cpq_selected_tiers_per_combination');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        console.log('📋 Restored per-combination tier selections:', parsed);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('Could not load per-combination tiers:', e);
     }
-    return configuration.numberOfUsers || 0;
-  }, [configuration]);
+    return {};
+  });
+
+  // Save per-combination tier selections to sessionStorage whenever they change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('cpq_selected_tiers_per_combination', JSON.stringify(selectedTiersPerCombination));
+      console.log('💾 Saved per-combination tier selections:', selectedTiersPerCombination);
+    } catch (e) {
+      console.warn('Could not save per-combination tiers:', e);
+    }
+  }, [selectedTiersPerCombination]);
 
   // Initialize selected tiers with the current calculation tier (Standard by default)
   useEffect(() => {
@@ -51,7 +63,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       });
       
       setSelectedTiersPerCombination(prev => {
-        // Only set if not already set (preserve user selections)
+        // Only set if not already set (preserve user selections from sessionStorage)
         const updated = { ...prev };
         Object.keys(initialTiers).forEach(key => {
           if (!updated[key]) {
@@ -348,52 +360,88 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         {filteredCalculations.map((calc) => {
           // For Multi combination, recalculate total based on this plan's tier
           let planTotal = calc.totalCost;
+          let originalTotalBeforeMinimum = planTotal;
+          let isSingleCombination = false;
+          
           if (configuration?.migrationType === 'Multi combination') {
             planTotal = 0;
             
+            // Count how many combination types are selected
+            const hasMessaging = calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0;
+            const hasContent = calc.contentCombinationBreakdowns && calc.contentCombinationBreakdowns.length > 0;
+            const hasEmail = calc.emailCombinationBreakdowns && calc.emailCombinationBreakdowns.length > 0;
+            const combinationCount = (hasMessaging ? 1 : 0) + (hasContent ? 1 : 0) + (hasEmail ? 1 : 0);
+            isSingleCombination = combinationCount === 1;
+            
             // Sum messaging combinations
-            if (calc.messagingCombinationBreakdowns && calc.messagingCombinationBreakdowns.length > 0) {
-              calc.messagingCombinationBreakdowns.forEach(breakdown => {
+            if (hasMessaging) {
+              calc.messagingCombinationBreakdowns!.forEach(breakdown => {
                 const pricing = getCombinationPricing(breakdown.combinationName, 'messaging', breakdown, calc.tier);
                 planTotal += pricing.totalCost;
               });
             }
             
             // Sum content combinations
-            if (calc.contentCombinationBreakdowns && calc.contentCombinationBreakdowns.length > 0) {
-              calc.contentCombinationBreakdowns.forEach(breakdown => {
+            if (hasContent) {
+              calc.contentCombinationBreakdowns!.forEach(breakdown => {
                 const pricing = getCombinationPricing(breakdown.combinationName, 'content', breakdown, calc.tier);
                 planTotal += pricing.totalCost;
               });
             }
             
             // Sum email combinations
-            if (calc.emailCombinationBreakdowns && calc.emailCombinationBreakdowns.length > 0) {
-              calc.emailCombinationBreakdowns.forEach(breakdown => {
+            if (hasEmail) {
+              calc.emailCombinationBreakdowns!.forEach(breakdown => {
                 const pricing = getCombinationPricing(breakdown.combinationName, 'email', breakdown, calc.tier);
                 planTotal += pricing.totalCost;
               });
             }
+            
+            originalTotalBeforeMinimum = planTotal;
+            
+            // Apply $2500 minimum to overall Multi combination total
+            const MINIMUM_TOTAL = 2500;
+            if (planTotal < MINIMUM_TOTAL) {
+              planTotal = MINIMUM_TOTAL;
+            }
           }
           
           const discountInfo = calculateDiscountedPrice(planTotal);
+          const isBelowMinimumMultiCombination =
+            configuration?.migrationType === 'Multi combination' &&
+            originalTotalBeforeMinimum > 0 &&
+            originalTotalBeforeMinimum < 2500;
+          
+          // Check if this plan is currently selected
+          const isSelected = selectedTier?.tier?.name === calc.tier.name;
           
           return (
             <div
               key={calc.tier.id}
-              className={`relative rounded-2xl border-2 border-gray-200 bg-white p-8 transition-all duration-500 hover:shadow-2xl transform hover:-translate-y-2 hover:border-blue-300 ${
+              className={`relative rounded-2xl border-2 p-8 transition-all duration-500 hover:shadow-2xl transform hover:-translate-y-2 ${
+                isSelected
+                  ? 'border-blue-500 bg-blue-50/50 shadow-lg' // Highlight selected plan
+                  : 'border-gray-200 bg-white hover:border-blue-300'
+              } ${
                 filteredCalculations.length === 2 ? 'w-full max-w-sm' : 'w-full max-w-sm'
               }`}
             >
 
               <div className="text-center mb-6">
+                {/* Selected indicator */}
+                {isSelected && (
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-blue-600" />
+                    <span className="text-sm font-semibold text-blue-600">Selected</span>
+                  </div>
+                )}
                 {/* Special heading for overage agreement */}
                 {configuration?.combination === 'overage-agreement' ? (
-                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
+                  <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     Overage Agreement
                   </h3>
                 ) : (
-                  <h3 className="text-2xl font-bold mb-3 text-gray-800">
+                  <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     {calc.tier.name}
                   </h3>
                 )}
@@ -412,10 +460,22 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </div>
                 ) : (
                   <div>
-                    <div className="text-4xl font-bold mb-2 text-gray-900">
-                      {formatCurrency(planTotal)}
-                    </div>
-                    <div className="text-sm text-gray-600 font-medium">Total project cost</div>
+                    {/* Show original price if Multi combination total is below minimum */}
+                    {isBelowMinimumMultiCombination ? (
+                      <>
+                        <div className="text-4xl font-bold mb-2 text-red-600">
+                          {formatCurrency(originalTotalBeforeMinimum)}
+                        </div>
+                        <div className="text-sm text-red-600 font-medium">Total project cost (Below minimum)</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-4xl font-bold mb-2 text-gray-900">
+                          {formatCurrency(planTotal)}
+                        </div>
+                        <div className="text-sm text-gray-600 font-medium">Total project cost</div>
+                      </>
+                    )}
                     {discount > 0 && planTotal < 2500 && (
                       <div className="text-xs text-amber-600 mt-1">
                         Discount available for orders above $2,500
@@ -433,19 +493,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       <p className="text-sm text-purple-800 font-bold text-center">
                         🔀 Multi Combination Pricing Breakdown
                       </p>
-                    </div>
-
-                    <div className="space-y-2 mb-4 bg-white/70 border border-purple-200 rounded-lg p-4">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700">Per user cost:</span>
-                        <span className="font-bold text-gray-900">
-                          {totalUsers > 0 ? `${formatCurrency(calc.userCost / totalUsers)}/user` : 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700">Total users (all combinations):</span>
-                        <span className="font-bold text-gray-900">{totalUsers || 0}</span>
-                      </div>
                     </div>
 
                     {/* Messaging Section - show individual combinations if available */}
@@ -799,8 +846,19 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
 
               <button
-                onClick={() => onSelectTier(calc)}
+                onClick={() => {
+                  // Block selection if overall Multi combination total is below $2500 (based on original total before minimum clamp)
+                  if (isBelowMinimumMultiCombination) {
+                    alert('Below $2,500 not applicable. Please select additional combinations or adjust your configuration to meet the minimum requirement of $2,500.');
+                    return;
+                  }
+                  onSelectTier(calc);
+                }}
+                disabled={isBelowMinimumMultiCombination}
                 className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group ${
+                  isBelowMinimumMultiCombination
+                    ? 'bg-gray-400 cursor-not-allowed hover:scale-100 hover:shadow-lg'
+                    :
                   configuration?.combination === 'overage-agreement'
                     ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
@@ -811,6 +869,15 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   {configuration?.combination === 'overage-agreement' ? 'Select Overage Agreement' : `Select ${calc.tier.name}`}
                 </span>
               </button>
+              
+              {/* Show warning if Multi combination total is below minimum */}
+              {isBelowMinimumMultiCombination && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-700 font-medium text-center">
+                    ⚠️ Below $2,500 not applicable. Please select additional combinations.
+                  </p>
+                </div>
+              )}
             </div>
           );
         })}
@@ -925,6 +992,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               {/* Button to proceed with custom selection */}
               <button
                 onClick={() => {
+                  if (customTotal > 0 && customTotal < 2500) {
+                    alert('Below $2,500 not applicable. Please select additional combinations or adjust your configuration to meet the minimum requirement of $2,500.');
+                    return;
+                  }
                   // Create a custom PricingCalculation from the selected tiers
                   if (!configuration) return;
                   
@@ -996,7 +1067,12 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   
                   onSelectTier(customCalculation);
                 }}
-                className="mt-4 w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+                disabled={customTotal > 0 && customTotal < 2500}
+                className={`mt-4 w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group text-white ${
+                  customTotal > 0 && customTotal < 2500
+                    ? 'bg-gray-400 cursor-not-allowed hover:scale-100 hover:shadow-lg'
+                    : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
+                }`}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                 <span className="relative flex items-center justify-center gap-2">
