@@ -217,3 +217,5 @@ The blank preview was caused by an early `return` statement that prevented DOCX 
 **Solution**: Remove early return, enable DOCX fallback rendering  
 **Impact**: Document previews now work even without LibreOffice
 
+
+

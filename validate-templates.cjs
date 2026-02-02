@@ -10,7 +10,8 @@ const fs = require('fs');
 const path = require('path');
 
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
-const DB_NAME = process.env.DB_NAME || 'cpq';
+// Keep defaults consistent with server.cjs / most scripts
+const DB_NAME = process.env.DB_NAME || 'cpq_database';
 
 async function validateTemplates() {
   console.log('🔍 Starting template validation...\n');

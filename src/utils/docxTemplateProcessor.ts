@@ -856,6 +856,66 @@ export class DocxTemplateProcessor {
       } catch (err) {
         console.warn('⚠️ Unable to patch hardcoded overage per-GB text:', err);
       }
+
+      // CRITICAL: Remove stray duplicated short-currency fragments that sometimes appear
+      // right before a properly formatted currency value.
+      //
+      // Example observed in generated PDF/DOCX:
+      //   "$1.5$1.50 per GB"
+      // We keep the correctly formatted "$1.50" and drop the stray "$1.5".
+      //
+      // Generic form:
+      //   "$<d>.<n>" immediately followed by "$<d>.<n>0"
+      // Works for Standard ($1.50) and Advanced ($1.80) as well.
+      try {
+        const before = finalDocumentXml;
+        finalDocumentXml = finalDocumentXml.replace(/\$(\d+)\.(\d)\s*(?=\$\1\.\2(0))/g, '');
+        if (finalDocumentXml !== before) {
+          console.log('🧹 Removed stray short-currency duplicates (e.g. "$1.5$1.50")');
+        }
+      } catch (dupCleanupErr) {
+        console.warn('⚠️ Unable to remove stray short-currency duplicates:', dupCleanupErr);
+      }
+
+      // CRITICAL: Global mojibake / NBSP cleanup for ALL templates
+      //
+      // We have observed PDF previews showing characters like:
+      // - "Â" (U+00C2) and "aÂ" in phrases like "in aÂ High-End"
+      // - "â€™", "â€œ", "â€" (UTF-8 smart quotes interpreted as Windows-1252)
+      //
+      // Root cause is usually non‑breaking spaces (U+00A0) or smart quotes embedded
+      // in the DOCX template XML. Some DOCX→PDF conversions render these as visible artifacts.
+      //
+      // We normalize them at the rendered XML stage so it applies to every template.
+      try {
+        const before = finalDocumentXml;
+        const replacements: Array<[string, string]> = [
+          // NBSP → normal space
+          [String.fromCharCode(160), ' '], // U+00A0
+          // Stray "Â" prefix that often appears before spaces/punctuation
+          ['Â', ''], // U+00C2
+
+          // Common mojibake for smart quotes/apostrophes
+          ['â€™', "'"],
+          ['â€˜', "'"],
+          ['â€œ', '"'],
+          ['â€', '"'],
+          // zero-width space mojibake
+          ['â€‹', ''],
+        ];
+
+        for (const [from, to] of replacements) {
+          if (finalDocumentXml.includes(from)) {
+            finalDocumentXml = finalDocumentXml.split(from).join(to);
+          }
+        }
+
+        if (finalDocumentXml !== before) {
+          console.log('🧹 Normalized mojibake/NBSP artifacts in rendered DOCX XML');
+        }
+      } catch (mojibakeCleanupErr) {
+        console.warn('⚠️ Unable to normalize mojibake/NBSP artifacts:', mojibakeCleanupErr);
+      }
       
       if (finalDocumentXml !== originalFinalXml) {
         this.setZipFile(finalZip, finalXmlPath, finalDocumentXml);

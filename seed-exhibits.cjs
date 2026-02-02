@@ -811,6 +811,27 @@ async function seedDefaultExhibits(db) {
       displayOrder: 20,
       keywords: ['egnyte', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
+    // Egnyte to Microsoft (Standard & Advanced) exhibits
+    {
+      name: 'Egnyte to Microsoft Standard Exhibit',
+      description: 'Standard exhibit for Egnyte to Microsoft (OneDrive/SharePoint) migration',
+      fileName: 'egnyte-to-microsoft-standard.docx',
+      combinations: ['egnyte-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 21,
+      keywords: ['egnyte', 'microsoft', 'onedrive', 'sharepoint', 'standard', 'content', 'migration']
+    },
+    {
+      name: 'Egnyte to Microsoft Advanced Exhibit',
+      description: 'Advanced exhibit for Egnyte to Microsoft (OneDrive/SharePoint) migration',
+      fileName: 'egnyte-to-microsoft-advanced.docx',
+      combinations: ['egnyte-to-microsoft', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 22,
+      keywords: ['egnyte', 'microsoft', 'onedrive', 'sharepoint', 'advanced', 'content', 'migration']
+    },
     // OneDrive to OneDrive exhibits
     {
       name: 'OneDrive to OneDrive Standard Plan - Included Features',
