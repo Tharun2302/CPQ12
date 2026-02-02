@@ -4,6 +4,14 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { track } from '../analytics/clarity';
 
+function showSuccessToast(message: string, durationMs = 3000) {
+  const el = document.createElement('div');
+  el.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] flex items-center gap-2';
+  el.innerHTML = `<span>✅</span><span>${message.replace(/\n/g, '<br/>')}</span>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), durationMs);
+}
+
 interface TechnicalTeamApprovalDashboardProps {
   managerEmail?: string;
 }
@@ -31,7 +39,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   console.log('📊 Available workflows:', workflows.length);
   console.log('📋 Workflows data:', workflows);
 
-  // Auto-open document preview when coming from Gmail link
+  // Auto-open document preview when coming from Gmail link (only if workflow is still awaiting Technical approval)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const workflowId = urlParams.get('workflow');
@@ -40,8 +48,12 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       // First try to find in loaded workflows
       const foundWorkflow = workflows.find(w => w.id === workflowId);
       if (foundWorkflow) {
-        console.log('🔗 Opening document preview from Gmail link for workflow:', workflowId);
-        handleViewDocument(foundWorkflow);
+        const manual = isManualWorkflow(foundWorkflow);
+        const awaitingTechnical = (!manual && foundWorkflow.currentStep === 2) || (manual && foundWorkflow.currentStep === 1);
+        if (awaitingTechnical) {
+          console.log('🔗 Opening document preview from Gmail link for workflow:', workflowId);
+          handleViewDocument(foundWorkflow);
+        }
       } else if (workflows.length > 0) {
         // If workflows are loaded but this one not found, it doesn't exist
         console.error('❌ Workflow not found in loaded workflows:', workflowId);
@@ -61,10 +73,14 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.workflow) {
-          console.log('📋 Manager viewing workflow from API:', result.workflow);
-          // Auto-open document preview when coming from Gmail link
-          console.log('🔗 Auto-opening document preview from Gmail link for workflow:', workflowId);
-          handleViewDocument(result.workflow);
+          const w = result.workflow;
+          const manual = isManualWorkflow(w);
+          const awaitingTechnical = (!manual && w.currentStep === 2) || (manual && w.currentStep === 1);
+          if (awaitingTechnical) {
+            console.log('📋 Manager viewing workflow from API:', result.workflow);
+            console.log('🔗 Auto-opening document preview from Gmail link for workflow:', workflowId);
+            handleViewDocument(result.workflow);
+          }
         } else {
           console.error('❌ Workflow not found in API response:', workflowId);
         }
@@ -198,6 +214,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         workflowSteps: prev.workflowSteps?.map((s: any) => s.step === 2 && s.role === 'Technical Team' ? { ...s, status: 'approved', timestamp: new Date().toISOString() } : s)
       } : prev);
       
+      // Close document preview immediately so it doesn't stay open after approval
+      closeDocumentModal();
+      
       // Get workflow data to send Legal Team email
       if (workflow) {
         // Send email to Legal Team
@@ -214,19 +233,21 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
               documentType: workflow.documentType,
               clientName: workflow.clientName,
               amount: workflow.amount,
-              workflowId: workflow.id
+              workflowId: workflow.id,
+              creatorEmail: (workflow as any)?.creatorEmail,
+              requestedByName: (workflow as any)?.creatorName || (workflow as any)?.creatorEmail
             }
           })
         });
 
         const result = await response.json();
         if (result.success) {
-          alert('✅ Workflow approved successfully!\n📧 Legal Team has been notified for next approval.');
+          showSuccessToast('Workflow approved successfully! Legal Team has been notified for next approval.');
         } else {
-          alert('✅ Workflow approved but Legal Team email failed.\nPlease notify Legal Team manually.');
+          showSuccessToast('Workflow approved but Legal Team email failed. Please notify Legal Team manually.');
         }
       } else {
-        alert('✅ Workflow approved successfully!');
+        showSuccessToast('Workflow approved successfully!');
       }
       
       // Close modal - state is already updated by updateWorkflowStep
@@ -511,6 +532,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested by</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Team Approval Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Team Approval Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Status</th>
@@ -537,6 +559,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                     </td>
                     <td className="py-4 px-4 text-gray-700">
                       {workflow.clientName || 'Unknown Client'}
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">
+                      {(workflow as any).creatorName || (workflow as any).creatorEmail || '—'}
                     </td>
                     <td className="py-4 px-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
@@ -622,6 +647,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                   <div>
                     <h3 className="font-semibold text-gray-900">{workflow.documentId}</h3>
                     <p className="text-sm text-gray-500">{workflow.clientName}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Requested by <span className="font-medium text-gray-700">{(workflow as any).creatorName || (workflow as any).creatorEmail || '—'}</span></p>
                   </div>
                 </div>
                 <div className="text-right">
