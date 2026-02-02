@@ -296,7 +296,9 @@ export function createPlaceholderMap(quoteData: QuoteData): PlaceholderMap {
     'totalCost': formatCurrency(quoteData.calculation.totalCost),
     
     // CRITICAL: Add specific token formats for DOCX templates
-    'users_cost': formatCurrency(quoteData.calculation.userCost),
+    // users_cost = userCost + dataCost so the agreement table's 3 rows (CloudFuze Migrate, Managed Migration, Instance) sum to totalCost
+    'users_cost': formatCurrency(quoteData.calculation.userCost + quoteData.calculation.dataCost),
+    'user_cost_only': formatCurrency(quoteData.calculation.userCost),
     'price_migration': formatCurrency(quoteData.calculation.migrationCost),
     'migration_price': formatCurrency(quoteData.calculation.migrationCost),
     'total price': formatCurrency(quoteData.calculation.totalCost),

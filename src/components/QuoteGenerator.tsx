@@ -3726,6 +3726,12 @@ Total Price: {{total price}}`;
           '{{dataSizeGB}}': (dataSizeGB ?? 0).toString(),
           '{{data_size_gb}}': (dataSizeGB ?? 0).toString(),
           
+          // Pricing: first row (CloudFuze Migrate) = userCost + dataCost so agreement table rows sum to total
+          '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
+          '{{user_cost}}': formatCurrency(userCost || 0),
+          '{{price_migration}}': formatCurrency(migrationCost || 0),
+          '{{migration_price}}': formatCurrency(migrationCost || 0),
+          
           // Project dates - formatted as mm/dd/yyyy
           // Use configuration.startDate (Project Start Date) for Start_date
           '{{Start_date}}': (() => {
@@ -5478,7 +5484,8 @@ Total Price: {{total price}}`;
             } else if (token === '{{users_count}}') {
               templateData[token] = (userCount || 1).toString();
             } else if (token === '{{users_cost}}') {
-              templateData[token] = formatCurrency(userCost || 0);
+              // First row (CloudFuze Migrate) = userCost + dataCost so agreement table rows sum to total
+              templateData[token] = formatCurrency((userCost || 0) + (dataCost || 0));
             } else if (token === '{{Duration of months}}' || token === '{{Duration_of_months}}') {
               templateData[token] = (duration || 1).toString();
             } else if (token === '{{total price}}' || token === '{{total_price}}') {

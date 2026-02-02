@@ -1,5 +1,29 @@
 import { PricingTier, ConfigurationData, PricingCalculation } from '../types/pricing';
- 
+
+/** Ensures total = userCost + dataCost + migrationCost + instanceCost (used when $2500 minimum is applied). */
+function assertPricingInvariant(
+  userCost: number,
+  dataCost: number,
+  migrationCost: number,
+  instanceCost: number,
+  totalCost: number
+): void {
+  const sum = userCost + dataCost + migrationCost + instanceCost;
+  const ok = Math.abs(sum - totalCost) < 0.02; // allow 2 cent rounding
+  const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
+  if (!ok && isDev) {
+    console.error('Pricing invariant violated: userCost + dataCost + migrationCost + instanceCost !== totalCost', {
+      userCost,
+      dataCost,
+      migrationCost,
+      instanceCost,
+      sum,
+      totalCost,
+      diff: sum - totalCost
+    });
+  }
+}
+
 export const PRICING_TIERS: PricingTier[] = [
   {
     id: 'basic',
@@ -152,7 +176,7 @@ function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier)
     totalCost = MINIMUM_TOTAL;
   }
 
-  return {
+  const result = {
     userCost: adjustedUserCost,
     dataCost,
     migrationCost,
@@ -160,6 +184,8 @@ function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier)
     totalCost,
     tier
   };
+  assertPricingInvariant(result.userCost, result.dataCost, result.migrationCost, result.instanceCost, result.totalCost);
+  return result;
 }
 
 // Helper function to calculate Content pricing (extracted for reuse in Multi combination)
@@ -308,7 +334,7 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
     totalCost = MINIMUM_TOTAL;
   }
 
-  return {
+  const contentResult = {
     userCost: adjustedUserCost,
     dataCost,
     migrationCost,
@@ -316,6 +342,8 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
     totalCost,
     tier
   };
+  assertPricingInvariant(contentResult.userCost, contentResult.dataCost, contentResult.migrationCost, contentResult.instanceCost, contentResult.totalCost);
+  return contentResult;
 }
 
 // Helper function to calculate Email pricing
@@ -439,7 +467,7 @@ function calculateEmailPricing(config: ConfigurationData, tier: PricingTier): Pr
     totalCost
   });
 
-  return {
+  const emailResult = {
     userCost: adjustedUserCost,
     dataCost,
     migrationCost,
@@ -447,6 +475,8 @@ function calculateEmailPricing(config: ConfigurationData, tier: PricingTier): Pr
     totalCost,
     tier
   };
+  assertPricingInvariant(emailResult.userCost, emailResult.dataCost, emailResult.migrationCost, emailResult.instanceCost, emailResult.totalCost);
+  return emailResult;
 }
  
 export function calculatePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
@@ -709,6 +739,13 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       });
     }
 
+    assertPricingInvariant(
+      adjustedCombinedUserCost,
+      combinedDataCost,
+      combinedMigrationCost,
+      combinedInstanceCost,
+      finalTotal
+    );
     return {
       userCost: adjustedCombinedUserCost,
       dataCost: combinedDataCost,
@@ -796,7 +833,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     totalCost = MINIMUM_TOTAL;
   }
  
-  return { userCost: adjustedUserCost, dataCost, migrationCost, instanceCost, totalCost, tier };
+  const fallbackResult = { userCost: adjustedUserCost, dataCost, migrationCost, instanceCost, totalCost, tier };
+  assertPricingInvariant(fallbackResult.userCost, fallbackResult.dataCost, fallbackResult.migrationCost, fallbackResult.instanceCost, fallbackResult.totalCost);
+  return fallbackResult;
 }
  
 export function calculateAllTiers(config: ConfigurationData, tiers: PricingTier[] = PRICING_TIERS): PricingCalculation[] {
