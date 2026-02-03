@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Check, ChevronRight, Search, ArrowRight } from 'lucide-react';
+import { Check, ChevronRight, Search, ArrowRight, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BACKEND_URL } from '../config/api';
 
@@ -346,6 +346,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     
     let base = combination.toLowerCase();
     
+    // Normalize dropbox-to-mydrive to dropbox-to-google-mydrive (merge into same group)
+    if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+      base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+    }
+    
     // Remove plan type suffixes
     base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
     
@@ -375,6 +380,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     // Group exhibits by base combination extracted from combinations field
     const groups: Map<string, Exhibit[]> = new Map();
     const ungrouped: Exhibit[] = [];
+    // Track which exhibits have been added to a group to prevent duplicates
+    const addedExhibitIds = new Set<string>();
 
     // Hide legacy ShareFile groups in UI (we use the merged "Google Drive (MyDrive & Shared Drive)" group instead)
     const hiddenGroupNames = new Set([
@@ -386,6 +393,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     ]);
     
     sorted.forEach((exhibit) => {
+      // Skip if already added to a group (prevent duplicates)
+      if (addedExhibitIds.has(exhibit._id)) {
+        return;
+      }
+      
       // Get the first combination (or 'all' if no combinations)
       const primaryCombination = exhibit.combinations && exhibit.combinations.length > 0 
         ? exhibit.combinations[0] 
@@ -407,6 +419,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           groups.set(folderName, []);
         }
         groups.get(folderName)!.push(exhibit);
+        addedExhibitIds.add(exhibit._id);
       } else {
         // Fallback: Try grouping by name pattern (for backward compatibility)
         const dashIndex = exhibit.name.indexOf(' - ');
@@ -429,8 +442,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             groups.set(folderName, []);
           }
           groups.get(folderName)!.push(exhibit);
+          addedExhibitIds.add(exhibit._id);
         } else {
           ungrouped.push(exhibit);
+          addedExhibitIds.add(exhibit._id);
         }
       }
     });
@@ -509,13 +524,25 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleUnselectAll}
-            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-xs font-medium transition-colors flex-shrink-0"
-          >
-            Unselect All
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={loadExhibits}
+              disabled={loading}
+              className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Refresh exhibits from backend"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={handleUnselectAll}
+              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-xs font-medium transition-colors flex-shrink-0"
+            >
+              Unselect All
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}

@@ -2934,6 +2934,19 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
     console.log('📄 File size:', req.file.size, 'bytes');
     console.log('📄 File type:', req.file.mimetype);
 
+    const hasFatalLibreOfficeStderr = (stderrText) => {
+      const s = String(stderrText || '').toLowerCase();
+      // LibreOffice sometimes returns exit code 0 but prints fatal errors to stderr and produces no PDF.
+      return (
+        s.includes('document is empty') ||
+        s.includes('source file could not be loaded') ||
+        s.includes('could not find platform independent libraries') ||
+        s.includes('error: source file could not be loaded') ||
+        s.includes('parser error') ||
+        s.includes('fatal')
+      );
+    };
+
     // Method 1: Direct LibreOffice system call (most reliable for exact formatting)
     console.log('📄 Trying direct LibreOffice conversion...');
     try {
@@ -2948,7 +2961,16 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       
       // Use LibreOffice to convert
       const isWindows = os.platform() === 'win32';
-      const sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
+      let sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
+      // On Windows, prefer soffice.com for headless conversions (more reliable/no GUI subsystem).
+      if (isWindows && !process.env.SOFFICE_PATH) {
+        try {
+          const candidateCom = sofficeCmd.replace(/soffice\.exe$/i, 'soffice.com');
+          if (fs.existsSync(candidateCom)) {
+            sofficeCmd = candidateCom;
+          }
+        } catch {}
+      }
       console.log('📄 Using LibreOffice:', sofficeCmd);
       const sofficeCwd = isWindows ? path.dirname(sofficeCmd) : process.cwd();
 
@@ -2965,10 +2987,12 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       const conversionArgs = [
         '--headless',
         '--nologo',
+        '--nolockcheck',
         '--nofirststartwizard',
         '--norestore',
         userInstallationArg,
-        '--convert-to', 'pdf',
+        // Use explicit writer export to reduce variability across installs
+        '--convert-to', 'pdf:writer_pdf_Export',
         '--outdir', tmpDir,
         inputPath
       ];
@@ -2999,23 +3023,61 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
             reject(new Error(`LibreOffice conversion failed with code ${code}: ${stderr}`));
             return;
           }
-          
+
           // Find the generated PDF
           const expectedPdfPath = inputPath.replace(/\.docx$/i, '.pdf');
           console.log('📄 Looking for PDF at:', expectedPdfPath);
           
-          if (!fs.existsSync(expectedPdfPath)) {
-            reject(new Error(`PDF not found at expected location: ${expectedPdfPath}`));
+          let finalPdfPath = expectedPdfPath;
+          if (!fs.existsSync(finalPdfPath)) {
+            // Some LibreOffice builds output a different filename; scan tmpDir for any .pdf
+            try {
+              const pdfs = fs.readdirSync(tmpDir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+              if (pdfs.length > 0) {
+                finalPdfPath = path.join(tmpDir, pdfs[0]);
+                console.log('📄 PDF not found at expected path; using discovered PDF:', finalPdfPath);
+              }
+            } catch {}
+          }
+
+          if (!fs.existsSync(finalPdfPath)) {
+            // Only now, if no PDF exists, treat fatal stderr patterns as a real failure signal.
+            if (hasFatalLibreOfficeStderr(stderr)) {
+              reject(new Error(`LibreOffice conversion failed (fatal stderr detected, no PDF produced): ${stderr}`));
+              return;
+            }
+            reject(new Error(`PDF not found after LibreOffice conversion. stderr: ${stderr}`));
             return;
           }
+
+          try {
+            const st = fs.statSync(finalPdfPath);
+            if (!st || st.size === 0) {
+              if (hasFatalLibreOfficeStderr(stderr)) {
+                reject(new Error(`LibreOffice conversion failed (fatal stderr detected, empty PDF): ${stderr}`));
+                return;
+              }
+              reject(new Error(`LibreOffice produced an empty PDF. stderr: ${stderr}`));
+              return;
+            }
+          } catch (statErr) {
+            reject(new Error(`Unable to stat generated PDF. stderr: ${stderr}`));
+            return;
+          }
+
+          // At this point we have a non-empty PDF. Even if stderr contains scary messages,
+          // accept the PDF and just log the stderr as a warning.
+          if (stderr && String(stderr).trim().length > 0) {
+            console.warn('⚠️ LibreOffice produced a PDF but stderr was not empty (continuing):', stderr);
+          }
           
-          const pdfBuffer = fs.readFileSync(expectedPdfPath);
+          const pdfBuffer = fs.readFileSync(finalPdfPath);
           console.log('✅ PDF generated successfully with LibreOffice');
           console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
           
           // Cleanup
           try { fs.unlinkSync(inputPath); } catch {}
-          try { fs.unlinkSync(expectedPdfPath); } catch {}
+          try { fs.unlinkSync(finalPdfPath); } catch {}
           try { fs.rmSync(loProfileDir, { recursive: true, force: true }); } catch {}
           try { fs.rmdirSync(tmpDir); } catch {}
           
@@ -3043,7 +3105,59 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       // Continue to next method
     }
 
-    // Method 2: Try remote Gotenberg service
+    // Method 2: Use libreoffice-convert package (if available)
+    if (libre && typeof libre.convertAsync === 'function') {
+      try {
+        console.log('📄 Trying libreoffice-convert package...');
+        const pdfBuffer = await libre.convertAsync(req.file.buffer, '.pdf', undefined);
+        if (pdfBuffer && pdfBuffer.length > 0) {
+          console.log('✅ PDF generated successfully with libreoffice-convert');
+          res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="agreement.pdf"',
+            'Content-Length': pdfBuffer.length
+          });
+          return res.send(pdfBuffer);
+        }
+        console.warn('⚠️ libreoffice-convert returned empty output; continuing...');
+      } catch (e) {
+        console.error('❌ libreoffice-convert failed:', e?.message || e);
+      }
+    }
+
+    // Method 3: Try local LibreOffice converter service (if running)
+    // This is useful when system LibreOffice has path/profile issues.
+    if (LIBREOFFICE_SERVICE_URL) {
+      try {
+        console.log('📄 Trying LibreOffice converter service...', LIBREOFFICE_SERVICE_URL);
+        const baseUrl = String(LIBREOFFICE_SERVICE_URL).replace(/\/$/, '');
+        const endpoint = `${baseUrl}/convert`;
+        const form = new FormData();
+        const blob = new Blob([req.file.buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        form.append('file', blob, 'document.docx');
+        const resp = await fetch(endpoint, { method: 'POST', body: form });
+        if (resp.ok) {
+          const ab = await resp.arrayBuffer();
+          const pdfBuffer = Buffer.from(ab);
+          if (pdfBuffer.length > 0) {
+            console.log('✅ PDF converted successfully with converter service');
+            res.set({
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="agreement.pdf"',
+              'Content-Length': pdfBuffer.length
+            });
+            return res.send(pdfBuffer);
+          }
+        } else {
+          const txt = await resp.text();
+          console.error('Converter service failed:', resp.status, txt);
+        }
+      } catch (e) {
+        console.error('❌ Converter service request error:', e);
+      }
+    }
+
+    // Method 4: Try remote Gotenberg service
     if (GOTENBERG_URL) {
       try {
         console.log('📄 Trying Gotenberg service...');
@@ -3073,7 +3187,7 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       }
     }
 
-    // Method 3: Simple text-based PDF generation
+    // Method 5: Simple text-based PDF generation
     console.log('📄 Trying simple text-based PDF generation...');
     try {
       const mammoth = require('mammoth');

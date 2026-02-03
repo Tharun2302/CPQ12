@@ -809,6 +809,23 @@ export class DocxTemplateProcessor {
       //
       // This makes the generated agreement consistent even if the DOCX template wasn't updated.
       try {
+        // Only treat these templates as "email templates" for special handling.
+        const emailTemplateNames = new Set([
+          'gmail-to-gmail.docx',
+          'gmail-to-outlook.docx',
+          'outlook-to-gmail.docx',
+          'outlook-to-outlook.docx',
+        ]);
+        const templateNameLower = (templateFile?.name || '').toLowerCase();
+        // IMPORTANT: Email flow in QuoteGenerator does NOT always pass a "{{migration type}}" token,
+        // so we must detect based on the actual template file being rendered.
+        const isEmailContext = emailTemplateNames.has(templateNameLower);
+
+        // For Email migrations: we will remove the per-GB segment entirely later.
+        // Do not "patch" per-GB here, as it can re-introduce per-GB text.
+        if (isEmailContext) {
+          // no-op
+        } else {
         const rawPerDataCost = String((processedData as any)?.['{{per_data_cost}}'] || '').trim();
         const tierNameForFallback = String(
           (processedData as any)?.['{{tier_name}}'] ??
@@ -853,6 +870,7 @@ export class DocxTemplateProcessor {
             console.log('ℹ️ No overage per-GB patch needed (template already consistent).');
           }
         }
+        }
       } catch (err) {
         console.warn('⚠️ Unable to patch hardcoded overage per-GB text:', err);
       }
@@ -875,6 +893,84 @@ export class DocxTemplateProcessor {
         }
       } catch (dupCleanupErr) {
         console.warn('⚠️ Unable to remove stray short-currency duplicates:', dupCleanupErr);
+      }
+
+      // EMAIL TEMPLATES: Remove per-GB overage segment AND "| {{data_size}} GBs" from description
+      //
+      // Email migrations do not have a GB/data-size concept in configuration, so the agreement
+      // should not show "per GB" in the "Overage Charges" bullet or "| X GBs" in description.
+      //
+      // We only do this for email templates (gmail/outlook).
+      try {
+        const emailTemplateNames = new Set([
+          'gmail-to-gmail.docx',
+          'gmail-to-outlook.docx',
+          'outlook-to-gmail.docx',
+          'outlook-to-outlook.docx',
+        ]);
+        const templateNameLower = (templateFile?.name || '').toLowerCase();
+        // Restrict cleanup to only the 4 email templates (detected by template filename).
+        const isEmailContext = emailTemplateNames.has(templateNameLower);
+
+        if (isEmailContext) {
+          console.log('🧾 EMAIL TEMPLATE DETECTED:', templateFile?.name, '→ removing GB references');
+          const before = finalDocumentXml;
+
+          // AGGRESSIVE CLEANUP FOR EMAIL TEMPLATES:
+          // Remove all GB-related patterns from the entire document (not just Overage section).
+          // This handles cases where Word splits the text across multiple runs/cells.
+
+          // 1) Remove "| {{data_size}} GBs" token (before docxtemplater renders it)
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*data_size[^}]*\}\}\s*GBs/gi, '');
+
+          // 2) Remove "| {{data_description}}" token (before docxtemplater renders it)
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '');
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '');
+
+          // 3) Remove literal "| X GBs" (after docxtemplater rendered the token)
+          //    Handles: "| 0 GBs", "| 11 GBs", etc. - More aggressive pattern
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\d+\s*GBs?/gi, '');
+          // Also handle cases where there might be spaces or formatting: "| 0 GBs", " | 0 GBs ", etc.
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*0\s*GBs?/gi, '');
+          finalDocumentXml = finalDocumentXml.replace(/\|\s*0\s*GBs?/gi, '');
+
+          // 4) Remove "per GB" from anywhere in the document
+          //    Handles: "| $1.00 per GB", "per GB.", "{{per_data_cost}} per GB", etc.
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\$?\s*\d+(?:\.\d{1,2})?\s*per\s*GB\.?/gi, '');
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*per_data_cost[^}]*\}\}\s*per\s*GB\.?/gi, '');
+
+          // 5) Remove empty pipe separators that might be left after removing GBs
+          //    Handles: "Up to X Users | " -> "Up to X Users"
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*$/gm, '');
+          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*<w:br/gi, '<w:br');
+
+          // 6) Extra safety: remove any standalone "GBs" or "per GB" text runs that might be orphaned
+          //    after the above replacements (only if preceded by pipe or within pricing context)
+          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>\s*\|\s*<\/w:t>\s*<w:t[^>]*>\s*\d+\s*GBs?\s*<\/w:t>/gi, '');
+          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>\s*per\s*GB\.?\s*<\/w:t>/gi, '<w:t></w:t>');
+          
+          // 7) Remove pipe separator when followed by empty data_description (handles Word's XML structure)
+          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>([^<]*Users[^<]*)<\/w:t>\s*<w:t[^>]*>\s*\|\s*<\/w:t>\s*<w:t[^>]*>\s*0\s*GBs?\s*<\/w:t>/gi, '<w:t>$1</w:t>');
+          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>([^<]*Users[^<]*)<\/w:t>\s*<w:t[^>]*>\s*\|\s*0\s*GBs?\s*<\/w:t>/gi, '<w:t>$1</w:t>');
+          
+          // 8) Handle combined format "Up to X Users | 0 GBs" in a single text run
+          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*0\s*GBs?/gi, '$1');
+          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '$1');
+          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '$1');
+          
+          // 9) Remove trailing pipe when data_description is empty (handles "Up to X Users | " pattern)
+          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*$/gm, '$1');
+          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*<w:br/gi, '$1<w:br');
+          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*<\/w:t>/gi, '$1</w:t>');
+
+          if (finalDocumentXml !== before) {
+            console.log('✅ Email template cleanup: removed all GB references from document');
+          } else {
+            console.log('ℹ️ Email template cleanup: no GB references found to remove');
+          }
+        }
+      } catch (emailOverageErr) {
+        console.warn('⚠️ Unable to remove per-GB overage for email templates:', emailOverageErr);
       }
 
       // CRITICAL: Global mojibake / NBSP cleanup for ALL templates
