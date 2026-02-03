@@ -1395,7 +1395,8 @@ Quote ID: ${quoteData.id}
         const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
         const instanceType = configuration?.instanceType || 'Standard';
         const numberOfInstances = configuration?.numberOfInstances || 1;
-        const dataSizeGB = configuration?.dataSizeGB ?? 0;
+        // Email agreements do not have a GB/data-size concept; keep it empty in templates.
+        const dataSizeGB = 0;
         
         // Debug: Log data size for email function
         console.log('🔍 EMAIL FUNCTION - DATA SIZE DEBUG:');
@@ -1455,9 +1456,10 @@ Quote ID: ${quoteData.id}
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
-          '{{data_size}}': (dataSizeGB ?? 0).toString(),
-          '{{dataSizeGB}}': (dataSizeGB ?? 0).toString(),
-          '{{data_size_gb}}': (dataSizeGB ?? 0).toString(),
+          // Email agreements: blank out any data-size tokens to avoid showing "GB/GBs".
+          '{{data_size}}': '',
+          '{{dataSizeGB}}': '',
+          '{{data_size_gb}}': '',
           
           // Pricing breakdown - all costs
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
@@ -1666,6 +1668,21 @@ Quote ID: ${quoteData.id}
           '{{quote_id}}': `QTE-${Date.now().toString().slice(-8)}`,
           '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
         };
+        
+        // Add user description tokens for email agreements
+        const emailUserDescription = `Up to ${userCount || 1} Users`;
+        templateData['{{user_description}}'] = emailUserDescription;
+        templateData['{{userDescription}}'] = emailUserDescription;
+        templateData['{{users_description}}'] = emailUserDescription;
+        
+        // Add data size description tokens - empty for email agreements (Gmail/Outlook)
+        templateData['{{data_description}}'] = '';
+        templateData['{{dataDescription}}'] = '';
+        
+        // Add combined description token for email agreements (no GBs)
+        templateData['{{user_data_description}}'] = emailUserDescription;
+        templateData['{{userDataDescription}}'] = emailUserDescription;
+        templateData['{{description}}'] = emailUserDescription;
 
         const result = await DocxTemplateProcessor.processDocxTemplate(templateFileForEmail as File, templateData);
         if (result.success && result.processedDocx) {
@@ -2107,9 +2124,10 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         }
         return formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1));
       })(),
-      '{{data_size}}': (quote.configuration.dataSizeGB ?? 0).toString(),
-      '{{dataSizeGB}}': (quote.configuration.dataSizeGB ?? 0).toString(),
-      '{{data_size_gb}}': (quote.configuration.dataSizeGB ?? 0).toString(),
+      // Email agreements do not have a GB/data-size concept; keep it empty in templates.
+      '{{data_size}}': '',
+      '{{dataSizeGB}}': '',
+      '{{data_size_gb}}': '',
       '{{per_data_cost}}': (() => {
         // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
         const isMulti = quote.configuration?.migrationType === 'Multi combination';
@@ -3597,7 +3615,8 @@ Total Price: {{total price}}`;
         const tierName = quoteData.calculation?.tier?.name || 'Advanced';
         const instanceType = quoteData.configuration?.instanceType || 'Standard';
         const numberOfInstances = quoteData.configuration?.numberOfInstances || 1;
-        const dataSizeGB = quoteData.configuration?.dataSizeGB ?? configuration?.dataSizeGB ?? 0;
+        // Email agreements do not have a GB/data-size concept; keep it empty in templates.
+        const dataSizeGB = 0;
         
         // CRITICAL: Recalculate discount based on the local totalCost value
         // This ensures discount is calculated correctly for the template preview
@@ -3722,9 +3741,10 @@ Total Price: {{total price}}`;
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
-          '{{data_size}}': (dataSizeGB ?? 0).toString(),
-          '{{dataSizeGB}}': (dataSizeGB ?? 0).toString(),
-          '{{data_size_gb}}': (dataSizeGB ?? 0).toString(),
+          // Email agreements: blank out any data-size tokens to avoid showing "GB/GBs".
+          '{{data_size}}': '',
+          '{{dataSizeGB}}': '',
+          '{{data_size_gb}}': '',
           
           // Pricing: first row (CloudFuze Migrate) = userCost + dataCost so agreement table rows sum to total
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
@@ -5098,9 +5118,22 @@ Total Price: {{total price}}`;
         templateData['{{users_description}}'] = userDescription;
         
         // Add data size description tokens
-        const dataDescription = dataSizeGB > 0 ? `${dataSizeGB} GBs` : '0 GBs';
+        // For email agreements (Gmail/Outlook), don't show GBs at all
+        const isEmailAgreement = migrationType === 'Email' || 
+          (configuration?.combination || '').toLowerCase().includes('gmail') ||
+          (configuration?.combination || '').toLowerCase().includes('outlook');
+        const dataDescription = isEmailAgreement ? '' : (dataSizeGB > 0 ? `${dataSizeGB} GBs` : '0 GBs');
         templateData['{{data_description}}'] = dataDescription;
         templateData['{{dataDescription}}'] = dataDescription;
+        
+        // Add combined description token for templates that use "{{user_description}} | {{data_description}}"
+        // For email agreements, only show user description without GBs
+        const combinedDescription = isEmailAgreement 
+          ? userDescription 
+          : (dataDescription ? `${userDescription} | ${dataDescription}` : userDescription);
+        templateData['{{user_data_description}}'] = combinedDescription;
+        templateData['{{userDataDescription}}'] = combinedDescription;
+        templateData['{{description}}'] = combinedDescription;
 
         // Add server/instance description token used by some templates
         // (TemplateDiagnostic requires an exact match for "server_descriptions")
