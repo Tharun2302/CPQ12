@@ -2963,7 +2963,7 @@ const replacePlaceholdersInExistingPage = async (
     color: rgb(0, 0, 0),
   });
 
-  page.drawText(sanitizeText(values['price_migration']), {
+  page.drawText(sanitizeText(values['price_data']), {
     x: col4X + 8,
     y: headerRowY - 18,
     size: 11,
@@ -3045,7 +3045,7 @@ const replacePlaceholdersInExistingPage = async (
     color: rgb(0, 0, 0),
   });
 
-  page.drawText(sanitizeText(values['price_data']), {
+  page.drawText(sanitizeText(values['price_migration']), {
     x: col4X + 8,
     y: row1Y - 18,
     size: 11,

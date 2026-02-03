@@ -1461,11 +1461,11 @@ Quote ID: ${quoteData.id}
           '{{dataSizeGB}}': '',
           '{{data_size_gb}}': '',
           
-          // Pricing breakdown - all costs
+          // Pricing breakdown - Row1=(user+data), Row2=migration, Row3=instance so rows sum to total
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
           '{{user_cost}}': formatCurrency(userCost || 0),
           '{{userCost}}': formatCurrency(userCost || 0),
-          '{{price_data}}': formatCurrency(dataCost),
+          '{{price_data}}': formatCurrency((userCost || 0) + (dataCost || 0)),
           '{{data_cost}}': formatCurrency(dataCost),
           '{{dataCost}}': formatCurrency(dataCost),
           '{{price_migration}}': formatCurrency(migrationCost || 0),
@@ -2097,7 +2097,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{migration type}}': quote.configuration.migrationType,
       '{{userscount}}': quote.configuration.numberOfUsers.toString(),
       '{{price_migration}}': formatCurrency(safeCalculation.migrationCost),
-      '{{price_data}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
+      '{{price_data}}': formatCurrency((safeCalculation.userCost || 0) + (safeCalculation.dataCost || 0)),
       // Use effective duration (handles Multi combination + nested configs)
       '{{Duration of months}}': (getEffectiveDurationMonths(quote.configuration) || 1).toString(),
       '{{instance_users}}': quote.configuration.numberOfInstances.toString(),
@@ -2207,12 +2207,12 @@ Services and Pricing Table:
 ┌─────────────────────────────────────┬─────────────────────────────────────┬─────────────────┬─────────────┐
 │ Job Requirement                     │ Description                         │ Migration Type  │ Price(USD)  │
 ├─────────────────────────────────────┼─────────────────────────────────────┼─────────────────┼─────────────┤
-│ CloudFuze X-Change Data Migration   │ {{migration type}} to Teams         │ Managed         │ {{price_migration}} │
+│ CloudFuze X-Change Data Migration   │ {{migration type}} to Teams         │ Managed         │ {{price_data}} │
 │                                     │ ─────────────────────────────────   │ Migration       │             │
 │                                     │ Up to {{userscount}} Users          │ One-Time        │             │
 │                                     │ All Channels and DMs                │                 │             │
 ├─────────────────────────────────────┼─────────────────────────────────────┼─────────────────┼─────────────┤
-│ Managed Migration Service           │ Fully Managed Migration             │ Managed         │ {{price_data}} │
+│ Managed Migration Service           │ Fully Managed Migration             │ Managed         │ {{price_migration}} │
 │                                     │ Dedicated Project Manager           │ Migration       │             │
 │                                     │ Pre-Migration Analysis              │ One-Time        │             │
 │                                     │ During Migration Consulting         │                 │             │
@@ -3746,9 +3746,10 @@ Total Price: {{total price}}`;
           '{{dataSizeGB}}': '',
           '{{data_size_gb}}': '',
           
-          // Pricing: first row (CloudFuze Migrate) = userCost + dataCost so agreement table rows sum to total
+          // Pricing: price_data + price_migration + instance_cost must equal total (user+data+migration+instance).
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
           '{{user_cost}}': formatCurrency(userCost || 0),
+          '{{price_data}}': formatCurrency((userCost || 0) + (dataCost || 0)),
           '{{price_migration}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           
