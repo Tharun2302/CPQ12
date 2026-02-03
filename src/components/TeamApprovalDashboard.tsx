@@ -4,6 +4,14 @@ import { BACKEND_URL } from '../config/api';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye } from 'lucide-react';
 import { track } from '../analytics/clarity';
 
+function showSuccessToast(message: string, durationMs = 3000) {
+  const el = document.createElement('div');
+  el.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] flex items-center gap-2';
+  el.innerHTML = `<span>✅</span><span>${message.replace(/\n/g, '<br/>')}</span>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), durationMs);
+}
+
 const TeamApprovalDashboard: React.FC = () => {
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   const [activeTab, setActiveTab] = useState('queue');
@@ -86,7 +94,7 @@ const TeamApprovalDashboard: React.FC = () => {
           }
         }
 
-        alert('✅ Team approval recorded. Legal Team has been notified (Technical approval skipped for overage).');
+        showSuccessToast('Team approval recorded. Legal Team has been notified (Technical approval skipped for overage).');
       } else {
         // Standard workflows: notify Technical Team for next approval step
         const technicalEmail =
@@ -105,7 +113,9 @@ const TeamApprovalDashboard: React.FC = () => {
                   documentType: wf?.documentType,
                   clientName: wf?.clientName,
                   amount: wf?.amount,
-                  workflowId: wf?.id
+                  workflowId: wf?.id,
+                  creatorEmail: (wf as any)?.creatorEmail,
+                  requestedByName: (wf as any)?.creatorName || (wf as any)?.creatorEmail
                 }
               })
             });
@@ -114,9 +124,9 @@ const TeamApprovalDashboard: React.FC = () => {
           }
         }
 
-        alert('✅ Team approval recorded. Technical Team has been notified.');
+        showSuccessToast('Team approval recorded. Technical Team has been notified.');
       }
-      // Close modal after action
+      // Close document preview immediately after approval
       closeDocumentModal();
       // Reset acting state to allow next approval
       setIsActing(false);
@@ -319,14 +329,14 @@ const TeamApprovalDashboard: React.FC = () => {
     }
   };
 
-  // Auto-open from email link (?workflow=ID)
+  // Auto-open from email link (?workflow=ID) only if workflow is still awaiting Team approval
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const workflowId = urlParams.get('workflow');
     if (!workflowId) return;
     
     const fromStore = workflows.find(w => w.id === workflowId);
-    if (fromStore) {
+    if (fromStore && fromStore.currentStep === 1) {
       console.log('🔗 Opening document from email link for workflow:', workflowId);
       handleViewWorkflow(fromStore);
       return;
@@ -389,6 +399,7 @@ const TeamApprovalDashboard: React.FC = () => {
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Document</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Client</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested by</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Team Approval Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Team Approval Comments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Technical Team Status</th>
@@ -492,6 +503,7 @@ const TeamApprovalDashboard: React.FC = () => {
                   <div>
                     <h3 className="font-semibold text-gray-900">{workflow.documentId}</h3>
                     <p className="text-sm text-gray-500">{workflow.clientName}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Requested by <span className="font-medium text-gray-700">{(workflow as any).creatorName || (workflow as any).creatorEmail || '—'}</span></p>
                   </div>
                 </div>
                 <div className="text-right">

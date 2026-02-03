@@ -412,9 +412,10 @@ function generateTeamEmailHTML(workflowData) {
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
             ${teamLabel ? `<p><strong>Team Group:</strong> ${teamLabel}</p>` : ''}
+            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${(workflowData.amount || 0).toLocaleString()}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
@@ -458,9 +459,10 @@ function generateManagerEmailHTML(workflowData) {
           
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
+            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${(workflowData.amount || 0).toLocaleString()}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
@@ -505,9 +507,10 @@ function generateCEOEmailHTML(workflowData) {
           
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
+            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${(workflowData.amount || 0).toLocaleString()}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>

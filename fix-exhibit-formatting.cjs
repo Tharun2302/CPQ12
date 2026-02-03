@@ -90,14 +90,6 @@ function fixWordDocument(filePath) {
     // If document was modified, save it
     if (modified) {
       zip.updateFile('word/document.xml', Buffer.from(updatedXml, 'utf8'));
-      
-      // Create backup
-      const backupPath = filePath + '.backup';
-      if (!fs.existsSync(backupPath)) {
-        fs.copyFileSync(filePath, backupPath);
-        console.log(`   💾 Backup created: ${path.basename(backupPath)}`);
-      }
-      
       // Write the fixed document
       zip.writeZip(filePath);
       console.log(`   ✅ Fixed and saved: ${path.basename(filePath)}`);
@@ -126,7 +118,7 @@ async function main() {
   
   // Get all .docx files
   const files = fs.readdirSync(exhibitsDir)
-    .filter(file => file.endsWith('.docx') && !file.endsWith('.backup.docx'))
+    .filter(file => file.endsWith('.docx'))
     .map(file => path.join(exhibitsDir, file));
   
   if (files.length === 0) {
@@ -146,10 +138,7 @@ async function main() {
   
   console.log(`\n✅ Formatting fix complete!`);
   console.log(`   📊 Fixed ${fixedCount} out of ${files.length} file(s)`);
-  console.log(`\n💡 Next steps:`);
-  console.log(`   1. Review the fixed documents`);
-  console.log(`   2. If satisfied, delete the .backup files`);
-  console.log(`   3. Re-seed exhibits: node seed-exhibits-now.cjs`);
+  console.log(`\n💡 Next step: Re-seed exhibits if needed: node seed-exhibits-now.cjs`);
 }
 
 // Run the script

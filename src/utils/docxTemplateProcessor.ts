@@ -300,18 +300,24 @@ export class DocxTemplateProcessor {
         console.log('🔍 No placeholders found in clean text');
       }
       
-      // Before processing, auto-fix a class of malformed placeholders that sometimes
-      // appear in uploaded DOCX files where the closing brace is missing right
-      // before adjacent text, e.g. "{{Company_Name}By" instead of "{{Company_Name}} By".
-      // This causes Docxtemplater to throw "Unclosed tag" errors. We fix such
-      // cases by inserting the missing brace and a space.
+      // Before processing, auto-fix malformed placeholders that cause "Unclosed tag" errors:
+      // 1) "{{tag}X" → "{{tag}} X" (missing } before a letter, e.g. {{Company_Name}By)
+      // 2) "{{tag} " or "{{tag}(" etc. → "{{tag}}" (missing } before space/punctuation, e.g. {{Date} (the "Effective Date"))
       try {
-        const originalXml = documentXml;
-        const fixedXml = originalXml.replace(/\{\{([^}]+)\}([A-Za-z])/g, '{{$1}} $2');
-        if (fixedXml !== originalXml) {
-          // Use helper function for cross-platform compatibility
+        let fixedXml = documentXml;
+        const before1 = fixedXml;
+        fixedXml = fixedXml.replace(/\{\{([^}]+)\}([A-Za-z])/g, '{{$1}} $2');
+        if (fixedXml !== before1) {
+          console.log('🩹 Auto-fixed malformed placeholders (missing "}" before letter).');
+        }
+        const before2 = fixedXml;
+        // Fix {{tag} not followed by } → {{tag}} (covers {{Date} , {{Date}(, etc.)
+        fixedXml = fixedXml.replace(/\{\{([^}]+)\}(?!\})/g, '{{$1}}');
+        if (fixedXml !== before2) {
+          console.log('🩹 Auto-fixed unclosed tags (missing closing "}}").');
+        }
+        if (fixedXml !== documentXml) {
           this.setZipFile(zip, 'word/document.xml', fixedXml);
-          console.log('🩹 Auto-fixed malformed placeholders in document.xml (missing \"}\" before text).');
         }
       } catch (autoFixErr) {
         console.warn('⚠️ Unable to auto-fix malformed placeholders:', autoFixErr);
@@ -521,7 +527,10 @@ export class DocxTemplateProcessor {
         'message_count': processedData['{{message_count}}'] || processedData['{{messaging_messages}}'] || processedData['{{messages}}'] || '0',
         // Server instance cost breakdown (Multi combination)
         'server_instance_cost_breakdown': processedData['{{server_instance_cost_breakdown}}'] || '',
-        'server_descriptions': processedData['{{server_descriptions}}'] || processedData['{{serverDescriptions}}'] || ''
+        'server_descriptions': processedData['{{server_descriptions}}'] || processedData['{{serverDescriptions}}'] || '',
+        // Date tokens (template may use {{date}} or {{Date}})
+        'date': processedData['{{date}}'] || processedData['{{Date}}'] || new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
+        'Date': processedData['{{Date}}'] || processedData['{{date}}'] || new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' })
       };
       
       // Add common tokens to docxtemplater data
@@ -756,31 +765,30 @@ export class DocxTemplateProcessor {
         
       } catch (error) {
         console.error('❌ Template rendering error:', error);
-        
-        // Get detailed error information from Docxtemplater
+        // Build user-friendly message so the user can fix the template
+        let userMessage = error instanceof Error ? error.message : String(error);
         if (error && typeof error === 'object' && 'properties' in error) {
-          const docxError = error as any;
-          console.error('❌ Docxtemplater error details:', docxError.properties);
-          
-          if (docxError.properties && docxError.properties.errors) {
-            const errors = docxError.properties.errors;
-            console.error('❌ Specific errors:', errors);
-            
-            // Log the errors but don't throw - go to fallback instead
-            const errorMessages = errors.map((err: any) => {
-              if (typeof err === 'string') return err;
-              if (err.message) return err.message;
-              if (err.name) return `${err.name}: ${err.message || 'Unknown error'}`;
-              return JSON.stringify(err);
-            });
-            
-            console.error('❌ Template rendering failed with multiple errors:', errorMessages.join('\n'));
+          const p = (error as { properties?: { explanation?: string; errors?: unknown[] } }).properties;
+          if (Array.isArray(p?.errors) && p.errors.length) {
+            type SubErr = { properties?: { explanation?: string } };
+            const parts = p.errors.map((e: unknown, i: number) => {
+              const sub = e as SubErr;
+              const exp = sub?.properties?.explanation;
+              return exp ? `${i + 1}. ${exp}` : null;
+            }).filter(Boolean);
+            if (parts.length) userMessage = parts.join(' ');
+          } else if (p?.explanation) {
+            userMessage = p.explanation;
           }
         }
-        
-        // If template rendering fails, try to create a simple fallback document
-        console.log('⚠️ Template rendering failed, attempting fallback...');
-        return this.createFallbackDocument(templateData);
+        if (!userMessage || userMessage.length <= 2) {
+          userMessage = 'Template or data contains invalid characters. Check pasted text in the template or form.';
+        }
+        if (error && typeof error === 'object' && 'properties' in error) {
+          console.error('❌ Docxtemplater error details:', (error as { properties: unknown }).properties);
+        }
+        // Throw so outer catch returns error to user (no fallback document)
+        throw new Error(userMessage);
       }
       
       // CRITICAL: Final cleanup - remove any "undefined" strings from the document before generating
@@ -1238,26 +1246,43 @@ export class DocxTemplateProcessor {
       
     } catch (error) {
       const processingTime = Date.now() - startTime;
-      console.error('❌ DOCX template processing failed:', error);
-      
-      // Try fallback document creation
-      console.log('⚠️ Attempting fallback document creation...');
-      try {
-        const fallbackResult = await this.createFallbackDocument(templateData);
-        console.log('✅ Fallback document created successfully');
-        return fallbackResult;
-      } catch (fallbackError) {
-        console.error('❌ Fallback document creation also failed:', fallbackError);
-        
-        return {
-          success: false,
-          error: `Template processing failed: ${error instanceof Error ? error.message : 'Unknown error'}. Fallback also failed: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`,
-          processingTime,
-          tokensReplaced: 0,
-          originalSize: templateFile.size,
-          finalSize: 0
-        };
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const errName = error && typeof error === 'object' && 'name' in error ? (error as Error).name : '';
+      console.error('❌ DOCX template processing failed:', errMsg || error);
+      if (errName) console.error('❌ Error name:', errName);
+      // Build a user-friendly error message so the user can fix the template
+      let userMessage = errMsg || 'Unknown error';
+      if (error && typeof error === 'object' && 'properties' in error) {
+        const p = (error as { properties?: { explanation?: string; id?: string; errors?: unknown[] } }).properties;
+        if (Array.isArray(p?.errors) && p.errors.length) {
+          type SubErr = { properties?: { explanation?: string; id?: string } };
+          const parts = p.errors.map((e: unknown, i: number) => {
+            const sub = e as SubErr;
+            const exp = sub?.properties;
+            return exp?.explanation ? `${i + 1}. ${exp.explanation}` : null;
+          }).filter(Boolean);
+          if (parts.length) userMessage = parts.join(' ');
+        } else if (p?.explanation) {
+          userMessage = p.explanation;
+        }
       }
+      if (!userMessage || userMessage.length <= 2) {
+        userMessage = 'Template or data contains invalid characters (e.g. control characters). Check pasted text in the template or form.';
+      }
+      // Log docxtemplater details for developers
+      if (error && typeof error === 'object' && 'properties' in error) {
+        const p = (error as { properties?: { id?: string } }).properties;
+        if (p?.id) console.error('❌ Docxtemplater error id:', p.id);
+      }
+      // Return error so user sees the message and can fix the cause (no fallback document)
+      return {
+        success: false,
+        error: userMessage,
+        processingTime,
+        tokensReplaced: 0,
+        originalSize: templateFile.size,
+        finalSize: 0
+      };
     }
   }
   
@@ -1298,6 +1323,29 @@ export class DocxTemplateProcessor {
     };
   }
   
+  /**
+   * Strip XML-invalid control characters that cause docxtemplater "invalid_xml_characters" / corrupt character errors.
+   * Per docxtemplater docs: NUL, SOH, STX, ETX, EOT, ENQ, ACK, BEL, BS, VT (\v), FF (\f), SO, SI, DLE, DC1-4, NAK, SYN, ETB, CAN, EM, SUB, ESC, FS, GS, RS, US.
+   */
+  private stripXmlControlChars(str: string): string {
+    if (typeof str !== 'string') return str;
+    return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  }
+
+  /**
+   * Recursively strip control chars from a value (string, or object/array of strings).
+   */
+  private sanitizeForXml(value: unknown): unknown {
+    if (typeof value === 'string') return this.stripXmlControlChars(value);
+    if (Array.isArray(value)) return value.map((item) => this.sanitizeForXml(item));
+    if (value !== null && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value)) out[k] = this.sanitizeForXml(v);
+      return out;
+    }
+    return value;
+  }
+
   /**
    * Prepare template data for processing
    */
@@ -1901,7 +1949,8 @@ export class DocxTemplateProcessor {
       console.log(`  ${status} ${token}: ${value}`);
     });
     
-    return processedData;
+    // Strip XML-invalid control characters to avoid docxtemplater "invalid_xml_characters" (e.g. vertical tab showing as "v")
+    return this.sanitizeForXml(processedData) as typeof processedData;
   }
   
   /**
@@ -1913,242 +1962,6 @@ export class DocxTemplateProcessor {
     ).length;
   }
 
-  /**
-   * Create a fallback document when template processing fails
-   */
-  private async createFallbackDocument(templateData: DocxTemplateData): Promise<DocxProcessingResult> {
-    try {
-      console.log('🔄 Creating fallback document...');
-      
-      // Create a simple DOCX file using the original template structure
-      // For now, let's create a basic DOCX with the data
-      const simpleDocxContent = `
-SERVICE AGREEMENT
-
-Company: ${templateData.company}
-Date: ${templateData.date}
-Quote ID: ${templateData.quoteId}
-
-CLIENT INFORMATION
-Client Name: ${templateData.clientName}
-Email: ${templateData.email}
-Company: ${templateData.company}
-
-SERVICE DETAILS
-Number of Users: ${templateData.users}
-Instance Type: ${templateData.instanceType}
-Duration: ${templateData.duration} months
-Data Size: ${templateData.dataSize} GB
-Plan: ${templateData.planName}
-
-PRICING BREAKDOWN
-Migration Cost: ${templateData.price_migration}
-Data Cost: ${templateData.price_data}
-Instance Cost: ${templateData['{{instance_cost}}'] || '$0.00'}
-Subtotal: ${templateData.total}${(templateData['{{discount}}'] && templateData['{{discount}}'] !== '' && templateData['{{discount}}'] !== '0') ? `
-Discount: ${templateData['{{discount}}']}% - ${templateData['{{discount_amount}}']}` : ''}
-Total After Discount: ${templateData['{{total_after_discount}}'] || templateData.total}
-
-TERMS AND CONDITIONS
-This agreement outlines the services to be provided by CloudFuze for the migration and management of the client's data and systems as specified above.
-
-The total cost of ${templateData.total} covers all services including migration, data transfer, and ${templateData.duration} months of service.
-
-This agreement is valid from the date of signature and will be in effect for the duration specified above.
-
-Generated on: ${templateData.date}
-Quote ID: ${templateData.quoteId}
-      `.trim();
-      
-      // Create a proper DOCX file using the docx library
-      const { Document, Packer, Paragraph, TextRun } = await import('docx');
-      
-      const doc = new Document({
-        sections: [{
-          properties: {},
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: "SERVICE AGREEMENT",
-                  bold: true,
-                  size: 32
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Company: ${templateData.company || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Date: ${templateData.date || new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Quote ID: ${templateData.quoteId || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: "\nCLIENT INFORMATION",
-                  bold: true,
-                  size: 28
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Client Name: ${templateData.clientName || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Email: ${templateData.email || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Company: ${templateData.company || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: "\nSERVICE DETAILS",
-                  bold: true,
-                  size: 28
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Number of Users: ${templateData.users || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Duration: ${templateData.duration || 'N/A'} months`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Plan: ${templateData.planName || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: "\nPRICING BREAKDOWN",
-                  bold: true,
-                  size: 28
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `Total Cost: ${templateData.total || 'N/A'}`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: "\nTERMS AND CONDITIONS",
-                  bold: true,
-                  size: 28
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: "This agreement outlines the services to be provided by CloudFuze for the migration and management of the client's data and systems as specified above.",
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `The total cost of ${templateData.total || 'N/A'} covers all services including migration, data transfer, and ${templateData.duration || 'N/A'} months of service.`,
-                  size: 24
-                })
-              ]
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: "This agreement is valid from the date of signature and will be in effect for the duration specified above.",
-                  size: 24
-                })
-              ]
-            })
-          ]
-        }]
-      });
-      
-      const blob = await Packer.toBlob(doc);
-      
-      console.log('✅ Fallback document created successfully');
-      console.log('📄 Content length:', simpleDocxContent.length, 'characters');
-      
-      return {
-        success: true,
-        processedDocx: blob,
-        tokensReplaced: Object.keys(templateData).length,
-        processingTime: 0,
-        error: undefined,
-        originalSize: 0,
-        finalSize: blob.size
-      };
-      
-    } catch (error) {
-      console.error('❌ Error creating fallback document:', error);
-      return {
-        success: false,
-        processedDocx: undefined,
-        tokensReplaced: 0,
-        processingTime: 0,
-        error: `Failed to create fallback document: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        originalSize: 0,
-        finalSize: 0
-      };
-    }
-  }
-  
   /**
    * Download processed DOCX
    */

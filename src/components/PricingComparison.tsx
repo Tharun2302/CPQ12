@@ -460,13 +460,16 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </div>
                 ) : (
                   <div>
-                    {/* Show original price if Multi combination total is below minimum */}
+                    {/* When below minimum: show $2,500 (amount charged) as main price; calculated amount as secondary */}
                     {isBelowMinimumMultiCombination ? (
                       <>
-                        <div className="text-4xl font-bold mb-2 text-red-600">
-                          {formatCurrency(originalTotalBeforeMinimum)}
+                        <div className="text-4xl font-bold mb-2 text-gray-900">
+                          {formatCurrency(2500)}
                         </div>
-                        <div className="text-sm text-red-600 font-medium">Total project cost (Below minimum)</div>
+                        <div className="text-sm text-gray-600 font-medium">Total project cost</div>
+                        <div className="text-sm text-red-600 font-medium mt-1">
+                          Calculated: {formatCurrency(originalTotalBeforeMinimum)} (below minimum)
+                        </div>
                       </>
                     ) : (
                       <>
@@ -846,19 +849,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
 
               <button
-                onClick={() => {
-                  // Block selection if overall Multi combination total is below $2500 (based on original total before minimum clamp)
-                  if (isBelowMinimumMultiCombination) {
-                    alert('Below $2,500 not applicable. Please select additional combinations or adjust your configuration to meet the minimum requirement of $2,500.');
-                    return;
-                  }
-                  onSelectTier(calc);
-                }}
-                disabled={isBelowMinimumMultiCombination}
+                onClick={() => onSelectTier(calc)}
                 className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group ${
-                  isBelowMinimumMultiCombination
-                    ? 'bg-gray-400 cursor-not-allowed hover:scale-100 hover:shadow-lg'
-                    :
                   configuration?.combination === 'overage-agreement'
                     ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
@@ -870,11 +862,11 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                 </span>
               </button>
               
-              {/* Show warning if Multi combination total is below minimum */}
+              {/* Informational note when calculated total was below minimum (selection allowed; charge is $2,500) */}
               {isBelowMinimumMultiCombination && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-700 font-medium text-center">
-                    ⚠️ Below $2,500 not applicable. Please select additional combinations.
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800 font-medium text-center">
+                    Minimum project total is $2,500. You can select this plan to proceed.
                   </p>
                 </div>
               )}

@@ -2565,13 +2565,7 @@ Total Price: {{total price}}`;
       
       // Create the approval workflow (Team Approval -> Technical -> Legal -> Deal Desk)
       // For overage workflows, Technical Team approval will be auto-skipped in Team step.
-        const workflowData = {
-        documentId: documentId,
-        documentType: 'PDF Agreement',
-        clientName: clientInfo.clientName || 'Unknown Client',
-        amount: calculation?.totalCost || 0,
-        // Notify the actual workflow initiator (current CPQ user)
-          creatorEmail: (() => {
+        const creatorEmail = (() => {
           try {
             const userRaw = localStorage.getItem('cpq_user');
             if (userRaw) {
@@ -2579,9 +2573,27 @@ Total Price: {{total price}}`;
               if (user?.email) return user.email;
             }
           } catch {}
-          // Fallback if no user is stored
           return 'abhilasha.kandakatla@cloudfuze.com';
-        })(),
+        })();
+        const requestedByName = (() => {
+          try {
+            const u = getCurrentUser();
+            if (u?.name) return u.name;
+            const userRaw = localStorage.getItem('cpq_user');
+            if (userRaw) {
+              const user = JSON.parse(userRaw);
+              return user?.name || (user?.email ? user.email.split('@')[0] : null);
+            }
+          } catch {}
+          return creatorEmail ? creatorEmail.split('@')[0] : null;
+        })();
+        const workflowData = {
+        documentId: documentId,
+        documentType: 'PDF Agreement',
+        clientName: clientInfo.clientName || 'Unknown Client',
+        amount: calculation?.totalCost || 0,
+        creatorEmail,
+        creatorName: requestedByName || undefined,
         isOverage: isOverageWorkflow,
         totalSteps: 4,
         workflowSteps: [
@@ -2620,8 +2632,9 @@ Total Price: {{total price}}`;
               clientName: clientInfo.clientName || 'Unknown Client',
               amount: calculation?.totalCost || 0,
               workflowId: newWorkflow.id,
-              // Include selected team so email can display it
-              teamGroup: autoSelectedTeam
+              teamGroup: autoSelectedTeam,
+              creatorEmail: workflowData.creatorEmail,
+              requestedByName: workflowData.creatorName || workflowData.creatorEmail
             }
           })
         });
@@ -3732,6 +3745,12 @@ Total Price: {{total price}}`;
           '{{data_size}}': '',
           '{{dataSizeGB}}': '',
           '{{data_size_gb}}': '',
+          
+          // Pricing: first row (CloudFuze Migrate) = userCost + dataCost so agreement table rows sum to total
+          '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
+          '{{user_cost}}': formatCurrency(userCost || 0),
+          '{{price_migration}}': formatCurrency(migrationCost || 0),
+          '{{migration_price}}': formatCurrency(migrationCost || 0),
           
           // Project dates - formatted as mm/dd/yyyy
           // Use configuration.startDate (Project Start Date) for Start_date
@@ -5498,7 +5517,8 @@ Total Price: {{total price}}`;
             } else if (token === '{{users_count}}') {
               templateData[token] = (userCount || 1).toString();
             } else if (token === '{{users_cost}}') {
-              templateData[token] = formatCurrency(userCost || 0);
+              // First row (CloudFuze Migrate) = userCost + dataCost so agreement table rows sum to total
+              templateData[token] = formatCurrency((userCost || 0) + (dataCost || 0));
             } else if (token === '{{Duration of months}}' || token === '{{Duration_of_months}}') {
               templateData[token] = (duration || 1).toString();
             } else if (token === '{{total price}}' || token === '{{total_price}}') {
@@ -7503,11 +7523,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       <button
                         onClick={() => setShowApprovalModal(true)}
                         disabled={isStartingWorkflow}
-                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
-                        title="Start Approval Workflow"
+                        className="text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40 transition-all duration-300"
+                        title="Send for Approval"
                       >
                         <Workflow className="w-3 h-3 inline mr-1" />
-                        {isStartingWorkflow ? 'Creating Approval Workflow…' : 'Start Approval Workflow'}
+                        {isStartingWorkflow ? 'Sending for Approval…' : 'Send for Approval'}
                       </button>
                       <button
                         onClick={handleEmailAgreement}
@@ -7815,7 +7835,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <div className="flex items-center justify-between mb-4">
                 <h3 id="approval-workflow-title" className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <Workflow className="w-5 h-5 text-blue-600" />
-                  Start Approval Workflow
+                  Send for Approval
                 </h3>
                 <button
                   onClick={() => setShowApprovalModal(false)}
@@ -7972,17 +7992,17 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 <button
                   onClick={handleStartApprovalWorkflow}
                   disabled={isStartingWorkflow}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-2 font-semibold shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 ring-2 ring-green-400/50 hover:ring-green-300/60"
                 >
                   {isStartingWorkflow ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Starting...
+                      Sending...
                     </>
                   ) : (
                     <>
                       <Workflow className="w-4 h-4" />
-                      Start Approval Workflow
+                      Send for Approval
                     </>
                   )}
                 </button>
