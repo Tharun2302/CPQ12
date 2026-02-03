@@ -468,7 +468,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
               {list.map((workflow: any) => {
                 const status = workflow.status || 'pending';
                 const statusLabel = String(status).replace('_', ' ');
-                const requestedBy = workflow.creatorEmail || '—';
+                const requestedBy = workflow.creatorName || workflow.creatorEmail || '—';
                 const createdAt = workflow.createdAt ? new Date(workflow.createdAt) : null;
 
                 const teamStep = getStep(workflow, 'Team Approval');

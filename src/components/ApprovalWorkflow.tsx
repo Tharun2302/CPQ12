@@ -26,6 +26,13 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     role4Email: 'salesops@cloudfuze.com'
   });
 
+  // Contact Information for manual approval workflow (saved contact / from navigation)
+  const [contactInfo, setContactInfo] = useState<{ clientName: string; clientEmail: string; company: string }>({
+    clientName: '',
+    clientEmail: '',
+    company: ''
+  });
+
   // Team Approval settings - loaded from MongoDB API
   const [teamApprovalSettings, setTeamApprovalSettings] = useState<{
     teamLeads: Record<string, string>;
@@ -384,7 +391,44 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         documentId: state.documentId || ''
       }));
     }
+
+    // If contact information is passed via navigation state, pre-fill it
+    const stateContact = state as { contactInfo?: { clientName?: string; clientEmail?: string; company?: string }; clientName?: string; clientEmail?: string; company?: string } | null;
+    if (stateContact?.contactInfo) {
+      setContactInfo(prev => ({
+        clientName: stateContact.contactInfo?.clientName ?? prev.clientName,
+        clientEmail: stateContact.contactInfo?.clientEmail ?? prev.clientEmail,
+        company: stateContact.contactInfo?.company ?? prev.company
+      }));
+    } else if (stateContact?.clientName || stateContact?.clientEmail || stateContact?.company) {
+      setContactInfo(prev => ({
+        clientName: stateContact.clientName ?? prev.clientName,
+        clientEmail: stateContact.clientEmail ?? prev.clientEmail,
+        company: stateContact.company ?? prev.company
+      }));
+    }
   }, [location.state]);
+
+  // Load saved contact info from localStorage/sessionStorage when opening Start tab
+  useEffect(() => {
+    if (activeTab !== 'start') return;
+    try {
+      const saved = localStorage.getItem('cpq_contact_info') || sessionStorage.getItem('cpq_configure_contact_info');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const name = parsed.clientName ?? parsed.contactName ?? '';
+        const email = parsed.clientEmail ?? parsed.contactEmail ?? '';
+        const company = parsed.company ?? parsed.companyName ?? '';
+        if (name || email || company) {
+          setContactInfo(prev => ({
+            clientName: name || prev.clientName,
+            clientEmail: email || prev.clientEmail,
+            company: company || prev.company
+          }));
+        }
+      }
+    } catch (_) {}
+  }, [activeTab]);
 
   // Optional: show quotes list (not used for eSign document download)
   useEffect(() => {
@@ -430,8 +474,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         fileName: uploadedFile.name,
         fileData: fileBase64,
         fileSize: uploadedFile.size,
-        clientName: 'Manual Approval',
-        company: 'Manual Approval',
+        clientName: contactInfo.clientName?.trim() || 'Manual Approval',
+        company: contactInfo.company?.trim() || 'Manual Approval',
+        clientEmail: contactInfo.clientEmail?.trim() || undefined,
         quoteId: null,
         metadata: {
           totalCost: 0
@@ -502,9 +547,12 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       const matchingQuote = quotes?.find(q => q.id === effectiveDocumentId);
 
       const clientName =
+        contactInfo.clientName?.trim() ||
         matchingQuote?.clientName ||
         selectedDoc?.clientName ||
         'Unknown Client';
+      const companyName = contactInfo.company?.trim() || matchingQuote?.company || selectedDoc?.company || clientName;
+      const clientEmail = contactInfo.clientEmail?.trim() || matchingQuote?.clientEmail || selectedDoc?.clientEmail || undefined;
 
       const amount =
         matchingQuote?.calculation?.totalCost ??
@@ -528,6 +576,10 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         documentType: formData.documentType,
         clientName,
         amount,
+        ...(companyName && { companyName }),
+        ...(clientEmail && { clientEmail }),
+        creatorEmail: loggedInUserEmail || undefined,
+        creatorName: currentUser?.name || (loggedInUserEmail ? loggedInUserEmail.split('@')[0] : undefined),
         totalSteps: 4,
         workflowSteps: [
           {
@@ -585,7 +637,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 clientName,
                 amount,
                 workflowId: newWorkflow.id,
-                teamGroup: autoSelectedTeam
+                teamGroup: autoSelectedTeam,
+                ...(companyName && { companyName }),
+                ...(clientEmail && { clientEmail })
               }
             })
           });
@@ -628,7 +682,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         {activeTab === 'start' && (
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200">
             <div className="p-8 space-y-8">
-              <div className="flex items-center justify-end">
+              <div className="flex items-center justify-start">
                 <button
                   type="button"
                   onClick={() => setActiveTab('dashboard')}
@@ -638,90 +692,153 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   Back to Dashboard
                 </button>
               </div>
-              {/* Document Information Section */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                  Document Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Document ID */}
+              {/* Document Information & Contact Information side by side */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Document Information Section */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                    Document Information
+                  </h3>
+                  <div className="grid grid-cols-1 gap-6">
+                    {/* Upload document for this workflow */}
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-3">
+                        Upload Document (PDF, Excel, CSV)
+                      </label>
+                      <div className="flex flex-col gap-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".pdf,.csv,.xlsx,.xls"
+                          onChange={(e) => {
+                            const file = e.target.files && e.target.files[0];
+                            setUploadedFile(file || null);
+                            setUploadMessage(null);
+                          }}
+                          className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl bg-white shadow-sm cursor-pointer"
+                        />
+                        {uploadedFile && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUploadedFile(null);
+                              setUploadMessage(null);
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = '';
+                              }
+                            }}
+                            className="self-start text-xs text-red-600 hover:text-red-700"
+                          >
+                            Clear selected file
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs text-gray-500">
+                        Upload a file to send for approval. It will be saved and used for this workflow.
+                      </p>
+                      {uploadedFile && (
+                        <p className="mt-1 text-xs text-gray-600">
+                          Selected file: <span className="font-medium">{uploadedFile.name}</span>
+                        </p>
+                      )}
+                      {isUploadingDocument && (
+                        <p className="mt-1 text-xs text-blue-600">
+                          Uploading document, please wait...
+                        </p>
+                      )}
+                      {uploadMessage && (
+                        <p className="mt-1 text-xs text-gray-700">
+                          {uploadMessage}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contact Information Section */}
+                <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-6 border border-emerald-200">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
+                    <Users className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900">Contact Information</h3>
+                  {(contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
+                    <span className="ml-auto text-xs text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full font-medium">
+                      Saved Contact
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-600 mb-4">
+                  Optional. Used for document metadata and approval emails. If saved contact exists, it will be pre-filled.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-3">
-                      Document ID
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      Contact Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
-                      value={formData.documentId}
-                      onChange={(e) => setFormData(prev => ({ ...prev, documentId: e.target.value }))}
-                      placeholder="Enter document ID..."
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium bg-white shadow-sm"
+                      value={contactInfo.clientName}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setContactInfo(prev => ({ ...prev, clientName: v }));
+                        try {
+                          localStorage.setItem('cpq_contact_info', JSON.stringify({ ...contactInfo, clientName: v }));
+                        } catch (_) {}
+                      }}
+                      placeholder="e.g. John Smith"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white"
                     />
                   </div>
-
-                  {/* OR upload a document directly for this workflow */}
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-3">
-                      Or Upload Document (PDF, Excel, CSV)
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      Contact Email <span className="text-red-500">*</span>
                     </label>
-                    <div className="flex flex-col gap-2">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".pdf,.csv,.xlsx,.xls"
-                        onChange={(e) => {
-                          const file = e.target.files && e.target.files[0];
-                          setUploadedFile(file || null);
-                          setUploadMessage(null);
-                        }}
-                        className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl bg-white shadow-sm cursor-pointer"
-                      />
-                      {uploadedFile && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadedFile(null);
-                            setUploadMessage(null);
-                            if (fileInputRef.current) {
-                              fileInputRef.current.value = '';
-                            }
-                          }}
-                          className="self-start text-xs text-red-600 hover:text-red-700"
-                        >
-                          Clear selected file
-                        </button>
-                      )}
-                    </div>
-                    <p className="mt-2 text-xs text-gray-500">
-                      You can either paste an existing Document ID or upload a new file. If you upload,
-                      we&apos;ll automatically save it and use its Document ID for this workflow.
-                    </p>
-                    {uploadedFile && (
-                      <p className="mt-1 text-xs text-gray-600">
-                        Selected file: <span className="font-medium">{uploadedFile.name}</span>
-                      </p>
-                    )}
-                    {isUploadingDocument && (
-                      <p className="mt-1 text-xs text-blue-600">
-                        Uploading document, please wait...
-                      </p>
-                    )}
-                    {uploadMessage && (
-                      <p className="mt-1 text-xs text-gray-700">
-                        {uploadMessage}
-                      </p>
-                    )}
+                    <input
+                      type="email"
+                      value={contactInfo.clientEmail}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setContactInfo(prev => ({ ...prev, clientEmail: v }));
+                        try {
+                          localStorage.setItem('cpq_contact_info', JSON.stringify({ ...contactInfo, clientEmail: v }));
+                        } catch (_) {}
+                      }}
+                      placeholder="e.g. john.smith@company.com"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      Company Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={contactInfo.company}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setContactInfo(prev => ({ ...prev, company: v }));
+                        try {
+                          localStorage.setItem('cpq_contact_info', JSON.stringify({ ...contactInfo, company: v }));
+                        } catch (_) {}
+                      }}
+                      placeholder="e.g. Acme Corp"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white"
+                    />
                   </div>
                 </div>
               </div>
-              
+              </div>
+
               <p className="text-sm text-gray-500">
-                Enter the Document ID of the PDF you want to send for approval, or upload a new
-                document using the file selector above.
+                Upload a document using the file selector above to send it for approval.
               </p>
 
-              {/* Team Approval - Automatic Selection with Edit Option */}
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+              {/* Team Approval Group & Approval Roles side by side */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Team Approval - Automatic Selection with Edit Option */}
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
                     <Users className="w-4 h-4 text-purple-600" />
@@ -856,8 +973,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 </div>
               </div>
 
-              {/* Approval Roles Section */}
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
+                {/* Approval Roles Section */}
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
                 <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
                   <Users className="w-4 h-4 text-green-600" />
                   Approval Roles
@@ -915,6 +1032,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                     </div>
                   </div>
                 </div>
+              </div>
               </div>
               
               <p className="text-sm text-gray-500">
