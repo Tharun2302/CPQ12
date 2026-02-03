@@ -367,6 +367,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const formatCombinationForDisplay = (combination: string): string => {
     if (!combination) return '';
     
+    // Special case: map "dropbox-to-google" to "Dropbox To Google Shared Drive"
+    if (combination.toLowerCase() === 'dropbox-to-google') {
+      return 'Dropbox To Google Shared Drive';
+    }
+    
     return combination
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -375,7 +380,21 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
   // Process exhibits for flat list display (handle grouping)
   const processedExhibits = useMemo(() => {
-    const sorted = [...searchFilteredExhibits].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+    // Filter out generic "Included Features" and "Not Included Features" exhibits (without plan type)
+    // These are redundant with plan-specific exhibits (e.g., "Standard Include", "Advanced Include")
+    const filtered = searchFilteredExhibits.filter(exhibit => {
+      const name = exhibit.name || '';
+      // Check if it ends with " - Included Features" or " - Not Included Features" (without plan type)
+      const endsWithIncludedFeatures = / - (Included|Not Included) Features$/i.test(name);
+      if (endsWithIncludedFeatures) {
+        // Only exclude if it doesn't have a plan type in the name
+        const hasPlanType = /\b(Basic|Standard|Advanced|Premium|Enterprise)\s+(Plan\s*-)?\s*(Included|Not Included|Include|Not Include)/i.test(name);
+        return hasPlanType; // Keep if it has a plan type, exclude if it doesn't
+      }
+      return true; // Keep all other exhibits
+    });
+    
+    const sorted = [...filtered].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
     
     // Group exhibits by base combination extracted from combinations field
     const groups: Map<string, Exhibit[]> = new Map();
@@ -386,9 +405,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     // Hide legacy ShareFile groups in UI (we use the merged "Google Drive (MyDrive & Shared Drive)" group instead)
     const hiddenGroupNames = new Set([
       'ShareFile to Google Shared Drive',
+      'Sharefile To Google Sharedrive', // Format: "sharefile-to-google-sharedrive" -> "Sharefile To Google Sharedrive"
       'ShareFile to Google MyDrive',
+      'Sharefile To Google Mydrive', // Format: "sharefile-to-google-mydrive" -> "Sharefile To Google Mydrive"
       // Hide legacy Dropbox groups in UI (we use the merged "Google Drive (MyDrive & Shared Drive)" group instead)
       'Dropbox to MyDrive',
+      'Dropbox To Google Mydrive', // Format: "dropbox-to-google-mydrive" -> "Dropbox To Google Mydrive"
       'Dropbox to Google Shared Drive',
     ]);
     
@@ -410,8 +432,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         // Use base combination as folder name
         const folderName = formatCombinationForDisplay(baseCombination);
         
-        // Skip rendering these groups entirely in the UI
-        if (hiddenGroupNames.has(folderName)) {
+        // Skip rendering these groups entirely in the UI (case-insensitive check)
+        const folderNameLower = folderName.toLowerCase();
+        const shouldHide = Array.from(hiddenGroupNames).some(hiddenName => 
+          hiddenName.toLowerCase() === folderNameLower
+        );
+        if (shouldHide) {
           return;
         }
         
@@ -462,12 +488,38 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     // Add groups (only if they have more than 1 exhibit, otherwise treat as ungrouped)
     groups.forEach((exhibits, folderName) => {
       if (exhibits.length > 1) {
+        // Deduplicate exhibits within the group by their display label (the part after " - ")
+        // Keep the most specific exhibit (prefer exhibits specific to this combination over merged ones)
+        const deduplicatedExhibits: Exhibit[] = [];
+        const seenLabels = new Map<string, Exhibit>();
+        
+        // Sort exhibits to process more specific ones first (non-merged before merged)
+        const sortedExhibits = [...exhibits].sort((a, b) => {
+          const aIsMerged = a.name.includes('(MyDrive & Shared Drive)');
+          const bIsMerged = b.name.includes('(MyDrive & Shared Drive)');
+          if (aIsMerged && !bIsMerged) return 1; // Merged ones go last
+          if (!aIsMerged && bIsMerged) return -1;
+          return 0;
+        });
+        
+        sortedExhibits.forEach(exhibit => {
+          const dashIndex = exhibit.name.indexOf(' - ');
+          const label = dashIndex > 0 ? exhibit.name.substring(dashIndex + 3) : exhibit.name;
+          
+          // Only add if we haven't seen this label before, or if this one is more specific
+          if (!seenLabels.has(label)) {
+            seenLabels.set(label, exhibit);
+            deduplicatedExhibits.push(exhibit);
+          }
+          // If label already exists, skip this exhibit (we already have a more specific one)
+        });
+        
         result.push({
           id: `group-${folderName}`,
           name: folderName,
-          exhibits,
+          exhibits: deduplicatedExhibits,
           isGroup: true,
-          displayOrder: Math.min(...exhibits.map(e => e.displayOrder ?? 0))
+          displayOrder: Math.min(...deduplicatedExhibits.map(e => e.displayOrder ?? 0))
         });
       } else {
         ungrouped.push(exhibits[0]);
