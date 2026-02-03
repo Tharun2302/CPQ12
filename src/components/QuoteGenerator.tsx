@@ -7548,22 +7548,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               {/* Content - Maximized for Preview */}
               <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Success Message - Ultra Compact (hidden in fullscreen) */}
-                {!isFullscreen && (
-                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-l-2 border-green-500 p-2 mx-2 mt-1 mb-2 flex-shrink-0">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <p className="text-green-800 font-semibold text-xs">
-                        Template processed successfully! Review the preview below.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 {/* Preview Area - Maximized */}
                 <div className={`flex-1 bg-gray-50 border border-gray-300 overflow-hidden flex flex-col min-h-0 ${
                   isFullscreen 
