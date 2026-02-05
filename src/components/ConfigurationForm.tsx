@@ -131,6 +131,43 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             let hasContent = false;
             let hasEmail = false;
             
+            // Normalize base combination keys so "same folder" doesn't create duplicate configs
+            // (e.g. "onedrive-/-sharepoint---onedrive-/-sharepoint" vs "onedrive-/-sharepoint-onedrive-/-sharepoint")
+            const normalizeBaseCombinationKey = (input: string): string => {
+              if (!input) return '';
+              let s = String(input).toLowerCase();
+              s = s
+                .replace(/\//g, '-') // treat "/" as separator
+                .replace(/[^a-z0-9-]+/g, '-') // everything else -> "-"
+                .replace(/-+/g, '-') // collapse dashes
+                .replace(/^-+|-+$/g, ''); // trim
+
+              // Collapse duplicated halves: "a-b-a-b" -> "a-b"
+              const parts = s.split('-').filter(Boolean);
+              if (parts.length > 0 && parts.length % 2 === 0) {
+                const half = parts.length / 2;
+                const first = parts.slice(0, half).join('-');
+                const second = parts.slice(half).join('-');
+                if (first === second) s = first;
+              }
+              return s;
+            };
+
+            const baseKeyToDisplayLabel = (baseKey: string): string => {
+              if (!baseKey) return '';
+              // Keep requested business label for OneDrive/SharePoint folder
+              if (baseKey === 'onedrive-sharepoint') {
+                return 'OneDrive / SharePoint - OneDrive / SharePoint';
+              }
+              // Default: "testing-to-production" -> "Testing To Production"
+              return baseKey
+                .split('-')
+                .filter(Boolean)
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ')
+                .trim();
+            };
+
             // Helper function to extract base combination from exhibit
             // Priority: Use combinations field (base combination), fallback to name extraction
             const extractCombinationName = (exhibit: any): string => {
@@ -144,12 +181,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, ''); // Run twice to catch both
                   
                   if (base && base !== 'all' && base.length >= 3) {
-                    // Format for display: "testing-to-production" -> "Testing To Production"
-                    const formatted = base
-                      .split('-')
-                      .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-                      .join(' ');
-                    return formatted;
+                    const baseKey = normalizeBaseCombinationKey(base);
+                    const label = baseKeyToDisplayLabel(baseKey);
+                    return label || base.trim();
                   }
                 }
               }

@@ -94,10 +94,42 @@ export async function mergeDocxFiles(
     const parser = new DOMParser();
     const mainDoc = parser.parseFromString(mainXml, 'text/xml');
     const mainBody = mainDoc.getElementsByTagName('w:body')[0];
+    const mainRoot = mainDoc.documentElement; // <w:document ...xmlns:* />
 
     if (!mainBody) {
       throw new Error('Could not find main document body');
     }
+    if (!mainRoot) {
+      throw new Error('Could not find main document root element');
+    }
+
+    // Ensure the merged XML contains all namespace declarations used by appended exhibits.
+    // Without this, XMLSerializer (and/or Word) can fail when imported nodes contain prefixes
+    // that are only declared on the exhibit's <w:document>.
+    const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+    const ensureNamespacesFromExhibit = (exhibitDoc: Document) => {
+      const exhibitRoot = exhibitDoc.documentElement;
+      if (!exhibitRoot) return;
+
+      // Copy all xmlns declarations from exhibit root to main root when missing
+      const attrs = Array.from(exhibitRoot.attributes || []);
+      for (const attr of attrs) {
+        const name = attr.name || '';
+        if (name === 'xmlns') {
+          // Default namespace
+          if (!mainRoot.getAttribute('xmlns')) {
+            mainRoot.setAttribute('xmlns', attr.value);
+          }
+          continue;
+        }
+        if (name.startsWith('xmlns:')) {
+          if (!mainRoot.getAttribute(name)) {
+            // Use namespace-aware setter for xmlns:* attributes
+            mainRoot.setAttributeNS(XMLNS_NS, name, attr.value);
+          }
+        }
+      }
+    };
 
     // Group exhibits by Included/Not Included if metadata is provided
     let groupedExhibits: { included: number[]; notIncluded: number[] } | null = null;
@@ -187,6 +219,8 @@ export async function mergeDocxFiles(
 
       const exhibitDoc = parser.parseFromString(exhibitXml, 'text/xml');
       const exhibitBody = exhibitDoc.getElementsByTagName('w:body')[0];
+      // IMPORTANT: Bring over any missing xmlns declarations so imported nodes serialize correctly.
+      ensureNamespacesFromExhibit(exhibitDoc);
       
       if (!exhibitBody) {
         console.warn(`⚠️ Could not find exhibit body, skipping`);
@@ -317,7 +351,15 @@ export async function mergeDocxFiles(
         // Pass isIncludedExhibit=true to filter out any "NOT INCLUDED" content
         for (const index of groupedExhibits.included) {
           console.log(`📎 Processing Included exhibit ${index + 1}...`);
-          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, false, true); // isIncludedExhibit=true
+          try {
+            await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, false, true); // isIncludedExhibit=true
+          } catch (e) {
+            console.error('❌ Failed to merge an Included exhibit (skipping):', {
+              index,
+              name: exhibitMetadata?.[index]?.name,
+              error: e
+            });
+          }
         }
         console.log(`✅ Completed all ${groupedExhibits.included.length} Included exhibits`);
       }
@@ -349,7 +391,15 @@ export async function mergeDocxFiles(
         // Pass isIncludedExhibit=false to filter out any "INCLUDED" content
         for (const index of groupedExhibits.notIncluded) {
           console.log(`📎 Processing Not Included exhibit ${index + 1}...`);
-          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, true, false); // skipFirstHeading=true, isIncludedExhibit=false
+          try {
+            await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, true, false); // skipFirstHeading=true, isIncludedExhibit=false
+          } catch (e) {
+            console.error('❌ Failed to merge a Not Included exhibit (skipping):', {
+              index,
+              name: exhibitMetadata?.[index]?.name,
+              error: e
+            });
+          }
         }
         console.log(`✅ Completed all ${groupedExhibits.notIncluded.length} Not Included exhibits`);
       }
@@ -358,7 +408,15 @@ export async function mergeDocxFiles(
       console.log('⚠️ No grouping available, processing exhibits in order without headers');
       for (let i = 0; i < exhibitDocxBlobs.length; i++) {
         console.log(`📎 Processing exhibit ${i + 1}/${exhibitDocxBlobs.length}...`);
-        await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[i], parser, true); // true = add page break
+        try {
+          await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[i], parser, true); // true = add page break
+        } catch (e) {
+          console.error('❌ Failed to merge an exhibit (skipping):', {
+            index: i,
+            name: exhibitMetadata?.[i]?.name,
+            error: e
+          });
+        }
       }
     }
 

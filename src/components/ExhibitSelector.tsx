@@ -357,6 +357,28 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     // Remove include/notinclude suffixes
     base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
     
+    // Normalize legacy/hand-typed folder keys:
+    // - Replace "/" and other non-alphanumeric separators
+    // - Collapse multiple dashes
+    // This makes "onedrive-/-sharepoint---onedrive-/-sharepoint" and
+    // "onedrive-/-sharepoint-onedrive-/-sharepoint" group together.
+    base = base
+      .replace(/\//g, '-') // "x/y" -> "x-y"
+      .replace(/[^a-z0-9-]+/g, '-') // anything else -> "-"
+      .replace(/-+/g, '-') // collapse
+      .replace(/^-+|-+$/g, ''); // trim dashes
+
+    // If the base is duplicated (A-B-A-B), collapse to first half (A-B)
+    const parts = base.split('-').filter(Boolean);
+    if (parts.length > 0 && parts.length % 2 === 0) {
+      const half = parts.length / 2;
+      const first = parts.slice(0, half).join('-');
+      const second = parts.slice(half).join('-');
+      if (first === second) {
+        base = first;
+      }
+    }
+
     // Clean up any trailing dashes
     base = base.replace(/-+$/, '').trim();
     
@@ -366,7 +388,45 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   // Helper function to format combination for display (e.g., "testing-to-production" -> "Testing to Production")
   const formatCombinationForDisplay = (combination: string): string => {
     if (!combination) return '';
+
+    // Special case: "Google My Drive & Share Drive to Google My Drive & Share Drive"
+    // Prefer the business-friendly label requested by users.
+    const normalized = combination.toLowerCase().replace(/-+$/g, '').trim();
+    if (normalized === 'google-my-drive-&-share-drive-to-google-my-drive-&-share-drive') {
+      return 'Google My Drive / Share Drive - Google My Drive / Share Drive';
+    }
+
+    // Special case: Box to SharePoint should display as SharePoint Online (consistent with exhibit naming)
+    if (normalized === 'box-to-sharepoint') {
+      return 'Box to SharePoint Online';
+    }
+
+    // Special case: Google Shared Drive to SharePoint should display as SharePoint Online
+    if (normalized === 'google-sharedrive-to-sharepoint') {
+      return 'Google ShareDrive to SharePoint Online';
+    }
+
+    // Special case: Google MyDrive to SharePoint should display as SharePoint Online
+    if (normalized === 'google-mydrive-to-sharepoint') {
+      return 'Google MyDrive to SharePoint Online';
+    }
+
+    // Special case: ShareFile to SharePoint should display as SharePoint Online
+    if (normalized === 'sharefile-to-sharepoint') {
+      return 'ShareFile to SharePoint Online';
+    }
     
+    // Special case: legacy OneDrive->SharePoint Online exhibits use a custom slug
+    if (normalized === 'one-drive-toshare-point') {
+      return 'OneDrive to SharePoint Online';
+    }
+
+    // Special case: user-created OneDrive/SharePoint folder should keep the exact folder-style label
+    // (This slug is produced by normalization of "OneDrive / SharePoint - OneDrive / SharePoint")
+    if (normalized === 'onedrive-sharepoint') {
+      return 'OneDrive / SharePoint - OneDrive / SharePoint';
+    }
+
     // Special case: map "dropbox-to-google" to "Dropbox To Google Shared Drive"
     if (combination.toLowerCase() === 'dropbox-to-google') {
       return 'Dropbox To Google Shared Drive';
@@ -454,6 +514,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           let folderName = baseName
             .replace(/\s+(Basic|Standard|Advanced|Premium)\s+Plan$/i, '')
             .trim();
+
+          // Special case: some legacy SharePoint exhibits use "SharePoint to SharePoint Online" in the name,
+          // but the desired UI label is "SharePoint Online to SharePoint Online".
+          if (folderName.toLowerCase() === 'sharepoint to sharepoint online') {
+            folderName = 'SharePoint Online to SharePoint Online';
+          }
           
           if (!folderName || folderName.length < 3) {
             folderName = baseName;

@@ -1716,6 +1716,80 @@ Quote ID: ${quoteData.id}
                 (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
               );
 
+              // Ensure we always merge BOTH Included + Not Included exhibit variants for a selected migration.
+              // Users often select a "folder" (migration) and expect both to appear in the agreement.
+              const getPlanLowerFromExhibit = (ex: any): string => {
+                const pt = (ex?.planType || '').toString().toLowerCase();
+                if (pt) return pt;
+                const name = (ex?.name || '').toString().toLowerCase();
+                if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'basic';
+                if (name.includes('standard') && !name.includes('advanced')) return 'standard';
+                if (name.includes('advanced')) return 'advanced';
+                return '';
+              };
+
+              const getNormalizedBaseCombination = (ex: any): string => {
+                const primary = ex?.combinations?.[0];
+                if (!primary || primary === 'all') return '';
+                let base = String(primary).toLowerCase();
+                // Strip common suffixes (may be missing on some legacy uploads)
+                base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+                base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+                base = base.replace(/-+$/, '').trim();
+
+                // Normalize separators + collapse duplicated halves
+                base = base
+                  .replace(/\//g, '-')
+                  .replace(/[^a-z0-9-]+/g, '-')
+                  .replace(/-+/g, '-')
+                  .replace(/^-+|-+$/g, '');
+
+                const parts = base.split('-').filter(Boolean);
+                if (parts.length > 0 && parts.length % 2 === 0) {
+                  const half = parts.length / 2;
+                  const first = parts.slice(0, half).join('-');
+                  const second = parts.slice(half).join('-');
+                  if (first === second) base = first;
+                }
+                return base;
+              };
+
+              // Expand merge list to include sibling Included/Not Included exhibits for the same base combo + plan.
+              const expandedForMerge = new Set<string>();
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  expandedForMerge.add(id);
+                  continue;
+                }
+                const category = (ex?.category || 'content').toString().toLowerCase();
+                const baseCombo = getNormalizedBaseCombination(ex);
+                const planLower = getPlanLowerFromExhibit(ex);
+                expandedForMerge.add(id);
+
+                if (!baseCombo || !planLower) continue;
+
+                for (const other of allExhibits) {
+                  if (!other?._id) continue;
+                  const otherCat = (other?.category || 'content').toString().toLowerCase();
+                  if (otherCat !== category) continue;
+                  if (getPlanLowerFromExhibit(other) !== planLower) continue;
+                  if (getNormalizedBaseCombination(other) !== baseCombo) continue;
+                  // Only consider the intended includeType variants
+                  const it = (other?.includeType || '').toString();
+                  if (it !== 'included' && it !== 'notincluded') continue;
+                  expandedForMerge.add(other._id.toString());
+                }
+              }
+
+              const expandedUniqueSelectedExhibitsForMerge = Array.from(expandedForMerge).filter(Boolean);
+              if (expandedUniqueSelectedExhibitsForMerge.length !== uniqueSelectedExhibitsForMerge.length) {
+                console.log('📎 Expanded exhibit merge list (include both Included/Not Included variants):', {
+                  before: uniqueSelectedExhibitsForMerge.length,
+                  after: expandedUniqueSelectedExhibitsForMerge.length
+                });
+              }
+
               const isNotIncludedExhibit = (ex: any): boolean => {
                 if (ex?.includeType === 'notincluded') return true;
                 if (ex?.includeType === 'included') return false;
@@ -5716,6 +5790,80 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
               );
 
+              // Expand merge list to include sibling Included/Not Included exhibits for the same base combo + plan.
+              // (This block is for AGREEMENT generation; do not rely on variables created in the email merge path.)
+              let expandedUniqueSelectedExhibitsForMerge: string[] = Array.from(uniqueSelectedExhibitsForMerge);
+              try {
+                const getPlanLowerFromExhibit = (ex: any): string => {
+                  const pt = (ex?.planType || '').toString().toLowerCase();
+                  if (pt) return pt;
+                  const name = (ex?.name || '').toString().toLowerCase();
+                  if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'basic';
+                  if (name.includes('standard') && !name.includes('advanced')) return 'standard';
+                  if (name.includes('advanced')) return 'advanced';
+                  return '';
+                };
+
+                const getNormalizedBaseCombination = (ex: any): string => {
+                  const primary = ex?.combinations?.[0];
+                  if (!primary || primary === 'all') return '';
+                  let base = String(primary).toLowerCase();
+                  base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+                  base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+                  base = base.replace(/-+$/, '').trim();
+                  base = base
+                    .replace(/\//g, '-')
+                    .replace(/[^a-z0-9-]+/g, '-')
+                    .replace(/-+/g, '-')
+                    .replace(/^-+|-+$/g, '');
+                  const parts = base.split('-').filter(Boolean);
+                  if (parts.length > 0 && parts.length % 2 === 0) {
+                    const half = parts.length / 2;
+                    const first = parts.slice(0, half).join('-');
+                    const second = parts.slice(half).join('-');
+                    if (first === second) base = first;
+                  }
+                  return base;
+                };
+
+                const expandedForMerge = new Set<string>();
+                for (const id of uniqueSelectedExhibitsForMerge) {
+                  const ex = lookup.get(id);
+                  if (!ex) {
+                    expandedForMerge.add(id);
+                    continue;
+                  }
+                  const category = (ex?.category || 'content').toString().toLowerCase();
+                  const baseCombo = getNormalizedBaseCombination(ex);
+                  const planLower = getPlanLowerFromExhibit(ex);
+                  expandedForMerge.add(id);
+                  if (!baseCombo || !planLower) continue;
+
+                  for (const other of allExhibits) {
+                    if (!other?._id) continue;
+                    const otherCat = (other?.category || 'content').toString().toLowerCase();
+                    if (otherCat !== category) continue;
+                    if (getPlanLowerFromExhibit(other) !== planLower) continue;
+                    if (getNormalizedBaseCombination(other) !== baseCombo) continue;
+                    const it = (other?.includeType || '').toString();
+                    if (it !== 'included' && it !== 'notincluded') continue;
+                    expandedForMerge.add(other._id.toString());
+                  }
+                }
+
+                expandedUniqueSelectedExhibitsForMerge = Array.from(expandedForMerge).filter(Boolean);
+                if (expandedUniqueSelectedExhibitsForMerge.length !== uniqueSelectedExhibitsForMerge.length) {
+                  console.log('📎 Expanded exhibit merge list (agreement):', {
+                    before: uniqueSelectedExhibitsForMerge.length,
+                    after: expandedUniqueSelectedExhibitsForMerge.length
+                  });
+                }
+              } catch (e) {
+                // Never fail agreement generation because of merge-list expansion
+                console.warn('⚠️ Could not expand exhibit merge list; using original selection.', e);
+                expandedUniqueSelectedExhibitsForMerge = Array.from(uniqueSelectedExhibitsForMerge);
+              }
+
               const isNotIncludedExhibit = (ex: any): boolean => {
                 if (ex?.includeType === 'notincluded') return true;
                 if (ex?.includeType === 'included') return false;
@@ -5747,7 +5895,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               // De-dupe exhibits by stable "migration key" before fetching/merging blobs
               const seenKeys = new Set<string>();
               const dedupedIds: string[] = [];
-              for (const id of uniqueSelectedExhibitsForMerge) {
+              for (const id of expandedUniqueSelectedExhibitsForMerge) {
                 const ex = lookup.get(id);
                 if (!ex) {
                   // Keep unknown IDs (but they may be skipped later if metadata is required)

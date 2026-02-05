@@ -35,6 +35,40 @@ function generateNameFromCombination(combination: string): string {
   return formatted || combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase();
 }
 
+// Normalize folder/combo text into a stable slug key for grouping
+function normalizeFolderKey(input: string): string {
+  if (!input) return '';
+  let s = String(input).toLowerCase();
+  s = s
+    .replace(/&/g, 'and')
+    .replace(/\//g, '-') // treat "/" as separator
+    .replace(/[^a-z0-9]+/g, '-') // any non-alphanum -> "-"
+    .replace(/-+/g, '-') // collapse dashes
+    .replace(/^-+|-+$/g, ''); // trim
+
+  // Strip any trailing include/plan suffixes if user typed them into the folder name
+  s = s.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+  s = s.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+
+  // Collapse duplicated halves: "onedrive-sharepoint-onedrive-sharepoint" -> "onedrive-sharepoint"
+  const parts = s.split('-').filter(Boolean);
+  if (parts.length > 0 && parts.length % 2 === 0) {
+    const half = parts.length / 2;
+    const first = parts.slice(0, half).join('-');
+    const second = parts.slice(half).join('-');
+    if (first === second) s = first;
+  }
+
+  return s;
+}
+
+function buildCombinationKey(base: string, includeType: string, planType: string): string {
+  const b = normalizeFolderKey(base);
+  const t = String(includeType || '').toLowerCase();
+  const p = String(planType || '').toLowerCase();
+  return [b || 'all', t, p].filter(Boolean).join('-');
+}
+
 interface Exhibit {
   _id: string;
   id?: string;
@@ -241,90 +275,27 @@ const ExhibitManager: React.FC = () => {
       
       // Auto-generate name from combination if not provided
       // Use custom combination if checked, otherwise use formData.combination or detected metadata
-      let finalCombination = '';
-      
-      // If creating new folder, use the new folder name
+      // IMPORTANT: Always generate a consistent combination key for grouping.
+      // Previously, selecting an existing folder didn't append includeType/planType,
+      // which caused the same folder to split into different groups in the UI.
+      let combinationSource = '';
       if (createNewFolder && newFolderName.trim()) {
-        finalCombination = newFolderName.toLowerCase().replace(/\s+/g, '-');
+        combinationSource = newFolderName.trim();
         setUseCustomCombination(true);
-        setCustomCombination(newFolderName);
-        
-        // Append include/notinclude and plan type to the new combination
-        const detectedType = formData.includeType || '';
-        if (!detectedType) {
-          setUploadError('Please select whether this exhibit is for included or not included features.');
-          setIsUploading(false);
-          return;
-        }
-        const planType = formData.plan || '';
-        
-        // Append include/notinclude and plan type if not already in the combination
-        if (detectedType && !finalCombination.includes(detectedType) && !finalCombination.includes('include')) {
-          finalCombination += `-${detectedType}`;
-        }
-        if (planType && !finalCombination.includes(planType)) {
-          finalCombination += `-${planType}`;
-        }
+        setCustomCombination(combinationSource);
       } else if (selectedFolder) {
-        finalCombination = selectedFolder.toLowerCase().replace(/\s+/g, '-');
+        combinationSource = selectedFolder;
       } else if (useCustomCombination && customCombination) {
-        finalCombination = customCombination.toLowerCase().replace(/\s+/g, '-');
-        
-        // Use form values; optionally parse plan/type from custom combination string if not set in form
-        let extractedPlan = formData.plan || '';
-        if (!extractedPlan) {
-          const comboLower = customCombination.toLowerCase();
-          if (comboLower.includes('basic') && !comboLower.includes('standard') && !comboLower.includes('advanced')) {
-            extractedPlan = 'basic';
-          } else if (comboLower.includes('standard') && !comboLower.includes('advanced')) {
-            extractedPlan = 'standard';
-          } else if (comboLower.includes('advanced')) {
-            extractedPlan = 'advanced';
-          }
-        }
-        
-        let extractedType = formData.includeType || '';
-        if (!extractedType) {
-          const comboLower = customCombination.toLowerCase();
-          if (comboLower.includes('include') && !comboLower.includes('not')) {
-            extractedType = 'included';
-          } else if (comboLower.includes('notinclude') || comboLower.includes('not-include') || comboLower.includes('not include') || comboLower.includes('excluded')) {
-            extractedType = 'notincluded';
-          }
-        }
-        
-        const detectedType = extractedType;
-        const planType = extractedPlan || formData.plan || '';
-        
-        // Only append if not already in the custom combination string
-        if (detectedType && !finalCombination.includes(detectedType) && !finalCombination.includes('include')) {
-          finalCombination += `-${detectedType}`;
-        }
-        if (planType && !finalCombination.includes(planType)) {
-          finalCombination += `-${planType}`;
-        }
+        combinationSource = customCombination;
       } else {
-        // Use the clean combination from dropdown (formData.combination) instead of auto-detected
-        finalCombination = formData.combination || '';
-        
-        // For predefined combinations, use form selection (required field)
-        const detectedType = formData.includeType || '';
-        if (!detectedType) {
-          setUploadError('Please select whether this exhibit is for included or not included features.');
-          setIsUploading(false);
-          return;
-        }
-        
-        const planType = formData.plan || '';
-        
-        // Only append if not already in the combination string
-        if (detectedType && !finalCombination.includes(detectedType) && !finalCombination.includes('include')) {
-          finalCombination += `-${detectedType}`;
-        }
-        if (planType && !finalCombination.includes(planType)) {
-          finalCombination += `-${planType}`;
-        }
+        combinationSource = formData.combination || '';
       }
+
+      const finalCombination = buildCombinationKey(
+        combinationSource || cleanFolderName || formData.combination || '',
+        formData.includeType,
+        formData.plan
+      );
       
       // Generate name from clean folder name, plan type, and type
       // Use clean folder name and form values instead of auto-detected metadata with typos
@@ -510,6 +481,20 @@ const ExhibitManager: React.FC = () => {
     
     // Remove include/notinclude suffixes
     base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+
+    // Normalize separators and collapse duplicated halves (keeps folder selection stable)
+    base = base
+      .replace(/\//g, '-')
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const parts = base.split('-').filter(Boolean);
+    if (parts.length > 0 && parts.length % 2 === 0) {
+      const half = parts.length / 2;
+      const first = parts.slice(0, half).join('-');
+      const second = parts.slice(half).join('-');
+      if (first === second) base = first;
+    }
     
     // Clean up any trailing dashes
     base = base.replace(/-+$/, '').trim();
@@ -563,19 +548,20 @@ const ExhibitManager: React.FC = () => {
       // If creating new folder, use the new folder name
       if (createNewFolder && newFolderName.trim()) {
         cleanFolderName = newFolderName.trim();
-        finalCombination = cleanFolderName.toLowerCase().replace(/\s+/g, '-');
+        finalCombination = buildCombinationKey(cleanFolderName, formData.includeType, formData.plan);
         setUseCustomCombination(true);
         setCustomCombination(cleanFolderName);
       } else if (selectedFolder) {
         cleanFolderName = selectedFolder;
-        finalCombination = cleanFolderName.toLowerCase().replace(/\s+/g, '-');
+        finalCombination = buildCombinationKey(cleanFolderName, formData.includeType, formData.plan);
       } else if (useCustomCombination && customCombination) {
         cleanFolderName = customCombination;
-        finalCombination = customCombination.toLowerCase().replace(/\s+/g, '-');
+        finalCombination = buildCombinationKey(cleanFolderName, formData.includeType, formData.plan);
       } else {
-        finalCombination = formData.combination || '';
+        finalCombination = buildCombinationKey(formData.combination || '', formData.includeType, formData.plan);
         if (finalCombination) {
-          cleanFolderName = generateNameFromCombination(finalCombination);
+          // Use the base for naming (don't include includeType/planType in the folder label)
+          cleanFolderName = generateNameFromCombination(extractBaseCombination(finalCombination));
         }
       }
       
@@ -588,24 +574,6 @@ const ExhibitManager: React.FC = () => {
       }
       
       const planType = formData.plan || '';
-      
-      // Append include/notinclude and plan type to combination if creating new folder or using selected folder
-      if ((createNewFolder && newFolderName.trim()) || selectedFolder) {
-        if (detectedType && !finalCombination.includes(detectedType) && !finalCombination.includes('include')) {
-          finalCombination += `-${detectedType}`;
-        }
-        if (planType && !finalCombination.includes(planType)) {
-          finalCombination += `-${planType}`;
-        }
-      }
-      
-      // Only append if not already in the combination string
-      if (detectedType && !finalCombination.includes(detectedType) && !finalCombination.includes('include')) {
-        finalCombination += `-${detectedType}`;
-      }
-      if (planType && !finalCombination.includes(planType)) {
-        finalCombination += `-${planType}`;
-      }
       
       // Generate name from clean folder name, plan type, and type
       let finalName = formData.name;
