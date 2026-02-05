@@ -389,6 +389,11 @@ if (process.env.SENDGRID_API_KEY) {
 const isEmailConfigured = process.env.SENDGRID_API_KEY;
 
 // Email template functions
+function formatUsdAmount(value) {
+  const n = Number(value || 0);
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function generateTeamEmailHTML(workflowData) {
   const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
   return `
@@ -415,7 +420,7 @@ function generateTeamEmailHTML(workflowData) {
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${(workflowData.amount || 0).toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
@@ -462,7 +467,7 @@ function generateManagerEmailHTML(workflowData) {
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${(workflowData.amount || 0).toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
@@ -510,7 +515,7 @@ function generateCEOEmailHTML(workflowData) {
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${(workflowData.amount || 0).toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
@@ -556,7 +561,7 @@ function generateClientEmailHTML(workflowData) {
           <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
             <h3>📄 Document Details</h3>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
-            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Status:</strong> Pending Approval</p>
             <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
           </div>
@@ -610,7 +615,7 @@ function generateDealDeskEmailHTML(workflowData) {
             <h3>📄 Document Details</h3>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${workflowData.amount.toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Status:</strong> All Approvals Complete</p>
             <p><strong>📎 Document:</strong> The approved PDF document is attached to this email.</p>
           </div>
@@ -663,7 +668,7 @@ function generateDenialEmailHTML(data) {
             <h3>📄 Document Details</h3>
             <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
-            <p><strong>Amount:</strong> $${Number(workflowData.amount || 0).toLocaleString()}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Workflow ID:</strong> ${workflowData.workflowId || workflowData.id || ''}</p>
           </div>
           ${comments ? `<p><strong>Reason:</strong> ${comments}</p>` : ''}

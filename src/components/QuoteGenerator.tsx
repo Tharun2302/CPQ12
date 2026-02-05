@@ -2507,6 +2507,9 @@ Total Price: {{total price}}`;
 
     setIsStartingWorkflow(true);
     try {
+      // Use the same amount shown in the agreement PDF (post-discount if discount applies)
+      const approvalAmount = shouldApplyDiscount ? finalTotalAfterDiscount : totalCost;
+
       // First, save the PDF to MongoDB if not already saved
       const { templateService } = await import('../utils/templateService');
       const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
@@ -2525,7 +2528,8 @@ Total Price: {{total price}}`;
           generatedDate: new Date().toISOString(),
           quoteId: quoteId,
           metadata: {
-            totalCost: calculation?.totalCost || 0,
+            // Store the effective approval amount so approvals/emails match the PDF total shown to the user
+            totalCost: Number(approvalAmount) || 0,
             duration: configuration?.duration || 0,
             migrationType: configuration?.migrationType || 'Messaging',
             numberOfUsers: configuration?.numberOfUsers || 0
@@ -2591,7 +2595,8 @@ Total Price: {{total price}}`;
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
-        amount: calculation?.totalCost || 0,
+        // IMPORTANT: Must match the PDF "Total Price" (post-discount when applicable)
+        amount: Number(approvalAmount) || 0,
         creatorEmail,
         creatorName: requestedByName || undefined,
         isOverage: isOverageWorkflow,
@@ -2630,7 +2635,8 @@ Total Price: {{total price}}`;
               documentId: documentId,
               documentType: 'PDF Agreement',
               clientName: clientInfo.clientName || 'Unknown Client',
-              amount: calculation?.totalCost || 0,
+              // IMPORTANT: Must match the PDF "Total Price" (post-discount when applicable)
+              amount: Number(approvalAmount) || 0,
               workflowId: newWorkflow.id,
               teamGroup: autoSelectedTeam,
               creatorEmail: workflowData.creatorEmail,

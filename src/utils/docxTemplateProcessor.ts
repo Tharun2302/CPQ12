@@ -2234,3 +2234,5 @@ export const docxTemplateProcessor = DocxTemplateProcessor.getInstance();
 
 // Export utility functions
 // Note: Interfaces are already exported at the top of the file
+
+

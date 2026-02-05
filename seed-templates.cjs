@@ -355,6 +355,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'box', 'dropbox', 'content', 'migration', 'enterprise']
     },
+    // BOX TO SHAREFILE templates (Standard & Advanced only)
+    {
+      name: 'BOX TO SHAREFILE Standard',
+      description: 'Standard template for Box to ShareFile migration - suitable for medium to large projects',
+      fileName: 'box-to-sharefile-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-sharefile',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'sharefile', 'content', 'migration']
+    },
+    {
+      name: 'BOX TO SHAREFILE Advanced',
+      description: 'Advanced template for Box to ShareFile migration - suitable for large enterprise projects',
+      fileName: 'box-to-sharefile-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-sharefile',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'sharefile', 'content', 'migration', 'enterprise']
+    },
     // BOX TO AWS S3 templates (Basic & Advanced only)
     {
       name: 'BOX TO AWS S3 Basic',
