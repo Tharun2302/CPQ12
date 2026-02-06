@@ -5,6 +5,7 @@ import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
+import { getContentTimelineByServerType, formatServerTypeLabel } from '../utils/timelineProjection';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -398,6 +399,18 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     clientEmail: false,
     company: false
   });
+
+  // Which option to show: Migration Type or Timeline Projection (two-option choice in one box)
+  const [migrationOrTimeline, setMigrationOrTimeline] = useState<'migration' | 'timeline'>(() =>
+    (config.timelineProjection && !config.migrationType) ? 'timeline' : 'migration'
+  );
+  useEffect(() => {
+    if (config.timelineProjection && !config.migrationType) setMigrationOrTimeline('timeline');
+    else if (config.migrationType) setMigrationOrTimeline('migration');
+  }, [config.migrationType, config.timelineProjection]);
+
+  // Which timeline projection category is selected: Content, Messaging, or Email
+  const [timelineProjectionCategory, setTimelineProjectionCategory] = useState<'content' | 'messaging' | 'email' | ''>('');
 
   // Extract company name from email domain if company field is "Not Available"
   const extractCompanyFromEmail = (email: string): string => {
@@ -1535,56 +1548,280 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           </div>
           )}
 
-          {/* Migration Type - Primary Component */}
+          {/* Migration Type or Timeline Projection - Two options, then one dropdown */}
           <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl shadow-lg border border-teal-200 p-8">
             <div className="max-w-md mx-auto">
               <label className="flex items-center gap-3 text-lg font-semibold text-gray-800 mb-4">
                 <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center">
                   <ArrowRight className="w-5 h-5 text-white" />
                 </div>
-                Migration Type
+                Choose one
               </label>
-              <select
-                value={config.migrationType}
-                onChange={(e) => {
-                  const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
-                  console.log(`🔄 Migration type changing from "${config.migrationType}" to "${newMigrationType}"`);
-                  
-                  // Create new config with updated migration type and cleared combination
-                  const newConfig = { 
-                    ...config, 
-                    migrationType: newMigrationType,
-                    combination: '' // Clear combination when migration type changes
-                  };
-                  
-                  // Update state immediately
-                  setConfig(newConfig);
-                  setCombination('');
-                  onConfigurationChange(newConfig);
-                  
-                  // Persist to sessionStorage
-                  try {
-                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                    const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-                    navState.migrationType = newMigrationType;
-                    navState.combination = '';
-                    sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                    console.log(`✅ Migration type changed to "${newMigrationType}" and combination cleared`);
-                  } catch (error) {
-                    console.warn('Could not save to sessionStorage:', error);
-                  }
-                }}
-                className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
-              >
-                <option value="">Select Migration Type</option>
-                <option value="Multi combination">Multi combination</option>
-                <option value="Messaging">Messaging</option>
-                <option value="Content">Content</option>
-                <option value="Email">Email</option>
-                <option value="Overage Agreement">Overage</option>
-              </select>
+              {/* Two options: Migration Type or Timeline Projection */}
+              <div className="flex gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMigrationOrTimeline('migration');
+                    setTimelineProjectionCategory('');
+                    setConfig(prev => ({ ...prev, timelineProjection: '' }));
+                    onConfigurationChange({ ...config, timelineProjection: '' });
+                  }}
+                  className={`flex-1 px-4 py-3 rounded-xl font-medium transition-all duration-200 border-2 ${
+                    migrationOrTimeline === 'migration'
+                      ? 'bg-teal-500 text-white border-teal-500 shadow-md'
+                      : 'bg-white text-gray-700 border-teal-200 hover:border-teal-300'
+                  }`}
+                >
+                  Migration Type
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMigrationOrTimeline('timeline');
+                    setTimelineProjectionCategory('');
+                    const newConfig = { ...config, migrationType: '' as any, combination: '' };
+                    setConfig(newConfig);
+                    setCombination('');
+                    onConfigurationChange(newConfig);
+                    try {
+                      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                      navState.migrationType = '';
+                      navState.combination = '';
+                      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                  }}
+                  className={`flex-1 px-4 py-3 rounded-xl font-medium transition-all duration-200 border-2 ${
+                    migrationOrTimeline === 'timeline'
+                      ? 'bg-teal-500 text-white border-teal-500 shadow-md'
+                      : 'bg-white text-gray-700 border-teal-200 hover:border-teal-300'
+                  }`}
+                >
+                  Timeline Projection
+                </button>
+              </div>
+              {/* Show Migration Type dropdown */}
+              {migrationOrTimeline === 'migration' && (
+                <select
+                  value={config.migrationType}
+                  onChange={(e) => {
+                    const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
+                    const newConfig = { ...config, migrationType: newMigrationType, combination: '', timelineProjection: '' };
+                    setConfig(newConfig);
+                    setCombination('');
+                    onConfigurationChange(newConfig);
+                    try {
+                      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                      navState.migrationType = newMigrationType;
+                      navState.combination = '';
+                      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                  }}
+                  className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                >
+                  <option value="">Select Migration Type</option>
+                  <option value="Multi combination">Multi combination</option>
+                  <option value="Messaging">Messaging</option>
+                  <option value="Content">Content</option>
+                  <option value="Email">Email</option>
+                  <option value="Overage Agreement">Overage</option>
+                </select>
+              )}
+              {/* When Timeline Projection: show option to select Content, Messaging, or Email projection */}
+              {migrationOrTimeline === 'timeline' && (
+                <div className="mt-4">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Category</label>
+                  <select
+                    value={timelineProjectionCategory}
+                    onChange={(e) => setTimelineProjectionCategory(e.target.value as 'content' | 'messaging' | 'email' | '')}
+                    className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                  >
+                    <option value="">Select projection type</option>
+                    <option value="content">Content projection</option>
+                    <option value="messaging">Messaging projection</option>
+                    <option value="email">Email projection</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Timeline Projection: show selected category card (Content, Messaging, or Email) */}
+          {migrationOrTimeline === 'timeline' && timelineProjectionCategory && (
+            <div className="mt-6">
+              {/* Content Migration - two tables side by side like reference UI */}
+              {timelineProjectionCategory === 'content' && (() => {
+                const totalSizeGB = config.dataSizeGB ?? 0;
+                const noOfServers = Math.max(1, config.numberOfInstances ?? 1);
+                const contentTimelineRows = getContentTimelineByServerType(totalSizeGB, noOfServers);
+                const migrationTypeLabel = 'Data, Root & Sub-Folder permissions, Hyperlinks';
+                return (
+              <div className="flex flex-wrap gap-0 border border-black overflow-hidden bg-white shadow-md max-w-4xl">
+                {/* Left table: CONTENT MIGRATION */}
+                <div className="flex-1 min-w-[280px] border-r border-black">
+                  <div className="bg-green-500 text-white font-bold text-center py-2.5 px-3 text-sm uppercase tracking-wide border-b border-black">
+                    CONTENT MIGRATION
+                  </div>
+                  <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                    <tbody>
+                      <tr className="border-b border-black">
+                        <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Source Environment</td>
+                        <td className="border-b border-black py-2 px-3 bg-white">Others</td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Total Size to be Migrated in GB</td>
+                        <td className="border-b border-black py-2 px-3 bg-white">
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={totalSizeGB || ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const num = v === '' ? 0 : Math.max(0, parseInt(v, 10) || 0);
+                              handleChange('dataSizeGB', num);
+                            }}
+                            className="w-full min-w-0 py-1 px-2 border border-gray-300 rounded text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                            placeholder="e.g. 7000"
+                          />
+                        </td>
+                      </tr>
+                      <tr className="border-b border-black">
+                        <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Migration Type</td>
+                        <td className="border-b border-black py-2 px-3 bg-white">{migrationTypeLabel}</td>
+                      </tr>
+                      <tr>
+                        <td className="border-r border-black py-2 px-3 bg-white font-medium text-gray-900">No of Servers</td>
+                        <td className="py-2 px-3 bg-white">
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={noOfServers}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const num = v === '' ? 1 : Math.max(1, parseInt(v, 10) || 1);
+                              handleChange('numberOfInstances', num);
+                            }}
+                            className="w-full min-w-0 py-1 px-2 border border-gray-300 rounded text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {/* Right table: Server Type | Days */}
+                <div className="w-64 min-w-[200px]">
+                  <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th className="bg-blue-800 text-white font-bold text-left py-2.5 px-3 border-b border-black border-r border-black">Server Type</th>
+                        <th className="bg-blue-800 text-white font-bold text-left py-2.5 px-3 border-b border-black">Days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {contentTimelineRows.map(({ serverType, days }, i) => (
+                        <tr key={serverType}>
+                          <td className="border-b border-black border-r border-black py-2 px-3 bg-sky-100 text-gray-900">{formatServerTypeLabel(serverType)}</td>
+                          <td className="border-b border-black py-2 px-3 bg-white">{days}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+                );
+              })()}
+
+              {/* Messaging Migration */}
+              {timelineProjectionCategory === 'messaging' && (
+              <div className="rounded-2xl border border-gray-200 overflow-hidden shadow-lg bg-white">
+                <div className="bg-blue-600 text-white font-bold text-center py-3 px-4 text-sm uppercase tracking-wide">
+                  Messaging Migration
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span className="text-gray-600">Source Environment</span>
+                    <span className="font-medium">—</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span className="text-gray-600">Total Size / Messages</span>
+                    <span className="font-medium">—</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span className="text-gray-600">Migration Type</span>
+                    <span className="font-medium text-right text-xs">Messages, Channels, Permissions</span>
+                  </div>
+                  <div className="flex justify-between text-sm pb-2">
+                    <span className="text-gray-600">No of Servers</span>
+                    <span className="font-medium">—</span>
+                  </div>
+                </div>
+                <div className="border-t border-gray-200">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-700 text-white">
+                        <th className="text-left py-2 px-3 font-semibold">Server Type</th>
+                        <th className="text-left py-2 px-3 font-semibold">Days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-gray-100"><td className="py-2 px-3">Small</td><td className="py-2 px-3">17</td></tr>
+                      <tr className="border-b border-gray-100"><td className="py-2 px-3">Standard</td><td className="py-2 px-3">11</td></tr>
+                      <tr className="border-b border-gray-100"><td className="py-2 px-3">Large</td><td className="py-2 px-3">7</td></tr>
+                      <tr><td className="py-2 px-3">Extra Large (Bare Metal)</td><td className="py-2 px-3">5</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              )}
+
+              {/* Email Migration */}
+              {timelineProjectionCategory === 'email' && (
+              <div className="rounded-2xl border border-gray-200 overflow-hidden shadow-lg bg-white">
+                <div className="bg-amber-600 text-white font-bold text-center py-3 px-4 text-sm uppercase tracking-wide">
+                  Email Migration
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span className="text-gray-600">Source Environment</span>
+                    <span className="font-medium">—</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span className="text-gray-600">Total Mailboxes</span>
+                    <span className="font-medium">—</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span className="text-gray-600">Migration Type</span>
+                    <span className="font-medium text-right text-xs">Mailboxes, Folders, Rules</span>
+                  </div>
+                  <div className="flex justify-between text-sm pb-2">
+                    <span className="text-gray-600">No of Servers</span>
+                    <span className="font-medium">—</span>
+                  </div>
+                </div>
+                <div className="border-t border-gray-200">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-700 text-white">
+                        <th className="text-left py-2 px-3 font-semibold">Server Type</th>
+                        <th className="text-left py-2 px-3 font-semibold">Days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-gray-100"><td className="py-2 px-3">Small</td><td className="py-2 px-3">17</td></tr>
+                      <tr className="border-b border-gray-100"><td className="py-2 px-3">Standard</td><td className="py-2 px-3">11</td></tr>
+                      <tr className="border-b border-gray-100"><td className="py-2 px-3">Large</td><td className="py-2 px-3">7</td></tr>
+                      <tr><td className="py-2 px-3">Extra Large (Bare Metal)</td><td className="py-2 px-3">5</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              )}
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8">

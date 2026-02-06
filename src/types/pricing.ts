@@ -41,6 +41,7 @@ export interface ConfigurationData {
   startDate?: string;
   endDate?: string;
   combination?: string;
+  timelineProjection?: string;
   // Multi combination specific configs
   messagingConfig?: {
     numberOfUsers: number;
