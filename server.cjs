@@ -72,7 +72,28 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static files from the React app build
-app.use(express.static(path.join(__dirname, 'dist')));
+//
+// IMPORTANT (prod caching):
+// - Never aggressively cache HTML entrypoints (index.html), otherwise browsers can get a stale HTML
+//   that references *new* hashed chunks, or vice-versa, causing runtime errors like:
+//     "Cannot access '<symbol>' before initialization"
+// - Aggressively cache Vite hashed assets under dist/assets for performance.
+app.use(
+  express.static(path.join(__dirname, 'dist'), {
+    etag: true,
+    lastModified: true,
+    setHeaders(res, filePath) {
+      // Vite hashed assets
+      if (filePath.includes(`${path.sep}dist${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return;
+      }
+
+      // Everything else (including index.html if served by static)
+      res.setHeader('Cache-Control', 'no-cache');
+    },
+  })
+);
 
 // Multer configuration for file uploads
 const storage = multer.memoryStorage();
@@ -731,8 +752,7 @@ async function sendEmail(to, subject, html, attachments = []) {
   }
 }
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'dist')));
+// NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
 
 // Main route - serve the React app with deal data
 app.get('/', (req, res) => {
@@ -5730,11 +5750,13 @@ app.delete('/api/documents/:id', async (req, res) => {
 
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Catch-all (serve React for any non-API route)
 app.get(/^(?!\/api).*/, (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
