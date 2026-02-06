@@ -152,7 +152,38 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
   exhibitName = exhibitName.trim();
   
   // For Multi combination, use the specific config for this exhibit
+  // For single migrations, fall back to main configuration if exhibitConfig doesn't have the value
   let config = exhibitConfig || configuration;
+  
+  // Special handling for dataSizeGB: use whichever has a valid (non-zero) value
+  // This fixes the issue where single Content migrations might not have dataSizeGB in exhibitConfig
+  if (category === 'content') {
+    // Check both exhibitConfig and configuration for dataSizeGB
+    // For single migrations, exhibitConfig might be the same as configuration, but we still check both
+    const exhibitDataSize = exhibitConfig?.dataSizeGB;
+    const configDataSize = configuration?.dataSizeGB;
+    
+    // Use the first valid (non-zero) value found
+    let finalDataSize = 0;
+    if (exhibitDataSize && exhibitDataSize > 0) {
+      finalDataSize = exhibitDataSize;
+    } else if (configDataSize && configDataSize > 0) {
+      finalDataSize = configDataSize;
+    }
+    
+    // Always update config with the final dataSize, even if it's 0 (for debugging)
+    config = { ...config, dataSizeGB: finalDataSize };
+    
+    // Debug logging to help identify the issue
+    console.log('🔍 formatExhibitDescription - Content migration:', {
+      category,
+      exhibitName,
+      exhibitConfigDataSizeGB: exhibitDataSize,
+      configurationDataSizeGB: configDataSize,
+      finalDataSize: finalDataSize,
+      configAfterUpdate: config.dataSizeGB
+    });
+  }
   
   if (category === 'messaging' || category === 'message') {
     const users = config?.numberOfUsers || 1;
@@ -1395,12 +1426,32 @@ Quote ID: ${quoteData.id}
         const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
         const instanceType = configuration?.instanceType || 'Standard';
         const numberOfInstances = configuration?.numberOfInstances || 1;
-        // Email agreements do not have a GB/data-size concept; keep it empty in templates.
-        const dataSizeGB = 0;
+
+        // Data size (GB)
+        // - Email agreements do not have a GB/data-size concept -> 0 / blank tokens
+        // - Multi combination should use the CONTENT side's data size (messaging has no data size)
+        const isEmailAgreement =
+          migrationType === 'Email' ||
+          (String(configuration?.combination || '').toLowerCase().includes('gmail')) ||
+          (String(configuration?.combination || '').toLowerCase().includes('outlook'));
+
+        const dataSizeGB = (() => {
+          if (isEmailAgreement) return 0;
+          if (configuration?.migrationType === 'Multi combination') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfgAny: any = configuration as any;
+            const fromContentConfig = Number(cfgAny?.contentConfig?.dataSizeGB ?? 0);
+            const fromContentConfigs = Number(cfgAny?.contentConfigs?.[0]?.dataSizeGB ?? 0);
+            return fromContentConfig > 0 ? fromContentConfig : fromContentConfigs;
+          }
+          return Number(configuration?.dataSizeGB ?? 0);
+        })();
         
-        // Debug: Log data size for email function
-        console.log('🔍 EMAIL FUNCTION - DATA SIZE DEBUG:');
+        // Debug: Log data size for docx generation path
+        console.log('🔍 AGREEMENT DOCX PATH - DATA SIZE DEBUG:');
         console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
+        console.log('  migrationType:', migrationType);
+        console.log('  isEmailAgreement:', isEmailAgreement);
         console.log('  Final dataSizeGB value:', dataSizeGB);
         console.log('  dataCost value:', dataCost);
         
@@ -1456,10 +1507,10 @@ Quote ID: ${quoteData.id}
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
-          // Email agreements: blank out any data-size tokens to avoid showing "GB/GBs".
-          '{{data_size}}': '',
-          '{{dataSizeGB}}': '',
-          '{{data_size_gb}}': '',
+          // Data size tokens (blank for Email only)
+          '{{data_size}}': isEmailAgreement ? '' : dataSizeGB.toString(),
+          '{{dataSizeGB}}': isEmailAgreement ? '' : dataSizeGB.toString(),
+          '{{data_size_gb}}': isEmailAgreement ? '' : dataSizeGB.toString(),
           
           // Pricing breakdown - Row1=(user+data), Row2=migration, Row3=instance so rows sum to total
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
@@ -3359,6 +3410,8 @@ Total Price: {{total price}}`;
       console.log('📊 Calculation object:', calculation);
       console.log('📊 SafeCalculation object:', safeCalculation);
       console.log('📊 Configuration object:', configuration);
+      console.log('📊 Configuration.dataSizeGB:', configuration?.dataSizeGB);
+      console.log('📊 Configuration.migrationType:', configuration?.migrationType);
       console.log('👤 Client Info object:', clientInfo);
       console.log('🏢 Company name from clientInfo:', clientInfo.company);
       
@@ -3695,8 +3748,26 @@ Total Price: {{total price}}`;
         const tierName = quoteData.calculation?.tier?.name || 'Advanced';
         const instanceType = quoteData.configuration?.instanceType || 'Standard';
         const numberOfInstances = quoteData.configuration?.numberOfInstances || 1;
-        // Email agreements do not have a GB/data-size concept; keep it empty in templates.
-        const dataSizeGB = 0;
+
+        // Data size (GB)
+        // - Email agreements do not have a GB/data-size concept -> 0 / blank tokens
+        // - Multi combination should use the CONTENT side's data size (messaging has no data size)
+        const isEmailAgreementForDataSize =
+          migrationType === 'Email' ||
+          (String(quoteData.configuration?.combination || '').toLowerCase().includes('gmail')) ||
+          (String(quoteData.configuration?.combination || '').toLowerCase().includes('outlook'));
+
+        const dataSizeGB = (() => {
+          if (isEmailAgreementForDataSize) return 0;
+
+          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+          if (cfg?.migrationType === 'Multi combination') {
+            const fromContentConfig = Number(cfg?.contentConfig?.dataSizeGB ?? 0);
+            const fromContentConfigs = Number(cfg?.contentConfigs?.[0]?.dataSizeGB ?? 0);
+            return fromContentConfig > 0 ? fromContentConfig : fromContentConfigs;
+          }
+          return Number(cfg?.dataSizeGB ?? 0);
+        })();
         
         // CRITICAL: Recalculate discount based on the local totalCost value
         // This ensures discount is calculated correctly for the template preview
@@ -3724,6 +3795,7 @@ Total Price: {{total price}}`;
         console.log('  quoteData.configuration?.dataSizeGB:', quoteData.configuration?.dataSizeGB);
         console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
         console.log('  finalConfiguration?.dataSizeGB:', finalConfiguration?.dataSizeGB);
+        console.log('  isEmailAgreementForDataSize:', isEmailAgreementForDataSize);
         console.log('  Final dataSizeGB value:', dataSizeGB);
         console.log('  typeof dataSizeGB:', typeof dataSizeGB);
         console.log('  dataSizeGB === undefined:', dataSizeGB === undefined);
@@ -3821,10 +3893,10 @@ Total Price: {{total price}}`;
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
-          // Email agreements: blank out any data-size tokens to avoid showing "GB/GBs".
-          '{{data_size}}': '',
-          '{{dataSizeGB}}': '',
-          '{{data_size_gb}}': '',
+          // Data size tokens (blank for Email only)
+          '{{data_size}}': isEmailAgreementForDataSize ? '' : dataSizeGB.toString(),
+          '{{dataSizeGB}}': isEmailAgreementForDataSize ? '' : dataSizeGB.toString(),
+          '{{data_size_gb}}': isEmailAgreementForDataSize ? '' : dataSizeGB.toString(),
           
           // Pricing: price_data + price_migration + instance_cost must equal total (user+data+migration+instance).
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
@@ -4626,8 +4698,9 @@ Total Price: {{total price}}`;
         try {
           // In Multi combination, the per-exhibit configs (messagingConfigs/contentConfigs/emailConfigs)
           // are the most reliable source of which combinations are selected.
+          // Use finalConfiguration which has the correct dataSizeGB value
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const cfgAny: any = configuration as any;
+          const cfgAny: any = finalConfiguration as any;
           const idsFromSelection = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
           const idsFromConfigs = [
             ...(cfgAny.messagingConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
@@ -4998,9 +5071,12 @@ Total Price: {{total price}}`;
                 }
               };
 
-              addRowsFromConfigs((configuration as any).messagingConfigs, 'messaging');
-              addRowsFromConfigs((configuration as any).contentConfigs, 'content');
-              addRowsFromConfigs((configuration as any).emailConfigs, 'email');
+              // Use finalConfiguration which has the correct dataSizeGB value
+              const configToUse = finalConfiguration || configuration;
+              
+              addRowsFromConfigs((configToUse as any).messagingConfigs, 'messaging');
+              addRowsFromConfigs((configToUse as any).contentConfigs, 'content');
+              addRowsFromConfigs((configToUse as any).emailConfigs, 'email');
 
               // If no configs (e.g. single migration type), fall back to one row per exhibit but group by base combination
               if (configRows.length === 0 && exhibitIds.length > 0) {
@@ -5017,7 +5093,22 @@ Total Price: {{total price}}`;
                   const key = `${category}|${(baseCombo || displayName).toLowerCase()}`;
                   if (!byComboKey.has(key)) byComboKey.set(key, { category, displayName, exhibit });
                 }
-                byComboKey.forEach((v) => configRows.push({ category: v.category, displayName: v.displayName, exhibitConfig: configuration, exhibit: v.exhibit }));
+                // For single migrations, use finalConfiguration which has the correct dataSizeGB
+                byComboKey.forEach((v) => {
+                  // Use finalConfiguration to ensure dataSizeGB is preserved
+                  const singleConfig = {
+                    ...configToUse,
+                    dataSizeGB: configToUse?.dataSizeGB || 0
+                  };
+                  console.log('🔍 Single migration config row:', {
+                    category: v.category,
+                    dataSizeGB: singleConfig.dataSizeGB,
+                    configToUseDataSizeGB: configToUse?.dataSizeGB,
+                    finalConfigurationDataSizeGB: finalConfiguration?.dataSizeGB,
+                    configurationDataSizeGB: configuration?.dataSizeGB
+                  });
+                  configRows.push({ category: v.category, displayName: v.displayName, exhibitConfig: singleConfig, exhibit: v.exhibit });
+                });
               }
 
               const sortedRows = [...configRows].sort((a, b) => {
@@ -5032,21 +5123,31 @@ Total Price: {{total price}}`;
                 const exhibitConfig = row.exhibitConfig;
                 const exhibit = row.exhibit;
 
+                // Debug logging for dataSizeGB issue
+                if (category === 'content') {
+                  console.log('🔍 Agreement Generation - Content row:', {
+                    combinationName,
+                    exhibitConfigDataSizeGB: exhibitConfig?.dataSizeGB,
+                    configurationDataSizeGB: configuration?.dataSizeGB,
+                    migrationType: configuration?.migrationType,
+                    hasContentConfigs: Array.isArray(configuration?.contentConfigs) && configuration.contentConfigs.length > 0
+                  });
+                }
+
                 let price = 0;
+                let breakdown: any = null;
+                
                 if (configuration?.migrationType === 'Multi combination') {
                   const breakdownName = exhibitConfig?.exhibitName || combinationName;
                   if (category === 'messaging' || category === 'message') {
-                    price =
-                      (calculation || safeCalculation)?.messagingCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName)
-                        ?.totalCost ?? 0;
+                    breakdown = (calculation || safeCalculation)?.messagingCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
+                    price = breakdown?.totalCost ?? 0;
                   } else if (category === 'content') {
-                    price =
-                      (calculation || safeCalculation)?.contentCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName)
-                        ?.totalCost ?? 0;
+                    breakdown = (calculation || safeCalculation)?.contentCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
+                    price = breakdown?.totalCost ?? 0;
                   } else if (category === 'email') {
-                    price =
-                      (calculation || safeCalculation)?.emailCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName)
-                        ?.totalCost ?? 0;
+                    breakdown = (calculation || safeCalculation)?.emailCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
+                    price = breakdown?.totalCost ?? 0;
                   }
                 }
 
@@ -5061,17 +5162,92 @@ Total Price: {{total price}}`;
                 const descRest = baseDesc.split('\n').slice(1).join('\n');
                 const exhibitDesc = descRest ? `${descFirstLine}\n${descRest}` : descFirstLine;
 
-                exhibitsData.push({
+                // Calculate overage charges for multicombination agreements
+                let overageCharges: {
+                  perUserCost: string;
+                  perServerPerMonthCost: string;
+                  perGBCost: string;
+                  combinationName: string;
+                } | undefined = undefined;
+
+                if (finalConfiguration?.migrationType === 'Multi combination' && exhibitConfig) {
+                  const tier = (calculation || safeCalculation)?.tier;
+                  const userCount = Number(exhibitConfig.numberOfUsers || 0);
+                  const instanceType = String(exhibitConfig.instanceType || 'Standard');
+                  const dataSizeGB = Number(exhibitConfig.dataSizeGB || 0);
+                  
+                  // Calculate per-user cost
+                  let perUserCost = 0;
+                  if (breakdown && userCount > 0) {
+                    perUserCost = breakdown.userCost / userCount;
+                  } else if (tier && userCount > 0) {
+                    // Fallback to tier's per-user cost
+                    perUserCost = tier.perUserCost || 0;
+                  }
+
+                  // Calculate per-server per month cost (instance type cost)
+                  const perServerPerMonthCost = getInstanceTypeCost(instanceType);
+
+                  // Calculate per-GB cost (only for content migrations)
+                  let perGBCost = 0;
+                  if (category === 'content' && breakdown && dataSizeGB > 0) {
+                    perGBCost = breakdown.dataCost / dataSizeGB;
+                  } else if (category === 'content' && tier) {
+                    // Fallback to tier's per-GB cost
+                    perGBCost = tier.perGBCost || 0;
+                  }
+
+                  overageCharges = {
+                    perUserCost: formatCurrency(perUserCost),
+                    perServerPerMonthCost: formatCurrency(perServerPerMonthCost),
+                    // Only set perGBCost for content migrations, leave empty for messaging/email
+                    perGBCost: category === 'content' ? formatCurrency(perGBCost) : '',
+                    combinationName: combinationName
+                  };
+                }
+
+                const exhibitData: any = {
                   exhibitType: 'CloudFuze X-Change Data Migration',
                   exhibitDesc,
                   exhibitPlan: (calculation || safeCalculation)?.tier?.name || 'Standard',
                   exhibitPrice: formatCurrency(price),
-                });
+                };
+
+                // Add overage charges fields for multicombination agreements
+                if (overageCharges) {
+                  exhibitData.exhibitOveragePerUser = overageCharges.perUserCost;
+                  exhibitData.exhibitOveragePerServer = overageCharges.perServerPerMonthCost;
+                  exhibitData.exhibitOveragePerGB = overageCharges.perGBCost;
+                  exhibitData.exhibitCombinationName = overageCharges.combinationName;
+                  // Also add formatted overage charges string for easy template usage
+                  exhibitData.exhibitOverageCharges = `Overage Charges: ${overageCharges.perUserCost} per User | ${overageCharges.perServerPerMonthCost} per server per month${category === 'content' ? ` | ${overageCharges.perGBCost} per GB` : ''}`;
+                }
+
+                exhibitsData.push(exhibitData);
               }
             }
           }
 
           (templateData as any).exhibits = exhibitsData;
+          
+          // Generate formatted overage charges string for multicombination (single line format, no gaps)
+          if (configuration?.migrationType === 'Multi combination' && exhibitsData.length > 0) {
+            const overageChargesLines = exhibitsData
+              .filter((e: any) => e.exhibitCombinationName && e.exhibitOveragePerUser)
+              .map((e: any) => {
+                const perGB = e.exhibitOveragePerGB && e.exhibitOveragePerGB !== '$0.00' 
+                  ? ` | ${e.exhibitOveragePerGB} per GB` 
+                  : '';
+                return `Overage Charges for ${e.exhibitCombinationName}: ${e.exhibitOveragePerUser} per User | ${e.exhibitOveragePerServer} per server per month${perGB}`;
+              });
+            
+            if (overageChargesLines.length > 0) {
+              // Single formatted string with line breaks (no paragraph spacing)
+              templateData['{{overage_charges_formatted}}'] = overageChargesLines.join('\n');
+              // Also provide as array for loop usage
+              templateData['{{overage_charges_array}}'] = overageChargesLines;
+            }
+          }
           
           // First-page exhibits list/summary so the front page can show what exhibits are included
           const exhibitsListText = exhibitsData.length > 0

@@ -1,0 +1,43 @@
+EXACT TEMPLATE CODE - Matches Second Screenshot Perfectly
+
+Copy this EXACT code into your Word template:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB{{/exhibits}}
+
+CRITICAL FORMATTING STEPS IN WORD:
+
+1. PASTE THE CODE:
+   - Paste the code above into your template
+   - Make sure it's all on one line (even if Word wraps it visually)
+
+2. SET PARAGRAPH FORMATTING:
+   - Place cursor in the overage charges area
+   - Right-click → Paragraph
+   - Set EXACTLY:
+     * Spacing Before: 0 pt
+     * Spacing After: 0 pt
+     * Line spacing: Single
+     * Don't add space between paragraphs of the same style: CHECKED ✓
+   - Click OK
+
+3. MATCH BULLET POINT STYLE:
+   - Select the overage charges section
+   - Go to Home tab → Paragraph group
+   - Click the small arrow (Paragraph Settings)
+   - Under "Spacing":
+     * Before: 0 pt
+     * After: 0 pt
+   - Under "Line Spacing": Single
+   - Click OK
+
+4. SAVE AND TEST:
+   - Save the template (Ctrl+S)
+   - Generate a new agreement
+   - The overage charges should now match the second screenshot exactly
+
+RESULT:
+- Each exhibit on one clean line
+- No gaps between lines
+- Tight spacing matching the bullet points above
+- Format: "Overage Charges for [Name]: $X.00 per User | $Y.00 per server per month | $Z.00 per GB"
+

@@ -1,0 +1,33 @@
+FIXED TEMPLATE - No Gaps Between Lines
+
+Use this EXACT code in your Word template:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB{{/exhibits}}
+
+CRITICAL FORMATTING:
+1. Put EVERYTHING on ONE line - no line breaks inside the loop
+2. NO space before {{#exhibits}}
+3. NO space after {{/exhibits}}
+4. The entire loop should be: {{#exhibits}}...content...{{/exhibits}} all on one line
+
+This will create:
+- Each exhibit on its own line
+- NO gaps between lines
+- Clean, compact format
+
+HOW TO FIX IN WORD:
+1. Select the entire overage charges section
+2. Delete it completely
+3. Type the code above on ONE line (no Enter key, no line breaks)
+4. Save the template
+
+ALTERNATIVE (If you need line breaks but want to control spacing):
+
+In Word, after pasting the template:
+1. Select all the overage charge lines
+2. Right-click → Paragraph
+3. Set "Spacing Before" to 0pt
+4. Set "Spacing After" to 0pt
+5. Set "Line spacing" to Single
+6. Click OK
+

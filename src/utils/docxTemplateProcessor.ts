@@ -79,6 +79,12 @@ export interface DocxTemplateData {
     exhibitDesc: string;
     exhibitPlan: string;
     exhibitPrice: string;
+    // Overage charges fields for multicombination agreements
+    exhibitOveragePerUser?: string;
+    exhibitOveragePerServer?: string;
+    exhibitOveragePerGB?: string;
+    exhibitCombinationName?: string;
+    exhibitOverageCharges?: string; // Formatted string: "Overage Charges: $X per User | $Y per server per month | $Z per GB"
   }>;
 }
 

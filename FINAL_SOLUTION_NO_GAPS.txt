@@ -1,0 +1,37 @@
+FINAL SOLUTION - No Gaps Between Overage Charge Lines
+
+OPTION 1: Use the Loop (Recommended - Already Implemented)
+Your template code is correct:
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB{{/exhibits}}
+
+CRITICAL: Set Paragraph Formatting in Word Template:
+1. Open your template in Word
+2. Find the overage charges section
+3. Select the area where the template code is
+4. Right-click → Paragraph
+5. Set EXACTLY:
+   - Spacing Before: 0 pt
+   - Spacing After: 0 pt
+   - Line spacing: Single
+   - Don't add space between paragraphs of the same style: CHECKED ✓
+6. Click OK
+7. Save template
+
+OPTION 2: Use Pre-formatted String (Alternative)
+I've added code that generates a pre-formatted string. You can use this in your template:
+
+{{overage_charges_formatted}}
+
+This will output all overage charges as a single formatted string with line breaks but no paragraph spacing.
+
+HOW IT WORKS:
+- The code automatically generates: "Overage Charges for [Name]: $X per User | $Y per server per month | $Z per GB" for each exhibit
+- Joins them with line breaks (\n) which creates new lines without paragraph spacing
+- No gaps between lines
+
+TESTING:
+1. Use Option 1 (the loop) with paragraph spacing set to 0
+2. OR use Option 2 (the pre-formatted string)
+3. Generate a new agreement
+4. Check the output - should have no gaps between lines
+

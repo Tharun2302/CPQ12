@@ -1,0 +1,43 @@
+EXACT TEMPLATE CODE - Matches Second Screenshot Perfectly
+
+Copy this EXACT code into your Word template:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month{{#exhibitOveragePerGB}} | {{exhibitOveragePerGB}} per GB{{/exhibitOveragePerGB}}
+{{/exhibits}}
+
+CRITICAL FORMATTING STEPS:
+
+1. PASTE THE CODE:
+   - Line 1: {{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month{{#exhibitOveragePerGB}} | {{exhibitOveragePerGB}} per GB{{/exhibitOveragePerGB}}
+   - Line 2: {{/exhibits}} (on a NEW line)
+
+2. SET PARAGRAPH FORMATTING (CRITICAL):
+   - Select the overage charges template code area
+   - Right-click → Paragraph
+   - Set EXACTLY:
+     * Spacing Before: 0 pt
+     * Spacing After: 0 pt
+     * Line spacing: Single (exactly)
+     * Don't add space between paragraphs of the same style: CHECKED ✓
+   - Click OK
+
+3. VERIFY NO EXTRA SPACES:
+   - Make sure there are NO extra spaces before {{#exhibits}}
+   - Make sure there are NO extra spaces after {{/exhibits}}
+   - Make sure there are NO blank lines between the two lines
+
+4. SAVE AND TEST:
+   - Save template (Ctrl+S)
+   - Generate new agreement
+   - Should match second screenshot exactly
+
+RESULT:
+Overage Charges for Dropbox To Azureblob: $35.00 per User | $500.00 per server per month | $1.50 per GB
+Overage Charges for Dropbox To Box: $35.00 per User | $500.00 per server per month | $1.50 per GB
+Overage Charges for Onedrive To Onedrive: $35.00 per User | $500.00 per server per month | $1.50 per GB
+
+- Each on its own line
+- No gaps between lines
+- Clean, tight spacing
+- Exact match to second screenshot
+

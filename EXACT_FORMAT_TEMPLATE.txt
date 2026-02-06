@@ -1,0 +1,17 @@
+EXACT TEMPLATE CODE - Copy This Into Word
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB{{/exhibits}}
+
+INSTRUCTIONS:
+1. Open your template in Microsoft Word
+2. Find the "Important Payment Notes" section
+3. Delete any existing overage charges code
+4. Type the code above EXACTLY as shown (all on one line)
+5. Make sure there are NO line breaks inside the loop
+6. Save the template
+
+This will create:
+- Each exhibit on its own single line
+- No gaps between lines
+- Exact format: "Overage Charges for [Name]: $X.00 per User | $Y.00 per server per month | $Z.00 per GB"
+

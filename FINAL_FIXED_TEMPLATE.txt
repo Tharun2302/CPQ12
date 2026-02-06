@@ -1,0 +1,23 @@
+FINAL FIXED TEMPLATE CODE - Conditional Per-GB Display
+
+Use this EXACT code in your Word template:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month{{#exhibitOveragePerGB}} | {{exhibitOveragePerGB}} per GB{{/exhibitOveragePerGB}}
+{{/exhibits}}
+
+KEY CHANGES:
+1. Put {{/exhibits}} on a NEW LINE (press Enter after the closing conditional)
+2. Use conditional {{#exhibitOveragePerGB}}...{{/exhibitOveragePerGB}} to only show per-GB when it exists
+3. This ensures per-GB only shows for Content migrations, not Messaging/Email
+
+RESULT:
+- Content migrations: "Overage Charges for Dropbox To Azureblob: $35.00 per User | $500.00 per server per month | $1.50 per GB"
+- Messaging/Email: "Overage Charges for Slack To Teams: $35.00 per User | $500.00 per server per month" (no per-GB)
+
+FORMATTING IN WORD:
+1. Select the overage charges area
+2. Right-click → Paragraph
+3. Set: Spacing Before: 0 pt, Spacing After: 0 pt, Line spacing: Single
+4. Check: "Don't add space between paragraphs of the same style"
+5. Save template
+

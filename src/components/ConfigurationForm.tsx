@@ -96,6 +96,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const [messagingTiers, setMessagingTiers] = useState<Record<string, PricingTier>>({});
   const [emailTiers, setEmailTiers] = useState<Record<string, PricingTier>>({});
 
+  // Shared instance type state - common for all project configurations
+  const [sharedInstanceType, setSharedInstanceType] = useState<string>('Small');
+
   // State to track collapsed/expanded sections
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [noteExpanded, setNoteExpanded] = useState<boolean>(false);
@@ -284,6 +287,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               
               if (existing) {
                 // Preserve existing config but update planType if not set
+                // Preserve existing instanceType - don't override with sharedInstanceType
                 newMessagingConfigs.push({
                   ...existing,
                   planType: existing.planType || exhibitPlanType,
@@ -293,7 +297,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   exhibitId: primaryExhibitId, // Store first exhibit ID, but display combination name
                   exhibitName: combinationName, // Display the combination name, not individual exhibit name
                   numberOfUsers: config.messagingConfig?.numberOfUsers || 1,
-                  instanceType: config.messagingConfig?.instanceType || 'Small',
+                  instanceType: sharedInstanceType,
                   numberOfInstances: config.messagingConfig?.numberOfInstances || 1,
                   duration: config.messagingConfig?.duration || 1,
                   messages: config.messagingConfig?.messages || 1,
@@ -318,6 +322,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               
               if (existing) {
                 // Preserve existing config but update planType if not set
+                // Preserve existing instanceType - don't override with sharedInstanceType
                 newContentConfigs.push({
                   ...existing,
                   planType: existing.planType || exhibitPlanType,
@@ -327,7 +332,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   exhibitId: primaryExhibitId,
                   exhibitName: combinationName, // Display the combination name
                   numberOfUsers: config.contentConfig?.numberOfUsers || 1,
-                  instanceType: config.contentConfig?.instanceType || 'Small',
+                  instanceType: sharedInstanceType,
                   numberOfInstances: config.contentConfig?.numberOfInstances || 1,
                   duration: config.contentConfig?.duration || 1,
                   dataSizeGB: config.contentConfig?.dataSizeGB || 1,
@@ -344,11 +349,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               );
               
               newEmailConfigs.push(
-                existing || {
+                existing ? {
+                  ...existing,
+                  // Preserve existing instanceType - don't override with sharedInstanceType
+                } : {
                   exhibitId: primaryExhibitId,
                   exhibitName: combinationName, // Display the combination name
                   numberOfUsers: 1,
-                  instanceType: 'Small',
+                  instanceType: sharedInstanceType,
                   numberOfInstances: 1,
                   duration: 1,
                   messages: 1,
@@ -595,6 +603,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           startDate: parsed.startDate,
           endDate: parsed.endDate
         } as ConfigurationData;
+        
+        // Initialize shared instance type from first available config
+        if (parsed.messagingConfigs && parsed.messagingConfigs.length > 0 && parsed.messagingConfigs[0].instanceType) {
+          setSharedInstanceType(parsed.messagingConfigs[0].instanceType);
+        } else if (parsed.contentConfigs && parsed.contentConfigs.length > 0 && parsed.contentConfigs[0].instanceType) {
+          setSharedInstanceType(parsed.contentConfigs[0].instanceType);
+        } else if (parsed.emailConfigs && parsed.emailConfigs.length > 0 && parsed.emailConfigs[0].instanceType) {
+          setSharedInstanceType(parsed.emailConfigs[0].instanceType);
+        } else if (parsed.instanceType) {
+          setSharedInstanceType(parsed.instanceType);
+        }
         
         console.log('📋 === CRITICAL CHECK ===');
         console.log('📋 Merged combination value:', merged.combination);
@@ -2119,6 +2138,86 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
+          {/* Common Instance Type Selector - appears after exhibits are selected */}
+          {config.migrationType === 'Multi combination' && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (() => {
+            // Calculate if all instance types are the same
+            const allInstanceTypes: string[] = [
+              ...(config.messagingConfigs || []).map(cfg => cfg.instanceType || 'Small'),
+              ...(config.contentConfigs || []).map(cfg => cfg.instanceType || 'Small'),
+              ...(config.emailConfigs || []).map(cfg => cfg.instanceType || 'Small')
+            ];
+            const uniqueTypes = Array.from(new Set(allInstanceTypes.filter(Boolean)));
+            const allSame = uniqueTypes.length <= 1;
+            const commonValue = allSame && uniqueTypes.length > 0 ? uniqueTypes[0] : (sharedInstanceType || 'Small');
+            const displayValue = allSame ? commonValue : 'Mixed';
+            
+            return (
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl shadow-md border-2 border-purple-200 p-6 mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
+                    <Server className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-base font-bold text-gray-900 mb-1">
+                      Common Instance Type
+                    </label>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Quick-set: Apply the same instance type to all panels at once. You can also set different instance types using the dropdowns in each panel below.
+                    </p>
+                    <select
+                      value={displayValue}
+                      onChange={(e) => {
+                        const value = e.target.value as any;
+                        if (value === 'Mixed') return; // Don't allow selecting "Mixed"
+                        setSharedInstanceType(value);
+                        setConfig(prev => {
+                          const newConfig = {
+                            ...prev,
+                            // Update all messaging configs
+                            messagingConfigs: (prev.messagingConfigs || []).map(cfg => ({
+                              ...cfg,
+                              instanceType: value
+                            })),
+                            // Update all content configs
+                            contentConfigs: (prev.contentConfigs || []).map(cfg => ({
+                              ...cfg,
+                              instanceType: value
+                            })),
+                            // Update all email configs
+                            emailConfigs: (prev.emailConfigs || []).map(cfg => ({
+                              ...cfg,
+                              instanceType: value
+                            })),
+                          };
+                          // Explicitly save to sessionStorage
+                          try {
+                            sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                          } catch (e) {
+                            console.warn('Could not save config:', e);
+                          }
+                          onConfigurationChange(newConfig);
+                          return newConfig;
+                        });
+                      }}
+                      className="w-full max-w-xs px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base font-medium shadow-sm hover:border-purple-400"
+                    >
+                      {!allSame && <option value="Mixed" disabled>Mixed (use individual panels below)</option>}
+                      <option value="Small">Small</option>
+                      <option value="Standard">Standard</option>
+                      <option value="Large">Large</option>
+                      <option value="Extra Large">Extra Large</option>
+                    </select>
+                    {!allSame && (
+                      <p className="text-xs text-amber-600 mt-2 font-medium">
+                        ⚠️ Panels have different instance types. Use this selector to sync them all, or set them individually below.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* MULTI COMBINATION: Show separate sections for Messaging, Content, and Email */}
           {config.migrationType === 'Multi combination' && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
             <>
@@ -2989,12 +3088,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             value={emailCfg.instanceType || 'Small'}
                             onChange={(e) => {
                               const value = e.target.value as any;
-                              setConfig(prev => ({
-                                ...prev,
-                                emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                  i === emailIndex ? { ...cfg, instanceType: value } : cfg
-                                ),
-                              }));
+                              setConfig(prev => {
+                                const newConfig = {
+                                  ...prev,
+                                  emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
+                                    i === emailIndex ? { ...cfg, instanceType: value } : cfg
+                                  ),
+                                };
+                                // Explicitly save to sessionStorage
+                                try {
+                                  sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                                } catch (e) {
+                                  console.warn('Could not save config:', e);
+                                }
+                                onConfigurationChange(newConfig);
+                                return newConfig;
+                              });
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
                           >

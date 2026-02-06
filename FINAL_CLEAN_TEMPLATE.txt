@@ -1,0 +1,23 @@
+FINAL CLEAN TEMPLATE - Single Line Format (Like Second Image)
+
+Copy this EXACT code into your Word template:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB
+{{/exhibits}}
+
+IMPORTANT NOTES:
+1. Put "{{#exhibits}}" at the START of the line (no spaces before it)
+2. Put everything on ONE line until "{{/exhibits}}"
+3. Put "{{/exhibits}}" on a NEW line (this creates the line break between exhibits)
+4. NO extra blank lines between the loop tags
+
+This will create:
+- Each exhibit on its own single line
+- No extra spacing
+- Clean format like: "Overage Charges for Slack To Teams: $22.00 per User | $500.00 per server per month | $1.50 per GB"
+
+ALTERNATIVE (If per-GB should only show for Content):
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month{{#exhibitOveragePerGB}} | {{exhibitOveragePerGB}} per GB{{/exhibitOveragePerGB}}
+{{/exhibits}}
+

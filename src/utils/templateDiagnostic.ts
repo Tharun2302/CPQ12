@@ -108,7 +108,9 @@ export class TemplateDiagnostic {
       const hasExhibitsArrayInData = effectiveDataTokens.some((t) => t.replace(/^\{\{|\}\}$/g, '') === 'exhibits');
       const optionalLoopItemTokens = new Set<string>();
       if (hasExhibitsLoop && hasExhibitsArrayInData) {
-        ['exhibitType', 'exhibitDesc', 'exhibitPlan', 'exhibitPrice'].forEach((t) => optionalLoopItemTokens.add(t));
+        ['exhibitType', 'exhibitDesc', 'exhibitPlan', 'exhibitPrice', 
+         'exhibitOveragePerUser', 'exhibitOveragePerServer', 'exhibitOveragePerGB', 
+         'exhibitCombinationName', 'exhibitOverageCharges'].forEach((t) => optionalLoopItemTokens.add(t));
         console.log('🧩 Template diagnostic: exhibits loop detected; treating exhibit loop-item tokens as optional.');
       }
       

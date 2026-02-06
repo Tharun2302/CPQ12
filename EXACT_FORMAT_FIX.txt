@@ -1,0 +1,31 @@
+EXACT TEMPLATE CODE - Matches Second Screenshot Format
+
+Copy this EXACT code into your Word template (all on ONE line):
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB{{/exhibits}}
+
+CRITICAL INSTRUCTIONS:
+1. Delete ALL existing overage charges code in your template
+2. Type the code above EXACTLY as shown
+3. Make sure it's ALL on ONE line (no Enter key, no line breaks)
+4. NO spaces before {{#exhibits}} or after {{/exhibits}}
+5. Save the template
+
+ADDITIONAL FIX - Set Paragraph Formatting in Word:
+
+After pasting the code:
+1. Place cursor in the overage charges area
+2. Right-click → Paragraph
+3. Set these EXACT values:
+   - Spacing Before: 0 pt
+   - Spacing After: 0 pt  
+   - Line spacing: Single (exactly)
+   - Don't add space between paragraphs of the same style: CHECKED
+4. Click OK
+5. Save template
+
+This will create the EXACT format from your second screenshot:
+- Each exhibit on one clean line
+- No gaps between lines
+- Proper formatting: "Overage Charges for [Name]: $X.00 per User | $Y.00 per server per month | $Z.00 per GB"
+

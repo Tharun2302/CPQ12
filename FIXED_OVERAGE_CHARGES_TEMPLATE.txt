@@ -1,0 +1,19 @@
+FIXED TEMPLATE CODE - Each Exhibit on New Line
+
+Use this EXACT code in your Word template:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB
+{{/exhibits}}
+
+KEY DIFFERENCE:
+- Put {{/exhibits}} on a NEW LINE (press Enter after the per GB part)
+- This creates a line break between each exhibit
+- Each exhibit will start on its own line
+
+RESULT:
+Overage Charges for Dropbox To Azureblob: $30.00 per User | $500.00 per server per month | $1.00 per GB
+Overage Charges for Dropbox To Box: $30.00 per User | $500.00 per server per month | $1.00 per GB
+Overage Charges for Onedrive To Onedrive: $30.00 per User | $500.00 per server per month | $1.00 per GB
+
+Each line starts fresh with "Overage Charges for" - no continuation from previous line.
+

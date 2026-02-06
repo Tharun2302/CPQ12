@@ -1,0 +1,34 @@
+SOLUTION: Template Code Not Fitting on One Line
+
+OPTION 1: Disable Word Wrap (Recommended)
+1. In Word, go to View tab
+2. Uncheck "Word Wrap" or "Wrap Text" 
+3. This will let you see the full line without wrapping
+4. The template will still work correctly even if it wraps visually
+
+OPTION 2: Use Non-Breaking Format
+If Word keeps wrapping, you can break it but keep it functional:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB{{/exhibits}}
+
+Just make sure:
+- NO line breaks between {{#exhibits}} and {{/exhibits}}
+- NO spaces before {{#exhibits}} or after {{/exhibits}}
+- The entire loop is continuous (even if Word wraps it visually)
+
+OPTION 3: Use Smaller Font in Template (Just for Editing)
+1. Select the template code
+2. Change font size to 8pt (just for editing visibility)
+3. This helps see the full line
+4. The generated document will use normal font size
+
+OPTION 4: Copy-Paste from Here
+Copy this exact code (it's all one line, even if it wraps here):
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month | {{exhibitOveragePerGB}} per GB{{/exhibits}}
+
+IMPORTANT: 
+- Even if Word wraps it visually, as long as you don't press Enter, it's still one line
+- The template processor will treat it as one line
+- The generated document will format correctly
+
