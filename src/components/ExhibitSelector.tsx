@@ -340,6 +340,27 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     );
   }, [filteredExhibits, searchQuery]);
 
+  // Selected counts (helpful for Multi combination)
+  const selectedCounts = useMemo(() => {
+    const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
+    const filesSelected = selectedSet.size;
+    let migrationsSelected = 0;
+
+    // processedExhibits represents the grouped "migration folders" list in the UI.
+    // Count a migration as selected if ANY child exhibit is selected.
+    for (const item of processedExhibits as any[]) {
+      if (item?.isGroup) {
+        const anyChildSelected = (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()));
+        if (anyChildSelected) migrationsSelected += 1;
+      } else {
+        const ex0 = item?.exhibits?.[0];
+        if (ex0 && selectedSet.has((ex0._id ?? '').toString())) migrationsSelected += 1;
+      }
+    }
+
+    return { migrationsSelected, filesSelected };
+  }, [selectedExhibits, processedExhibits]);
+
   // Helper function to extract base combination from combination string
   const extractBaseCombination = (combination: string): string => {
     if (!combination || combination === 'all') return '';
@@ -702,7 +723,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         ) : (
           <div className="bg-blue-50/30 rounded-lg border border-blue-200 p-4">
             <div className="mb-3">
-              <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
+                <div className="text-[11px] text-gray-600 font-medium">
+                  Selected: {selectedCounts.migrationsSelected} migration{selectedCounts.migrationsSelected === 1 ? '' : 's'} · {selectedCounts.filesSelected} file{selectedCounts.filesSelected === 1 ? '' : 's'}
+                </div>
+              </div>
             </div>
             <div 
               className="max-h-[200px] overflow-y-auto space-y-2"
