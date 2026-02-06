@@ -1883,7 +1883,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* MULTI COMBINATION: Show separate sections for Messaging, Content, and Email */}
-          {config.migrationType === 'Multi combination' && selectedExhibits.length > 0 && (
+          {config.migrationType === 'Multi combination' && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
             <>
 
               {/* Messaging Project Configuration Section - one card per messaging exhibit */}

@@ -12,6 +12,12 @@ declare global {
 }
 
 export function initClarity(projectId?: string) {
+  // Check if we're on localhost (needed for error handling)
+  const isLocalhost = typeof window !== 'undefined' && 
+                     (window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1' || 
+                      window.location.hostname === '');
+  
   try {
     if (!projectId) return; // No project configured
     if (typeof window === 'undefined') return;
@@ -20,7 +26,13 @@ export function initClarity(projectId?: string) {
     // Only initialize in production builds by default, unless explicitly enabled for dev
     const mode = (import.meta as any)?.env?.MODE;
     const enableDev = (import.meta as any)?.env?.VITE_CLARITY_ENABLE_DEV === '1';
-    if (mode && mode !== 'production' && !enableDev) return;
+    
+    // Skip initialization in development mode (localhost) to avoid CORS errors
+    // Clarity's servers don't support credentials with wildcard CORS in development
+    if ((mode && mode !== 'production' && !enableDev) || (isLocalhost && !enableDev)) {
+      console.log('ℹ️ Clarity: Skipping initialization in development mode');
+      return;
+    }
 
     (function (c: any, l: Document, a: string, r: string, i: string, t?: HTMLScriptElement, y?: HTMLScriptElement) {
       (c as any)[a] = (c as any)[a] || function () {
@@ -30,22 +42,45 @@ export function initClarity(projectId?: string) {
       if (t) {
         t.async = true;
         t.src = 'https://www.clarity.ms/tag/' + i;
+        // Suppress script loading errors in development
+        t.onerror = () => {
+          if (!isLocalhost) {
+            console.warn('⚠️ Clarity: Failed to load script');
+          }
+        };
         y = l.getElementsByTagName(r)[0] as HTMLScriptElement | undefined;
         if (y && y.parentNode) {
           y.parentNode.insertBefore(t, y);
         }
       }
     })(window as any, document, 'clarity', 'script', projectId);
-  } catch {
-    // no-op
+  } catch (error) {
+    // Suppress errors in development
+    if (!isLocalhost) {
+      console.error('❌ Clarity initialization error:', error);
+    }
   }
 }
 
 export function track(name: string, props?: Record<string, any>) {
   try {
+    // Skip tracking in development to avoid CORS errors
+    const isLocalhost = typeof window !== 'undefined' && 
+                       (window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' || 
+                        window.location.hostname === '');
+    if (isLocalhost && (import.meta as any)?.env?.VITE_CLARITY_ENABLE_DEV !== '1') {
+      return;
+    }
     window.clarity?.('event', name, props || {});
-  } catch {
-    // no-op
+  } catch (error) {
+    // Suppress CORS errors in development
+    const isLocalhost = typeof window !== 'undefined' && 
+                       (window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1');
+    if (!isLocalhost) {
+      console.warn('⚠️ Clarity track error:', error);
+    }
   }
 }
 

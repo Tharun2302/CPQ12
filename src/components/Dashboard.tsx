@@ -12,6 +12,7 @@ import Settings from './Settings';
 import DigitalSignatureForm from './DigitalSignatureForm';
 import ApprovalWorkflow from './ApprovalWorkflow';
 import ExhibitManager from './ExhibitManager';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
 import { FileText, Menu, ChevronLeft } from 'lucide-react';
@@ -476,18 +477,20 @@ const Dashboard: React.FC<DashboardProps> = ({
       case 'configure':
         return (
           <div className="space-y-8">
-            <ConfigurationForm
-              onConfigurationChange={handleConfigurationChange}
-              onSubmit={handleSubmitConfiguration}
-              dealData={activeDealData}
-              onContactInfoChange={handleConfigureContactInfoChange}
-              templates={templates}
-              selectedTemplate={selectedTemplate}
-              onTemplateSelect={handleTemplateSelect}
-              selectedExhibits={selectedExhibits}
-              onExhibitsChange={onExhibitsChange}
-              selectedTier={selectedTier}
-            />
+            <ErrorBoundary>
+              <ConfigurationForm
+                onConfigurationChange={handleConfigurationChange}
+                onSubmit={handleSubmitConfiguration}
+                dealData={activeDealData}
+                onContactInfoChange={handleConfigureContactInfoChange}
+                templates={templates}
+                selectedTemplate={selectedTemplate}
+                onTemplateSelect={handleTemplateSelect}
+                selectedExhibits={selectedExhibits}
+                onExhibitsChange={onExhibitsChange}
+                selectedTier={selectedTier}
+              />
+            </ErrorBoundary>
 
             {calculations.length > 0 && (
               <PricingComparison

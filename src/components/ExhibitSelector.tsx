@@ -340,27 +340,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     );
   }, [filteredExhibits, searchQuery]);
 
-  // Selected counts (helpful for Multi combination)
-  const selectedCounts = useMemo(() => {
-    const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
-    const filesSelected = selectedSet.size;
-    let migrationsSelected = 0;
-
-    // processedExhibits represents the grouped "migration folders" list in the UI.
-    // Count a migration as selected if ANY child exhibit is selected.
-    for (const item of processedExhibits as any[]) {
-      if (item?.isGroup) {
-        const anyChildSelected = (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()));
-        if (anyChildSelected) migrationsSelected += 1;
-      } else {
-        const ex0 = item?.exhibits?.[0];
-        if (ex0 && selectedSet.has((ex0._id ?? '').toString())) migrationsSelected += 1;
-      }
-    }
-
-    return { migrationsSelected, filesSelected };
-  }, [selectedExhibits, processedExhibits]);
-
   // Helper function to extract base combination from combination string
   const extractBaseCombination = (combination: string): string => {
     if (!combination || combination === 'all') return '';
@@ -461,6 +440,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
   // Process exhibits for flat list display (handle grouping)
   const processedExhibits = useMemo(() => {
+    // Defensive check: ensure searchFilteredExhibits is an array
+    if (!Array.isArray(searchFilteredExhibits)) {
+      console.warn('⚠️ ExhibitSelector: searchFilteredExhibits is not an array', searchFilteredExhibits);
+      return [];
+    }
+    
     // Filter out generic "Included Features" and "Not Included Features" exhibits (without plan type)
     // These are redundant with plan-specific exhibits (e.g., "Standard Include", "Advanced Include")
     const filtered = searchFilteredExhibits.filter(exhibit => {
@@ -628,6 +613,29 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     return result.sort((a, b) => a.displayOrder - b.displayOrder);
   }, [searchFilteredExhibits]);
 
+  // Selected counts (helpful for Multi combination)
+  const selectedCounts = useMemo(() => {
+    const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
+    const filesSelected = selectedSet.size;
+    let migrationsSelected = 0;
+
+    // processedExhibits represents the grouped "migration folders" list in the UI.
+    // Count a migration as selected if ANY child exhibit is selected.
+    // Add defensive check to prevent crashes if processedExhibits is not an array
+    if (Array.isArray(processedExhibits)) {
+      for (const item of processedExhibits) {
+        if (item?.isGroup) {
+          const anyChildSelected = (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()));
+          if (anyChildSelected) migrationsSelected += 1;
+        } else {
+          const ex0 = item?.exhibits?.[0];
+          if (ex0 && selectedSet.has((ex0._id ?? '').toString())) migrationsSelected += 1;
+        }
+      }
+    }
+
+    return { migrationsSelected, filesSelected };
+  }, [selectedExhibits, processedExhibits]);
 
   const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
     if (isRequired) return; // Cannot deselect required exhibits
@@ -737,12 +745,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                 scrollbarColor: '#9ca3af #f3f4f6',
               }}
             >
-              {processedExhibits.length === 0 ? (
+              {!Array.isArray(processedExhibits) || processedExhibits.length === 0 ? (
                 <div className="text-xs text-gray-400 text-center py-8">
                   No exhibits match your search.
                 </div>
               ) : (
-                processedExhibits.map((item, index) => {
+                (Array.isArray(processedExhibits) ? processedExhibits : []).map((item, index) => {
                   const isGroup = item.isGroup;
                   const allExhibitsSelected = item.exhibits.every(ex => selectedExhibits.includes(ex._id));
                   const someExhibitsSelected = item.exhibits.some(ex => selectedExhibits.includes(ex._id));
@@ -799,8 +807,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                       <div className="flex items-center gap-2.5">
                         {/* Expand/collapse chevron for groups (clicking it shouldn't toggle selection) */}
                         {isGroup ? (
-                          <button
-                            type="button"
+                          <div
+                            role="button"
+                            tabIndex={0}
                             onClick={(e) => {
                               e.stopPropagation();
                               setExpandedGroups(prev => {
@@ -810,11 +819,23 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                                 return next;
                               });
                             }}
-                            className="w-5 h-5 flex items-center justify-center flex-shrink-0 rounded hover:bg-gray-100"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setExpandedGroups(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(item.id)) next.delete(item.id);
+                                  else next.add(item.id);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className="w-5 h-5 flex items-center justify-center flex-shrink-0 rounded hover:bg-gray-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
                             aria-label={isExpanded ? 'Collapse group' : 'Expand group'}
                           >
                             <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                          </button>
+                          </div>
                         ) : (
                           <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
                             <ChevronRight className="w-3.5 h-3.5 text-gray-300 opacity-0" />

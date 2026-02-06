@@ -83,6 +83,11 @@ app.use(
     etag: true,
     lastModified: true,
     setHeaders(res, filePath) {
+      // Set proper MIME types for JavaScript module files
+      if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      }
+      
       // Vite hashed assets
       if (filePath.includes(`${path.sep}dist${path.sep}assets${path.sep}`)) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
