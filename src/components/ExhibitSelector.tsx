@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Check, ChevronRight, Search, ArrowRight, RefreshCw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { BACKEND_URL } from '../config/api';
 
 interface Exhibit {
@@ -27,7 +26,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   onExhibitsChange,
   selectedTier
 }) => {
-  const navigate = useNavigate();
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -613,16 +611,15 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     return result.sort((a, b) => a.displayOrder - b.displayOrder);
   }, [searchFilteredExhibits]);
 
-  // Selected counts (helpful for Multi combination)
+  // Selected counts: total = migration types (rows), selected = how many of those rows have at least one exhibit selected
   const selectedCounts = useMemo(() => {
     const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
     const filesSelected = selectedSet.size;
+    let total = 0;
     let migrationsSelected = 0;
 
-    // processedExhibits represents the grouped "migration folders" list in the UI.
-    // Count a migration as selected if ANY child exhibit is selected.
-    // Add defensive check to prevent crashes if processedExhibits is not an array
     if (Array.isArray(processedExhibits)) {
+      total = processedExhibits.length; // number of migration types (rows), e.g. 54
       for (const item of processedExhibits) {
         if (item?.isGroup) {
           const anyChildSelected = (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()));
@@ -634,7 +631,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       }
     }
 
-    return { migrationsSelected, filesSelected };
+    return { total, selected: migrationsSelected, filesSelected };
   }, [selectedExhibits, processedExhibits]);
 
   const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
@@ -671,7 +668,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            <div className="text-[11px] text-gray-600 font-medium">
+              {selectedCounts.selected} selected of {selectedCounts.total} migration type{selectedCounts.total === 1 ? '' : 's'}
+            </div>
+            <div className="flex gap-2">
             <button
               type="button"
               onClick={loadExhibits}
@@ -689,6 +690,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             >
               Unselect All
             </button>
+            </div>
           </div>
         </div>
 
@@ -706,21 +708,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           </div>
         </div>
 
-        {/* Helpful message for adding exhibits */}
-        <div className="mb-3 p-2.5 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-xs text-gray-700 text-center">
-            If you can't find the combination you need,{' '}
-            <button
-              type="button"
-              onClick={() => navigate('/exhibits')}
-              className="text-blue-600 hover:text-blue-700 underline font-medium"
-            >
-              go to Exhibits
-            </button>
-            {' '}and you can add them. Those will reflect here.
-          </p>
-        </div>
-
         {/* Exhibits List Container */}
         {loading ? (
           <div className="animate-pulse bg-gray-100 rounded-lg p-4 h-32"></div>
@@ -731,12 +718,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         ) : (
           <div className="bg-blue-50/30 rounded-lg border border-blue-200 p-4">
             <div className="mb-3">
-              <div className="flex items-center justify-between gap-3">
-                <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
-                <div className="text-[11px] text-gray-600 font-medium">
-                  Selected: {selectedCounts.migrationsSelected} migration{selectedCounts.migrationsSelected === 1 ? '' : 's'} · {selectedCounts.filesSelected} file{selectedCounts.filesSelected === 1 ? '' : 's'}
-                </div>
-              </div>
+              <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
             </div>
             <div 
               className="max-h-[200px] overflow-y-auto space-y-2"
