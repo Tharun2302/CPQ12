@@ -1866,6 +1866,7 @@ Quote ID: ${quoteData.id}
                   .replace(/not\s+include(?!d)/gi, '')
                   .replace(/notincluded/gi, '')
                   .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+online\b/gi, '')
                   .replace(/\s+/g, ' ')
                   .trim();
               };
@@ -6064,6 +6065,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   .replace(/not\s+include(?!d)/gi, '')
                   .replace(/notincluded/gi, '')
                   .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+online\b/gi, '')
                   .replace(/\s+/g, ' ')
                   .trim();
               };
