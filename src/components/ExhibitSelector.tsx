@@ -611,16 +611,15 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     return result.sort((a, b) => a.displayOrder - b.displayOrder);
   }, [searchFilteredExhibits]);
 
-  // Selected counts (helpful for Multi combination)
+  // Selected counts: total = migration types (rows), selected = how many of those rows have at least one exhibit selected
   const selectedCounts = useMemo(() => {
     const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
     const filesSelected = selectedSet.size;
+    let total = 0;
     let migrationsSelected = 0;
 
-    // processedExhibits represents the grouped "migration folders" list in the UI.
-    // Count a migration as selected if ANY child exhibit is selected.
-    // Add defensive check to prevent crashes if processedExhibits is not an array
     if (Array.isArray(processedExhibits)) {
+      total = processedExhibits.length; // number of migration types (rows), e.g. 54
       for (const item of processedExhibits) {
         if (item?.isGroup) {
           const anyChildSelected = (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()));
@@ -632,7 +631,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       }
     }
 
-    return { migrationsSelected, filesSelected };
+    return { total, selected: migrationsSelected, filesSelected };
   }, [selectedExhibits, processedExhibits]);
 
   const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
@@ -671,7 +670,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           </div>
           <div className="flex items-center gap-3">
             <div className="text-[11px] text-gray-600 font-medium">
-              Selected: {selectedCounts.migrationsSelected} migration{selectedCounts.migrationsSelected === 1 ? '' : 's'} · {selectedCounts.filesSelected} file{selectedCounts.filesSelected === 1 ? '' : 's'}
+              {selectedCounts.selected} selected of {selectedCounts.total} migration type{selectedCounts.total === 1 ? '' : 's'}
             </div>
             <div className="flex gap-2">
             <button
