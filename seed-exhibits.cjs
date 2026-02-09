@@ -158,6 +158,29 @@ async function seedDefaultExhibits(db) {
       displayOrder: 14,
       keywords: ['meta', 'google', 'chat', 'messaging', 'not included', 'features', 'limitations', 'migration']
     },
+    // Google Chat to Google Chat exhibits (Included/Not Included)
+    {
+      name: 'Google Chat to Google Chat - Included',
+      description: 'Documentation for features included in Google Chat to Google Chat migration',
+      fileName: 'Google Chat-to-Google Chat Included.docx',
+      combinations: ['google-chat-to-google-chat', 'all'],
+      category: 'messaging',
+      includeType: 'included',
+      isRequired: false,
+      displayOrder: 11,
+      keywords: ['google chat', 'chat', 'messaging', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Google Chat to Google Chat - Not Included',
+      description: 'Documentation for features not included in Google Chat to Google Chat migration',
+      fileName: 'Google Chat-to-Google Chat Not Included.docx',
+      combinations: ['google-chat-to-google-chat', 'all'],
+      category: 'messaging',
+      includeType: 'notincluded',
+      isRequired: false,
+      displayOrder: 12,
+      keywords: ['google chat', 'chat', 'messaging', 'not included', 'excluded', 'limitations', 'migration']
+    },
     // Email exhibits (Outlook exhibits removed — files not present in backend-exhibits/)
     {
       name: 'Gmail to Gmail Standard Plan - Standard Include',
@@ -1299,7 +1322,7 @@ async function seedDefaultExhibits(db) {
         const fileIsSignificantlyNewer = (fileModTime - existingModTime) > oneHourInMs;
         
         const metadataChanged = (() => {
-          const keysToCompare = ['name', 'description', 'fileName', 'category', 'isRequired', 'displayOrder', 'keywords', 'combinations'];
+          const keysToCompare = ['name', 'description', 'fileName', 'category', 'includeType', 'isRequired', 'displayOrder', 'keywords', 'combinations'];
           for (const key of keysToCompare) {
             const a = existing[key];
             const b = exhibit[key];

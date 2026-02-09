@@ -376,6 +376,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'box', 'sharefile', 'content', 'migration', 'enterprise']
     },
+    // BOX TO SHAREPOINT templates (Standard & Advanced only)
+    {
+      name: 'BOX TO SHAREPOINT Standard',
+      description: 'Standard template for Box to SharePoint migration - suitable for medium to large projects',
+      fileName: 'box-to-sharepoint-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-sharepoint',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'sharepoint', 'content', 'microsoft']
+    },
+    {
+      name: 'BOX TO SHAREPOINT Advanced',
+      description: 'Advanced template for Box to SharePoint migration - suitable for large enterprise projects',
+      fileName: 'box-to-sharepoint-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-sharepoint',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'sharepoint', 'content', 'microsoft', 'enterprise']
+    },
     // BOX TO AWS S3 templates (Basic & Advanced only)
     {
       name: 'BOX TO AWS S3 Basic',
@@ -1242,18 +1263,7 @@ async function seedDefaultTemplates(db) {
   } else {
     console.log(`✅ Template seeding completed! All templates are up-to-date`);
   }
-  console.log(`📊 Total templates defined: 4 Messaging + 62 Content + 2 Overage Agreement (68 templates total)`);
-  console.log(`   - Messaging: SLACK TO TEAMS, SLACK TO GOOGLE CHAT (Basic, Advanced)`);
-  console.log(`   - Content: DROPBOX TO MYDRIVE, DROPBOX TO SHAREDRIVE (Basic, Standard, Advanced)`);
-  console.log(`   - Content: DROPBOX TO SHAREPOINT, DROPBOX TO ONEDRIVE, DROPBOX TO GOOGLE, DROPBOX TO MICROSOFT (Standard, Advanced only)`);
-  console.log(`   - Content: BOX TO BOX, BOX TO GOOGLE MYDRIVE, BOX TO GOOGLE SHARED DRIVE, BOX TO ONEDRIVE, BOX TO MICROSOFT, BOX TO GOOGLE (Standard, Advanced only)`);
-  console.log(`   - Content: GOOGLE SHARED DRIVE TO EGNYTE, GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE (Standard, Advanced only)`);
-  console.log(`   - Content: GOOGLE SHARED DRIVE TO ONEDRIVE, GOOGLE SHARED DRIVE TO SHAREPOINT (Standard, Advanced only)`);
-  console.log(`   - Content: GOOGLE MYDRIVE TO DROPBOX, GOOGLE MYDRIVE TO EGNYTE, GOOGLE MYDRIVE TO ONEDRIVE, GOOGLE MYDRIVE TO SHAREPOINT (Standard, Advanced only)`);
-  console.log(`   - Content: GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE, GOOGLE MYDRIVE TO GOOGLE MYDRIVE (Standard, Advanced only)`);
-  console.log(`   - Content: SHAREFILE TO GOOGLE MYDRIVE, SHAREFILE TO GOOGLE SHARED DRIVE, SHAREFILE TO ONEDRIVE, SHAREFILE TO SHAREFILE, SHAREFILE TO SHAREPOINT (Standard, Advanced only)`);
-  console.log(`   - Content: EGNYTE TO GOOGLE SHARED DRIVE, EGNYTE TO SHAREPOINT ONLINE, EGNYTE TO GOOGLE MYDRIVE (Standard, Advanced only)`);
-  console.log(`   - Overage: OVERAGE AGREEMENT (Messaging, Content)`);
+  console.log(`📊 Total templates defined: ${defaultTemplates.length}`);
   return uploadedCount > 0;
 }
 

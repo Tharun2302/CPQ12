@@ -274,6 +274,27 @@ async function seedDefaultTemplates(db) {
       planType: 'advanced',
       keywords: ['advanced', 'box', 'sharefile', 'content', 'migration', 'enterprise']
     },
+    // BOX TO SHAREPOINT templates (Standard & Advanced only)
+    {
+      name: 'BOX TO SHAREPOINT Standard',
+      description: 'Standard template for Box to SharePoint migration',
+      fileName: 'box-to-sharepoint-standard.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-sharepoint',
+      planType: 'standard',
+      keywords: ['standard', 'box', 'sharepoint', 'content', 'microsoft']
+    },
+    {
+      name: 'BOX TO SHAREPOINT Advanced',
+      description: 'Advanced template for Box to SharePoint migration',
+      fileName: 'box-to-sharepoint-advanced.docx',
+      isDefault: false,
+      category: 'content',
+      combination: 'box-to-sharepoint',
+      planType: 'advanced',
+      keywords: ['advanced', 'box', 'sharepoint', 'content', 'microsoft', 'enterprise']
+    },
     {
       name: 'BOX TO GOOGLE MYDRIVE Advanced',
       description: 'Advanced template for Box to Google MyDrive migration',
