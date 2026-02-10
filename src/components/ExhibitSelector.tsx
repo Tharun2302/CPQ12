@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Check, ChevronRight, Search, ArrowRight, RefreshCw } from 'lucide-react';
+import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface Exhibit {
@@ -615,29 +615,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     return result.sort((a, b) => a.displayOrder - b.displayOrder);
   }, [searchFilteredExhibits]);
 
-  // Selected counts: total = migration types (rows), selected = how many of those rows have at least one exhibit selected
-  const selectedCounts = useMemo(() => {
-    const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
-    const filesSelected = selectedSet.size;
-    let total = 0;
-    let migrationsSelected = 0;
-
-    if (Array.isArray(processedExhibits)) {
-      total = processedExhibits.length; // number of migration types (rows), e.g. 54
-      for (const item of processedExhibits) {
-        if (item?.isGroup) {
-          const anyChildSelected = (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()));
-          if (anyChildSelected) migrationsSelected += 1;
-        } else {
-          const ex0 = item?.exhibits?.[0];
-          if (ex0 && selectedSet.has((ex0._id ?? '').toString())) migrationsSelected += 1;
-        }
-      }
-    }
-
-    return { total, selected: migrationsSelected, filesSelected };
-  }, [selectedExhibits, processedExhibits]);
-
   const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
     if (isRequired) return; // Cannot deselect required exhibits
     
@@ -656,6 +633,35 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
   const hasAnyExhibits = filteredExhibits.length > 0;
 
+  // Names of migration types that have at least one exhibit selected (for display below search)
+  const selectedMigrationNames = useMemo(() => {
+    const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
+    const names: string[] = [];
+    if (Array.isArray(processedExhibits)) {
+      for (const item of processedExhibits) {
+        if (!item?.name) continue;
+        const anySelected = item.isGroup
+          ? (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()))
+          : (item.exhibits?.[0] && selectedSet.has((item.exhibits[0]._id ?? '').toString()));
+        if (anySelected) names.push(item.name);
+      }
+    }
+    return names;
+  }, [selectedExhibits, processedExhibits]);
+
+  const handleRemoveMigrationType = (migrationName: string) => {
+    const item = Array.isArray(processedExhibits)
+      ? processedExhibits.find((i) => i?.name === migrationName)
+      : null;
+    if (!item?.exhibits?.length) return;
+    const idsToRemove = item.exhibits.map((ex: any) => (ex?._id ?? '').toString()).filter(Boolean);
+    const requiredIds = new Set(exhibits.filter((ex) => ex.isRequired).map((ex) => ex._id));
+    const newSelection = selectedExhibits.filter(
+      (id) => !idsToRemove.includes(id) || requiredIds.has(id)
+    );
+    onExhibitsChange(newSelection);
+  };
+
   return (
     <div className="flex justify-center">
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-5 mb-4 w-full max-w-4xl">
@@ -672,11 +678,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-[11px] text-gray-600 font-medium">
-              {selectedCounts.selected} selected of {selectedCounts.total} migration type{selectedCounts.total === 1 ? '' : 's'}
-            </div>
-            <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={loadExhibits}
@@ -694,7 +696,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             >
               Unselect All
             </button>
-            </div>
           </div>
         </div>
 
@@ -711,6 +712,34 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             />
           </div>
         </div>
+
+        {/* Selected migration types (below search) */}
+        {selectedMigrationNames.length > 0 && (
+          <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+              Selected migration types <span className="text-blue-600 font-bold">({selectedMigrationNames.length})</span>
+            </h4>
+            <div className="flex flex-wrap gap-2">
+              {selectedMigrationNames.map((name) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-1.5 pl-2 pr-1 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-medium"
+                >
+                  <Check className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                  {name}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMigrationType(name)}
+                    className="p-0.5 rounded hover:bg-blue-200 text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title="Remove this migration type"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Exhibits List Container */}
         {loading ? (

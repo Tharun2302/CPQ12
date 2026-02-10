@@ -8,6 +8,7 @@ import {
   User, 
   Mail, 
   Building, 
+  Check,
   CheckCircle, 
   Users, 
   Sparkles,
@@ -18,7 +19,8 @@ import {
   X,
   Settings,
   Plus,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -7775,42 +7777,36 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
   return (
     <div className="max-w-4xl mx-auto p-8">
       <div className="text-center mb-8">
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-            <FileText className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-800">Generate Professional Quote</h1>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">Generate Professional Quote</h1>
         <p className="text-gray-600">Create a detailed quote for your client</p>
       </div>
 
       <div className="flex justify-center">
         {/* Client Information Form */}
         <div className="w-full max-w-2xl">
-          <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+          <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-200">
 
             {/* Template Selection Indicator */}
             {selectedTemplate ? (
-              <div className="flex items-center justify-between mb-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
+              <div className="flex items-center justify-between mb-6 p-4 bg-green-50 rounded-xl border border-green-200">
                 <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                    <FileText className="w-3 h-3 text-white" />
+                  <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Check className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-800">Template Selected</h3>
                     <p className="text-sm text-gray-600">
-                      Using template: <span className="font-medium text-green-700">{getSelectedTemplateDisplayName()}</span>
+                      Using template: <span className="font-bold text-green-700">{getSelectedTemplateDisplayName()}</span>
                     </p>
-                    <p className="text-xs text-green-600 mt-1">
-                      ✅ Ready to generate agreement with this template
+                    <p className="text-xs text-green-600 mt-1 flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5 text-green-600" />
+                      Ready to generate agreement with this template
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                    Template Active
-                  </span>
-                </div>
+                <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-medium flex-shrink-0">
+                  Template Active
+                </span>
               </div>
             ) : (
               <div className="flex items-center gap-3 mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border border-yellow-200">
@@ -7831,37 +7827,68 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
 
             <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3">
-            <User className="w-6 h-6 text-blue-600" />
-            Contact Information
-          </h3>
+              <User className="w-5 h-5 text-gray-500" />
+              Contact Information
+            </h3>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="group">
-              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-                Contact Name
-              </label>
-              <input
-                type="text"
-                required
-                value={clientInfo.clientName}
-                onChange={(e) => {
-                  const sanitized = sanitizeNameInput(e.target.value);
-                  const processed = limitConsecutiveSpaces(sanitized);
-                  setClientInfo({ ...clientInfo, clientName: processed });
-                }}
-                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                placeholder="Enter contact name"
-                maxLength={35}
-              />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Contact Name and Legal Entity Name in one row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="group">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                  <div className="w-7 h-7 bg-purple-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <User className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  Contact Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clientInfo.clientName}
+                  onChange={(e) => {
+                    const sanitized = sanitizeNameInput(e.target.value);
+                    const processed = limitConsecutiveSpaces(sanitized);
+                    setClientInfo({ ...clientInfo, clientName: processed });
+                  }}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-base font-medium"
+                  placeholder="Enter contact name"
+                  maxLength={35}
+                />
+              </div>
+              <div className="group">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                  <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Building className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  Legal Entity Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clientInfo.company}
+                  onChange={(e) => {
+                    const sanitized = sanitizeCompanyInput(e.target.value);
+                    setClientInfo({ ...clientInfo, company: sanitized });
+                  }}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-base font-medium"
+                  placeholder="Enter legal entity name"
+                />
+                {clientInfo.company && hubspotState?.selectedContact && (
+                  <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4" />
+                    {hubspotState.selectedContact.properties.company 
+                      ? 'Legal entity name from HubSpot contact'
+                      : 'Legal entity name auto-extracted from email domain'
+                    }
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="group">
-              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <Mail className="w-4 h-4 text-white" />
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-red-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Mail className="w-3.5 h-3.5 text-white" />
                 </div>
                 Email Address
               </label>
@@ -7873,49 +7900,21 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   const sanitized = sanitizeEmailInput(e.target.value);
                   setClientInfo({ ...clientInfo, clientEmail: sanitized });
                 }}
-                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-base font-medium"
                 placeholder="Enter email address"
                 maxLength={35}
               />
             </div>
 
-            <div className="group">
-              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <Building className="w-4 h-4 text-white" />
-                </div>
-                Legal Entity Name*
-              </label>
-              <input
-                type="text"
-                required
-                value={clientInfo.company}
-                onChange={(e) => {
-                  const sanitized = sanitizeCompanyInput(e.target.value);
-                  setClientInfo({ ...clientInfo, company: sanitized });
-                }}
-                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                placeholder="Enter legal entity name"
-              />
-                {clientInfo.company && hubspotState?.selectedContact && (
-                  <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
-                    <CheckCircle className="w-4 h-4" />
-                    {hubspotState.selectedContact.properties.company 
-                      ? 'Legal entity name from HubSpot contact'
-                      : 'Legal entity name auto-extracted from email domain'
-                    }
-                  </p>
-                )}
-            </div>
-
+            {/* Date Selection - side by side */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Project Start Date - MOVED from Project Configuration */}
             <div className="group">
-              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <Calendar className="w-4 h-4 text-white" />
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-3.5 h-3.5 text-white" />
                 </div>
-                Project Start Date
-                <span className="text-red-500">*</span>
+                Project Start Date <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
@@ -7947,12 +7946,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     setDateValidationErrors(prev => ({ ...prev, projectStartDate: true }));
                   }
                 }}
-                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium ${
+                className={`w-full px-4 py-2.5 border-2 rounded-lg focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-base font-medium ${
                   dateValidationErrors.projectStartDate
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
                     : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 hover:border-blue-300'
                 }`}
-                placeholder="Select start date"
+                placeholder="dd-mm-yyyy"
                 autoComplete="off"
               />
               {dateValidationErrors.projectStartDate && (
@@ -7968,12 +7967,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
             {/* Effective Date */}
             <div className="group">
-              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <Calendar className="w-4 h-4 text-white" />
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-3.5 h-3.5 text-white" />
                 </div>
-                Effective Date
-                <span className="text-red-500">*</span>
+                Effective Date <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
@@ -8026,17 +8024,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     }
                   }
                 }}
-                className={`w-full px-6 py-5 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-xl font-medium ${
+                className={`w-full px-4 py-2.5 border-2 rounded-lg focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-base font-medium ${
                   dateValidationErrors.effectiveDate
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
                     : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 hover:border-blue-300'
                 }`}
-                style={{ 
-                  fontSize: '18px',
-                  height: '60px',
-                  paddingTop: '18px',
-                  paddingBottom: '18px'
-                }}
               />
               {dateValidationErrors.effectiveDate && (
                 <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
@@ -8047,6 +8039,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               {!dateValidationErrors.effectiveDate && (
                 <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
               )}
+            </div>
             </div>
 
             {/* Payment Terms - Only for Overage Agreement */}
@@ -8104,19 +8097,18 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </span>
             </button>
 
-            {/* Generate Agreement Button */}
-                  <button
+            {/* Preview Agreement - primary CTA */}
+            <button
               type="button"
               onClick={handleGenerateAgreement}
               disabled={!selectedTemplate || isGeneratingAgreement}
-              className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group ${
+              className={`w-full mt-6 py-4 px-8 rounded-xl font-bold text-lg transition-all duration-200 shadow-lg ${
                 selectedTemplate && !isGeneratingAgreement
-                  ? 'bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 hover:scale-105 hover:shadow-2xl' 
+                  ? 'bg-green-600 text-white hover:bg-green-700 hover:shadow-xl' 
                   : 'bg-gray-400 text-gray-200 cursor-not-allowed'
               }`}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              <span className="relative flex items-center justify-center gap-3">
+              <span className="flex items-center justify-center gap-3">
                 {isGeneratingAgreement ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -8130,7 +8122,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   </>
                 )}
               </span>
-                  </button>
+            </button>
 
             {/* Send to Deal Desk Button (same behavior as preview) */}
             <button
