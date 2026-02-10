@@ -54,6 +54,18 @@ export class TemplateDiagnostic {
           nestedTokens.add('exhibitCombinationName');
           nestedTokens.add('exhibitOverageCharges');
         }
+        
+        // Special case for servers array: similar to exhibits, servers can be empty for single migrations
+        // but the template may still reference server tokens inside {{#servers}} loop
+        if (dataKey === 'servers') {
+          nestedTokens.add('serverDescription');
+          nestedTokens.add('combinationName');
+          nestedTokens.add('serverMonths');
+          nestedTokens.add('serverPrice');
+          nestedTokens.add('serverPriceBundled');
+          nestedTokens.add('serverBundledPrice');
+          nestedTokens.add('isLast');
+        }
 
         // If the array is empty, we cannot infer keys from objects; rely on special cases above.
         if (value.length === 0) continue;
@@ -120,6 +132,15 @@ export class TemplateDiagnostic {
         console.log('🧩 Template diagnostic: exhibits loop detected; treating exhibit loop-item tokens as optional.');
       }
       
+      // Similar handling for servers loop
+      const hasServersLoop = templateTokens.includes('#servers');
+      const hasServersArrayInData = effectiveDataTokens.some((t) => t.replace(/^\{\{|\}\}$/g, '') === 'servers');
+      if (hasServersLoop && hasServersArrayInData) {
+        ['serverDescription', 'combinationName', 'serverMonths', 'serverPrice', 'serverPriceBundled',
+         'serverBundledPrice', 'isLast'].forEach((t) => optionalLoopItemTokens.add(t));
+        console.log('🧩 Template diagnostic: servers loop detected; treating server loop-item tokens as optional.');
+      }
+      
       // Handle conditional blocks ({{#token}}...{{/token}}) - these are not loops but conditionals
       // For conditional blocks like {{#exhibitOveragePerGB}}, we need to check if the token exists
       // in nested data tokens, not as a top-level array
@@ -135,6 +156,13 @@ export class TemplateDiagnostic {
           optionalLoopItemTokens.add('#' + conditionalToken);
         }
       });
+      
+      // Also handle the case where servers loop exists but array might be empty (single migrations)
+      // In this case, server tokens should still be considered valid
+      if (hasServersLoop) {
+        ['serverDescription', 'combinationName', 'serverMonths', 'serverPrice', 'serverPriceBundled',
+         'serverBundledPrice', 'isLast'].forEach((t) => optionalLoopItemTokens.add(t));
+      }
       
       if (conditionalBlockTokens.size > 0) {
         console.log('🧩 Template diagnostic: conditional blocks detected; treating as optional:', Array.from(conditionalBlockTokens));

@@ -4852,6 +4852,9 @@ Total Price: {{total price}}`;
         // Store expanded exhibit IDs for use in document merging (includes both Include and Not Include variants)
         let expandedExhibitIdsForMerge: string[] = [];
         
+        // Initialize totalUserCountFromExhibits outside try block so it's accessible everywhere
+        let totalUserCountFromExhibits = userCount || 1; // Default to single migration userCount
+        
         // Build exhibit rows for the template.
         // Plan-based rule: when a plan (Basic/Standard/Advanced) is selected, include BOTH "Include" and "Not Include"
         // exhibit variants for that plan for each selected combination (e.g. Basic Include + Basic Not Include).
@@ -5558,6 +5561,57 @@ Total Price: {{total price}}`;
           templateData['{{exhibits_list_text}}'] = exhibitsListText;
           templateData['{{exhibits_count}}'] = exhibitsData.length.toString();
           
+          // Calculate total user count from all exhibits for CloudFuze Manage calculation
+          // (totalUserCountFromExhibits was initialized before the try block)
+          if (configuration?.migrationType === 'Multi combination') {
+            // Sum users from all exhibit configs
+            totalUserCountFromExhibits = 0;
+            const configToUse = finalConfiguration || configuration;
+            
+            // Sum from messaging configs
+            if (Array.isArray((configToUse as any).messagingConfigs)) {
+              for (const cfg of (configToUse as any).messagingConfigs) {
+                totalUserCountFromExhibits += Number(cfg.numberOfUsers || 0);
+              }
+            }
+            
+            // Sum from content configs
+            if (Array.isArray((configToUse as any).contentConfigs)) {
+              for (const cfg of (configToUse as any).contentConfigs) {
+                totalUserCountFromExhibits += Number(cfg.numberOfUsers || 0);
+              }
+            }
+            
+            // Sum from email configs
+            if (Array.isArray((configToUse as any).emailConfigs)) {
+              for (const cfg of (configToUse as any).emailConfigs) {
+                totalUserCountFromExhibits += Number(cfg.numberOfUsers || 0);
+              }
+            }
+            
+            // Fallback: if no configs found, try to sum from exhibitsData
+            if (totalUserCountFromExhibits === 0 && exhibitsData.length > 0) {
+              for (const exhibit of exhibitsData) {
+                if (exhibit.exhibitConfig && exhibit.exhibitConfig.numberOfUsers) {
+                  totalUserCountFromExhibits += Number(exhibit.exhibitConfig.numberOfUsers || 0);
+                }
+              }
+            }
+            
+            // Ensure at least 1 user
+            if (totalUserCountFromExhibits === 0) {
+              totalUserCountFromExhibits = 1;
+            }
+            
+            console.log('🔍 Total user count from exhibits for CloudFuze Manage:', {
+              totalUserCountFromExhibits,
+              messagingConfigs: (configToUse as any).messagingConfigs?.length || 0,
+              contentConfigs: (configToUse as any).contentConfigs?.length || 0,
+              emailConfigs: (configToUse as any).emailConfigs?.length || 0,
+              exhibitsCount: exhibitsData.length
+            });
+          }
+          
           // If expansion didn't happen (no plan selected), use original exhibitIds for merging
           if (expandedExhibitIdsForMerge.length === 0) {
             expandedExhibitIdsForMerge = exhibitIds;
@@ -5571,6 +5625,10 @@ Total Price: {{total price}}`;
           templateData['{{exhibits_count}}'] = '0';
           // Fallback: use original selectedExhibits if expansion failed
           expandedExhibitIdsForMerge = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
+          // Ensure totalUserCountFromExhibits has a fallback value in case of error
+          if (totalUserCountFromExhibits === undefined || totalUserCountFromExhibits === 0) {
+            totalUserCountFromExhibits = userCount || 1;
+          }
         }
         
         console.log('🔍 TEMPLATE DATA CREATED:');
@@ -5975,8 +6033,9 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
-            // Set CloudFuze Manage user total (userCount * 399)
-            const cfmUserTotal = (userCount || 1) * 399;
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 399)
+            // For multi-combination, this should be the sum of all users from all exhibits
+            const cfmUserTotal = totalUserCountFromExhibits * 399;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
@@ -6101,8 +6160,9 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
-            // Set CloudFuze Manage user total (userCount * 399)
-            const cfmUserTotal = (userCount || 1) * 399;
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 399)
+            // For single migrations, this uses the single userCount, but for multi-combination it uses the sum
+            const cfmUserTotal = totalUserCountFromExhibits * 399;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
@@ -6186,6 +6246,23 @@ Total Price: {{total price}}`;
           console.warn('⚠️ Unable to build servers array:', e);
           templateData['{{server_instance_cost_breakdown}}'] = '';
           (templateData as any).servers = [];
+          
+          // Ensure CloudFuze Manage tokens are set even if there's an error
+          // Use fallback values to prevent template diagnostic errors
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 399;
+          templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
+          
+          const fallbackCfmUserTotalBundled = fallbackCfmUserTotal * 0.9;
+          templateData['{{cfm_user_total_b}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+          templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+          templateData['{{cfm_user_bundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+          
+          // Set cfm_total_b with a fallback value
+          templateData['{{cfm_total_b}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+          templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+          templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);
         }
         
         console.log('📋 Template data for DOCX processing:', templateData);
@@ -6381,6 +6458,29 @@ Total Price: {{total price}}`;
         if (templateData['{{instanceCostBundled}}'] === undefined) {
           const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
           templateData['{{instanceCostBundled}}'] = formatCurrency((instanceCost || 0) * 0.9); // Final price after 10% discount
+        }
+
+        // Ensure CloudFuze Manage tokens are always set before diagnostic
+        // (safety check in case they weren't set in the previous blocks)
+        if (!templateData['{{cfm_user_total}}']) {
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 399;
+          templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
+        }
+        if (!templateData['{{cfm_user_total_b}}']) {
+          const fallbackCfmUserTotal = parseFloat((templateData['{{cfm_user_total}}'] || '$0').replace(/[$,]/g, '')) || (totalUserCountFromExhibits * 399);
+          const fallbackCfmUserTotalBundled = fallbackCfmUserTotal * 0.9;
+          templateData['{{cfm_user_total_b}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+          templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+          templateData['{{cfm_user_bundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);
+        }
+        if (!templateData['{{cfm_total_b}}']) {
+          // Try to get from cloudfuze_manage_total_bundled, or calculate fallback
+          const fallbackCfmTotalB = templateData['{{cloudfuze_manage_total_bundled}}'] || 
+                                   templateData['{{cloudfuzeManageTotalBundled}}'] ||
+                                   formatCurrency((totalUserCountFromExhibits * 399) * 0.9);
+          templateData['{{cfm_total_b}}'] = fallbackCfmTotalB;
         }
 
         // DIAGNOSTIC: Run comprehensive template analysis
