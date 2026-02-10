@@ -54,6 +54,16 @@ async function seedDefaultTemplates(db) {
       keywords: ['basic', 'slack', 'google-chat', 'messaging']
     },
     {
+      name: 'SLACK TO GOOGLE CHAT Standard',
+      description: 'Standard template for Slack to Google Chat migration - suitable for medium to large projects',
+      fileName: 'slack-to-google-chat-std.docx',
+      isDefault: false,
+      category: 'messaging',
+      combination: 'slack-to-google-chat',
+      planType: 'standard',
+      keywords: ['standard', 'std', 'slack', 'google-chat', 'messaging']
+    },
+    {
       name: 'SLACK TO GOOGLE CHAT Advanced',
       description: 'Advanced template for Slack to Google Chat migration - suitable for large enterprise projects',
       fileName: 'slack-to-google-chat-advanced.docx',
@@ -1258,12 +1268,166 @@ async function seedDefaultTemplates(db) {
     }
   }
 
+  // AUTO-DETECT: Find all .docx files in backend-templates that aren't in the predefined list
+  console.log('\n🔍 Auto-detecting additional templates in backend-templates folder...');
+  const predefinedFileNames = new Set(defaultTemplates.map(t => t.fileName.toLowerCase()));
+  const allFiles = fs.readdirSync(templatesDir);
+  const docxFiles = allFiles.filter(f => 
+    f.toLowerCase().endsWith('.docx') && 
+    !f.startsWith('~$') && // Skip temp files
+    !predefinedFileNames.has(f.toLowerCase())
+  );
+
+  if (docxFiles.length > 0) {
+    console.log(`📄 Found ${docxFiles.length} additional template file(s) not in predefined list:`);
+    docxFiles.forEach(f => console.log(`   - ${f}`));
+  }
+
+  // Process auto-detected files
+  for (const fileName of docxFiles) {
+    try {
+      const filePath = path.join(templatesDir, fileName);
+      const fileStats = fs.statSync(filePath);
+      
+      // Extract metadata from filename
+      // Format: combination-plan.docx or combination-plan-type.docx
+      // Examples: slack-to-google-chat-std.docx, slack-to-teams-basic.docx
+      const baseName = fileName.replace(/\.docx$/i, '').toLowerCase();
+      
+      // Try to extract combination and plan type from filename
+      let combination = '';
+      let planType = '';
+      let category = 'messaging'; // default
+      
+      // Common patterns
+      if (baseName.includes('slack-to-google-chat')) {
+        combination = 'slack-to-google-chat';
+        category = 'messaging';
+      } else if (baseName.includes('slack-to-teams')) {
+        combination = 'slack-to-teams';
+        category = 'messaging';
+      } else if (baseName.includes('google-chat-to-teams')) {
+        combination = 'google-chat-to-teams';
+        category = 'messaging';
+      } else if (baseName.includes('dropbox-to-')) {
+        combination = baseName.split('-to-')[0] + '-to-' + baseName.split('-to-')[1].split('-')[0];
+        category = 'content';
+      } else if (baseName.includes('box-to-')) {
+        combination = baseName.split('-to-')[0] + '-to-' + baseName.split('-to-')[1].split('-')[0];
+        category = 'content';
+      } else if (baseName.includes('gmail-to-')) {
+        combination = baseName.split('-to-')[0] + '-to-' + baseName.split('-to-')[1].split('-')[0];
+        category = 'email';
+      } else if (baseName.includes('outlook-to-')) {
+        combination = baseName.split('-to-')[0] + '-to-' + baseName.split('-to-')[1].split('-')[0];
+        category = 'email';
+      } else {
+        // Generic: use filename as combination
+        combination = baseName;
+      }
+      
+      // Extract plan type
+      if (baseName.includes('-basic') || baseName.endsWith('basic')) {
+        planType = 'basic';
+      } else if (baseName.includes('-std') || baseName.endsWith('std') || baseName.includes('-standard') || baseName.endsWith('standard')) {
+        planType = 'standard';
+      } else if (baseName.includes('-advanced') || baseName.endsWith('advanced')) {
+        planType = 'advanced';
+      } else {
+        planType = 'standard'; // default
+      }
+      
+      // Generate template name from filename
+      const templateName = fileName
+        .replace(/\.docx$/i, '')
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+        .replace(/\bStd\b/gi, 'Standard');
+      
+      // Check if template already exists (by filename)
+      const existing = await db.collection('templates').findOne({ 
+        fileName: fileName 
+      });
+
+      if (existing) {
+        // Check if file has been modified
+        const existingModified = existing.lastModified ? new Date(existing.lastModified) : new Date(0);
+        
+        if (fileStats.mtime > existingModified) {
+          console.log(`🔄 Auto-detected template file modified, updating: ${fileName}`);
+          
+          const fileBuffer = fs.readFileSync(filePath);
+          const base64Data = fileBuffer.toString('base64');
+          
+          await db.collection('templates').updateOne(
+            { fileName: fileName },
+            { 
+              $set: {
+                fileData: base64Data,
+                fileSize: fileBuffer.length,
+                lastModified: fileStats.mtime,
+                updatedAt: new Date(),
+                name: templateName, // Update name in case it changed
+                combination: combination,
+                category: category,
+                planType: planType,
+                version: (existing.version || 1) + 0.1
+              }
+            }
+          );
+          
+          console.log(`✅ Updated auto-detected template: ${templateName} (${Math.round(fileBuffer.length / 1024)}KB)`);
+          uploadedCount++;
+        }
+        continue;
+      }
+
+      // Read file and create new template
+      const fileBuffer = fs.readFileSync(filePath);
+      const base64Data = fileBuffer.toString('base64');
+      
+      const templateDoc = {
+        id: `template-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+        name: templateName,
+        description: `Auto-detected template: ${templateName}`,
+        fileName: fileName,
+        fileSize: fileBuffer.length,
+        fileData: base64Data,
+        fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        isDefault: false,
+        category: category,
+        combination: combination,
+        planType: planType,
+        keywords: [planType, ...baseName.split('-')],
+        createdAt: new Date(),
+        lastModified: fileStats.mtime,
+        uploadedBy: 'system-auto-detect',
+        status: 'active',
+        version: 1.0
+      };
+
+      const result = await db.collection('templates').insertOne(templateDoc);
+      
+      if (result.insertedId) {
+        console.log(`✅ Auto-uploaded template: ${templateName}`);
+        console.log(`   File: ${fileName} (${Math.round(fileBuffer.length / 1024)}KB)`);
+        console.log(`   Plan: ${planType} | Combination: ${combination} | Category: ${category}`);
+        uploadedCount++;
+      }
+
+    } catch (error) {
+      console.error(`❌ Error processing auto-detected template ${fileName}:`, error);
+    }
+  }
+
   if (uploadedCount > 0) {
     console.log(`🎉 Template seeding completed! Updated/uploaded ${uploadedCount} templates`);
   } else {
     console.log(`✅ Template seeding completed! All templates are up-to-date`);
   }
   console.log(`📊 Total templates defined: ${defaultTemplates.length}`);
+  console.log(`📊 Auto-detected templates: ${docxFiles.length}`);
   return uploadedCount > 0;
 }
 

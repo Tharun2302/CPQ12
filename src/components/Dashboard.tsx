@@ -499,6 +499,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 onSelectTier={handleSelectTierWithNavigation}
                 configuration={configuration}
                 selectedTier={selectedTier}
+                templates={templates}
               />
             )}
           </div>

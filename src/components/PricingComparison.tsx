@@ -9,13 +9,15 @@ interface PricingComparisonProps {
   onSelectTier: (calculation: PricingCalculation) => void;
   configuration?: ConfigurationData;
   selectedTier?: PricingCalculation | null; // Add selectedTier prop to know which plan is selected
+  templates?: any[]; // Templates to check if plan has corresponding template
 }
 
 const PricingComparison: React.FC<PricingComparisonProps> = ({
   calculations,
   onSelectTier,
   configuration,
-  selectedTier
+  selectedTier,
+  templates = []
 }) => {
   const [discount, setDiscount] = useState<number>(0);
   
@@ -209,6 +211,16 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Filter plans based on migration type
   const filteredCalculations = calculations.filter(calc => {
+    // Debug logging for slack-to-google-chat
+    if (configuration?.combination === 'slack-to-google-chat') {
+      console.log('🔍 PricingComparison filter - slack-to-google-chat:', {
+        totalCalculations: calculations.length,
+        calculationTiers: calculations.map(c => c.tier.name),
+        currentCalcTier: calc.tier.name,
+        combination: configuration.combination
+      });
+    }
+    
     // For overage agreement, show only ONE plan (first available)
     if (configuration?.combination === 'overage-agreement') {
       return calc === calculations[0];
@@ -266,11 +278,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     // Hide Standard plan for specific combinations (only Basic and Advanced available)
     const hideStandardPlan = combination === 'box-to-aws-s3';
     
-    // Check if this is a messaging combination
-    const isMessagingCombination = combination === 'slack-to-teams' || 
-                                   combination === 'slack-to-google-chat' ||
-                                   combination === 'google-chat-to-teams';
-    
     // Hide Basic plan for specific combinations
     if (hideBasicPlan && calc.tier.name === 'Basic') {
       return false;
@@ -281,14 +288,66 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
       return false;
     }
     
-    // For Messaging combinations: show only 2 plans (Basic, Advanced)
-    if (isMessagingCombination) {
-      return calc.tier.name === 'Basic' || calc.tier.name === 'Advanced';
+    // CRITICAL: Only show plans that have corresponding templates in the database
+    // This ensures UI only displays plans for which templates actually exist
+    // This check takes precedence over all other logic to ensure only available templates are shown
+    if (templates && templates.length > 0 && combination) {
+      const tierName = calc.tier.name.toLowerCase();
+      const combinationLower = combination.toLowerCase();
+      
+      // Check if a template exists for this plan type and combination
+      const templateExists = templates.some(t => {
+        const templatePlanType = (t?.planType || '').toLowerCase();
+        const templateCombination = (t?.combination || '').toLowerCase();
+        
+        // Match plan type (handle "std" as "standard")
+        const planMatches = templatePlanType === tierName || 
+                          (tierName === 'standard' && (templatePlanType === 'std' || templatePlanType === 'standard'));
+        
+        // Match combination
+        const comboMatches = templateCombination === combinationLower;
+        
+        return planMatches && comboMatches;
+      });
+      
+      if (!templateExists) {
+        // Debug logging
+        if (configuration?.combination === 'slack-to-teams' || configuration?.combination === 'slack-to-google-chat') {
+          console.log('🔍 PricingComparison: Hiding plan - no template found:', {
+            tier: calc.tier.name,
+            combination: combination,
+            availableTemplates: templates.filter(t => {
+              const tc = (t?.combination || '').toLowerCase();
+              return tc === combinationLower;
+            }).map(t => ({ name: t.name, planType: t.planType, combination: t.combination }))
+          });
+        }
+        return false; // Don't show plan if no template exists
+      }
     }
     
-    // For Content combinations and others: show all 3 plans (Basic, Standard, Advanced)
+    // If templates check passed (or no templates available), show the plan
+    // Show all valid plans (Basic, Standard, Advanced) for all combinations
+    // Note: Template check above ensures only plans with templates are shown
     return calc.tier.name === 'Basic' || calc.tier.name === 'Standard' || calc.tier.name === 'Advanced';
   });
+  
+  // Debug logging after filtering
+  useEffect(() => {
+    if (configuration?.combination === 'slack-to-teams' || configuration?.combination === 'slack-to-google-chat') {
+      console.log('🔍 PricingComparison - After filtering:', {
+        combination: configuration.combination,
+        originalCount: calculations.length,
+        filteredCount: filteredCalculations.length,
+        originalTiers: calculations.map(c => c.tier.name),
+        filteredTiers: filteredCalculations.map(c => c.tier.name),
+        availableTemplates: templates?.filter(t => {
+          const tc = (t?.combination || '').toLowerCase();
+          return tc === (configuration?.combination || '').toLowerCase();
+        }).map(t => ({ name: t.name, planType: t.planType })) || []
+      });
+    }
+  }, [calculations, filteredCalculations, configuration?.combination, templates]);
 
   // Helper function to apply discount calculations
   const calculateDiscountedPrice = (totalCost: number) => {

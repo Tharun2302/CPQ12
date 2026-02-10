@@ -4874,7 +4874,8 @@ Total Price: {{total price}}`;
                 const primary = ex?.combinations?.[0];
                 if (!primary || primary === 'all') return '';
                 let base = String(primary).toLowerCase();
-                base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+                // Remove plan type suffixes (including "std" as abbreviation for "standard")
+                base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
                 base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
                 base = base.replace(/-+$/, '').trim();
                 return base;
@@ -4886,8 +4887,11 @@ Total Price: {{total price}}`;
                   return pt.charAt(0).toUpperCase() + pt.slice(1);
                 }
                 const name = (ex?.name || '').toLowerCase();
-                if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'Basic';
-                if (name.includes('standard') && !name.includes('advanced')) return 'Standard';
+                // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
+                const hasStd = name.includes('-std') || name.includes('_std') || name.endsWith('std');
+                const hasStandard = name.includes('standard') || hasStd;
+                if (name.includes('basic') && !hasStandard && !name.includes('advanced')) return 'Basic';
+                if (hasStandard && !name.includes('advanced')) return 'Standard';
                 if (name.includes('advanced')) return 'Advanced';
                 return '';
               };

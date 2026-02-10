@@ -183,7 +183,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       
       // Fallback: Check if exhibit name contains a plan type (legacy support)
       const exhibitName = exhibit.name.toLowerCase();
-      const hasStandard = exhibitName.includes('standard');
+      // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
+      const hasStandard = exhibitName.includes('standard') || (exhibitName.includes('-std') || exhibitName.includes('_std') || exhibitName.endsWith('std'));
       const hasAdvanced = exhibitName.includes('advanced');
       const hasBasic = exhibitName.includes('basic');
       const hasPremium = exhibitName.includes('premium');
@@ -231,7 +232,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         
         // Fallback: Check exhibit name for plan type
         const exhibitName = ex.name.toLowerCase();
-        const hasStandard = exhibitName.includes('standard');
+        // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
+        const hasStandard = exhibitName.includes('standard') || (exhibitName.includes('-std') || exhibitName.includes('_std') || exhibitName.endsWith('std'));
         const hasAdvanced = exhibitName.includes('advanced');
         const hasBasic = exhibitName.includes('basic');
         const hasPremium = exhibitName.includes('premium');
@@ -271,7 +273,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       // Keep if it doesn't have a plan type (user manually selected generic exhibits)
       if (!ex.planType) {
         const name = ex.name.toLowerCase();
-        const hasPlanInName = name.includes('basic') || name.includes('standard') || 
+        // Check for "std" as abbreviation for "standard"
+        const hasStd = name.includes('-std') || name.includes('_std') || name.endsWith('std');
+        const hasPlanInName = name.includes('basic') || name.includes('standard') || hasStd ||
                              name.includes('advanced') || name.includes('premium') || 
                              name.includes('enterprise');
         return !hasPlanInName;
@@ -349,8 +353,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
     }
     
-    // Remove plan type suffixes
-    base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+    // Remove plan type suffixes (including "std" as abbreviation for "standard")
+    base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
     
     // Remove include/notinclude suffixes
     base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');

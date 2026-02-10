@@ -1287,9 +1287,15 @@ function App() {
       }
     }
     
-    const newCalculations = calculateAllTiers(config, pricingTiers);
+    // Always use PRICING_TIERS constant to ensure all 3 tiers are included
+    // This is especially important for slack-to-google-chat which needs all 3 plans
+    const newCalculations = calculateAllTiers(config, PRICING_TIERS);
     setCalculations(newCalculations);
-    console.log('✅ Configuration updated successfully');
+    console.log('✅ Configuration updated successfully', {
+      combination: config.combination,
+      calculationsCount: newCalculations.length,
+      tiers: newCalculations.map(c => c.tier.name)
+    });
   };
 
   const handleSubmitConfiguration = () => {
