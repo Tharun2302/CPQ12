@@ -91,6 +91,7 @@ export interface DocxTemplateData {
   }>;
   
   // Bundled pricing tokens (10% discount)
+  '{{migrationBundled}}'?: string;
   '{{price_migration_bundled}}'?: string;
   '{{migration_cost_bundled}}'?: string;
   '{{migration_price_bundled}}'?: string;
@@ -101,6 +102,12 @@ export interface DocxTemplateData {
   '{{cloudfuzeManageTotalBundled}}'?: string;
   '{{cloudfuze_manage_price_bundled}}'?: string;
   '{{cloudfuzeManagePriceBundled}}'?: string;
+  '{{cfm_user_total}}'?: string;
+  '{{cloudfuze_manage_user_total}}'?: string;
+  '{{cloudfuzeManageUserTotal}}'?: string;
+  '{{cfm_user_total_b}}'?: string;
+  '{{cloudfuze_manage_user_total_bundled}}'?: string;
+  '{{cfm_user_bundled}}'?: string;
   
   // Servers array for dynamic table loops
   servers?: Array<{
@@ -1658,11 +1665,22 @@ export class DocxTemplateProcessor {
       '{{migration_price}}': migrationCost,
       '{{migrationCost}}': migrationCost,
       '{{migration_cost}}': migrationCost,
-      // Bundled pricing for migration (10% discount)
-      '{{price_migration_bundled}}': (data as any)['{{price_migration_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
-      '{{migration_cost_bundled}}': (data as any)['{{migration_cost_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
-      '{{migration_price_bundled}}': (data as any)['{{migration_price_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
-      '{{migrationCostBundled}}': (data as any)['{{migrationCostBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      // Bundled pricing for migration (final price after 10% discount = 90% of original)
+      '{{migrationBundled}}': (data as any)['{{migrationBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
+      '{{price_migration_bundled}}': (data as any)['{{price_migration_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
+      '{{migration_cost_bundled}}': (data as any)['{{migration_cost_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
+      '{{migration_price_bundled}}': (data as any)['{{migration_price_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
+      '{{migrationCostBundled}}': (data as any)['{{migrationCostBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
+      
+      // CloudFuze Manage user total (userCount * 399)
+      '{{cfm_user_total}}': (data as any)['{{cfm_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 399),
+      '{{cloudfuze_manage_user_total}}': (data as any)['{{cloudfuze_manage_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 399),
+      '{{cloudfuzeManageUserTotal}}': (data as any)['{{cloudfuzeManageUserTotal}}'] || formatCurrency((parseInt(userCount) || 1) * 399),
+      
+      // CloudFuze Manage user total bundled (final price after 10% discount = 90% of original)
+      '{{cfm_user_total_b}}': (data as any)['{{cfm_user_total_b}}'] || formatCurrency(((parseInt(userCount) || 1) * 399) * 0.9),
+      '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 399) * 0.9),
+      '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 399) * 0.9),
       
       // Migration type variations
       '{{migration type}}': migrationType,
@@ -1881,6 +1899,7 @@ export class DocxTemplateProcessor {
     
     // Also copy bundled pricing tokens explicitly
     const bundledPricingTokens = [
+      '{{migrationBundled}}',
       '{{price_migration_bundled}}',
       '{{migration_cost_bundled}}',
       '{{migration_price_bundled}}',

@@ -122,7 +122,9 @@ function normalizeExhibitDisplayNameForTable(rawName: string): string {
   // Fallback: " - Basic Include" → " - Basic - Included Features", " - Basic Not Include" → " - Basic - Not Included Features"
   name = name.replace(/\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)\s+Include(\s+Features?)?$/i, ' - $1 - Included Features');
   name = name.replace(/\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)\s+Not\s+Include(\s+Features?)?$/i, ' - $1 - Not Included Features');
-  return name.trim();
+  // Normalize multiple spaces to single space (fixes "Slack  To  Teams" -> "Slack To Teams")
+  name = name.replace(/\s+/g, ' ').trim();
+  return name;
 }
 
 // Helper function to format exhibit description with configuration details
@@ -149,7 +151,8 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
   
   // Also remove any trailing plan type if it exists (e.g., "Some Exhibit Standard")
   exhibitName = exhibitName.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)$/i, '');
-  exhibitName = exhibitName.trim();
+  // Normalize multiple spaces to single space (fixes "Slack  To  Teams" -> "Slack To Teams")
+  exhibitName = exhibitName.replace(/\s+/g, ' ').trim();
   
   // For Multi combination, use the specific config for this exhibit
   // For single migrations, fall back to main configuration if exhibitConfig doesn't have the value
@@ -1523,7 +1526,16 @@ Quote ID: ${quoteData.id}
           '{{migration_cost}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           '{{migrationCost}}': formatCurrency(migrationCost || 0),
+          // CloudFuze Manage user total (userCount * 399)
+          '{{cfm_user_total}}': formatCurrency((userCount || 1) * 399),
+          '{{cloudfuze_manage_user_total}}': formatCurrency((userCount || 1) * 399),
+          '{{cloudfuzeManageUserTotal}}': formatCurrency((userCount || 1) * 399),
+          // CloudFuze Manage user total bundled (final price after 10% discount = 90% of original)
+          '{{cfm_user_total_b}}': formatCurrency(((userCount || 1) * 399) * 0.9),
+          '{{cloudfuze_manage_user_total_bundled}}': formatCurrency(((userCount || 1) * 399) * 0.9),
+          '{{cfm_user_bundled}}': formatCurrency(((userCount || 1) * 399) * 0.9),
           // Bundled pricing for migration (final price after 10% discount = 90% of original)
+          '{{migrationBundled}}': formatCurrency((migrationCost || 0) * 0.9),
           '{{price_migration_bundled}}': formatCurrency((migrationCost || 0) * 0.9),
           '{{migration_cost_bundled}}': formatCurrency((migrationCost || 0) * 0.9),
           '{{migration_price_bundled}}': formatCurrency((migrationCost || 0) * 0.9),
@@ -5957,12 +5969,29 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
+            // Set CloudFuze Manage user total (userCount * 399)
+            const cfmUserTotal = (userCount || 1) * 399;
+            templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
+            
+            // Set CloudFuze Manage user total bundled (final price after 10% discount = 90% of original)
+            const cfmUserTotalBundled = cfmUserTotal * 0.9;
+            templateData['{{cfm_user_total_b}}'] = formatCurrency(cfmUserTotalBundled);
+            templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotalBundled);
+            templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotalBundled);
+            
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
+            // NOTE: cfm_user_total ($399) is excluded from the total price calculation
             const displayedTotalPrice = cloudfuzeManageTotal;
             if (localShouldApplyDiscount) {
               const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
               const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
+              // Update discount_amount to match the discount calculated on displayedTotalPrice (excluding cfm_user_total)
+              templateData['{{discount_amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discount amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discountAmount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
               templateData['{{total_price_discount}}'] = formatCurrency(finalDisplayedTotal);
               templateData['{{total_after_discount}}'] = formatCurrency(finalDisplayedTotal);
               templateData['{{Total After Discount}}'] = formatCurrency(finalDisplayedTotal);
@@ -5984,6 +6013,7 @@ Total Price: {{total price}}`;
             // 1. All server bundled prices (serverPriceBundled)
             // 2. Migration bundled price (price_migration_bundled)
             // 3. All exhibit bundled prices (exhibitBundledPrice)
+            // 4. CloudFuze Manage user total bundled (cfm_user_total_b)
             let bundledTotal = 0;
             
             // Sum all server bundled prices
@@ -5996,6 +6026,13 @@ Total Price: {{total price}}`;
             const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
             bundledTotal += migrationBundled;
             
+            // Set migration bundled pricing tokens
+            templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationBundled);
+            
             // Sum all exhibit bundled prices
             for (const exhibit of exhibitsData) {
               if (exhibit.exhibitBundledPrice) {
@@ -6003,6 +6040,9 @@ Total Price: {{total price}}`;
                 bundledTotal += parseFloat(exhibitBundledStr) || 0;
               }
             }
+            
+            // Add CloudFuze Manage user total bundled (cfm_user_total_b)
+            bundledTotal += cfmUserTotalBundled;
             
             // Set CloudFuze Manage bundled pricing
             templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(bundledTotal);
@@ -6055,10 +6095,23 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
+            // Set CloudFuze Manage user total (userCount * 399)
+            const cfmUserTotal = (userCount || 1) * 399;
+            templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
+            
+            // Set CloudFuze Manage user total bundled (final price after 10% discount = 90% of original)
+            const cfmUserTotalBundled = cfmUserTotal * 0.9;
+            templateData['{{cfm_user_total_b}}'] = formatCurrency(cfmUserTotalBundled);
+            templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotalBundled);
+            templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotalBundled);
+            
             // Calculate CloudFuze Manage bundled pricing as sum of:
             // 1. Instance bundled price (instance_cost_bundled)
             // 2. Migration bundled price (price_migration_bundled)
             // 3. All exhibit bundled prices (exhibitBundledPrice)
+            // 4. CloudFuze Manage user total bundled (cfm_user_total_b)
             let bundledTotal = 0;
             
             // Add instance bundled price (final price after 10% discount)
@@ -6069,6 +6122,13 @@ Total Price: {{total price}}`;
             const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
             bundledTotal += migrationBundled;
             
+            // Set migration bundled pricing tokens
+            templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationBundled);
+            
             // Sum all exhibit bundled prices
             for (const exhibit of exhibitsData) {
               if (exhibit.exhibitBundledPrice) {
@@ -6076,6 +6136,9 @@ Total Price: {{total price}}`;
                 bundledTotal += parseFloat(exhibitBundledStr) || 0;
               }
             }
+            
+            // Add CloudFuze Manage user total bundled (cfm_user_total_b)
+            bundledTotal += cfmUserTotalBundled;
             
             // Set CloudFuze Manage bundled pricing
             templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(bundledTotal);
@@ -6087,10 +6150,15 @@ Total Price: {{total price}}`;
             
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
+            // NOTE: cfm_user_total ($399) is excluded from the total price calculation
             const displayedTotalPrice = cloudfuzeManageTotal;
             if (localShouldApplyDiscount) {
               const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
               const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
+              // Update discount_amount to match the discount calculated on displayedTotalPrice (excluding cfm_user_total)
+              templateData['{{discount_amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discount amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discountAmount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
               templateData['{{total_price_discount}}'] = formatCurrency(finalDisplayedTotal);
               templateData['{{total_after_discount}}'] = formatCurrency(finalDisplayedTotal);
               templateData['{{Total After Discount}}'] = formatCurrency(finalDisplayedTotal);
@@ -6280,6 +6348,10 @@ Total Price: {{total price}}`;
 
         // Ensure bundled pricing tokens always exist (even if not set earlier)
         // These are needed for multicombination templates
+        if (templateData['{{migrationBundled}}'] === undefined) {
+          const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+          templateData['{{migrationBundled}}'] = formatCurrency((migrationCost || 0) * 0.9); // Final price after 10% discount
+        }
         if (templateData['{{price_migration_bundled}}'] === undefined) {
           const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
           templateData['{{price_migration_bundled}}'] = formatCurrency((migrationCost || 0) * 0.9); // Final price after 10% discount
@@ -6329,6 +6401,7 @@ Total Price: {{total price}}`;
           'show_discount', 
           'hide_discount', 
           'if_discount',
+          'migrationBundled',
           'price_migration_bundled',
           'migration_cost_bundled',
           'migration_price_bundled',
