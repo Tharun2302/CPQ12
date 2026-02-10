@@ -1523,23 +1523,101 @@ Quote ID: ${quoteData.id}
           '{{migration_cost}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           '{{migrationCost}}': formatCurrency(migrationCost || 0),
+          // Bundled pricing for migration (final price after 10% discount = 90% of original)
+          '{{price_migration_bundled}}': formatCurrency((migrationCost || 0) * 0.9),
+          '{{migration_cost_bundled}}': formatCurrency((migrationCost || 0) * 0.9),
+          '{{migration_price_bundled}}': formatCurrency((migrationCost || 0) * 0.9),
+          '{{migrationCostBundled}}': formatCurrency((migrationCost || 0) * 0.9),
           '{{instance_cost}}': formatCurrency(instanceCost),
           '{{instanceCost}}': formatCurrency(instanceCost),
           '{{instance_costs}}': formatCurrency(instanceCost),
+          // Bundled pricing for instance (final price after 10% discount = 90% of original)
+          '{{instance_cost_bundled}}': formatCurrency(instanceCost * 0.9),
+          '{{instanceCostBundled}}': formatCurrency(instanceCost * 0.9),
           
           // Per-user cost calculations
           // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
           '{{per_user_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
+              // Try to calculate from breakdowns first (more accurate)
+              let maxPerUser = 0;
+              
+              // Check messaging breakdowns
+              const messagingBreakdowns = calculation?.messagingCombinationBreakdowns ?? safeCalculation.messagingCombinationBreakdowns ?? [];
+              for (const breakdown of messagingBreakdowns) {
+                const users = breakdown.numberOfUsers || 0;
+                const userCost = breakdown.userCost || 0;
+                if (users > 0 && userCost > 0) {
+                  const perUser = userCost / users;
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+              
+              // Check content breakdowns
+              const contentBreakdowns = calculation?.contentCombinationBreakdowns ?? safeCalculation.contentCombinationBreakdowns ?? [];
+              for (const breakdown of contentBreakdowns) {
+                const users = breakdown.numberOfUsers || 0;
+                const userCost = breakdown.userCost || 0;
+                if (users > 0 && userCost > 0) {
+                  const perUser = userCost / users;
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+              
+              // If we found a per-user cost from breakdowns, use it
+              if (maxPerUser > 0) {
+                return formatCurrency(maxPerUser);
+              }
+              
+              // Fallback: calculate from messaging/content calculation userCost
               const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
               const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
               const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
               const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
               const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
               const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
-              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+              const calculatedMax = Math.max(msgPerUser, contentPerUser);
+              
+              // If still 0, try calculating from exhibit prices (will be populated later)
+              if (calculatedMax > 0) {
+                return formatCurrency(calculatedMax);
+              }
+              
+              // Final fallback: use tier's per-user cost if available
+              const tier = calculation?.tier ?? safeCalculation.tier;
+              if (tier?.perUserCost && tier.perUserCost > 0) {
+                return formatCurrency(tier.perUserCost);
+              }
+              
+              return formatCurrency(0);
             }
-            return formatCurrency((userCost || 0) / (userCount || 1));
+            // For single migrations, calculate from userCost if available
+            if (userCost && userCost > 0 && userCount > 0) {
+              return formatCurrency(userCost / userCount);
+            }
+            // For single migrations, the cost is typically in the exhibit price (which equals totalCost)
+            // Calculate per-user cost from totalCost excluding migration and instance costs
+            const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
+            const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+            const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
+            
+            // Try userCost + dataCost first (this is the exhibit price for single migrations)
+            const combinedUserDataCost = (userCost || 0) + (dataCost || 0);
+            if (combinedUserDataCost > 0 && userCount > 0) {
+              return formatCurrency(combinedUserDataCost / userCount);
+            }
+            
+            // Fallback: calculate from totalCost excluding migration and instance
+            // This gives us the exhibit price (userCost + dataCost) for single migrations
+            if (totalCost && totalCost > 0 && userCount > 0) {
+              const userDataOnlyCost = totalCost - (migrationCost || 0) - (instanceCost || 0);
+              if (userDataOnlyCost > 0) {
+                return formatCurrency(userDataOnlyCost / userCount);
+              }
+            }
+            
+            // If all else fails, return 0
+            return formatCurrency(0);
           })(),
           '{{per_user_monthly_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
@@ -2978,6 +3056,13 @@ Total Price: {{total price}}`;
                 background-color: #f9f9f9;
               }
               
+              /* Gray background for bundled pricing column (4th column) */
+              .docx-table td:nth-child(4),
+              .docx-table th:nth-child(4) {
+                background-color: #e5e5e5;
+                background-color: #d3d3d3;
+              }
+              
               /* Preserve spacing */
               .docx-table td {
                 white-space: nowrap;
@@ -3119,12 +3204,40 @@ Total Price: {{total price}}`;
                 border-bottom: 1px solid #ccc;
               }
               .table-cell {
-                flex: 1;
                 padding: 10px;
                 border-right: 1px solid #ccc;
               }
+              /* Column width distribution - make bundled pricing column narrower */
+              .table-cell:nth-child(1) {
+                flex: 1.5; /* Job Requirement - slightly wider */
+              }
+              .table-cell:nth-child(2) {
+                flex: 2.5; /* Description - widest column */
+              }
+              .table-cell:nth-child(3) {
+                flex: 1.2; /* Price (USD) - standard width */
+              }
+              .table-cell:nth-child(4) {
+                flex: 0.5; /* Bundled Pricing - much narrower to match Word doc */
+                min-width: 90px; /* Minimum width to prevent too narrow */
+                max-width: 130px; /* Maximum width to prevent too wide */
+                text-align: right; /* Right-align prices like the Price (USD) column */
+              }
+              /* Right-align price columns */
+              .table-cell:nth-child(3) {
+                text-align: right;
+              }
               .table-cell:last-child {
                 border-right: none;
+              }
+              /* Gray background for bundled pricing column (4th column) */
+              .table-row .table-cell:nth-child(4),
+              .table-row .table-cell.bundled-pricing {
+                background-color: #e5e5e5;
+              }
+              /* Header row bundled pricing column */
+              .table-row:first-child .table-cell:nth-child(4) {
+                background-color: #e5e5e5;
               }
               .highlight-box {
                 background: #f9f9f9;
@@ -3169,6 +3282,7 @@ Total Price: {{total price}}`;
                   <div class="table-cell"><strong>Job Requirement</strong></div>
                   <div class="table-cell"><strong>Description</strong></div>
                   <div class="table-cell"><strong>Price (USD)</strong></div>
+                  <div class="table-cell bundled-pricing"><strong>Bundled Pricing(10%)</strong></div>
                 </div>
                 <div class="table-row">
                   <div class="table-cell">CloudFuze X-Change Data Migration</div>
@@ -3177,6 +3291,7 @@ Total Price: {{total price}}`;
                     <p>Up to ${configuration?.numberOfUsers || 1} Users | All Channels and DMs</p>
                   </div>
                   <div class="table-cell">${formatCurrency(calculation?.userCost || 0)}</div>
+                  <div class="table-cell bundled-pricing">${formatCurrency((calculation?.userCost || 0) * 0.9)}</div>
                 </div>
                 <div class="table-row">
                   <div class="table-cell">Managed Migration Service</div>
@@ -3185,6 +3300,14 @@ Total Price: {{total price}}`;
                     <p><strong>Valid for ${formatMonths(getEffectiveDurationMonths(configuration) || 1)}</strong></p>
                   </div>
                   <div class="table-cell">${formatCurrency(calculation?.migrationCost || 0)}</div>
+                  <div class="table-cell bundled-pricing">${formatCurrency((calculation?.migrationCost || 0) * 0.9)}</div>
+                </div>
+                <!-- Total Price row - moved inside table as per template -->
+                <div class="table-row">
+                  <div class="table-cell"><strong>Total Price</strong></div>
+                  <div class="table-cell"></div>
+                  <div class="table-cell"></div>
+                  <div class="table-cell bundled-pricing"><strong>${formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost)}</strong></div>
                 </div>
               </div>
             </div>
@@ -3197,11 +3320,6 @@ Total Price: {{total price}}`;
               <p><strong>Migration Type:</strong> ${configuration?.migrationType || 'Content'}</p>
               <p><strong>Duration:</strong> ${(getEffectiveDurationMonths(configuration) || 1)} months</p>
               <p><strong>Data Size:</strong> ${configuration?.dataSizeGB || 0} GB</p>
-            </div>
-            
-            <div class="total-section">
-              <div class="section-title">Total Price</div>
-              <div class="total-amount">${formatCurrency(calculation?.totalCost || 0)}</div>
             </div>
             
             <div class="content-section">
@@ -4105,7 +4223,34 @@ Total Price: {{total price}}`;
               const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
               return formatCurrency(Math.max(msgPerUser, contentPerUser));
             }
-            return formatCurrency((userCost || 0) / (userCount || 1));
+            // For single migrations, calculate from userCost if available
+            if (userCost && userCost > 0 && userCount > 0) {
+              return formatCurrency(userCost / userCount);
+            }
+            // For single migrations, the cost is typically in the exhibit price (which equals totalCost)
+            // Calculate per-user cost from totalCost excluding migration and instance costs
+            const dataCost = safeCalculation.dataCost || 0;
+            const migrationCost = safeCalculation.migrationCost || 0;
+            const instanceCost = safeCalculation.instanceCost || 0;
+            
+            // Try userCost + dataCost first (this is the exhibit price for single migrations)
+            const combinedUserDataCost = (userCost || 0) + (dataCost || 0);
+            if (combinedUserDataCost > 0 && userCount > 0) {
+              return formatCurrency(combinedUserDataCost / userCount);
+            }
+            
+            // Fallback: calculate from totalCost excluding migration and instance
+            // This gives us the exhibit price (userCost + dataCost) for single migrations
+            const totalCost = getEffectiveTotalCost(configuration, safeCalculation);
+            if (totalCost && totalCost > 0 && userCount > 0) {
+              const userDataOnlyCost = totalCost - (migrationCost || 0) - (instanceCost || 0);
+              if (userDataOnlyCost > 0) {
+                return formatCurrency(userDataOnlyCost / userCount);
+              }
+            }
+            
+            // If all else fails, return 0
+            return formatCurrency(0);
           })(),
           '{{per_user_monthly_cost}}': (() => {
             if (configuration?.migrationType === 'Multi combination') {
@@ -5171,6 +5316,9 @@ Total Price: {{total price}}`;
                   combinationName: string;
                 } | undefined = undefined;
 
+                // Store per-user cost temporarily (will be added to exhibitData after it's created)
+                let exhibitPerUserCost: string | undefined = undefined;
+
                 if (finalConfiguration?.migrationType === 'Multi combination' && exhibitConfig) {
                   const tier = (calculation || safeCalculation)?.tier;
                   const userCount = Number(exhibitConfig.numberOfUsers || 0);
@@ -5181,9 +5329,17 @@ Total Price: {{total price}}`;
                   let perUserCost = 0;
                   if (breakdown && userCount > 0) {
                     perUserCost = breakdown.userCost / userCount;
+                  } else if (breakdown && breakdown.numberOfUsers && breakdown.numberOfUsers > 0) {
+                    // Use breakdown's numberOfUsers if exhibitConfig doesn't have it
+                    perUserCost = breakdown.userCost / breakdown.numberOfUsers;
                   } else if (tier && userCount > 0) {
                     // Fallback to tier's per-user cost
                     perUserCost = tier.perUserCost || 0;
+                  }
+                  
+                  // Store per-user cost for later use in per_user_cost calculation
+                  if (perUserCost > 0) {
+                    exhibitPerUserCost = formatCurrency(perUserCost);
                   }
 
                   // Calculate per-server per month cost (instance type cost)
@@ -5214,6 +5370,15 @@ Total Price: {{total price}}`;
                   exhibitPrice: formatCurrency(price),
                 };
 
+                // Add per-user cost if calculated
+                if (exhibitPerUserCost) {
+                  exhibitData.exhibitPerUserCost = exhibitPerUserCost;
+                }
+
+                // Add bundled pricing (final price after 10% discount = 90% of original)
+                const bundledPrice = price * 0.9; // Final price after 10% discount
+                exhibitData.exhibitBundledPrice = formatCurrency(bundledPrice);
+
                 // Add overage charges fields for multicombination agreements
                 if (overageCharges) {
                   exhibitData.exhibitOveragePerUser = overageCharges.perUserCost;
@@ -5230,6 +5395,106 @@ Total Price: {{total price}}`;
           }
 
           (templateData as any).exhibits = exhibitsData;
+          
+          // Recalculate per_user_cost for multicombination from breakdowns after exhibits are populated
+          if (configuration?.migrationType === 'Multi combination') {
+            let maxPerUser = 0;
+            
+            // Method 1: Use per-user cost already calculated in exhibit data (most accurate)
+            for (const exhibit of exhibitsData) {
+              if (exhibit.exhibitPerUserCost) {
+                const perUserStr = exhibit.exhibitPerUserCost.replace(/[$,]/g, '');
+                const perUser = parseFloat(perUserStr) || 0;
+                if (perUser > 0) {
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+            }
+            
+            // Method 2: Calculate from all combination breakdowns directly
+            if (maxPerUser === 0) {
+              const messagingBreakdowns = calculation?.messagingCombinationBreakdowns ?? safeCalculation.messagingCombinationBreakdowns ?? [];
+              const contentBreakdowns = calculation?.contentCombinationBreakdowns ?? safeCalculation.contentCombinationBreakdowns ?? [];
+              const emailBreakdowns = calculation?.emailCombinationBreakdowns ?? safeCalculation.emailCombinationBreakdowns ?? [];
+              
+              // Check all breakdowns
+              for (const breakdown of [...messagingBreakdowns, ...contentBreakdowns, ...emailBreakdowns]) {
+                const users = breakdown.numberOfUsers || 0;
+                const userCost = breakdown.userCost || 0;
+                if (users > 0 && userCost > 0) {
+                  const perUser = userCost / users;
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+            }
+            
+            // Method 3: Match breakdowns with exhibits using exhibitConfig
+            if (maxPerUser === 0) {
+              const messagingBreakdowns = calculation?.messagingCombinationBreakdowns ?? safeCalculation.messagingCombinationBreakdowns ?? [];
+              const contentBreakdowns = calculation?.contentCombinationBreakdowns ?? safeCalculation.contentCombinationBreakdowns ?? [];
+              const emailBreakdowns = calculation?.emailCombinationBreakdowns ?? safeCalculation.emailCombinationBreakdowns ?? [];
+              
+              for (const exhibit of exhibitsData) {
+                if (exhibit.exhibitConfig) {
+                  const combinationName = exhibit.exhibitConfig.exhibitName || exhibit.exhibitConfig.combinationName || exhibit.exhibitConfig.name;
+                  const category = exhibit.exhibit?.category || exhibit.exhibitConfig?.category || 'content';
+                  const exhibitUsers = Number(exhibit.exhibitConfig.numberOfUsers || 0);
+                  
+                  let breakdown: any = null;
+                  if (category === 'messaging' || category === 'message') {
+                    breakdown = messagingBreakdowns.find((b: any) => 
+                      (b.combinationName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase() ||
+                      (b.displayName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase()
+                    );
+                  } else if (category === 'content') {
+                    breakdown = contentBreakdowns.find((b: any) => 
+                      (b.combinationName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase() ||
+                      (b.displayName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase()
+                    );
+                  } else if (category === 'email') {
+                    breakdown = emailBreakdowns.find((b: any) => 
+                      (b.combinationName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase() ||
+                      (b.displayName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase()
+                    );
+                  }
+                  
+                  if (breakdown && breakdown.userCost) {
+                    const users = exhibitUsers > 0 ? exhibitUsers : (breakdown.numberOfUsers || 0);
+                    if (users > 0) {
+                      const perUser = breakdown.userCost / users;
+                      maxPerUser = Math.max(maxPerUser, perUser);
+                    }
+                  }
+                }
+              }
+            }
+            
+            // Method 4: Calculate from messaging/content calculation totals
+            if (maxPerUser === 0) {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              maxPerUser = Math.max(msgPerUser, contentPerUser);
+            }
+            
+            // Update per_user_cost if we found a value
+            if (maxPerUser > 0) {
+              templateData['{{per_user_cost}}'] = formatCurrency(maxPerUser);
+              console.log('✅ Recalculated {{per_user_cost}} for multicombination:', formatCurrency(maxPerUser), {
+                method: 'from exhibits and breakdowns',
+                exhibitsCount: exhibitsData.length
+              });
+            } else {
+              console.warn('⚠️ Could not calculate {{per_user_cost}} for multicombination - all methods returned 0', {
+                messagingBreakdowns: calculation?.messagingCombinationBreakdowns?.length || 0,
+                contentBreakdowns: calculation?.contentCombinationBreakdowns?.length || 0,
+                exhibitsCount: exhibitsData.length
+              });
+            }
+          }
           
           // Generate formatted overage charges string for multicombination (single line format, no gaps)
           if (configuration?.migrationType === 'Multi combination' && exhibitsData.length > 0) {
@@ -5625,6 +5890,9 @@ Total Price: {{total price}}`;
                 serverDescription: displayServerDescription,
                 combinationName: displayName || '(unknown)',
                 serverPrice: formatCurrency(cost),
+                // Bundled pricing for server (final price after 10% discount = 90% of original)
+                serverPriceBundled: formatCurrency(cost * 0.9),
+                serverBundledPrice: formatCurrency(cost * 0.9),
                 // Per-server duration (use this in template instead of {{Duration_of_months}} if you want each row's own months)
                 serverMonths: months,
                 // Template helpers
@@ -5639,12 +5907,14 @@ Total Price: {{total price}}`;
             const lines: string[] = [];
             let total = 0;
             
-            for (const it of items) {
-              const name = (it.exhibitName || '').trim();
-              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
-              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
-              total += cost;
-              lines.push(formatCurrency(cost));
+            // Calculate total by summing the actual serverPrice values from serversArray
+            // This ensures the total matches exactly what's displayed in the template
+            for (const server of serversArray) {
+              // Extract numeric value from formatted currency string (e.g., "$500.00" -> 500)
+              const priceStr = server.serverPrice.replace(/[$,]/g, '');
+              const priceValue = parseFloat(priceStr) || 0;
+              total += priceValue;
+              lines.push(server.serverPrice);
             }
             
             // Append total as last line (no label), if we have at least one server line
@@ -5652,12 +5922,181 @@ Total Price: {{total price}}`;
               lines.push(formatCurrency(total));
             }
 
+            // Calculate CloudFuze Manage total as sum of:
+            // 1. All server prices
+            // 2. Migration cost
+            // 3. All exhibit prices
+            let cloudfuzeManageTotal = total; // Start with server prices total
+            
+            // Add migration cost
+            const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+            cloudfuzeManageTotal += (migrationCost || 0);
+            
+            // Sum all exhibit prices
+            const exhibitsData = (templateData as any).exhibits || [];
+            for (const exhibit of exhibitsData) {
+              if (exhibit.exhibitPrice) {
+                const exhibitPriceStr = exhibit.exhibitPrice.replace(/[$,]/g, '');
+                cloudfuzeManageTotal += parseFloat(exhibitPriceStr) || 0;
+              }
+            }
+            
+            // Set CloudFuze Manage total (includes servers + migration + exhibits)
+            templateData['{{cloudfuze_manage_total}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManageTotal}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
+            
+            // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
+            // This ensures the Total Price matches the sum of all items in the table
+            const displayedTotalPrice = cloudfuzeManageTotal;
+            if (localShouldApplyDiscount) {
+              const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
+              const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
+              templateData['{{total_price_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{total_after_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{Total After Discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{final_total}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{finalTotal}}'] = formatCurrency(finalDisplayedTotal);
+            } else {
+              templateData['{{total_price_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{total_after_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{Total After Discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{final_total}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{finalTotal}}'] = formatCurrency(displayedTotalPrice);
+            }
+            // Also update total_price and total price to match
+            templateData['{{total price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{total_price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{totalPrice}}'] = formatCurrency(displayedTotalPrice);
+            
+            // Calculate CloudFuze Manage bundled pricing as sum of:
+            // 1. All server bundled prices (serverPriceBundled)
+            // 2. Migration bundled price (price_migration_bundled)
+            // 3. All exhibit bundled prices (exhibitBundledPrice)
+            let bundledTotal = 0;
+            
+            // Sum all server bundled prices
+            for (const server of serversArray) {
+              const bundledStr = (server.serverPriceBundled || server.serverBundledPrice || '0').replace(/[$,]/g, '');
+              bundledTotal += parseFloat(bundledStr) || 0;
+            }
+            
+            // Add migration bundled price (final price after 10% discount)
+            const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
+            bundledTotal += migrationBundled;
+            
+            // Sum all exhibit bundled prices
+            for (const exhibit of exhibitsData) {
+              if (exhibit.exhibitBundledPrice) {
+                const exhibitBundledStr = exhibit.exhibitBundledPrice.replace(/[$,]/g, '');
+                bundledTotal += parseFloat(exhibitBundledStr) || 0;
+              }
+            }
+            
+            // Set CloudFuze Manage bundled pricing
+            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(bundledTotal);
+            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(bundledTotal);
+            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(bundledTotal);
+            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(bundledTotal);
+            // Short placeholder alias for better font sizing in templates
+            templateData['{{cfm_total_b}}'] = formatCurrency(bundledTotal);
+            
+            console.log('🔍 CloudFuze Manage Total Calculation:', {
+              serversCount: serversArray.length,
+              serverPrices: serversArray.map(s => s.serverPrice),
+              serverTotal: formatCurrency(total),
+              migrationCost: formatCurrency(migrationCost || 0),
+              exhibitsCount: exhibitsData.length,
+              exhibitPrices: exhibitsData.map((e: any) => e.exhibitPrice),
+              cloudfuzeManageTotal: formatCurrency(cloudfuzeManageTotal),
+              serverBundledPrices: serversArray.map(s => s.serverPriceBundled || s.serverBundledPrice),
+              migrationBundled: formatCurrency(migrationBundled),
+              exhibitBundledPrices: exhibitsData.map((e: any) => e.exhibitBundledPrice),
+              bundledTotal: formatCurrency(bundledTotal)
+            });
+
             // Add extra spacing between amounts for better visual alignment in the DOCX/PDF preview.
             // Two blank lines between each amount => three newline characters between entries.
             templateData['{{server_instance_cost_breakdown}}'] = lines.join('\n\n\n');
           } else {
             templateData['{{server_instance_cost_breakdown}}'] = '';
             (templateData as any).servers = [];
+            // For single migrations, calculate CloudFuze Manage total as sum of:
+            // 1. Instance cost
+            // 2. Migration cost
+            // 3. All exhibit prices
+            const singleInstanceCost = (calculation || safeCalculation)?.instanceCost ?? 0;
+            const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+            let cloudfuzeManageTotal = singleInstanceCost + (migrationCost || 0);
+            
+            // Sum all exhibit prices
+            const exhibitsData = (templateData as any).exhibits || [];
+            for (const exhibit of exhibitsData) {
+              if (exhibit.exhibitPrice) {
+                const exhibitPriceStr = exhibit.exhibitPrice.replace(/[$,]/g, '');
+                cloudfuzeManageTotal += parseFloat(exhibitPriceStr) || 0;
+              }
+            }
+            
+            // Set CloudFuze Manage total (includes instance + migration + exhibits)
+            templateData['{{cloudfuze_manage_total}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManageTotal}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
+            
+            // Calculate CloudFuze Manage bundled pricing as sum of:
+            // 1. Instance bundled price (instance_cost_bundled)
+            // 2. Migration bundled price (price_migration_bundled)
+            // 3. All exhibit bundled prices (exhibitBundledPrice)
+            let bundledTotal = 0;
+            
+            // Add instance bundled price (final price after 10% discount)
+            const instanceBundled = singleInstanceCost * 0.9; // Final price after 10% discount
+            bundledTotal += instanceBundled;
+            
+            // Add migration bundled price (final price after 10% discount)
+            const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
+            bundledTotal += migrationBundled;
+            
+            // Sum all exhibit bundled prices
+            for (const exhibit of exhibitsData) {
+              if (exhibit.exhibitBundledPrice) {
+                const exhibitBundledStr = exhibit.exhibitBundledPrice.replace(/[$,]/g, '');
+                bundledTotal += parseFloat(exhibitBundledStr) || 0;
+              }
+            }
+            
+            // Set CloudFuze Manage bundled pricing
+            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(bundledTotal);
+            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(bundledTotal);
+            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(bundledTotal);
+            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(bundledTotal);
+            // Short placeholder alias for better font sizing in templates
+            templateData['{{cfm_total_b}}'] = formatCurrency(bundledTotal);
+            
+            // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
+            // This ensures the Total Price matches the sum of all items in the table
+            const displayedTotalPrice = cloudfuzeManageTotal;
+            if (localShouldApplyDiscount) {
+              const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
+              const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
+              templateData['{{total_price_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{total_after_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{Total After Discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{final_total}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{finalTotal}}'] = formatCurrency(finalDisplayedTotal);
+            } else {
+              templateData['{{total_price_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{total_after_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{Total After Discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{final_total}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{finalTotal}}'] = formatCurrency(displayedTotalPrice);
+            }
+            // Also update total_price and total price to match displayed total
+            templateData['{{total price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{total_price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{totalPrice}}'] = formatCurrency(displayedTotalPrice);
           }
         } catch (e) {
           console.warn('⚠️ Unable to build servers array:', e);
@@ -5829,6 +6268,33 @@ Total Price: {{total price}}`;
           templateData['{{discount_label}}'] = (localShouldApplyDiscount && localDiscountPercent > 0) ? 'Discount' : '';
         }
 
+        // Ensure bundled pricing tokens always exist (even if not set earlier)
+        // These are needed for multicombination templates
+        if (templateData['{{price_migration_bundled}}'] === undefined) {
+          const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+          templateData['{{price_migration_bundled}}'] = formatCurrency((migrationCost || 0) * 0.9); // Final price after 10% discount
+        }
+        if (templateData['{{migration_cost_bundled}}'] === undefined) {
+          const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+          templateData['{{migration_cost_bundled}}'] = formatCurrency((migrationCost || 0) * 0.9); // Final price after 10% discount
+        }
+        if (templateData['{{migration_price_bundled}}'] === undefined) {
+          const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+          templateData['{{migration_price_bundled}}'] = formatCurrency((migrationCost || 0) * 0.9); // Final price after 10% discount
+        }
+        if (templateData['{{migrationCostBundled}}'] === undefined) {
+          const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+          templateData['{{migrationCostBundled}}'] = formatCurrency((migrationCost || 0) * 0.9); // Final price after 10% discount
+        }
+        if (templateData['{{instance_cost_bundled}}'] === undefined) {
+          const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
+          templateData['{{instance_cost_bundled}}'] = formatCurrency((instanceCost || 0) * 0.9); // Final price after 10% discount
+        }
+        if (templateData['{{instanceCostBundled}}'] === undefined) {
+          const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
+          templateData['{{instanceCostBundled}}'] = formatCurrency((instanceCost || 0) * 0.9); // Final price after 10% discount
+        }
+
         // DIAGNOSTIC: Run comprehensive template analysis
         console.log('🔍 Running comprehensive template diagnostic...');
         const { TemplateDiagnostic } = await import('../utils/templateDiagnostic');
@@ -5846,8 +6312,27 @@ Total Price: {{total price}}`;
         console.log('  Document structure:', diagnostic.documentStructure);
         console.log('  Recommendations:', diagnostic.recommendations);
         
-        // Treat discount tokens as optional (we intentionally allow them to be empty/not present)
-        const optionalTokens = ['discount_label', 'discount_amount', 'show_discount', 'hide_discount', 'if_discount'];
+        // Treat discount tokens and bundled pricing tokens as optional (we intentionally allow them to be empty/not present)
+        const optionalTokens = [
+          'discount_label', 
+          'discount_amount', 
+          'show_discount', 
+          'hide_discount', 
+          'if_discount',
+          'price_migration_bundled',
+          'migration_cost_bundled',
+          'migration_price_bundled',
+          'migrationCostBundled',
+          'instance_cost_bundled',
+          'instanceCostBundled',
+          'serverPriceBundled',
+          'serverBundledPrice',
+          'exhibitBundledPrice',
+          'cloudfuze_manage_total_bundled',
+          'cloudfuzeManageTotalBundled',
+          'cloudfuze_manage_price_bundled',
+          'cloudfuzeManagePriceBundled'
+        ];
         const filteredMissing = diagnostic.missingTokens.filter(t => !optionalTokens.includes(t));
         const filteredMismatched = diagnostic.mismatchedTokens.filter(t => !optionalTokens.includes(t));
 
@@ -6360,6 +6845,30 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     width: 100%;
                     margin: 20px 0;
                     border: 1px solid #000;
+                    table-layout: fixed; /* Preserve column widths from Word template */
+                  }
+                  
+                  /* Column width distribution - match Word document */
+                  .docx-table td:nth-child(1),
+                  .docx-table th:nth-child(1) {
+                    width: 22%; /* Job Requirement */
+                  }
+                  
+                  .docx-table td:nth-child(2),
+                  .docx-table th:nth-child(2) {
+                    width: 38%; /* Description - widest */
+                  }
+                  
+                  .docx-table td:nth-child(3),
+                  .docx-table th:nth-child(3) {
+                    width: 20%; /* Price (USD) */
+                  }
+                  
+                  .docx-table td:nth-child(4),
+                  .docx-table th:nth-child(4) {
+                    width: 20%; /* Bundled Pricing - narrower */
+                    max-width: 130px; /* Cap maximum width */
+                    min-width: 90px; /* Ensure minimum readable width */
                   }
                   
                   .docx-row {

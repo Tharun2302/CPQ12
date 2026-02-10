@@ -47,6 +47,12 @@ export class TemplateDiagnostic {
           nestedTokens.add('exhibitDesc');
           nestedTokens.add('exhibitPlan');
           nestedTokens.add('exhibitPrice');
+          nestedTokens.add('exhibitBundledPrice');
+          nestedTokens.add('exhibitOveragePerUser');
+          nestedTokens.add('exhibitOveragePerServer');
+          nestedTokens.add('exhibitOveragePerGB');
+          nestedTokens.add('exhibitCombinationName');
+          nestedTokens.add('exhibitOverageCharges');
         }
 
         // If the array is empty, we cannot infer keys from objects; rely on special cases above.
@@ -108,10 +114,30 @@ export class TemplateDiagnostic {
       const hasExhibitsArrayInData = effectiveDataTokens.some((t) => t.replace(/^\{\{|\}\}$/g, '') === 'exhibits');
       const optionalLoopItemTokens = new Set<string>();
       if (hasExhibitsLoop && hasExhibitsArrayInData) {
-        ['exhibitType', 'exhibitDesc', 'exhibitPlan', 'exhibitPrice', 
+        ['exhibitType', 'exhibitDesc', 'exhibitPlan', 'exhibitPrice', 'exhibitBundledPrice',
          'exhibitOveragePerUser', 'exhibitOveragePerServer', 'exhibitOveragePerGB', 
          'exhibitCombinationName', 'exhibitOverageCharges'].forEach((t) => optionalLoopItemTokens.add(t));
         console.log('🧩 Template diagnostic: exhibits loop detected; treating exhibit loop-item tokens as optional.');
+      }
+      
+      // Handle conditional blocks ({{#token}}...{{/token}}) - these are not loops but conditionals
+      // For conditional blocks like {{#exhibitOveragePerGB}}, we need to check if the token exists
+      // in nested data tokens, not as a top-level array
+      const conditionalBlockTokens = new Set<string>();
+      templateTokens.forEach(token => {
+        if (token.startsWith('#') && token !== '#exhibits' && token !== '#servers') {
+          // This is a conditional block, extract the token name (remove #)
+          const conditionalToken = token.substring(1);
+          conditionalBlockTokens.add(conditionalToken);
+          // Add both the conditional token and the # version to optional tokens
+          // since conditional blocks are optional (they only render if the value is truthy)
+          optionalLoopItemTokens.add(conditionalToken);
+          optionalLoopItemTokens.add('#' + conditionalToken);
+        }
+      });
+      
+      if (conditionalBlockTokens.size > 0) {
+        console.log('🧩 Template diagnostic: conditional blocks detected; treating as optional:', Array.from(conditionalBlockTokens));
       }
       
       // 4. Find mismatches
@@ -338,24 +364,30 @@ export class TemplateDiagnostic {
    * Find missing tokens (in template but not in data)
    */
   private static findMissingTokens(templateTokens: string[], dataTokens: string[]): string[] {
+    const normalizedDataTokens = dataTokens.map(token => 
+      token.replace(/^\{\{|\}\}$/g, '')
+    );
+    
     return templateTokens.filter(templateToken => {
-      // Skip loop control tokens - these are not data tokens
-      // Loop start tokens: #exhibits, #array, etc.
-      // Loop end tokens: /exhibits, /array, etc.
+      // Handle loop control tokens - these are not data tokens
+      // Loop start tokens: #exhibits, #servers, etc.
+      // Loop end tokens: /exhibits, /servers, etc.
       if (templateToken.startsWith('#') || templateToken.startsWith('/')) {
-        // Check if the array name exists in data (e.g., if token is "#exhibits", check for "exhibits")
-        const arrayName = templateToken.replace(/^#|\//, ''); // Remove # or / prefix
-        const normalizedDataTokens = dataTokens.map(token => 
-          token.replace(/^\{\{|\}\}$/g, '')
-        );
-        // If the array exists in data, the loop control token is valid
-        return !normalizedDataTokens.includes(arrayName);
+        const tokenName = templateToken.replace(/^#|\//, ''); // Remove # or / prefix
+        
+        // For known loop arrays (exhibits, servers), check if the array exists
+        if (tokenName === 'exhibits' || tokenName === 'servers') {
+          return !normalizedDataTokens.includes(tokenName);
+        }
+        
+        // For conditional blocks ({{#token}}), check if the token (without #) exists in data
+        // Conditional blocks like {{#exhibitOveragePerGB}} check if exhibitOveragePerGB exists
+        // These should be found in nested data tokens (from array items), not top-level
+        // Check if the token (without #) exists in the normalized data tokens
+        return !normalizedDataTokens.includes(tokenName);
       }
       
       // For regular tokens, check if they exist in data
-      const normalizedDataTokens = dataTokens.map(token => 
-        token.replace(/^\{\{|\}\}$/g, '')
-      );
       return !normalizedDataTokens.includes(templateToken);
     });
   }

@@ -83,3 +83,4 @@ Let Vite automatically handle React chunking:
 - Vite ensures React loads before components that need it
 - Vite optimizes chunk sizes without breaking initialization order
 
+

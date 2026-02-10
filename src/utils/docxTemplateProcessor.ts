@@ -1,6 +1,7 @@
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { saveAs } from 'file-saver';
+import { formatCurrency } from './pricing';
 
 export interface DocxTemplateData {
   // Exact tokens from your template
@@ -79,12 +80,37 @@ export interface DocxTemplateData {
     exhibitDesc: string;
     exhibitPlan: string;
     exhibitPrice: string;
+    // Bundled pricing (10% discount)
+    exhibitBundledPrice?: string;
     // Overage charges fields for multicombination agreements
     exhibitOveragePerUser?: string;
     exhibitOveragePerServer?: string;
     exhibitOveragePerGB?: string;
     exhibitCombinationName?: string;
     exhibitOverageCharges?: string; // Formatted string: "Overage Charges: $X per User | $Y per server per month | $Z per GB"
+  }>;
+  
+  // Bundled pricing tokens (10% discount)
+  '{{price_migration_bundled}}'?: string;
+  '{{migration_cost_bundled}}'?: string;
+  '{{migration_price_bundled}}'?: string;
+  '{{migrationCostBundled}}'?: string;
+  '{{instance_cost_bundled}}'?: string;
+  '{{instanceCostBundled}}'?: string;
+  '{{cloudfuze_manage_total_bundled}}'?: string;
+  '{{cloudfuzeManageTotalBundled}}'?: string;
+  '{{cloudfuze_manage_price_bundled}}'?: string;
+  '{{cloudfuzeManagePriceBundled}}'?: string;
+  
+  // Servers array for dynamic table loops
+  servers?: Array<{
+    serverDescription: string;
+    combinationName: string;
+    serverPrice: string;
+    serverPriceBundled?: string; // 10% discount
+    serverBundledPrice?: string; // Alternative name
+    serverMonths: number;
+    isLast?: boolean;
   }>;
 }
 
@@ -1632,6 +1658,11 @@ export class DocxTemplateProcessor {
       '{{migration_price}}': migrationCost,
       '{{migrationCost}}': migrationCost,
       '{{migration_cost}}': migrationCost,
+      // Bundled pricing for migration (10% discount)
+      '{{price_migration_bundled}}': (data as any)['{{price_migration_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      '{{migration_cost_bundled}}': (data as any)['{{migration_cost_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      '{{migration_price_bundled}}': (data as any)['{{migration_price_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      '{{migrationCostBundled}}': (data as any)['{{migrationCostBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
       
       // Migration type variations
       '{{migration type}}': migrationType,
@@ -1750,6 +1781,9 @@ export class DocxTemplateProcessor {
       '{{instance..cost}}': (data as any)['{{instance..cost}}'] || (data as any)['{{instance_cost}}'] || (data as any)['{{instance_type_cost}}'] || '$0.00', // Handle double-dot typo
       '{{instance_cost}}': (data as any)['{{instance_cost}}'] || (data as any)['{{instance..cost}}'] || (data as any)['{{instance_type_cost}}'] || '$0.00',
       '{{instance cost}}': (data as any)['{{instance cost}}'] || (data as any)['{{instance_cost}}'] || (data as any)['{{instance..cost}}'] || '$0.00', // Space version
+      // Bundled pricing for instance (10% discount)
+      '{{instance_cost_bundled}}': (data as any)['{{instance_cost_bundled}}'] || formatCurrency((parseFloat(((data as any)['{{instance_cost}}'] || '$0.00').replace(/[$,]/g, ''))) * 0.1),
+      '{{instanceCostBundled}}': (data as any)['{{instanceCostBundled}}'] || formatCurrency((parseFloat(((data as any)['{{instance_cost}}'] || '$0.00').replace(/[$,]/g, ''))) * 0.1),
       '{{numberOfInstances}}': (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || (data as any)['{{instances}}'] || '1',
       '{{number_of_instances}}': (data as any)['{{number_of_instances}}'] || (data as any)['{{number of instances}}'] || (data as any)['{{numberOfInstances}}'] || (data as any)['{{instance_users}}'] || '1',
       '{{number of instances}}': (data as any)['{{number of instances}}'] || (data as any)['{{number_of_instances}}'] || (data as any)['{{numberOfInstances}}'] || '1', // Space version
@@ -1833,6 +1867,37 @@ export class DocxTemplateProcessor {
     
     // Apply all mappings
     Object.assign(processedData, tokenMappings);
+    
+    // CRITICAL: Copy all remaining template data fields (including bundled pricing tokens)
+    // This ensures that any fields set in QuoteGenerator but not in tokenMappings are still passed through
+    Object.keys(data).forEach(key => {
+      // Only copy fields that look like template tokens (start with {{) or are known data fields
+      if (key.startsWith('{{') || key === 'exhibits' || key === 'servers') {
+        if (!(key in processedData) || processedData[key] === undefined || processedData[key] === null) {
+          processedData[key] = (data as any)[key];
+        }
+      }
+    });
+    
+    // Also copy bundled pricing tokens explicitly
+    const bundledPricingTokens = [
+      '{{price_migration_bundled}}',
+      '{{migration_cost_bundled}}',
+      '{{migration_price_bundled}}',
+      '{{migrationCostBundled}}',
+      '{{instance_cost_bundled}}',
+      '{{instanceCostBundled}}',
+      '{{cloudfuze_manage_total_bundled}}',
+      '{{cloudfuzeManageTotalBundled}}',
+      '{{cloudfuze_manage_price_bundled}}',
+      '{{cloudfuzeManagePriceBundled}}'
+    ];
+    
+    bundledPricingTokens.forEach(token => {
+      if ((data as any)[token] !== undefined && (data as any)[token] !== null) {
+        processedData[token] = (data as any)[token];
+      }
+    });
     
     console.log('🔍 DOCX PROCESSOR: Processed data keys:', Object.keys(processedData));
     console.log('🔍 DOCX PROCESSOR: Sample processed data:', {

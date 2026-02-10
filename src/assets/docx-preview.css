@@ -50,6 +50,7 @@
 .docx table {
   border-collapse: collapse;
   width: 100%;
+  table-layout: fixed; /* Preserve column widths from Word template */
 }
 
 .docx table td,
@@ -57,6 +58,44 @@
   border: 1px solid #666;
   padding: 4px;
   vertical-align: top;
+}
+
+/* Preserve column widths - make bundled pricing column narrower to match Word doc */
+.docx table td:nth-child(1),
+.docx table th:nth-child(1) {
+  width: 22%; /* Job Requirement */
+}
+
+.docx table td:nth-child(2),
+.docx table th:nth-child(2) {
+  width: 38%; /* Description - widest */
+}
+
+.docx table td:nth-child(3),
+.docx table th:nth-child(3) {
+  width: 20%; /* Price (USD) */
+}
+
+.docx table td:nth-child(4),
+.docx table th:nth-child(4) {
+  width: 20%; /* Bundled Pricing - narrower, matching Word doc */
+  max-width: 130px; /* Cap maximum width to prevent it from being too wide */
+  min-width: 90px; /* Ensure minimum readable width */
+}
+
+/* Gray background for bundled pricing column (4th column) */
+.docx table td:nth-child(4),
+.docx table th:nth-child(4) {
+  background-color: #e5e5e5;
+  background-color: #d3d3d3;
+}
+
+/* Right-align price columns (3rd and 4th columns) */
+.docx table td:nth-child(3),
+.docx table th:nth-child(3),
+.docx table td:nth-child(4),
+.docx table th:nth-child(4) {
+  text-align: right;
 }
 
 .docx img {
