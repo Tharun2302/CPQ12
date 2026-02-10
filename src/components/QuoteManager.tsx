@@ -87,14 +87,17 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
   }, [templates, quotes]);
   
   // Load saved documents from MongoDB
+  const [documentsLoadError, setDocumentsLoadError] = useState<string | null>(null);
   const loadSavedDocuments = async () => {
     setLoadingDocuments(true);
+    setDocumentsLoadError(null);
     try {
       const docs = await documentServiceMongoDB.getAllDocuments();
       setSavedDocuments(docs);
       console.log('✅ Loaded saved documents from MongoDB:', docs.length);
     } catch (error) {
       console.error('❌ Error loading documents from MongoDB:', error);
+      setDocumentsLoadError('Unable to load documents. Check that the server is running and MongoDB is connected.');
     } finally {
       setLoadingDocuments(false);
     }
@@ -1442,6 +1445,15 @@ The client will receive an email with the PDF quote and a link to complete the d
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading documents...</p>
           </div>
+        ) : documentsLoadError ? (
+          <div className="bg-amber-50 rounded-xl p-8 text-center border border-amber-200">
+            <FileText className="w-16 h-16 text-amber-400 mx-auto mb-4" />
+            <p className="text-amber-800 font-medium mb-2">{documentsLoadError}</p>
+            <p className="text-sm text-amber-700 mb-4">Make sure the server is running (e.g. <code className="bg-amber-100 px-1 rounded">npm run server</code>) and MongoDB is connected.</p>
+            <button onClick={loadSavedDocuments} className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm font-medium">
+              Retry
+            </button>
+          </div>
         ) : savedDocuments.length === 0 ? (
           <div className="bg-gray-50 rounded-xl p-8 text-center">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -1512,13 +1524,6 @@ The client will receive an email with the PDF quote and a link to complete the d
                       <span>Word</span>
                     </button>
                   )}
-                  <button
-                    onClick={() => handleDeleteDocument(doc.id)}
-                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium flex items-center justify-center flex-shrink-0"
-                    title="Delete document"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
             ))}

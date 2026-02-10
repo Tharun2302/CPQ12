@@ -42,9 +42,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
 
   return (
     <>
-      {/* Desktop Vertical Sidebar */}
+      {/* Desktop Vertical Sidebar - hidden on screens < lg (1024px) to prevent overlap */}
       {isAuthenticated && (
-        <nav className="flex fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-white via-blue-50/50 to-indigo-50/50 shadow-2xl border-r border-blue-100/50 backdrop-blur-md z-50 flex-col">
+        <nav className="hidden lg:flex fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-white via-blue-50/50 to-indigo-50/50 shadow-2xl border-r border-blue-100/50 backdrop-blur-md z-50 flex-col">
           {/* Logo Section */}
           <Link
             to="/deal"
