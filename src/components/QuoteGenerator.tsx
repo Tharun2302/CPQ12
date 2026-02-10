@@ -5413,6 +5413,10 @@ Total Price: {{total price}}`;
                   exhibitData.exhibitOverageCharges = `Overage Charges: ${overageCharges.perUserCost} per User | ${overageCharges.perServerPerMonthCost} per server per month${category === 'content' ? ` | ${overageCharges.perGBCost} per GB` : ''}`;
                 }
 
+                // Skip exhibits that would render as an empty bullet in the overage list (avoids single dot)
+                if (finalConfiguration?.migrationType === 'Multi combination') {
+                  if (!exhibitData.exhibitCombinationName || !exhibitData.exhibitOveragePerUser) continue;
+                }
                 exhibitsData.push(exhibitData);
               }
             }
