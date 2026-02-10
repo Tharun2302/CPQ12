@@ -162,7 +162,7 @@ async function seedDefaultExhibits(db) {
     {
       name: 'Google Chat to Google Chat - Included',
       description: 'Documentation for features included in Google Chat to Google Chat migration',
-      fileName: 'Google Chat-to-Google Chat Included.docx',
+      fileName: 'Google Chat to Google Chat - Included.docx',
       combinations: ['google-chat-to-google-chat', 'all'],
       category: 'messaging',
       includeType: 'included',

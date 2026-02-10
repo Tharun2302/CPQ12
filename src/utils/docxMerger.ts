@@ -88,6 +88,66 @@ export async function mergeDocxFiles(
       throw new Error('Could not read main document XML');
     }
 
+    // Helper to merge styles from exhibit into main document
+    const mergeStylesFromExhibit = (exhibitZip: PizZip) => {
+      try {
+        const exhibitStylesXml = exhibitZip.file('word/styles.xml')?.asText();
+        if (!exhibitStylesXml) {
+          console.log('   ℹ️  No styles.xml in exhibit, skipping style merge');
+          return;
+        }
+
+        const mainStylesXml = mainZip.file('word/styles.xml')?.asText();
+        if (!mainStylesXml) {
+          console.log('   ⚠️  Main document has no styles.xml, creating one from exhibit');
+          mainZip.file('word/styles.xml', exhibitStylesXml);
+          return;
+        }
+
+        // Parse both style documents
+        const parser = new DOMParser();
+        const mainStylesDoc = parser.parseFromString(mainStylesXml, 'text/xml');
+        const exhibitStylesDoc = parser.parseFromString(exhibitStylesXml, 'text/xml');
+        
+        const mainStylesRoot = mainStylesDoc.getElementsByTagName('w:styles')[0];
+        const exhibitStylesRoot = exhibitStylesDoc.getElementsByTagName('w:styles')[0];
+        
+        if (!mainStylesRoot || !exhibitStylesRoot) {
+          console.log('   ⚠️  Could not find styles root, skipping style merge');
+          return;
+        }
+
+        // Copy unique styles from exhibit that don't exist in main
+        const mainStyleIds = new Set();
+        Array.from(mainStylesRoot.getElementsByTagName('w:style')).forEach(style => {
+          const styleId = style.getAttribute('w:styleId');
+          if (styleId) mainStyleIds.add(styleId);
+        });
+
+        let stylesAdded = 0;
+        Array.from(exhibitStylesRoot.getElementsByTagName('w:style')).forEach(exhibitStyle => {
+          const styleId = exhibitStyle.getAttribute('w:styleId');
+          if (styleId && !mainStyleIds.has(styleId)) {
+            const importedStyle = mainStylesDoc.importNode(exhibitStyle, true);
+            mainStylesRoot.appendChild(importedStyle);
+            mainStyleIds.add(styleId);
+            stylesAdded++;
+          }
+        });
+
+        if (stylesAdded > 0) {
+          const serializer = new XMLSerializer();
+          const updatedStylesXml = serializer.serializeToString(mainStylesDoc);
+          mainZip.file('word/styles.xml', updatedStylesXml);
+          console.log(`   ✅ Merged ${stylesAdded} unique style(s) from exhibit`);
+        } else {
+          console.log('   ℹ️  No new styles to merge (all exhibit styles already exist in main)');
+        }
+      } catch (error) {
+        console.warn('   ⚠️  Error merging styles (continuing without styles):', error);
+      }
+    };
+
     console.log('✅ Main document loaded, extracting body content...');
 
     // Parse main document XML
@@ -227,6 +287,10 @@ export async function mergeDocxFiles(
         return;
       }
 
+      // Merge styles from exhibit to preserve table and formatting styles
+      console.log('   📐 Merging styles from exhibit to preserve table formatting...');
+      mergeStylesFromExhibit(exhibitZip);
+
       // Add page break before exhibit only if requested
       if (addPageBreak) {
         const pageBreak = mainDoc.createElementNS(ns, 'w:p');
@@ -245,6 +309,15 @@ export async function mergeDocxFiles(
       for (const child of children) {
         // Skip the final sectPr (section properties) - keep only main doc's sectPr
         if (child.nodeName === 'w:sectPr') {
+          continue;
+        }
+        
+        // Handle tables explicitly to ensure all properties are preserved
+        if (child.nodeName === 'w:tbl' && child instanceof Element) {
+          // Tables should be imported with all properties (tblPr, alignment, borders, etc.)
+          const importedTable = mainDoc.importNode(child, true);
+          mainBody.insertBefore(importedTable, mainBody.lastChild);
+          console.log('   📊 Imported table with all properties preserved');
           continue;
         }
         
@@ -284,9 +357,10 @@ export async function mergeDocxFiles(
             }
           }
           
-          // For NOT INCLUDED exhibits: Skip first heading (already handled by main header)
-          if (skipFirstHeading && !skippedFirstHeading) {
-            // Check for various "not included" patterns
+          // Skip first heading (already handled by main header) for NOT INCLUDED exhibits only
+          // For INCLUDED exhibits, preserve ALL content including headings to maintain exact document structure
+          if (skipFirstHeading && !skippedFirstHeading && !isIncludedExhibit) {
+            // For NOT INCLUDED exhibits: Check for various "not included" patterns
             const hasNotIncluded = lowerText.includes('not included') ||
                                   lowerText.includes('not include') ||
                                   lowerText.includes('notincluded') ||
@@ -310,7 +384,7 @@ export async function mergeDocxFiles(
           }
         }
         
-        // Import the node into the main document
+        // Import the node into the main document (deep clone to preserve all properties)
         const importedNode = mainDoc.importNode(child, true);
         mainBody.insertBefore(importedNode, mainBody.lastChild);
       }
@@ -348,11 +422,14 @@ export async function mergeDocxFiles(
         mainBody.insertBefore(titleP, mainBody.lastChild);
         
         // Merge ALL Included exhibits (they will come right after the title)
+        // For included exhibits, preserve the EXACT document structure - don't skip headings
+        // Only filter out "NOT INCLUDED" content to maintain exact formatting and table structure
+        // Pass skipFirstHeading=false to preserve all content including headings
         // Pass isIncludedExhibit=true to filter out any "NOT INCLUDED" content
         for (const index of groupedExhibits.included) {
           console.log(`📎 Processing Included exhibit ${index + 1}...`);
           try {
-            await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, false, true); // isIncludedExhibit=true
+            await mergeExhibit(mainDoc, mainBody, exhibitDocxBlobs[index], parser, false, false, true); // skipFirstHeading=false, isIncludedExhibit=true
           } catch (e) {
             console.error('❌ Failed to merge an Included exhibit (skipping):', {
               index,

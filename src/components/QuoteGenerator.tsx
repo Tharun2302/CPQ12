@@ -5041,12 +5041,15 @@ Total Price: {{total price}}`;
                     continue; // Skip if not selected combination
                   }
                   const exhibitPlan = getPlanFromExhibit(ex);
-                  if (!exhibitPlan || exhibitPlan.toLowerCase() !== selectedPlanLower) {
+                  // IMPORTANT: Allow exhibits without plan types (generic exhibits) to be included
+                  // These are combination-specific but not plan-specific (e.g., "Google Chat to Google Chat")
+                  const isGenericExhibit = !exhibitPlan || exhibitPlan === '';
+                  if (!isGenericExhibit && exhibitPlan.toLowerCase() !== selectedPlanLower) {
                     skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${selectedPlanLower}` });
-                    continue; // Skip if plan doesn't match
+                    continue; // Skip if plan doesn't match (only for plan-specific exhibits)
                   }
                   expandedIds.add(ex._id?.toString?.() ?? '');
-                  matchedExhibits.push({ id: ex._id?.toString?.() ?? '', name: ex.name || '', plan: exhibitPlan, combo: baseCombo });
+                  matchedExhibits.push({ id: ex._id?.toString?.() ?? '', name: ex.name || '', plan: exhibitPlan || 'Generic', combo: baseCombo });
                 }
                 
                 console.log('✅ Exhibit expansion results:', {
@@ -5120,7 +5123,10 @@ Total Price: {{total price}}`;
                       if (exCat !== category || exBase !== baseCombo) continue;
                       if (planLower) {
                         const exPlan = getPlanFromExhibit(ex).toLowerCase();
-                        if (exPlan === planLower) {
+                        // IMPORTANT: Allow generic exhibits (without plan types) to be included
+                        // These are combination-specific but not plan-specific
+                        const isGenericExhibit = !exPlan || exPlan === '';
+                        if (isGenericExhibit || exPlan === planLower) {
                           const exId = (ex._id ?? '').toString();
                           mergeIdsFromConfigs.add(exId);
                           matchedIds.push(exId);
