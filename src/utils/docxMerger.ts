@@ -15,9 +15,9 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
   jc.setAttribute('w:val', 'center');
   pPr.appendChild(jc);
   
-  // Add shading for blue background bar
+  // Solid shading for full-width bar - light sky blue to match reference (#88D1E6)
   const shd = doc.createElementNS(ns, 'w:shd');
-  shd.setAttribute('w:fill', 'D9E1F2'); // Light blue color (similar to the blue bar)
+  shd.setAttribute('w:fill', '88D1E6'); // Light sky blue / cyan - one solid color across full width
   shd.setAttribute('w:val', 'clear');
   pPr.appendChild(shd);
   
@@ -27,10 +27,7 @@ function createExhibitTitleParagraph(doc: Document, title: string): Element {
   spacing.setAttribute('w:after', '120'); // Space after
   pPr.appendChild(spacing);
   
-  // Add paragraph style
-  const pStyle = doc.createElementNS(ns, 'w:pStyle');
-  pStyle.setAttribute('w:val', 'Heading1');
-  pPr.appendChild(pStyle);
+  // Do not use Heading1 style - template theme can add gradient (purple/blue/white). Use explicit formatting only.
   p.appendChild(pPr);
   
   // Run for the title text
