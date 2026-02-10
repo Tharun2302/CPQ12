@@ -5376,13 +5376,18 @@ app.get('/api/documents', async (req, res) => {
     const limit = parseInt(req.query.limit) || 100; // Default to 100 documents max
     const skip = parseInt(req.query.skip) || 0;
 
+    // Use aggregation with allowDiskUse so large sorts don't hit MongoDB's 32MB memory limit
     const documents = await db
       .collection('documents')
-      .find({})
-      .project({ fileData: 0, docxFileData: 0 }) // exclude large PDF and DOCX payloads, but keep docxFileName
-      .sort({ createdAt: -1, generatedDate: -1 })
-      .limit(limit)
-      .skip(skip)
+      .aggregate(
+        [
+          { $project: { fileData: 0, docxFileData: 0 } },
+          { $sort: { createdAt: -1, generatedDate: -1 } },
+          { $skip: skip },
+          { $limit: limit }
+        ],
+        { allowDiskUse: true }
+      )
       .toArray();
 
     // Serialize dates to strings for frontend compatibility

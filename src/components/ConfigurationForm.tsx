@@ -5,7 +5,7 @@ import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
-import { getContentTimelineByServerType, formatServerTypeLabel } from '../utils/timelineProjection';
+import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -419,6 +419,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   // Which timeline projection category is selected: Content, Messaging, or Email
   const [timelineProjectionCategory, setTimelineProjectionCategory] = useState<'content' | 'messaging' | 'email' | ''>('');
+  // Content migration timeline: source environment and migration type for factor lookup
+  const [contentSourceEnvironment, setContentSourceEnvironment] = useState<SourceEnvironment>('Others');
+  const [contentMigrationType, setContentMigrationType] = useState<ContentMigrationType>('Data, Root & Sub-Folder permissions, Hyperlinks');
 
   // Extract company name from email domain if company field is "Not Available"
   const extractCompanyFromEmail = (email: string): string => {
@@ -1328,23 +1331,23 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       `}</style>
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Contact Information and Migration Type - Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className={`grid gap-6 mb-8 ${(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
           {/* Contact Information Display - Show when deal data exists */}
           {(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
-            <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl shadow-lg border border-emerald-200 p-8">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-8 hover:shadow-md transition-shadow duration-200">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
                 <Users className="w-5 h-5 text-white" />
               </div>
-              <h3 className="text-lg font-bold text-gray-900">Contact Information</h3>
-              <span className="ml-auto text-xs text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
+              <h3 className="text-lg font-bold text-slate-800">Contact Information</h3>
+              <span className="ml-auto text-xs font-medium text-blue-700 bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100">
                 {dealData && !contactInfo.clientName && !contactInfo.clientEmail ? 'From HubSpot Deal' : 'Saved Contact'}
               </span>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Contact Name */}
-              <div className="bg-white rounded-lg p-4 border border-emerald-100">
+              <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-200/80">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
                   Contact Name <span className="text-red-500">*</span>
                 </label>
@@ -1398,7 +1401,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
                     contactValidationErrors.clientName
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-200 focus:ring-emerald-500 focus:border-emerald-500'
+                      : 'border-slate-200 focus:ring-blue-500 focus:border-blue-500'
                   }`}
                   placeholder="Enter contact name"
                 />
@@ -1411,7 +1414,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
               
               {/* Contact Email */}
-              <div className="bg-white rounded-lg p-4 border border-emerald-100">
+              <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-200/80">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
                   Contact Email <span className="text-red-500">*</span>
                 </label>
@@ -1467,7 +1470,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
                     contactValidationErrors.clientEmail
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-200 focus:ring-emerald-500 focus:border-emerald-500'
+                      : 'border-slate-200 focus:ring-blue-500 focus:border-blue-500'
                   }`}
                   placeholder="Enter contact email"
                 />
@@ -1480,7 +1483,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
               
               {/* Company Name */}
-              <div className="bg-white rounded-lg p-4 border border-emerald-100">
+              <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-200/80">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
                   Company Name <span className="text-red-500">*</span>
                 </label>
@@ -1537,7 +1540,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 transition-all duration-200 text-sm font-medium ${
                     contactValidationErrors.company
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-200 focus:ring-emerald-500 focus:border-emerald-500'
+                      : 'border-slate-200 focus:ring-blue-500 focus:border-blue-500'
                   }`}
                   placeholder="Enter company name"
                 />
@@ -1551,33 +1554,33 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
             
             <div 
-              className="mt-4 p-3 bg-emerald-100/50 rounded-lg border border-emerald-200 cursor-pointer hover:bg-emerald-100 transition-colors duration-200"
+              className="mt-4 p-3 bg-blue-50/80 rounded-xl border border-blue-100 cursor-pointer hover:bg-blue-50 transition-colors duration-200"
               onClick={() => setNoteExpanded(!noteExpanded)}
             >
               <div className="flex items-center justify-between">
-                <p className="text-xs text-emerald-800">
+                <p className="text-xs text-slate-700">
                   <strong>📌 Note:</strong>
                   {noteExpanded && (
                     <span className="ml-2"> Edit the contact information above. Changes will be automatically saved and reflected in your quotes and agreements.</span>
                   )}
                 </p>
-                <ChevronDown className={`w-4 h-4 text-emerald-800 transition-transform duration-200 ${noteExpanded ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${noteExpanded ? 'rotate-180' : ''}`} />
               </div>
             </div>
           </div>
           )}
 
           {/* Migration Type or Timeline Projection - Two options, then one dropdown */}
-          <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl shadow-lg border border-teal-200 p-8">
-            <div className="max-w-md mx-auto">
-              <label className="flex items-center gap-3 text-lg font-semibold text-gray-800 mb-4">
-                <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-8 hover:shadow-md transition-shadow duration-200">
+            <div className={`mx-auto ${(dealData || contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) ? 'max-w-md' : 'max-w-lg'}`}>
+              <label className="flex items-center gap-3 text-lg font-semibold text-slate-800 mb-4">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
                   <ArrowRight className="w-5 h-5 text-white" />
                 </div>
                 Choose one
               </label>
               {/* Two options: Migration Type or Timeline Projection */}
-              <div className="flex gap-3 mb-4">
+              <div className="flex gap-2 p-1.5 bg-slate-100 rounded-xl mb-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -1586,10 +1589,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     setConfig(prev => ({ ...prev, timelineProjection: '' }));
                     onConfigurationChange({ ...config, timelineProjection: '' });
                   }}
-                  className={`flex-1 px-4 py-3 rounded-xl font-medium transition-all duration-200 border-2 ${
+                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
                     migrationOrTimeline === 'migration'
-                      ? 'bg-teal-500 text-white border-teal-500 shadow-md'
-                      : 'bg-white text-gray-700 border-teal-200 hover:border-teal-300'
+                      ? 'bg-white text-slate-900 shadow-md border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-800'
                   }`}
                 >
                   Migration Type
@@ -1611,10 +1614,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
                     } catch (err) { console.warn('Could not save to sessionStorage:', err); }
                   }}
-                  className={`flex-1 px-4 py-3 rounded-xl font-medium transition-all duration-200 border-2 ${
+                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
                     migrationOrTimeline === 'timeline'
-                      ? 'bg-teal-500 text-white border-teal-500 shadow-md'
-                      : 'bg-white text-gray-700 border-teal-200 hover:border-teal-300'
+                      ? 'bg-white text-slate-900 shadow-md border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-800'
                   }`}
                 >
                   Timeline Projection
@@ -1638,7 +1641,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
                     } catch (err) { console.warn('Could not save to sessionStorage:', err); }
                   }}
-                  className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                  className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                 >
                   <option value="">Select Migration Type</option>
                   <option value="Multi combination">Multi combination</option>
@@ -1655,7 +1658,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <select
                     value={timelineProjectionCategory}
                     onChange={(e) => setTimelineProjectionCategory(e.target.value as 'content' | 'messaging' | 'email' | '')}
-                    className="w-full px-6 py-4 border-2 border-teal-200 rounded-xl focus:ring-4 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-300 bg-white/90 backdrop-blur-sm hover:border-teal-300 text-lg font-medium"
+                    className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                   >
                     <option value="">Select projection type</option>
                     <option value="content">Content projection</option>
@@ -1674,8 +1677,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               {timelineProjectionCategory === 'content' && (() => {
                 const totalSizeGB = config.dataSizeGB ?? 0;
                 const noOfServers = Math.max(1, config.numberOfInstances ?? 1);
-                const contentTimelineRows = getContentTimelineByServerType(totalSizeGB, noOfServers);
-                const migrationTypeLabel = 'Data, Root & Sub-Folder permissions, Hyperlinks';
+                const contentTimelineRows = getContentTimelineByServerType(totalSizeGB, noOfServers, contentSourceEnvironment, contentMigrationType);
                 return (
               <div className="flex flex-wrap gap-0 border border-black overflow-hidden bg-white shadow-md max-w-4xl">
                 {/* Left table: CONTENT MIGRATION */}
@@ -1687,7 +1689,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     <tbody>
                       <tr className="border-b border-black">
                         <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Source Environment</td>
-                        <td className="border-b border-black py-2 px-3 bg-white">Others</td>
+                        <td className="border-b border-black py-2 px-3 bg-white">
+                          <select
+                            value={contentSourceEnvironment}
+                            onChange={(e) => setContentSourceEnvironment(e.target.value as SourceEnvironment)}
+                            className="w-full min-w-0 py-1 px-2 border border-gray-300 rounded text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                          >
+                            <option value="Citrix/Egnyte/Fileshare/Box/DropBox">Citrix/Egnyte/Fileshare/Box/DropBox</option>
+                            <option value="Others">Others</option>
+                          </select>
+                        </td>
                       </tr>
                       <tr className="border-b border-black">
                         <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Total Size to be Migrated in GB</td>
@@ -1709,7 +1720,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       </tr>
                       <tr className="border-b border-black">
                         <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Migration Type</td>
-                        <td className="border-b border-black py-2 px-3 bg-white">{migrationTypeLabel}</td>
+                        <td className="border-b border-black py-2 px-3 bg-white">
+                          <select
+                            value={contentMigrationType}
+                            onChange={(e) => setContentMigrationType(e.target.value as ContentMigrationType)}
+                            className="w-full min-w-0 py-1 px-2 border border-gray-300 rounded text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                          >
+                            <option value="Data & Root Permissions Only">Data & Root Permissions Only</option>
+                            <option value="Data, Root & Sub-Folder permissions, Hyperlinks">Data, Root & Sub-Folder permissions, Hyperlinks</option>
+                          </select>
+                        </td>
                       </tr>
                       <tr>
                         <td className="border-r border-black py-2 px-3 bg-white font-medium text-gray-900">No of Servers</td>

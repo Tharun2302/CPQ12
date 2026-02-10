@@ -678,7 +678,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       <main
         className={`${
           isSignatureForm ? 'max-w-6xl' : currentTab === 'approval' ? 'max-w-full' : 'max-w-7xl'
-        } mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-10 transition-all duration-300 ${
+        } mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-10 transition-all duration-300 ${
           !isSignatureForm && currentTab === 'approval' 
             ? (isSidebarVisible ? 'lg:ml-64' : 'lg:ml-0')
             : (!isSignatureForm ? 'lg:ml-64' : '')

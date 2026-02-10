@@ -3,15 +3,24 @@
  * Separate file for timeline projection calculations based on server type and size.
  *
  * Business logic (from spec):
- * - Server type daily capacity (GB/day per server): Small = 200, Standard = 300, Large = 500, Extra Large = 700
- * - Small formula: days = Total size to be migrated in GB / 200
- * - No of servers: multipliers for parallel work (1 server = 1, 2 servers = 1.6, 3+ = 1.91)
- * - We count number of days for the migration timeline
+ * - Source Environment: Citrix/Egnyte/Fileshare/Box/DropBox → "Data & Root Permissions Only"
+ *   Others → "Data, Root & Sub-Folder permissions, Hyperlinks"
+ * - Factor matrix: Server config × (Source + Migration type) – see CONTENT_MIGRATION_FACTOR_MATRIX
+ * - Formula: days = (B12 / factor) * B15 / B14 = totalSizeGB * serverCountFactor / (factor * numberOfServers)
+ * - B15 (server count factor): 1 server = 1, 2 servers = 1.6, 3+ servers = 1.9
  */
 
 export type ServerType = 'Small' | 'Standard' | 'Large' | 'Extra Large';
 
-/** GB per day capacity per server (one server of this type). */
+/** Source environment for content migration */
+export type SourceEnvironment = 'Citrix/Egnyte/Fileshare/Box/DropBox' | 'Others';
+
+/** Migration type for content migration */
+export type ContentMigrationType =
+  | 'Data & Root Permissions Only'
+  | 'Data, Root & Sub-Folder permissions, Hyperlinks';
+
+/** GB per day capacity per server (one server of this type) – used when no source/migration type specified. */
 export const SERVER_TYPE_GB_PER_DAY: Record<ServerType, number> = {
   Small: 200,
   Standard: 300,
@@ -19,12 +28,45 @@ export const SERVER_TYPE_GB_PER_DAY: Record<ServerType, number> = {
   'Extra Large': 700
 };
 
-/** Server count factor: 1 server = 1, 2 servers = 1.6, >= 3 servers = 1.91 (applied to timeline). */
+/**
+ * Content migration factor matrix.
+ * Rows: Server Configuration (Small, Standard, Large, Extra Large)
+ * Columns: [Citrix Data&Root, Others Data&Root, Citrix Hyperlinks, Others Hyperlinks]
+ */
+const CONTENT_MIGRATION_FACTOR_MATRIX: Record<
+  ServerType,
+  { citrixDataRoot: number; othersDataRoot: number; citrixHyperlinks: number; othersHyperlinks: number }
+> = {
+  Small: { citrixDataRoot: 100, othersDataRoot: 250, citrixHyperlinks: 80, othersHyperlinks: 200 },
+  Standard: { citrixDataRoot: 300, othersDataRoot: 400, citrixHyperlinks: 200, othersHyperlinks: 300 },
+  Large: { citrixDataRoot: 500, othersDataRoot: 600, citrixHyperlinks: 400, othersHyperlinks: 500 },
+  'Extra Large': { citrixDataRoot: 700, othersDataRoot: 800, citrixHyperlinks: 600, othersHyperlinks: 700 }
+};
+
+/**
+ * Get the migration factor for content timeline based on server type, source environment, and migration type.
+ */
+export function getContentMigrationFactor(
+  serverType: ServerType,
+  sourceEnvironment: SourceEnvironment,
+  migrationType: ContentMigrationType
+): number {
+  const row = CONTENT_MIGRATION_FACTOR_MATRIX[serverType];
+  const isCitrix = sourceEnvironment === 'Citrix/Egnyte/Fileshare/Box/DropBox';
+  const isDataRootOnly = migrationType === 'Data & Root Permissions Only';
+
+  if (isCitrix && isDataRootOnly) return row.citrixDataRoot;
+  if (!isCitrix && isDataRootOnly) return row.othersDataRoot;
+  if (isCitrix && !isDataRootOnly) return row.citrixHyperlinks;
+  return row.othersHyperlinks;
+}
+
+/** Server count factor (B15): 1 server = 1, 2 servers = 1.6, 3+ servers = 1.9 */
 export function getServerCountFactor(numberOfServers: number): number {
   if (numberOfServers <= 0) return 1;
   if (numberOfServers === 1) return 1;
   if (numberOfServers === 2) return 1.6;
-  if (numberOfServers >= 3) return 1.91;
+  if (numberOfServers >= 3) return 1.9;
   return 1;
 }
 
@@ -33,39 +75,51 @@ export interface ContentTimelineInput {
   totalSizeGB: number;
   serverType: ServerType;
   numberOfServers: number;
+  /** Source environment (default: Others) */
+  sourceEnvironment?: SourceEnvironment;
+  /** Migration type (default: Data, Root & Sub-Folder permissions, Hyperlinks) */
+  migrationType?: ContentMigrationType;
 }
 
 export interface TimelineResult {
   /** Calculated number of days for the migration */
   days: number;
-  /** GB per day capacity used (per server) */
+  /** GB per day capacity/factor used (per server) */
   capacityPerDayPerServer: number;
   /** Effective total capacity per day (capacity * number of servers) */
   effectiveCapacityPerDay: number;
-  /** Server count factor applied (1, 1.6, or 1.91) */
+  /** Server count factor applied (1, 1.6, or 1.9) */
   serverCountFactor: number;
 }
 
 /**
  * Content migration timeline: compute number of days.
- * Formula: baseDays = totalSizeGB / (capacityPerDayPerServer * numberOfServers)
- *          days = round(baseDays * serverCountFactor)  [round to match reference UI: 1000 GB, 1 server → Small 5, Standard 3, Large 2, Extra Large 1]
+ * Formula: days = (B12 / factor) * B15 / B14 = totalSizeGB * serverCountFactor / (factor * numberOfServers)
+ * Where factor is from the matrix based on server type, source environment, and migration type.
  */
 export function computeContentTimeline(input: ContentTimelineInput): TimelineResult {
-  const { totalSizeGB, serverType, numberOfServers } = input;
-  const capacityPerDayPerServer = SERVER_TYPE_GB_PER_DAY[serverType] ?? 200;
-  const effectiveCapacityPerDay =
-    numberOfServers > 0
-      ? capacityPerDayPerServer * numberOfServers
-      : capacityPerDayPerServer;
-  const factor = getServerCountFactor(numberOfServers);
-  const baseDays = effectiveCapacityPerDay > 0 ? totalSizeGB / effectiveCapacityPerDay : 0;
-  const days = Math.max(0, Math.round(baseDays * factor));
+  const {
+    totalSizeGB,
+    serverType,
+    numberOfServers,
+    sourceEnvironment = 'Others',
+    migrationType = 'Data, Root & Sub-Folder permissions, Hyperlinks'
+  } = input;
+
+  const factor = getContentMigrationFactor(serverType, sourceEnvironment, migrationType);
+  const serverCountFactor = getServerCountFactor(numberOfServers);
+  const effectiveCapacityPerDay = numberOfServers > 0 ? factor * numberOfServers : factor;
+
+  const divisor = factor * Math.max(1, numberOfServers);
+  const days = divisor > 0
+    ? Math.max(0, Math.round((totalSizeGB * serverCountFactor) / divisor))
+    : 0;
+
   return {
     days,
-    capacityPerDayPerServer,
+    capacityPerDayPerServer: factor,
     effectiveCapacityPerDay,
-    serverCountFactor: factor
+    serverCountFactor
   };
 }
 
@@ -131,14 +185,18 @@ export function computeEmailTimeline(input: EmailTimelineInput): TimelineResult 
  */
 export function getContentTimelineByServerType(
   totalSizeGB: number,
-  numberOfServers: number = 1
+  numberOfServers: number = 1,
+  sourceEnvironment: SourceEnvironment = 'Others',
+  migrationType: ContentMigrationType = 'Data, Root & Sub-Folder permissions, Hyperlinks'
 ): { serverType: ServerType; days: number }[] {
   const types: ServerType[] = ['Small', 'Standard', 'Large', 'Extra Large'];
   return types.map((serverType) => {
     const result = computeContentTimeline({
       totalSizeGB,
       serverType,
-      numberOfServers
+      numberOfServers,
+      sourceEnvironment,
+      migrationType
     });
     return { serverType, days: result.days };
   });

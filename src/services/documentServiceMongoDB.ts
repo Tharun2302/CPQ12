@@ -109,8 +109,7 @@ class DocumentServiceMongoDB {
       return data.documents;
     } catch (error) {
       console.error('❌ Error fetching documents from MongoDB:', error);
-      // On timeout or network failure, fail gracefully with an empty list
-      return [];
+      throw error;
     }
   }
 
