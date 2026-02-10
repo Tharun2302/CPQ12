@@ -5,7 +5,7 @@ import { trackConfiguration } from '../analytics/clarity';
 import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
-import { getContentTimelineByServerType, formatServerTypeLabel } from '../utils/timelineProjection';
+import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -419,6 +419,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   // Which timeline projection category is selected: Content, Messaging, or Email
   const [timelineProjectionCategory, setTimelineProjectionCategory] = useState<'content' | 'messaging' | 'email' | ''>('');
+  // Content migration timeline: source environment and migration type for factor lookup
+  const [contentSourceEnvironment, setContentSourceEnvironment] = useState<SourceEnvironment>('Others');
+  const [contentMigrationType, setContentMigrationType] = useState<ContentMigrationType>('Data, Root & Sub-Folder permissions, Hyperlinks');
 
   // Extract company name from email domain if company field is "Not Available"
   const extractCompanyFromEmail = (email: string): string => {
@@ -1674,8 +1677,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               {timelineProjectionCategory === 'content' && (() => {
                 const totalSizeGB = config.dataSizeGB ?? 0;
                 const noOfServers = Math.max(1, config.numberOfInstances ?? 1);
-                const contentTimelineRows = getContentTimelineByServerType(totalSizeGB, noOfServers);
-                const migrationTypeLabel = 'Data, Root & Sub-Folder permissions, Hyperlinks';
+                const contentTimelineRows = getContentTimelineByServerType(totalSizeGB, noOfServers, contentSourceEnvironment, contentMigrationType);
                 return (
               <div className="flex flex-wrap gap-0 border border-black overflow-hidden bg-white shadow-md max-w-4xl">
                 {/* Left table: CONTENT MIGRATION */}
@@ -1687,7 +1689,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     <tbody>
                       <tr className="border-b border-black">
                         <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Source Environment</td>
-                        <td className="border-b border-black py-2 px-3 bg-white">Others</td>
+                        <td className="border-b border-black py-2 px-3 bg-white">
+                          <select
+                            value={contentSourceEnvironment}
+                            onChange={(e) => setContentSourceEnvironment(e.target.value as SourceEnvironment)}
+                            className="w-full min-w-0 py-1 px-2 border border-gray-300 rounded text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                          >
+                            <option value="Citrix/Egnyte/Fileshare/Box/DropBox">Citrix/Egnyte/Fileshare/Box/DropBox</option>
+                            <option value="Others">Others</option>
+                          </select>
+                        </td>
                       </tr>
                       <tr className="border-b border-black">
                         <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Total Size to be Migrated in GB</td>
@@ -1709,7 +1720,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       </tr>
                       <tr className="border-b border-black">
                         <td className="border-b border-black border-r border-black py-2 px-3 bg-white font-medium text-gray-900">Migration Type</td>
-                        <td className="border-b border-black py-2 px-3 bg-white">{migrationTypeLabel}</td>
+                        <td className="border-b border-black py-2 px-3 bg-white">
+                          <select
+                            value={contentMigrationType}
+                            onChange={(e) => setContentMigrationType(e.target.value as ContentMigrationType)}
+                            className="w-full min-w-0 py-1 px-2 border border-gray-300 rounded text-gray-900 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                          >
+                            <option value="Data & Root Permissions Only">Data & Root Permissions Only</option>
+                            <option value="Data, Root & Sub-Folder permissions, Hyperlinks">Data, Root & Sub-Folder permissions, Hyperlinks</option>
+                          </select>
+                        </td>
                       </tr>
                       <tr>
                         <td className="border-r border-black py-2 px-3 bg-white font-medium text-gray-900">No of Servers</td>
