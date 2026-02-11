@@ -5402,13 +5402,17 @@ Total Price: {{total price}}`;
                   const breakdownName = exhibitConfig?.exhibitName || combinationName;
                   if (category === 'messaging' || category === 'message') {
                     breakdown = (calculation || safeCalculation)?.messagingCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
-                    price = breakdown?.totalCost ?? 0;
+                    // For multi-combination, exhibit price should be userCost + dataCost only (not including migrationCost or instanceCost)
+                    // MigrationCost and instanceCost are shown separately in the agreement table
+                    price = (breakdown?.userCost ?? 0) + (breakdown?.dataCost ?? 0);
                   } else if (category === 'content') {
                     breakdown = (calculation || safeCalculation)?.contentCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
-                    price = breakdown?.totalCost ?? 0;
+                    // For multi-combination, exhibit price should be userCost + dataCost only (not including migrationCost or instanceCost)
+                    price = (breakdown?.userCost ?? 0) + (breakdown?.dataCost ?? 0);
                   } else if (category === 'email') {
                     breakdown = (calculation || safeCalculation)?.emailCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
-                    price = breakdown?.totalCost ?? 0;
+                    // For multi-combination, exhibit price should be userCost + dataCost only (not including migrationCost or instanceCost)
+                    price = (breakdown?.userCost ?? 0) + (breakdown?.dataCost ?? 0);
                   }
                 }
 
@@ -6109,16 +6113,18 @@ Total Price: {{total price}}`;
             }
 
             // Calculate CloudFuze Manage total as sum of:
-            // 1. All server prices
+            // 1. All server prices (instance costs)
             // 2. Migration cost
-            // 3. All exhibit prices
-            let cloudfuzeManageTotal = total; // Start with server prices total
+            // 3. All exhibit prices (userCost + dataCost only, NOT including instanceCost or migrationCost)
+            // NOTE: For multi-combination, exhibit prices are userCost + dataCost only.
+            // MigrationCost and instanceCost are shown separately in the agreement table.
+            let cloudfuzeManageTotal = total; // Start with server prices total (instance costs)
             
             // Add migration cost
             const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
             cloudfuzeManageTotal += (migrationCost || 0);
             
-            // Sum all exhibit prices
+            // Sum all exhibit prices (these should only contain userCost + dataCost for multi-combination)
             const exhibitsData = (templateData as any).exhibits || [];
             for (const exhibit of exhibitsData) {
               if (exhibit.exhibitPrice) {
@@ -6126,6 +6132,20 @@ Total Price: {{total price}}`;
                 cloudfuzeManageTotal += parseFloat(exhibitPriceStr) || 0;
               }
             }
+            
+            console.log('🔍 Multi-combination Total Price Calculation:', {
+              serverPricesTotal: formatCurrency(total),
+              migrationCost: formatCurrency(migrationCost || 0),
+              exhibitPrices: exhibitsData.map((e: any) => e.exhibitPrice),
+              exhibitPricesSum: formatCurrency(exhibitsData.reduce((sum: number, e: any) => {
+                if (e.exhibitPrice) {
+                  const priceStr = e.exhibitPrice.replace(/[$,]/g, '');
+                  return sum + (parseFloat(priceStr) || 0);
+                }
+                return sum;
+              }, 0)),
+              cloudfuzeManageTotal: formatCurrency(cloudfuzeManageTotal)
+            });
             
             // Set CloudFuze Manage total (includes servers + migration + exhibits)
             templateData['{{cloudfuze_manage_total}}'] = formatCurrency(cloudfuzeManageTotal);
@@ -6237,22 +6257,20 @@ Total Price: {{total price}}`;
           } else {
             templateData['{{server_instance_cost_breakdown}}'] = '';
             (templateData as any).servers = [];
-            // For single migrations, calculate CloudFuze Manage total as sum of:
-            // 1. Instance cost
-            // 2. Migration cost
-            // 3. All exhibit prices
+            // For single migrations, calculate CloudFuze Manage total
+            // NOTE: For single migrations, CloudFuze Manage should only include instance costs
+            // The exhibit prices already contain all costs (userCost + dataCost + migrationCost + instanceCost)
+            // So we should NOT add exhibit prices to cloudfuzeManageTotal for single migrations
             const singleInstanceCost = (calculation || safeCalculation)?.instanceCost ?? 0;
             const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
-            let cloudfuzeManageTotal = singleInstanceCost + (migrationCost || 0);
+            // For single migrations, CloudFuze Manage is just the instance cost
+            // (Migration cost and user/data costs are shown separately in the agreement table)
+            let cloudfuzeManageTotal = singleInstanceCost;
             
-            // Sum all exhibit prices
+            // Do NOT add exhibit prices for single migrations - they already contain all costs
+            // and would cause double-counting
             const exhibitsData = (templateData as any).exhibits || [];
-            for (const exhibit of exhibitsData) {
-              if (exhibit.exhibitPrice) {
-                const exhibitPriceStr = exhibit.exhibitPrice.replace(/[$,]/g, '');
-                cloudfuzeManageTotal += parseFloat(exhibitPriceStr) || 0;
-              }
-            }
+            // Note: exhibits are NOT added to cloudfuzeManageTotal for single migrations
             
             // Set CloudFuze Manage total (includes instance + migration + exhibits)
             templateData['{{cloudfuze_manage_total}}'] = formatCurrency(cloudfuzeManageTotal);
@@ -6314,10 +6332,28 @@ Total Price: {{total price}}`;
             // Short placeholder alias for better font sizing in templates
             templateData['{{cfm_total_b}}'] = formatCurrency(bundledTotal);
             
-            // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
-            // This ensures the Total Price matches the sum of all items in the table
-            // NOTE: cfm_user_total ($399) is excluded from the total price calculation
-            const displayedTotalPrice = cloudfuzeManageTotal;
+            // For single migrations, the total price should be the sum of:
+            // users_cost (userCost + dataCost) + migrationCost + instanceCost
+            // This equals totalCost from the calculation, NOT cloudfuzeManageTotal
+            // because cloudfuzeManageTotal incorrectly includes exhibit prices which already contain all costs
+            // NOTE: The agreement table shows 3 rows: users_cost, migrationCost, instanceCost
+            // So the total should be: users_cost + migrationCost + instanceCost = totalCost
+            const userCost = (calculation || safeCalculation)?.userCost ?? 0;
+            const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
+            const usersCost = userCost + dataCost;
+            const displayedTotalPrice = usersCost + (migrationCost || 0) + singleInstanceCost;
+            
+            console.log('🔍 Single Migration Total Price Calculation:', {
+              userCost,
+              dataCost,
+              usersCost,
+              migrationCost,
+              singleInstanceCost,
+              displayedTotalPrice,
+              totalCostFromCalculation: (calculation || safeCalculation)?.totalCost,
+              'Should match': usersCost + (migrationCost || 0) + singleInstanceCost
+            });
+            
             if (localShouldApplyDiscount) {
               const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
               const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
@@ -6722,12 +6758,45 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               unique: uniqueSelectedExhibitsForMerge
             });
             
+            // Declare outside try block so they're accessible in catch block
+            const exhibitBlobs: Blob[] = [];
+            const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
+            
+            // Define helper functions BEFORE try block so they're accessible throughout, including in catch blocks
+            const getPlanLowerFromExhibit = (ex: any): string => {
+              const pt = (ex?.planType || '').toString().toLowerCase();
+              if (pt) return pt;
+              const name = (ex?.name || '').toString().toLowerCase();
+              if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'basic';
+              if (name.includes('standard') && !name.includes('advanced')) return 'standard';
+              if (name.includes('advanced')) return 'advanced';
+              return '';
+            };
+
+            const getNormalizedBaseCombination = (ex: any): string => {
+              const primary = ex?.combinations?.[0];
+              if (!primary || primary === 'all') return '';
+              let base = String(primary).toLowerCase();
+              base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+              base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+              base = base.replace(/-+$/, '').trim();
+              base = base
+                .replace(/\//g, '-')
+                .replace(/[^a-z0-9-]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+              const parts = base.split('-').filter(Boolean);
+              if (parts.length > 0 && parts.length % 2 === 0) {
+                const half = parts.length / 2;
+                const first = parts.slice(0, half).join('-');
+                const second = parts.slice(half).join('-');
+                if (first === second) base = first;
+              }
+              return base;
+            };
+            
             try {
               // Fetch all exhibit files
-              const exhibitBlobs: Blob[] = [];
-              
-              // Fetch exhibit metadata for grouping
-              const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
               const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
               let allExhibits: any[] = [];
               if (metaResp.ok) {
@@ -6744,38 +6813,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               // Expand merge list to include sibling Included/Not Included exhibits for the same base combo + plan.
               // (This block is for AGREEMENT generation; do not rely on variables created in the email merge path.)
               let expandedUniqueSelectedExhibitsForMerge: string[] = Array.from(uniqueSelectedExhibitsForMerge);
+              
               try {
-                const getPlanLowerFromExhibit = (ex: any): string => {
-                  const pt = (ex?.planType || '').toString().toLowerCase();
-                  if (pt) return pt;
-                  const name = (ex?.name || '').toString().toLowerCase();
-                  if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'basic';
-                  if (name.includes('standard') && !name.includes('advanced')) return 'standard';
-                  if (name.includes('advanced')) return 'advanced';
-                  return '';
-                };
-
-                const getNormalizedBaseCombination = (ex: any): string => {
-                  const primary = ex?.combinations?.[0];
-                  if (!primary || primary === 'all') return '';
-                  let base = String(primary).toLowerCase();
-                  base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
-                  base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
-                  base = base.replace(/-+$/, '').trim();
-                  base = base
-                    .replace(/\//g, '-')
-                    .replace(/[^a-z0-9-]+/g, '-')
-                    .replace(/-+/g, '-')
-                    .replace(/^-+|-+$/g, '');
-                  const parts = base.split('-').filter(Boolean);
-                  if (parts.length > 0 && parts.length % 2 === 0) {
-                    const half = parts.length / 2;
-                    const first = parts.slice(0, half).join('-');
-                    const second = parts.slice(half).join('-');
-                    if (first === second) base = first;
-                  }
-                  return base;
-                };
 
                 const expandedForMerge = new Set<string>();
                 // Track seen exhibits by unique key to prevent duplicates
@@ -6963,7 +7002,20 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               }
               
               if (exhibitBlobs.length > 0) {
-                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into document...`);
+                // Verify processedDocument is valid before merging
+                if (!processedDocument) {
+                  throw new Error('Cannot merge exhibits: main document was not processed successfully');
+                }
+                
+                if (!(processedDocument instanceof Blob)) {
+                  throw new Error(`Cannot merge exhibits: processedDocument is not a valid Blob (type: ${typeof processedDocument})`);
+                }
+                
+                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into document...`, {
+                  mainDocSize: processedDocument.size,
+                  exhibitCount: exhibitBlobs.length
+                });
+                
                 const { mergeDocxFiles } = await import('../utils/docxMerger');
                 
                 processedDocument = await mergeDocxFiles(processedDocument, exhibitBlobs, exhibitMetadata);
@@ -6975,8 +7027,18 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               }
             } catch (mergeError) {
               console.error('❌ Error merging exhibits:', mergeError);
+              console.error('Error details:', {
+                error: mergeError,
+                message: mergeError instanceof Error ? mergeError.message : String(mergeError),
+                stack: mergeError instanceof Error ? mergeError.stack : undefined,
+                processedDocumentValid: !!processedDocument,
+                processedDocumentType: typeof processedDocument,
+                exhibitBlobsCount: exhibitBlobs?.length ?? 0,
+                exhibitMetadataCount: exhibitMetadata?.length ?? 0
+              });
               // Don't fail the whole generation, just warn the user
-              alert('⚠️ Warning: Some exhibits could not be attached to the document. The main document was generated successfully.');
+              const errorMessage = mergeError instanceof Error ? mergeError.message : 'Unknown error';
+              alert(`⚠️ Warning: Some exhibits could not be attached to the document.\n\nError: ${errorMessage}\n\nThe main document was generated successfully.`);
             }
           }
         } else {

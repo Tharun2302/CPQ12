@@ -76,13 +76,34 @@ export async function mergeDocxFiles(
       return mainDocx;
     }
 
+    // Validate main document
+    if (!mainDocx || !(mainDocx instanceof Blob)) {
+      throw new Error('Main document must be a valid Blob');
+    }
+    
+    if (mainDocx.size === 0) {
+      throw new Error('Main document is empty');
+    }
+    
     // Read main document
-    const mainBuffer = await mainDocx.arrayBuffer();
-    const mainZip = new PizZip(mainBuffer);
+    let mainBuffer: ArrayBuffer;
+    try {
+      mainBuffer = await mainDocx.arrayBuffer();
+    } catch (error) {
+      throw new Error(`Failed to read main document buffer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    
+    let mainZip: PizZip;
+    try {
+      mainZip = new PizZip(mainBuffer);
+    } catch (error) {
+      throw new Error(`Failed to parse main document as ZIP: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    
     const mainXml = mainZip.file('word/document.xml')?.asText();
     
     if (!mainXml) {
-      throw new Error('Could not read main document XML');
+      throw new Error('Could not read main document XML. The file may not be a valid DOCX file.');
     }
 
     // Helper to merge styles from exhibit into main document
@@ -265,12 +286,37 @@ export async function mergeDocxFiles(
     ): Promise<void> => {
       const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
       
-      const exhibitBuffer = await exhibitBlob.arrayBuffer();
-      const exhibitZip = new PizZip(exhibitBuffer);
+      // Validate exhibit blob
+      if (!exhibitBlob || !(exhibitBlob instanceof Blob)) {
+        console.warn(`⚠️ Invalid exhibit blob, skipping`);
+        return;
+      }
+      
+      if (exhibitBlob.size === 0) {
+        console.warn(`⚠️ Empty exhibit blob, skipping`);
+        return;
+      }
+      
+      let exhibitBuffer: ArrayBuffer;
+      try {
+        exhibitBuffer = await exhibitBlob.arrayBuffer();
+      } catch (error) {
+        console.warn(`⚠️ Failed to read exhibit buffer: ${error instanceof Error ? error.message : String(error)}, skipping`);
+        return;
+      }
+      
+      let exhibitZip: PizZip;
+      try {
+        exhibitZip = new PizZip(exhibitBuffer);
+      } catch (error) {
+        console.warn(`⚠️ Failed to parse exhibit as ZIP: ${error instanceof Error ? error.message : String(error)}, skipping`);
+        return;
+      }
+      
       const exhibitXml = exhibitZip.file('word/document.xml')?.asText();
       
       if (!exhibitXml) {
-        console.warn(`⚠️ Could not read exhibit XML, skipping`);
+        console.warn(`⚠️ Could not read exhibit XML (file may not be a valid DOCX), skipping`);
         return;
       }
 
@@ -520,7 +566,20 @@ export async function mergeDocxFiles(
 
   } catch (error) {
     console.error('❌ Error merging DOCX files:', error);
-    throw error;
+    console.error('Error details:', {
+      error,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      mainDocxSize: mainDocx?.size,
+      exhibitCount: exhibitDocxBlobs?.length
+    });
+    
+    // Provide a more helpful error message
+    if (error instanceof Error) {
+      throw new Error(`Failed to merge DOCX files: ${error.message}`);
+    } else {
+      throw new Error(`Failed to merge DOCX files: ${String(error)}`);
+    }
   }
 }
 
