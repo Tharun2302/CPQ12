@@ -137,6 +137,51 @@ async function seedDefaultExhibits(db) {
       displayOrder: 12,
       keywords: ['teams', 'google', 'chat', 'messaging', 'not included', 'features', 'limitations', 'migration']
     },
+    // Slack to Google Chat exhibits
+    {
+      name: 'Slack to Google Chat Basic Plan - Basic Include',
+      description: 'Documentation for features included in Slack to Google Chat Basic Plan migration',
+      fileName: 'Slack to Google Chat Basic Plan - Basic Include.docx',
+      combinations: ['slack-to-google-chat', 'all'],
+      category: 'messaging',
+      includeType: 'included',
+      isRequired: false,
+      displayOrder: 13,
+      keywords: ['slack', 'google', 'chat', 'messaging', 'basic', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Slack to Google Chat Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Slack to Google Chat Basic Plan migration',
+      fileName: 'Slack to Google Chat Basic Plan - Basic Not Include.docx',
+      combinations: ['slack-to-google-chat', 'all'],
+      category: 'messaging',
+      includeType: 'notincluded',
+      isRequired: false,
+      displayOrder: 14,
+      keywords: ['slack', 'google', 'chat', 'messaging', 'basic', 'not included', 'features', 'limitations', 'migration']
+    },
+    {
+      name: 'Slack to Google Chat Advanced Plan - Advanced Include',
+      description: 'Documentation for features included in Slack to Google Chat Advanced Plan migration',
+      fileName: 'Slack to Google Chat Advanced Plan - Advanced Include.docx',
+      combinations: ['slack-to-google-chat', 'all'],
+      category: 'messaging',
+      includeType: 'included',
+      isRequired: false,
+      displayOrder: 15,
+      keywords: ['slack', 'google', 'chat', 'messaging', 'advanced', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Slack to Google Chat Advanced Plan - Advanced Not Include',
+      description: 'Documentation for features not included in Slack to Google Chat Advanced Plan migration',
+      fileName: 'Slack to Google Chat Advanced Plan - Advanced Not Include.docx',
+      combinations: ['slack-to-google-chat', 'all'],
+      category: 'messaging',
+      includeType: 'notincluded',
+      isRequired: false,
+      displayOrder: 16,
+      keywords: ['slack', 'google', 'chat', 'messaging', 'advanced', 'not included', 'features', 'limitations', 'migration']
+    },
     // Meta to Google Chat exhibits
     {
       name: 'Meta to Google Chat - Included Features',
@@ -145,7 +190,7 @@ async function seedDefaultExhibits(db) {
       combinations: ['meta-to-google-chat', 'all'],
       category: 'messaging',
       isRequired: false,
-      displayOrder: 13,
+      displayOrder: 17,
       keywords: ['meta', 'google', 'chat', 'messaging', 'included', 'features', 'migration']
     },
     {
@@ -155,7 +200,7 @@ async function seedDefaultExhibits(db) {
       combinations: ['meta-to-google-chat', 'all'],
       category: 'messaging',
       isRequired: false,
-      displayOrder: 14,
+      displayOrder: 18,
       keywords: ['meta', 'google', 'chat', 'messaging', 'not included', 'features', 'limitations', 'migration']
     },
     // Google Chat to Google Chat exhibits (Included/Not Included)
