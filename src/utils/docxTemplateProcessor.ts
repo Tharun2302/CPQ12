@@ -752,6 +752,38 @@ export class DocxTemplateProcessor {
         } catch (emptyRowCleanupErr) {
           console.warn('⚠️ Could not post-process DOCX to remove empty table rows:', emptyRowCleanupErr);
         }
+
+        // Remove empty list items (paragraphs with bullet/numbering formatting but no text content)
+        // This prevents empty bullets from appearing in overage charges lists
+        try {
+          const zipAfter = doc.getZip();
+          const xmlPath = 'word/document.xml';
+          const originalXml = this.getZipFileText(zipAfter, xmlPath);
+          if (originalXml) {
+            const stripTags = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+            // Match paragraphs with list formatting (numPr or bullet formatting)
+            const listParaRegex = /<w:p[^>]*>[\s\S]*?<\/w:p>/gi;
+            const cleanedXml = originalXml.replace(listParaRegex, (para) => {
+              // Check if this paragraph has list formatting
+              const hasListFormatting = /<w:numPr\b|<w:ilvl\b|<w:numId\b/i.test(para);
+              if (hasListFormatting) {
+                // Extract text content
+                const paraText = stripTags(para);
+                // Remove if paragraph is empty or only contains whitespace/bullet characters
+                if (paraText.length === 0 || /^[\s\u2022•\-–—]*$/.test(paraText)) {
+                  return '';
+                }
+              }
+              return para;
+            });
+            if (cleanedXml !== originalXml) {
+              this.setZipFile(zipAfter, xmlPath, cleanedXml);
+              console.log('🧹 Removed empty list items (bullets with no content) from document.xml');
+            }
+          }
+        } catch (emptyListCleanupErr) {
+          console.warn('⚠️ Could not post-process DOCX to remove empty list items:', emptyListCleanupErr);
+        }
         
         // CRITICAL: Log the final processed document to verify tokens were replaced
         const finalDocumentXml = this.getZipFileText(doc.getZip(), 'word/document.xml');

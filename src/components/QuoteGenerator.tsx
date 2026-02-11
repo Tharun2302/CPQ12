@@ -5057,6 +5057,18 @@ Total Price: {{total price}}`;
                     skippedExhibits.push({ name: ex.name || 'unknown', reason: `combination mismatch: ${key}` });
                     continue; // Skip if not selected combination
                   }
+                  
+                  // CRITICAL: Verify the exhibit's combinations array actually contains the selected combination
+                  // This prevents exhibits with multiple combinations from being incorrectly matched
+                  // For example, if we selected "google-mydrive-to-google-mydrive", don't include exhibits
+                  // that only have "google-mydrive-to-google-sharedrive" even if they share the same baseCombo pattern
+                  const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
+                  const hasExactMatch = exCombinations.includes('all') || exCombinations.includes(baseCombo);
+                  if (!hasExactMatch) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `exact combination not in exhibit combinations: ${baseCombo} not in [${exCombinations.join(', ')}]` });
+                    continue;
+                  }
+                  
                   const exhibitPlan = getPlanFromExhibit(ex);
                   // IMPORTANT: Allow exhibits without plan types (generic exhibits) to be included
                   // These are combination-specific but not plan-specific (e.g., "Google Chat to Google Chat")
@@ -5133,11 +5145,23 @@ Total Price: {{total price}}`;
                     const matchedIds: string[] = [];
                     let matchedCount = 0;
                     
-                    // First try: match by category, baseCombo, and plan
+                    // First try: match by category, exact combination match, and plan
+                    // CRITICAL: Check if exhibit's combinations array contains the exact baseCombo
+                    // This prevents exhibits with multiple combinations (e.g., both mydrive-to-mydrive and mydrive-to-sharedrive)
+                    // from being incorrectly matched
                     for (const ex of allExhibits) {
                       const exCat = (ex.category || 'content').toLowerCase();
+                      if (exCat !== category) continue;
+                      
+                      // Check if exhibit's combinations array contains the exact baseCombo
+                      const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
+                      const hasExactMatch = exCombinations.includes('all') || exCombinations.includes(baseCombo);
+                      if (!hasExactMatch) continue;
+                      
+                      // Also verify baseCombo matches (double-check)
                       const exBase = getBaseCombination(ex);
-                      if (exCat !== category || exBase !== baseCombo) continue;
+                      if (exBase !== baseCombo) continue;
+                      
                       if (planLower) {
                         const exPlan = getPlanFromExhibit(ex).toLowerCase();
                         // IMPORTANT: Allow generic exhibits (without plan types) to be included
@@ -5169,13 +5193,21 @@ Total Price: {{total price}}`;
                       
                       for (const ex of allExhibits) {
                         const exCat = (ex.category || 'content').toLowerCase();
+                        if (exCat !== category) continue;
+                        
+                        // Check if exhibit's combinations array contains the exact baseCombo
+                        const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
+                        const hasExactMatch = exCombinations.includes('all') || exCombinations.includes(baseCombo);
+                        if (!hasExactMatch) continue;
+                        
+                        // Also verify baseCombo matches
                         const exBase = getBaseCombination(ex);
-                        if (exCat === category && exBase === baseCombo) {
-                          const exId = (ex._id ?? '').toString();
-                          mergeIdsFromConfigs.add(exId);
-                          matchedIds.push(exId);
-                          matchedCount++;
-                        }
+                        if (exBase !== baseCombo) continue;
+                        
+                        const exId = (ex._id ?? '').toString();
+                        mergeIdsFromConfigs.add(exId);
+                        matchedIds.push(exId);
+                        matchedCount++;
                       }
                       
                       if (matchedCount === 0) {
@@ -5203,10 +5235,66 @@ Total Price: {{total price}}`;
                 addForConfig(cfgAny.emailConfigs);
                 if (mergeIdsFromConfigs.size > 0) {
                   const prevMergeCount = expandedExhibitIdsForMerge.length;
-                  expandedExhibitIdsForMerge = Array.from(new Set([...expandedExhibitIdsForMerge, ...mergeIdsFromConfigs]));
-                  console.log('📎 Merge list from configs (ensure all combinations):', {
+                  
+                  // CRITICAL: Deduplicate exhibits by combination name, plan, and includeType
+                  // This prevents the same exhibit from appearing multiple times in the merged document
+                  const deduplicatedMergeIds = new Set<string>();
+                  const seenExhibitKeys = new Map<string, string>(); // key -> exhibitId
+                  
+                  // First, process existing expanded IDs and build seen keys
+                  for (const id of expandedExhibitIdsForMerge) {
+                    const exhibit = allExhibits.find((e: any) => (e?._id ?? '').toString() === id);
+                    if (exhibit) {
+                      const baseCombo = getBaseCombination(exhibit);
+                      const plan = getPlanFromExhibit(exhibit).toLowerCase();
+                      const includeType = (exhibit.includeType || (exhibit.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toLowerCase();
+                      const category = (exhibit.category || 'content').toLowerCase();
+                      const uniqueKey = `${category}|${baseCombo}|${plan}|${includeType}`;
+                      seenExhibitKeys.set(uniqueKey, id);
+                      deduplicatedMergeIds.add(id);
+                    } else {
+                      // If exhibit not found, add it anyway (might be from a different fetch)
+                      deduplicatedMergeIds.add(id);
+                    }
+                  }
+                  
+                  // Then, add new IDs from configs, but only if they're not duplicates
+                  for (const id of mergeIdsFromConfigs) {
+                    const exhibit = allExhibits.find((e: any) => (e?._id ?? '').toString() === id);
+                    if (!exhibit) {
+                      // If exhibit not found, add it anyway (might be from a different fetch)
+                      deduplicatedMergeIds.add(id);
+                      continue;
+                    }
+                    
+                    // Create a unique key: combination + plan + includeType
+                    const baseCombo = getBaseCombination(exhibit);
+                    const plan = getPlanFromExhibit(exhibit).toLowerCase();
+                    const includeType = (exhibit.includeType || (exhibit.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toLowerCase();
+                    const category = (exhibit.category || 'content').toLowerCase();
+                    const uniqueKey = `${category}|${baseCombo}|${plan}|${includeType}`;
+                    
+                    // Check if we already have an exhibit with this key
+                    if (seenExhibitKeys.has(uniqueKey)) {
+                      const existingId = seenExhibitKeys.get(uniqueKey);
+                      console.warn('⚠️ Skipping duplicate exhibit for merge:', {
+                        duplicateId: id,
+                        existingId,
+                        name: exhibit.name,
+                        key: uniqueKey
+                      });
+                      continue;
+                    }
+                    
+                    seenExhibitKeys.set(uniqueKey, id);
+                    deduplicatedMergeIds.add(id);
+                  }
+                  
+                  expandedExhibitIdsForMerge = Array.from(deduplicatedMergeIds);
+                  console.log('📎 Merge list from configs (ensure all combinations, deduplicated):', {
                     previousCount: prevMergeCount,
                     addedFromConfigs: mergeIdsFromConfigs.size,
+                    afterDedup: deduplicatedMergeIds.size,
                     totalMergeIds: expandedExhibitIdsForMerge.length,
                     configCount,
                     configDetails: configDetails.map(c => `${c.configName}: ${c.matched} exhibits`),
@@ -5417,8 +5505,20 @@ Total Price: {{total price}}`;
                 }
 
                 // Skip exhibits that would render as an empty bullet in the overage list (avoids single dot)
+                // For Multi combination, only include exhibits with valid overage charge data
                 if (finalConfiguration?.migrationType === 'Multi combination') {
-                  if (!exhibitData.exhibitCombinationName || !exhibitData.exhibitOveragePerUser) continue;
+                  // Must have combination name and at least per-user or per-server cost
+                  if (!exhibitData.exhibitCombinationName || 
+                      (!exhibitData.exhibitOveragePerUser && !exhibitData.exhibitOveragePerServer)) {
+                    continue;
+                  }
+                  // Also skip if per-user cost is empty, undefined, or $0.00
+                  if (!exhibitData.exhibitOveragePerUser || 
+                      exhibitData.exhibitOveragePerUser.trim() === '' || 
+                      exhibitData.exhibitOveragePerUser === '$0.00' ||
+                      exhibitData.exhibitOveragePerUser === 'undefined') {
+                    continue;
+                  }
                 }
                 exhibitsData.push(exhibitData);
               }
@@ -6678,6 +6778,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 };
 
                 const expandedForMerge = new Set<string>();
+                // Track seen exhibits by unique key to prevent duplicates
+                const seenExhibitKeys = new Set<string>();
+                
                 for (const id of uniqueSelectedExhibitsForMerge) {
                   const ex = lookup.get(id);
                   if (!ex) {
@@ -6687,18 +6790,37 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   const category = (ex?.category || 'content').toString().toLowerCase();
                   const baseCombo = getNormalizedBaseCombination(ex);
                   const planLower = getPlanLowerFromExhibit(ex);
-                  expandedForMerge.add(id);
+                  const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                  
+                  // Create unique key for this exhibit
+                  const uniqueKey = `${category}|${baseCombo}|${planLower}|${includeType}`;
+                  
+                  // Only add if we haven't seen this exact exhibit before
+                  if (!seenExhibitKeys.has(uniqueKey)) {
+                    seenExhibitKeys.add(uniqueKey);
+                    expandedForMerge.add(id);
+                  }
+                  
                   if (!baseCombo || !planLower) continue;
 
+                  // Add sibling exhibits (both Included and Not Included) for same base combo + plan
                   for (const other of allExhibits) {
                     if (!other?._id) continue;
                     const otherCat = (other?.category || 'content').toString().toLowerCase();
                     if (otherCat !== category) continue;
                     if (getPlanLowerFromExhibit(other) !== planLower) continue;
                     if (getNormalizedBaseCombination(other) !== baseCombo) continue;
-                    const it = (other?.includeType || '').toString();
-                    if (it !== 'included' && it !== 'notincluded') continue;
-                    expandedForMerge.add(other._id.toString());
+                    const otherIncludeType = (other?.includeType || (other?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                    if (otherIncludeType !== 'included' && otherIncludeType !== 'notincluded') continue;
+                    
+                    // Create unique key for sibling exhibit
+                    const otherUniqueKey = `${otherCat}|${baseCombo}|${planLower}|${otherIncludeType}`;
+                    
+                    // Only add if we haven't seen this exact exhibit before
+                    if (!seenExhibitKeys.has(otherUniqueKey)) {
+                      seenExhibitKeys.add(otherUniqueKey);
+                      expandedForMerge.add(other._id.toString());
+                    }
                   }
                 }
 
@@ -6745,6 +6867,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               };
 
               // De-dupe exhibits by stable "migration key" before fetching/merging blobs
+              // Use the same key format as the expansion above to ensure consistency
               const seenKeys = new Set<string>();
               const dedupedIds: string[] = [];
               for (const id of expandedUniqueSelectedExhibitsForMerge) {
@@ -6754,22 +6877,27 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   dedupedIds.push(id);
                   continue;
                 }
-                const desc = formatExhibitDescription(ex, configuration);
-                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
-                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
-                const category = (ex?.category || 'content').toLowerCase();
-                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
-                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
-                if (seenKeys.has(key)) {
-                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                const category = (ex?.category || 'content').toString().toLowerCase();
+                const baseCombo = getNormalizedBaseCombination(ex);
+                const planLower = getPlanLowerFromExhibit(ex);
+                const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                
+                // Use the same unique key format as the expansion above
+                const uniqueKey = `${category}|${baseCombo}|${planLower}|${includeType}`;
+                
+                if (seenKeys.has(uniqueKey)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same unique key)', {
                     id,
                     name: ex?.name,
                     category,
-                    key
+                    baseCombo,
+                    plan: planLower,
+                    includeType,
+                    key: uniqueKey
                   });
                   continue;
                 }
-                seenKeys.add(key);
+                seenKeys.add(uniqueKey);
                 dedupedIds.push(id);
               }
 
