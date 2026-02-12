@@ -5181,43 +5181,21 @@ Total Price: {{total price}}`;
                       }
                     }
                     
-                    // FALLBACK: If no matches found, find ALL exhibits for this combination (ignore plan filter)
+                    // FALLBACK: If no matches found, DO NOT broaden to all plans.
+                    // Keep merge strict by using only the selected config's primary exhibit.
                     if (matchedCount === 0) {
-                      console.warn(`⚠️ Config merge FAILED: ${configName} → found 0 matching exhibits, using fallback (ignoring plan filter)`, {
+                      console.warn(`⚠️ Config merge FAILED: ${configName} → found 0 strict matches, using primary exhibit only`, {
                         category,
                         baseCombo,
                         plan: planLower || 'any',
                         primaryExName: primaryEx.name,
                         primaryExId: primaryId
                       });
-                      
-                      for (const ex of allExhibits) {
-                        const exCat = (ex.category || 'content').toLowerCase();
-                        if (exCat !== category) continue;
-                        
-                        // Check if exhibit's combinations array contains the exact baseCombo
-                        const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
-                        const hasExactMatch = exCombinations.includes('all') || exCombinations.includes(baseCombo);
-                        if (!hasExactMatch) continue;
-                        
-                        // Also verify baseCombo matches
-                        const exBase = getBaseCombination(ex);
-                        if (exBase !== baseCombo) continue;
-                        
-                        const exId = (ex._id ?? '').toString();
-                        mergeIdsFromConfigs.add(exId);
-                        matchedIds.push(exId);
-                        matchedCount++;
-                      }
-                      
-                      if (matchedCount === 0) {
-                        // Last resort: add the primary exhibit ID
-                        mergeIdsFromConfigs.add(primaryId);
-                        console.warn(`⚠️ Fallback also found 0 exhibits, adding primary exhibit ID only: ${primaryId}`);
-                        matchedCount = 1;
-                      } else {
-                        console.log(`✅ Fallback found ${matchedCount} exhibits for ${configName} (ignoring plan filter)`);
-                      }
+
+                      mergeIdsFromConfigs.add(primaryId);
+                      matchedIds.push(primaryId);
+                      matchedCount = 1;
+                      console.log(`✅ Fallback selected primary exhibit only for ${configName}: ${primaryId}`);
                     } else {
                       console.log(`📎 Config merge: ${configName} → found ${matchedCount} exhibits`, {
                         category,
