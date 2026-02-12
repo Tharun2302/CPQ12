@@ -20,7 +20,6 @@ const MESSAGING_COMBINATIONS = [
   { value: 'slack-to-teams', label: 'Slack to Teams' },
   { value: 'slack-to-google-chat', label: 'Slack to Google Chat' },
   { value: 'slack-to-slack', label: 'Slack to Slack' },
-  { value: 'teams-to-teams', label: 'Teams to Teams' },
 ];
 
 const CONTENT_COMBINATIONS = [
@@ -93,8 +92,6 @@ export function detectFromFilename(fileName: string): DetectedMetadata {
     combination = 'slack-to-google-chat';
   } else if (lower.includes('slack') && lower.includes('slack')) {
     combination = 'slack-to-slack';
-  } else if (lower.includes('teams') && lower.includes('teams')) {
-    combination = 'teams-to-teams';
   }
   // Content combinations
   else if (lower.includes('dropbox') && lower.includes('mydrive')) {

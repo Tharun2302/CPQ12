@@ -95,27 +95,6 @@ async function seedDefaultExhibits(db) {
       displayOrder: 8,
       keywords: ['slack', 'messaging', 'not included', 'features', 'limitations', 'migration']
     },
-    // Teams to Teams exhibits
-    {
-      name: 'Teams to Teams Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in Teams to Teams Advanced Plan migration',
-      fileName: 'Teams to Teams Advanced Plan - Advanced Included.docx',
-      combinations: ['teams-to-teams'],
-      category: 'messaging',
-      isRequired: false,
-      displayOrder: 9,
-      keywords: ['teams', 'messaging', 'advanced', 'included', 'features', 'migration']
-    },
-    {
-      name: 'Teams to Teams Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in Teams to Teams Advanced Plan migration',
-      fileName: 'Teams to Teams Advanced Plan - Advanced Not Included.docx',
-      combinations: ['teams-to-teams'],
-      category: 'messaging',
-      isRequired: false,
-      displayOrder: 10,
-      keywords: ['teams', 'messaging', 'advanced', 'not included', 'features', 'limitations', 'migration']
-    },
     // Teams to Google Chat exhibits
     {
       name: 'Teams to Google Chat - Included Features',
