@@ -6169,7 +6169,18 @@ Total Price: {{total price}}`;
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
             // NOTE: cfm_user_total ($399) is excluded from the total price calculation
-            const displayedTotalPrice = cloudfuzeManageTotal;
+            // IMPORTANT: For multi-combination, ensure we respect the $2500 minimum from the calculation
+            // The calculation's totalCost already has the minimum applied if needed
+            const calculatedTotalCost = (calculation || safeCalculation)?.totalCost ?? 0;
+            // Use the higher of calculated sum or totalCost (which includes minimum if applicable)
+            const displayedTotalPrice = Math.max(cloudfuzeManageTotal, calculatedTotalCost);
+            
+            console.log('🔍 Multi-combination Total Price Calculation:', {
+              cloudfuzeManageTotal: formatCurrency(cloudfuzeManageTotal),
+              calculatedTotalCost: formatCurrency(calculatedTotalCost),
+              displayedTotalPrice: formatCurrency(displayedTotalPrice),
+              'Using max to respect $2500 minimum': calculatedTotalCost > cloudfuzeManageTotal
+            });
             if (localShouldApplyDiscount) {
               const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
               const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
@@ -6337,11 +6348,15 @@ Total Price: {{total price}}`;
             // This equals totalCost from the calculation, NOT cloudfuzeManageTotal
             // because cloudfuzeManageTotal incorrectly includes exhibit prices which already contain all costs
             // NOTE: The agreement table shows 3 rows: users_cost, migrationCost, instanceCost
-            // So the total should be: users_cost + migrationCost + instanceCost = totalCost
+            // IMPORTANT: Use totalCost from calculation which already includes $2500 minimum if applicable
+            // The pricing calculation adjusts userCost to meet the minimum, so totalCost already reflects this
             const userCost = (calculation || safeCalculation)?.userCost ?? 0;
             const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
             const usersCost = userCost + dataCost;
-            const displayedTotalPrice = usersCost + (migrationCost || 0) + singleInstanceCost;
+            // Use totalCost from calculation which already has $2500 minimum applied if needed
+            const calculatedTotal = (calculation || safeCalculation)?.totalCost ?? 0;
+            // Ensure we use the totalCost which includes minimum, not the raw sum
+            const displayedTotalPrice = calculatedTotal > 0 ? calculatedTotal : (usersCost + (migrationCost || 0) + singleInstanceCost);
             
             console.log('🔍 Single Migration Total Price Calculation:', {
               userCost,
@@ -6349,9 +6364,10 @@ Total Price: {{total price}}`;
               usersCost,
               migrationCost,
               singleInstanceCost,
+              calculatedTotalFromCalculation: calculatedTotal,
+              rawSum: usersCost + (migrationCost || 0) + singleInstanceCost,
               displayedTotalPrice,
-              totalCostFromCalculation: (calculation || safeCalculation)?.totalCost,
-              'Should match': usersCost + (migrationCost || 0) + singleInstanceCost
+              'Using calculation totalCost (includes $2500 minimum if applicable)': calculatedTotal
             });
             
             if (localShouldApplyDiscount) {
