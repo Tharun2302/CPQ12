@@ -5565,6 +5565,22 @@ Total Price: {{total price}}`;
 
           (templateData as any).exhibits = exhibitsData;
           
+          // For backward compatibility: also set top-level tokens for first exhibit (in case template uses static rows)
+          if (exhibitsData.length > 0) {
+            const firstExhibit = exhibitsData[0];
+            // Set top-level exhibit bundled price token for static rows
+            if (firstExhibit.exhibitBundledPrice) {
+              templateData['{{exhibitBundledPrice}}'] = firstExhibit.exhibitBundledPrice;
+            }
+            // Also set other first exhibit fields as top-level tokens
+            if (firstExhibit.exhibitPrice) {
+              templateData['{{exhibitPrice}}'] = firstExhibit.exhibitPrice;
+            }
+            if (firstExhibit.exhibitDesc) {
+              templateData['{{exhibitDesc}}'] = firstExhibit.exhibitDesc;
+            }
+          }
+          
           // Recalculate per_user_cost for multicombination from breakdowns after exhibits are populated
           if (configuration?.migrationType === 'Multi combination') {
             let maxPerUser = 0;
@@ -6329,12 +6345,28 @@ Total Price: {{total price}}`;
             templateData['{{server_instance_cost_breakdown}}'] = lines.join('\n\n\n');
           } else {
             templateData['{{server_instance_cost_breakdown}}'] = '';
-            (templateData as any).servers = [];
-            // For single migrations, calculate CloudFuze Manage total
+            // For single migrations, create a servers array with one entry so bundled pricing works
+            const singleInstanceCost = (calculation || safeCalculation)?.instanceCost ?? 0;
+            const instanceType = configuration?.instanceType || 'Small';
+            const numberOfInstances = configuration?.numberOfInstances || 1;
+            const durationMonths = getEffectiveDurationMonths(configuration) || 1;
+            
+            // Create a single server entry for the template loop
+            (templateData as any).servers = [{
+              serverDescription: `${numberOfInstances} X ${instanceType} server for data migration`,
+              combinationName: '',
+              serverPrice: formatCurrency(singleInstanceCost),
+              // Bundled pricing for server (final price after 10% discount = 90% of original)
+              serverPriceBundled: formatCurrency(singleInstanceCost * 0.9),
+              serverBundledPrice: formatCurrency(singleInstanceCost * 0.9),
+              serverMonths: durationMonths,
+              isLast: true
+            }];
+            
             // NOTE: For single migrations, CloudFuze Manage should only include instance costs
             // The exhibit prices already contain all costs (userCost + dataCost + migrationCost + instanceCost)
             // So we should NOT add exhibit prices to cloudfuzeManageTotal for single migrations
-            const singleInstanceCost = (calculation || safeCalculation)?.instanceCost ?? 0;
+            // singleInstanceCost already defined above
             const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
             // For single migrations, CloudFuze Manage is just the instance cost
             // (Migration cost and user/data costs are shown separately in the agreement table)
@@ -6364,46 +6396,22 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotalBundled);
             templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotalBundled);
             
-            // Calculate CloudFuze Manage bundled pricing as sum of:
-            // 1. Instance bundled price (instance_cost_bundled)
-            // 2. Migration bundled price (price_migration_bundled)
-            // 3. All exhibit bundled prices (exhibitBundledPrice)
-            // 4. CloudFuze Manage user total bundled (cfm_user_total_b)
-            let bundledTotal = 0;
-            
-            // Add instance bundled price (final price after 10% discount)
+            // Set instance bundled pricing tokens for single migrations
             const instanceBundled = singleInstanceCost * 0.9; // Final price after 10% discount
-            bundledTotal += instanceBundled;
-            
-            // Add migration bundled price (final price after 10% discount)
-            const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
-            bundledTotal += migrationBundled;
+            templateData['{{instance_cost_bundled}}'] = formatCurrency(instanceBundled);
+            templateData['{{instanceCostBundled}}'] = formatCurrency(instanceBundled);
+            templateData['{{instance_cost_bundled_price}}'] = formatCurrency(instanceBundled);
+            // Also set serverPriceBundled as top-level token for static rows in template
+            templateData['{{serverPriceBundled}}'] = formatCurrency(instanceBundled);
+            templateData['{{serverBundledPrice}}'] = formatCurrency(instanceBundled);
             
             // Set migration bundled pricing tokens
+            const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
             templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
             templateData['{{price_migration_bundled}}'] = formatCurrency(migrationBundled);
             templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationBundled);
             templateData['{{migration_price_bundled}}'] = formatCurrency(migrationBundled);
             templateData['{{migrationCostBundled}}'] = formatCurrency(migrationBundled);
-            
-            // Sum all exhibit bundled prices
-            for (const exhibit of exhibitsData) {
-              if (exhibit.exhibitBundledPrice) {
-                const exhibitBundledStr = exhibit.exhibitBundledPrice.replace(/[$,]/g, '');
-                bundledTotal += parseFloat(exhibitBundledStr) || 0;
-              }
-            }
-            
-            // Add CloudFuze Manage user total bundled (cfm_user_total_b)
-            bundledTotal += cfmUserTotalBundled;
-            
-            // Set CloudFuze Manage bundled pricing
-            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(bundledTotal);
-            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(bundledTotal);
-            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(bundledTotal);
-            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(bundledTotal);
-            // Short placeholder alias for better font sizing in templates
-            templateData['{{cfm_total_b}}'] = formatCurrency(bundledTotal);
             
             // For single migrations, the total price should be the sum of:
             // users_cost (userCost + dataCost) + migrationCost + instanceCost
@@ -6418,88 +6426,65 @@ Total Price: {{total price}}`;
             
             // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze X-Change Data Migration)
             const MINIMUM_TOTAL = 2500;
+            let finalUsersCost = usersCost; // This will be what's displayed
             if (calculatedDisplayedTotal < MINIMUM_TOTAL) {
               const deficit = MINIMUM_TOTAL - calculatedDisplayedTotal;
+              finalUsersCost = usersCost + deficit; // Add deficit to usersCost for display
+              calculatedDisplayedTotal = MINIMUM_TOTAL;
               
-              // Add deficit to the first exhibit's price (exhibitsData already declared above)
+              // Update the first exhibit's price to match
               if (exhibitsData.length > 0) {
                 const firstExhibit = exhibitsData[0];
-                if (firstExhibit && firstExhibit.exhibitPrice) {
-                  const currentPriceStr = firstExhibit.exhibitPrice.replace(/[$,]/g, '');
-                  const currentPrice = parseFloat(currentPriceStr) || 0;
-                  const newPrice = currentPrice + deficit;
-                  
-                  // Update exhibit price
-                  firstExhibit.exhibitPrice = formatCurrency(newPrice);
-                  
-                  // Update bundled price (90% of new price)
-                  const newBundledPrice = newPrice * 0.9;
-                  firstExhibit.exhibitBundledPrice = formatCurrency(newBundledPrice);
-                  
-                  // Recalculate displayedTotalPrice from updated exhibit price + migration + instance
-                  // For single migrations, exhibit price = usersCost, so new usersCost = newPrice
-                  const newUsersCost = newPrice;
-                  calculatedDisplayedTotal = newUsersCost + (migrationCost || 0) + singleInstanceCost;
-                  
-                  console.log('💰 Applied $2,500 minimum by adding deficit to first exhibit (single migration):', {
-                    originalExhibitPrice: formatCurrency(currentPrice),
-                    deficit: formatCurrency(deficit),
-                    newExhibitPrice: formatCurrency(newPrice),
-                    newBundledPrice: formatCurrency(newBundledPrice),
-                    newUsersCost: formatCurrency(newUsersCost),
-                    migrationCost: formatCurrency(migrationCost || 0),
-                    instanceCost: formatCurrency(singleInstanceCost),
-                    finalTotal: formatCurrency(calculatedDisplayedTotal)
-                  });
+                if (firstExhibit) {
+                  firstExhibit.exhibitPrice = formatCurrency(finalUsersCost);
                 }
               }
             }
+            
+            // Set users_cost to the FINAL value (after minimum adjustment if any)
+            templateData['{{users_cost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{user_cost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{userCost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{price_data}}'] = formatCurrency(finalUsersCost);
+            
+            // Calculate bundled price from the FINAL displayed users_cost (90% of finalUsersCost)
+            // This ensures bundled price is always 90% of what's shown in Price(USD) column
+            const usersCostBundled = finalUsersCost * 0.9;
+            templateData['{{exhibitBundledPrice}}'] = formatCurrency(usersCostBundled);
+            
+            // Also update the exhibit's bundled price to match
+            if (exhibitsData.length > 0) {
+              const firstExhibit = exhibitsData[0];
+              if (firstExhibit) {
+                firstExhibit.exhibitBundledPrice = formatCurrency(usersCostBundled);
+              }
+            }
+            
+            // NOW calculate the final bundled total AFTER all values are updated
+            // This should be the sum of the 4 rows in the table:
+            // 1. Exhibit bundled (usersCostBundled)
+            // 2. Migration bundled (migrationBundled)
+            // 3. Instance bundled (instanceBundled)
+            // 4. CloudFuze Manage bundled (cfmUserTotalBundled)
+            const finalBundledTotal = usersCostBundled + migrationBundled + instanceBundled + cfmUserTotalBundled;
+            
+            // Set bundled total tokens (this is what shows in the gray box)
+            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cfm_total_b}}'] = formatCurrency(finalBundledTotal);
+            
+            console.log('💰 Single migration bundled total calculation:', {
+              exhibitBundled: formatCurrency(usersCostBundled),
+              migrationBundled: formatCurrency(migrationBundled),
+              instanceBundled: formatCurrency(instanceBundled),
+              cfmUserTotalBundled: formatCurrency(cfmUserTotalBundled),
+              finalBundledTotal: formatCurrency(finalBundledTotal),
+              sum: usersCostBundled + migrationBundled + instanceBundled + cfmUserTotalBundled
+            });
             
             const displayedTotalPrice = calculatedDisplayedTotal;
-            
-            // Recalculate bundled total if we updated the exhibit price (to include updated exhibit bundled price)
-            // Check if we updated the exhibit price by comparing with original calculation
-            // (exhibitsData already declared above)
-            const originalUsersCost = userCost + dataCost;
-            const originalTotal = originalUsersCost + (migrationCost || 0) + singleInstanceCost;
-            if (originalTotal < MINIMUM_TOTAL && exhibitsData.length > 0) {
-              const firstExhibit = exhibitsData[0];
-              if (firstExhibit && firstExhibit.exhibitBundledPrice) {
-                // Recalculate bundled total with updated exhibit bundled price
-                let recalculatedBundledTotal = 0;
-                
-                // Add instance bundled price
-                const instanceBundled = singleInstanceCost * 0.9;
-                recalculatedBundledTotal += instanceBundled;
-                
-                // Add migration bundled price
-                const migrationBundled = (migrationCost || 0) * 0.9;
-                recalculatedBundledTotal += migrationBundled;
-                
-                // Sum all exhibit bundled prices (including updated first exhibit)
-                for (const exhibit of exhibitsData) {
-                  if (exhibit.exhibitBundledPrice) {
-                    const exhibitBundledStr = exhibit.exhibitBundledPrice.replace(/[$,]/g, '');
-                    recalculatedBundledTotal += parseFloat(exhibitBundledStr) || 0;
-                  }
-                }
-                
-                // Add CloudFuze Manage user total bundled
-                recalculatedBundledTotal += cfmUserTotalBundled;
-                
-                // Update bundled total tokens
-                templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(recalculatedBundledTotal);
-                templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(recalculatedBundledTotal);
-                templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(recalculatedBundledTotal);
-                templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(recalculatedBundledTotal);
-                templateData['{{cfm_total_b}}'] = formatCurrency(recalculatedBundledTotal);
-                
-                console.log('💰 Recalculated bundled total after applying minimum:', {
-                  recalculatedBundledTotal: formatCurrency(recalculatedBundledTotal),
-                  updatedExhibitBundledPrice: firstExhibit.exhibitBundledPrice
-                });
-              }
-            }
             
             console.log('🔍 Single Migration Total Price Calculation:', {
               userCost,
