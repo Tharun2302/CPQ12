@@ -2742,8 +2742,18 @@ Total Price: {{total price}}`;
 
     setIsStartingWorkflow(true);
     try {
-      // Use the same amount shown in the agreement PDF (post-discount if discount applies)
-      const approvalAmount = shouldApplyDiscount ? finalTotalAfterDiscount : totalCost;
+      // Apply $2,500 minimum to match what's shown in the agreement PDF
+      const MINIMUM_TOTAL = 2500;
+      const baseApprovalAmount = Math.max(totalCost, MINIMUM_TOTAL);
+      
+      // Apply discount if applicable (but ensure it doesn't go below $2,500)
+      let approvalAmount = baseApprovalAmount;
+      if (shouldApplyDiscount) {
+        const discountAmount = baseApprovalAmount * (discountPercent / 100);
+        const amountAfterDiscount = baseApprovalAmount - discountAmount;
+        // Ensure minimum is maintained even after discount
+        approvalAmount = Math.max(amountAfterDiscount, MINIMUM_TOTAL);
+      }
 
       // First, save the PDF to MongoDB if not already saved
       const { templateService } = await import('../utils/templateService');
@@ -3816,7 +3826,10 @@ Total Price: {{total price}}`;
         const userCount = quoteData.configuration?.numberOfUsers || 1;
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
-        const totalCost = quoteData.calculation?.totalCost || 0;
+        // Apply $2,500 minimum to total cost for agreement generation
+        const calculatedTotalCost = quoteData.calculation?.totalCost || 0;
+        const MINIMUM_TOTAL = 2500;
+        const totalCost = calculatedTotalCost < MINIMUM_TOTAL ? MINIMUM_TOTAL : calculatedTotalCost;
         const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
@@ -6159,6 +6172,38 @@ Total Price: {{total price}}`;
               }
             }
             
+            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze X-Change Data Migration)
+            const MINIMUM_TOTAL = 2500;
+            if (cloudfuzeManageTotal < MINIMUM_TOTAL && exhibitsData.length > 0) {
+              const deficit = MINIMUM_TOTAL - cloudfuzeManageTotal;
+              
+              // Add deficit to the first exhibit's price
+              const firstExhibit = exhibitsData[0];
+              if (firstExhibit && firstExhibit.exhibitPrice) {
+                const currentPriceStr = firstExhibit.exhibitPrice.replace(/[$,]/g, '');
+                const currentPrice = parseFloat(currentPriceStr) || 0;
+                const newPrice = currentPrice + deficit;
+                
+                // Update exhibit price
+                firstExhibit.exhibitPrice = formatCurrency(newPrice);
+                
+                // Update bundled price (90% of new price)
+                const newBundledPrice = newPrice * 0.9;
+                firstExhibit.exhibitBundledPrice = formatCurrency(newBundledPrice);
+                
+                // Recalculate total with updated exhibit price
+                cloudfuzeManageTotal = MINIMUM_TOTAL;
+                
+                console.log('💰 Applied $2,500 minimum by adding deficit to first exhibit:', {
+                  originalExhibitPrice: formatCurrency(currentPrice),
+                  deficit: formatCurrency(deficit),
+                  newExhibitPrice: formatCurrency(newPrice),
+                  newBundledPrice: formatCurrency(newBundledPrice),
+                  finalTotal: formatCurrency(cloudfuzeManageTotal)
+                });
+              }
+            }
+            
             console.log('🔍 Multi-combination Total Price Calculation:', {
               serverPricesTotal: formatCurrency(total),
               migrationCost: formatCurrency(migrationCost || 0),
@@ -6195,7 +6240,9 @@ Total Price: {{total price}}`;
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
             // NOTE: cfm_user_total ($399) is excluded from the total price calculation
+            // Total should now be at least $2,500 (deficit already added to first exhibit)
             const displayedTotalPrice = cloudfuzeManageTotal;
+            
             if (localShouldApplyDiscount) {
               const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
               const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
@@ -6367,7 +6414,92 @@ Total Price: {{total price}}`;
             const userCost = (calculation || safeCalculation)?.userCost ?? 0;
             const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
             const usersCost = userCost + dataCost;
-            const displayedTotalPrice = usersCost + (migrationCost || 0) + singleInstanceCost;
+            let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
+            
+            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze X-Change Data Migration)
+            const MINIMUM_TOTAL = 2500;
+            if (calculatedDisplayedTotal < MINIMUM_TOTAL) {
+              const deficit = MINIMUM_TOTAL - calculatedDisplayedTotal;
+              
+              // Add deficit to the first exhibit's price (exhibitsData already declared above)
+              if (exhibitsData.length > 0) {
+                const firstExhibit = exhibitsData[0];
+                if (firstExhibit && firstExhibit.exhibitPrice) {
+                  const currentPriceStr = firstExhibit.exhibitPrice.replace(/[$,]/g, '');
+                  const currentPrice = parseFloat(currentPriceStr) || 0;
+                  const newPrice = currentPrice + deficit;
+                  
+                  // Update exhibit price
+                  firstExhibit.exhibitPrice = formatCurrency(newPrice);
+                  
+                  // Update bundled price (90% of new price)
+                  const newBundledPrice = newPrice * 0.9;
+                  firstExhibit.exhibitBundledPrice = formatCurrency(newBundledPrice);
+                  
+                  // Recalculate displayedTotalPrice from updated exhibit price + migration + instance
+                  // For single migrations, exhibit price = usersCost, so new usersCost = newPrice
+                  const newUsersCost = newPrice;
+                  calculatedDisplayedTotal = newUsersCost + (migrationCost || 0) + singleInstanceCost;
+                  
+                  console.log('💰 Applied $2,500 minimum by adding deficit to first exhibit (single migration):', {
+                    originalExhibitPrice: formatCurrency(currentPrice),
+                    deficit: formatCurrency(deficit),
+                    newExhibitPrice: formatCurrency(newPrice),
+                    newBundledPrice: formatCurrency(newBundledPrice),
+                    newUsersCost: formatCurrency(newUsersCost),
+                    migrationCost: formatCurrency(migrationCost || 0),
+                    instanceCost: formatCurrency(singleInstanceCost),
+                    finalTotal: formatCurrency(calculatedDisplayedTotal)
+                  });
+                }
+              }
+            }
+            
+            const displayedTotalPrice = calculatedDisplayedTotal;
+            
+            // Recalculate bundled total if we updated the exhibit price (to include updated exhibit bundled price)
+            // Check if we updated the exhibit price by comparing with original calculation
+            // (exhibitsData already declared above)
+            const originalUsersCost = userCost + dataCost;
+            const originalTotal = originalUsersCost + (migrationCost || 0) + singleInstanceCost;
+            if (originalTotal < MINIMUM_TOTAL && exhibitsData.length > 0) {
+              const firstExhibit = exhibitsData[0];
+              if (firstExhibit && firstExhibit.exhibitBundledPrice) {
+                // Recalculate bundled total with updated exhibit bundled price
+                let recalculatedBundledTotal = 0;
+                
+                // Add instance bundled price
+                const instanceBundled = singleInstanceCost * 0.9;
+                recalculatedBundledTotal += instanceBundled;
+                
+                // Add migration bundled price
+                const migrationBundled = (migrationCost || 0) * 0.9;
+                recalculatedBundledTotal += migrationBundled;
+                
+                // Sum all exhibit bundled prices (including updated first exhibit)
+                for (const exhibit of exhibitsData) {
+                  if (exhibit.exhibitBundledPrice) {
+                    const exhibitBundledStr = exhibit.exhibitBundledPrice.replace(/[$,]/g, '');
+                    recalculatedBundledTotal += parseFloat(exhibitBundledStr) || 0;
+                  }
+                }
+                
+                // Add CloudFuze Manage user total bundled
+                recalculatedBundledTotal += cfmUserTotalBundled;
+                
+                // Update bundled total tokens
+                templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(recalculatedBundledTotal);
+                templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(recalculatedBundledTotal);
+                templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(recalculatedBundledTotal);
+                templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(recalculatedBundledTotal);
+                templateData['{{cfm_total_b}}'] = formatCurrency(recalculatedBundledTotal);
+                
+                console.log('💰 Recalculated bundled total after applying minimum:', {
+                  recalculatedBundledTotal: formatCurrency(recalculatedBundledTotal),
+                  updatedExhibitBundledPrice: firstExhibit.exhibitBundledPrice
+                });
+              }
+            }
             
             console.log('🔍 Single Migration Total Price Calculation:', {
               userCost,
