@@ -129,6 +129,20 @@ function normalizeExhibitDisplayNameForTable(rawName: string): string {
   return name;
 }
 
+// Helper function to format combination name for display
+// Converts "Onedrive To Sharepoint" to "OneDrive / SharePoint - OneDrive / SharePoint"
+function formatCombinationNameForDisplay(name: string): string {
+  if (!name) return name;
+  const normalized = name.toLowerCase().replace(/\s+/g, ' ').trim();
+  
+  // Special case: "Onedrive To Sharepoint" or "OneDrive To SharePoint" should display as "OneDrive / SharePoint - OneDrive / SharePoint"
+  if (normalized === 'onedrive to sharepoint' || normalized === 'onedrive to share point') {
+    return 'OneDrive / SharePoint - OneDrive / SharePoint';
+  }
+  
+  return name;
+}
+
 // Helper function to format exhibit description with configuration details
 function formatExhibitDescription(exhibit: any, configuration: ConfigurationData, exhibitConfig?: any): string {
   const category = (exhibit.category || 'content').toLowerCase();
@@ -155,6 +169,9 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
   exhibitName = exhibitName.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)$/i, '');
   // Normalize multiple spaces to single space (fixes "Slack  To  Teams" -> "Slack To Teams")
   exhibitName = exhibitName.replace(/\s+/g, ' ').trim();
+  
+  // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+  exhibitName = formatCombinationNameForDisplay(exhibitName);
   
   // For Multi combination, use the specific config for this exhibit
   // For single migrations, fall back to main configuration if exhibitConfig doesn't have the value
@@ -5423,7 +5440,9 @@ Total Price: {{total price}}`;
                 const baseDesc = exhibit
                   ? formatExhibitDescription(exhibit, configuration, exhibitConfig)
                   : `${combinationName}\n---------------------------------\nConfigured migration`;
-                const descFirstLine = combinationName;
+                // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+                const formattedCombinationName = formatCombinationNameForDisplay(combinationName);
+                const descFirstLine = formattedCombinationName;
                 const descRest = baseDesc.split('\n').slice(1).join('\n');
                 const exhibitDesc = descRest ? `${descFirstLine}\n${descRest}` : descFirstLine;
 
@@ -5503,7 +5522,9 @@ Total Price: {{total price}}`;
                   exhibitData.exhibitOveragePerUser = overageCharges.perUserCost;
                   exhibitData.exhibitOveragePerServer = overageCharges.perServerPerMonthCost;
                   exhibitData.exhibitOveragePerGB = overageCharges.perGBCost;
-                  exhibitData.exhibitCombinationName = overageCharges.combinationName;
+                  
+                  // Format combination name for display (handle special cases like "Onedrive To Sharepoint")
+                  exhibitData.exhibitCombinationName = formatCombinationNameForDisplay(overageCharges.combinationName);
                   // Also add formatted overage charges string for easy template usage
                   exhibitData.exhibitOverageCharges = `Overage Charges: ${overageCharges.perUserCost} per User | ${overageCharges.perServerPerMonthCost} per server per month${category === 'content' ? ` | ${overageCharges.perGBCost} per GB` : ''}`;
                 }
@@ -5639,6 +5660,7 @@ Total Price: {{total price}}`;
                 const perGB = e.exhibitOveragePerGB && e.exhibitOveragePerGB !== '$0.00' 
                   ? ` | ${e.exhibitOveragePerGB} per GB` 
                   : '';
+                // Use the already formatted combination name (should already be formatted above)
                 return `Overage Charges for ${e.exhibitCombinationName}: ${e.exhibitOveragePerUser} per User | ${e.exhibitOveragePerServer} per server per month${perGB}`;
               });
             
@@ -5944,8 +5966,10 @@ Total Price: {{total price}}`;
               );
               
               // Line 2: combination name in bold (if available)
-              if (p.exhibitName) {
-                lines.push(`**${p.exhibitName}**`);
+              // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+              const formattedExhibitName = p.exhibitName ? formatCombinationNameForDisplay(p.exhibitName) : null;
+              if (formattedExhibitName) {
+                lines.push(`**${formattedExhibitName}**`);
               }
             });
 
@@ -6064,7 +6088,9 @@ Total Price: {{total price}}`;
               // Keep normal spaces. If you see large gaps in Word/PDF, fix the DOCX cell alignment
               // (use Center/Left, not Justify/Distributed) rather than forcing non-breaking spaces,
               // which can cause ugly mid-word wrapping in narrow cells.
-              const displayName = name.replace(/\s+/g, ' ').trim();
+              let displayName = name.replace(/\s+/g, ' ').trim();
+              // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+              displayName = formatCombinationNameForDisplay(displayName);
               const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
               const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
               const months = Number(it.months || 0) > 0 ? Number(it.months) : 1;
@@ -6169,18 +6195,7 @@ Total Price: {{total price}}`;
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
             // NOTE: cfm_user_total ($399) is excluded from the total price calculation
-            // IMPORTANT: For multi-combination, ensure we respect the $2500 minimum from the calculation
-            // The calculation's totalCost already has the minimum applied if needed
-            const calculatedTotalCost = (calculation || safeCalculation)?.totalCost ?? 0;
-            // Use the higher of calculated sum or totalCost (which includes minimum if applicable)
-            const displayedTotalPrice = Math.max(cloudfuzeManageTotal, calculatedTotalCost);
-            
-            console.log('🔍 Multi-combination Total Price Calculation:', {
-              cloudfuzeManageTotal: formatCurrency(cloudfuzeManageTotal),
-              calculatedTotalCost: formatCurrency(calculatedTotalCost),
-              displayedTotalPrice: formatCurrency(displayedTotalPrice),
-              'Using max to respect $2500 minimum': calculatedTotalCost > cloudfuzeManageTotal
-            });
+            const displayedTotalPrice = cloudfuzeManageTotal;
             if (localShouldApplyDiscount) {
               const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
               const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
@@ -6348,15 +6363,11 @@ Total Price: {{total price}}`;
             // This equals totalCost from the calculation, NOT cloudfuzeManageTotal
             // because cloudfuzeManageTotal incorrectly includes exhibit prices which already contain all costs
             // NOTE: The agreement table shows 3 rows: users_cost, migrationCost, instanceCost
-            // IMPORTANT: Use totalCost from calculation which already includes $2500 minimum if applicable
-            // The pricing calculation adjusts userCost to meet the minimum, so totalCost already reflects this
+            // So the total should be: users_cost + migrationCost + instanceCost = totalCost
             const userCost = (calculation || safeCalculation)?.userCost ?? 0;
             const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
             const usersCost = userCost + dataCost;
-            // Use totalCost from calculation which already has $2500 minimum applied if needed
-            const calculatedTotal = (calculation || safeCalculation)?.totalCost ?? 0;
-            // Ensure we use the totalCost which includes minimum, not the raw sum
-            const displayedTotalPrice = calculatedTotal > 0 ? calculatedTotal : (usersCost + (migrationCost || 0) + singleInstanceCost);
+            const displayedTotalPrice = usersCost + (migrationCost || 0) + singleInstanceCost;
             
             console.log('🔍 Single Migration Total Price Calculation:', {
               userCost,
@@ -6364,10 +6375,9 @@ Total Price: {{total price}}`;
               usersCost,
               migrationCost,
               singleInstanceCost,
-              calculatedTotalFromCalculation: calculatedTotal,
-              rawSum: usersCost + (migrationCost || 0) + singleInstanceCost,
               displayedTotalPrice,
-              'Using calculation totalCost (includes $2500 minimum if applicable)': calculatedTotal
+              totalCostFromCalculation: (calculation || safeCalculation)?.totalCost,
+              'Should match': usersCost + (migrationCost || 0) + singleInstanceCost
             });
             
             if (localShouldApplyDiscount) {

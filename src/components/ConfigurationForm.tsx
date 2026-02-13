@@ -160,7 +160,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             const baseKeyToDisplayLabel = (baseKey: string): string => {
               if (!baseKey) return '';
               // Keep requested business label for OneDrive/SharePoint folder
-              if (baseKey === 'onedrive-sharepoint') {
+              if (baseKey === 'onedrive-sharepoint' || baseKey === 'onedrive-to-sharepoint') {
                 return 'OneDrive / SharePoint - OneDrive / SharePoint';
               }
               // Default: "testing-to-production" -> "Testing To Production"
