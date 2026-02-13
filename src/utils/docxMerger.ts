@@ -358,9 +358,32 @@ export async function mergeDocxFiles(
         // Handle tables explicitly to ensure all properties are preserved
         if (child.nodeName === 'w:tbl' && child instanceof Element) {
           // Tables should be imported with all properties (tblPr, alignment, borders, etc.)
-          const importedTable = mainDoc.importNode(child, true);
+          const importedTable = mainDoc.importNode(child, true) as Element;
+          
+          // Ensure table is centered by adding/updating table justification
+          let tblPr = importedTable.getElementsByTagName('w:tblPr')[0];
+          if (!tblPr) {
+            // Create tblPr if it doesn't exist
+            tblPr = mainDoc.createElementNS(ns, 'w:tblPr');
+            importedTable.insertBefore(tblPr, importedTable.firstChild);
+          }
+          
+          // Check if justification already exists
+          let jc = tblPr.getElementsByTagName('w:jc')[0];
+          if (!jc) {
+            // Add center justification if it doesn't exist
+            jc = mainDoc.createElementNS(ns, 'w:jc');
+            jc.setAttribute('w:val', 'center');
+            tblPr.appendChild(jc);
+            console.log('   📊 Added center alignment to table');
+          } else {
+            // Update existing justification to center
+            jc.setAttribute('w:val', 'center');
+            console.log('   📊 Updated table alignment to center');
+          }
+          
           mainBody.insertBefore(importedTable, mainBody.lastChild);
-          console.log('   📊 Imported table with all properties preserved');
+          console.log('   📊 Imported table with all properties preserved and centered');
           continue;
         }
         
