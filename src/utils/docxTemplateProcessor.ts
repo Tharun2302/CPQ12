@@ -1704,15 +1704,15 @@ export class DocxTemplateProcessor {
       '{{migration_price_bundled}}': (data as any)['{{migration_price_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
       '{{migrationCostBundled}}': (data as any)['{{migrationCostBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
       
-      // CloudFuze Manage user total (userCount * 399)
-      '{{cfm_user_total}}': (data as any)['{{cfm_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 399),
-      '{{cloudfuze_manage_user_total}}': (data as any)['{{cloudfuze_manage_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 399),
-      '{{cloudfuzeManageUserTotal}}': (data as any)['{{cloudfuzeManageUserTotal}}'] || formatCurrency((parseInt(userCount) || 1) * 399),
+      // CloudFuze Manage user total (userCount * 3.99)
+      '{{cfm_user_total}}': (data as any)['{{cfm_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 3.99),
+      '{{cloudfuze_manage_user_total}}': (data as any)['{{cloudfuze_manage_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 3.99),
+      '{{cloudfuzeManageUserTotal}}': (data as any)['{{cloudfuzeManageUserTotal}}'] || formatCurrency((parseInt(userCount) || 1) * 3.99),
       
       // CloudFuze Manage user total bundled (final price after 10% discount = 90% of original)
-      '{{cfm_user_total_b}}': (data as any)['{{cfm_user_total_b}}'] || formatCurrency(((parseInt(userCount) || 1) * 399) * 0.9),
-      '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 399) * 0.9),
-      '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 399) * 0.9),
+      '{{cfm_user_total_b}}': (data as any)['{{cfm_user_total_b}}'] || formatCurrency(((parseInt(userCount) || 1) * 3.99) * 0.9),
+      '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 3.99) * 0.9),
+      '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 3.99) * 0.9),
       
       // Migration type variations
       '{{migration type}}': migrationType,

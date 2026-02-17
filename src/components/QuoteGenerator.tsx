@@ -1545,14 +1545,14 @@ Quote ID: ${quoteData.id}
           '{{migration_cost}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           '{{migrationCost}}': formatCurrency(migrationCost || 0),
-          // CloudFuze Manage user total (userCount * 399)
-          '{{cfm_user_total}}': formatCurrency((userCount || 1) * 399),
-          '{{cloudfuze_manage_user_total}}': formatCurrency((userCount || 1) * 399),
-          '{{cloudfuzeManageUserTotal}}': formatCurrency((userCount || 1) * 399),
+          // CloudFuze Manage user total (userCount * 3.99)
+          '{{cfm_user_total}}': formatCurrency((userCount || 1) * 3.99),
+          '{{cloudfuze_manage_user_total}}': formatCurrency((userCount || 1) * 3.99),
+          '{{cloudfuzeManageUserTotal}}': formatCurrency((userCount || 1) * 3.99),
           // CloudFuze Manage user total bundled (final price after 10% discount = 90% of original)
-          '{{cfm_user_total_b}}': formatCurrency(((userCount || 1) * 399) * 0.9),
-          '{{cloudfuze_manage_user_total_bundled}}': formatCurrency(((userCount || 1) * 399) * 0.9),
-          '{{cfm_user_bundled}}': formatCurrency(((userCount || 1) * 399) * 0.9),
+          '{{cfm_user_total_b}}': formatCurrency(((userCount || 1) * 3.99) * 0.9),
+          '{{cloudfuze_manage_user_total_bundled}}': formatCurrency(((userCount || 1) * 3.99) * 0.9),
+          '{{cfm_user_bundled}}': formatCurrency(((userCount || 1) * 3.99) * 0.9),
           // Bundled pricing for migration (final price after 10% discount = 90% of original)
           '{{migrationBundled}}': formatCurrency((migrationCost || 0) * 0.9),
           '{{price_migration_bundled}}': formatCurrency((migrationCost || 0) * 0.9),
@@ -6240,9 +6240,9 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
-            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 399)
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 3.99)
             // For multi-combination, this should be the sum of all users from all exhibits
-            const cfmUserTotal = totalUserCountFromExhibits * 399;
+            const cfmUserTotal = totalUserCountFromExhibits * 3.99;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
@@ -6255,7 +6255,7 @@ Total Price: {{total price}}`;
             
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
-            // NOTE: cfm_user_total ($399) is excluded from the total price calculation
+            // NOTE: cfm_user_total ($3.99) is excluded from the total price calculation
             // Total should now be at least $2,500 (deficit already added to first exhibit)
             const displayedTotalPrice = cloudfuzeManageTotal;
             
@@ -6383,9 +6383,9 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
-            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 399)
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 3.99)
             // For single migrations, this uses the single userCount, but for multi-combination it uses the sum
-            const cfmUserTotal = totalUserCountFromExhibits * 399;
+            const cfmUserTotal = totalUserCountFromExhibits * 3.99;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
@@ -6528,7 +6528,7 @@ Total Price: {{total price}}`;
           
           // Ensure CloudFuze Manage tokens are set even if there's an error
           // Use fallback values to prevent template diagnostic errors
-          const fallbackCfmUserTotal = totalUserCountFromExhibits * 399;
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 3.99;
           templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
@@ -6742,13 +6742,13 @@ Total Price: {{total price}}`;
         // Ensure CloudFuze Manage tokens are always set before diagnostic
         // (safety check in case they weren't set in the previous blocks)
         if (!templateData['{{cfm_user_total}}']) {
-          const fallbackCfmUserTotal = totalUserCountFromExhibits * 399;
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 3.99;
           templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
         }
         if (!templateData['{{cfm_user_total_b}}']) {
-          const fallbackCfmUserTotal = parseFloat((templateData['{{cfm_user_total}}'] || '$0').replace(/[$,]/g, '')) || (totalUserCountFromExhibits * 399);
+          const fallbackCfmUserTotal = parseFloat((templateData['{{cfm_user_total}}'] || '$0').replace(/[$,]/g, '')) || (totalUserCountFromExhibits * 3.99);
           const fallbackCfmUserTotalBundled = fallbackCfmUserTotal * 0.9;
           templateData['{{cfm_user_total_b}}'] = formatCurrency(fallbackCfmUserTotalBundled);
           templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);
@@ -6758,7 +6758,7 @@ Total Price: {{total price}}`;
           // Try to get from cloudfuze_manage_total_bundled, or calculate fallback
           const fallbackCfmTotalB = templateData['{{cloudfuze_manage_total_bundled}}'] || 
                                    templateData['{{cloudfuzeManageTotalBundled}}'] ||
-                                   formatCurrency((totalUserCountFromExhibits * 399) * 0.9);
+                                   formatCurrency((totalUserCountFromExhibits * 3.99) * 0.9);
           templateData['{{cfm_total_b}}'] = fallbackCfmTotalB;
         }
 
