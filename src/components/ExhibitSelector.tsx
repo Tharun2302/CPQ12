@@ -331,17 +331,6 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   }, [selectedTier, exhibits.length, onExhibitsChange]); // Removed selectedExhibits from deps to avoid infinite loop
 
-  // Filter exhibits by search query
-  const searchFilteredExhibits = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return filteredExhibits;
-    }
-    const query = searchQuery.toLowerCase().trim();
-    return filteredExhibits.filter(exhibit => 
-      exhibit.name.toLowerCase().includes(query)
-    );
-  }, [filteredExhibits, searchQuery]);
-
   // Helper function to extract base combination from combination string
   const extractBaseCombination = (combination: string): string => {
     if (!combination || combination === 'all') return '';
@@ -423,8 +412,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       return 'OneDrive to SharePoint Online';
     }
 
+    // Special case: "onedrive-to-sharepoint" should display as "OneDrive / SharePoint - OneDrive / SharePoint"
+    if (normalized === 'onedrive-to-sharepoint' || normalized === 'onedrive-to-share-point') {
+      return 'OneDrive / SharePoint - OneDrive / SharePoint';
+    }
+
     // Special case: user-created OneDrive/SharePoint folder should keep the exact folder-style label
     // (This slug is produced by normalization of "OneDrive / SharePoint - OneDrive / SharePoint")
+    // extractBaseCombination should already collapse duplicates, so this should be "onedrive-sharepoint"
     if (normalized === 'onedrive-sharepoint') {
       return 'OneDrive / SharePoint - OneDrive / SharePoint';
     }
@@ -439,6 +434,70 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
   };
+
+  // Filter exhibits by search query
+  const searchFilteredExhibits = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return filteredExhibits;
+    }
+    const query = searchQuery.toLowerCase().trim();
+    
+    // Normalize the search query (remove special characters, normalize spaces/dashes)
+    const normalizedQuery = query
+      .replace(/[\/\-\s]+/g, ' ') // Replace /, -, and multiple spaces with single space
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    return filteredExhibits.filter(exhibit => {
+      // Search in exhibit name
+      const nameMatch = exhibit.name.toLowerCase().includes(query);
+      if (nameMatch) return true;
+      
+      // Search in combinations field
+      if (exhibit.combinations && exhibit.combinations.length > 0) {
+        const combinationMatch = exhibit.combinations.some(combo => 
+          combo.toLowerCase().includes(query) || 
+          combo.toLowerCase().replace(/[\/\-\s]+/g, ' ').includes(normalizedQuery)
+        );
+        if (combinationMatch) return true;
+      }
+      
+      // Search in the formatted combination name (what would be displayed as group name)
+      const primaryCombination = exhibit.combinations && exhibit.combinations.length > 0 
+        ? exhibit.combinations[0] 
+        : 'all';
+      const baseCombination = extractBaseCombination(primaryCombination);
+      if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 3) {
+        const formattedName = formatCombinationForDisplay(baseCombination);
+        const formattedMatch = formattedName.toLowerCase().includes(query) ||
+          formattedName.toLowerCase().replace(/[\/\-\s]+/g, ' ').includes(normalizedQuery);
+        if (formattedMatch) return true;
+      }
+      
+      // Search in description
+      if (exhibit.description && exhibit.description.toLowerCase().includes(query)) {
+        return true;
+      }
+      
+      // Special handling for "OneDrive / SharePoint" searches
+      // Match variations like "onedrive sharepoint", "onedrive/sharepoint", "onedrive-sharepoint"
+      const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length > 0);
+      if (queryWords.length >= 2) {
+        const hasOnedrive = queryWords.some(w => w.includes('onedrive') || w.includes('onedr'));
+        const hasSharepoint = queryWords.some(w => w.includes('sharepoint') || w.includes('share'));
+        
+        if (hasOnedrive && hasSharepoint) {
+          // Check if exhibit name or combination contains both terms
+          const exhibitText = (exhibit.name + ' ' + (exhibit.combinations || []).join(' ')).toLowerCase();
+          if (exhibitText.includes('onedrive') && exhibitText.includes('sharepoint')) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    });
+  }, [filteredExhibits, searchQuery]);
 
   // Process exhibits for flat list display (handle grouping)
   const processedExhibits = useMemo(() => {
@@ -496,6 +555,16 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       // Extract base combination (e.g., "testing-to-production" from "testing-to-production-include-basic")
       const baseCombination = extractBaseCombination(primaryCombination);
       
+      // Debug logging for OneDrive/SharePoint exhibits
+      if (exhibit.name && (exhibit.name.toLowerCase().includes('onedrive') && exhibit.name.toLowerCase().includes('sharepoint'))) {
+        console.log('🔍 OneDrive/SharePoint exhibit processing:', {
+          name: exhibit.name,
+          primaryCombination,
+          baseCombination,
+          combinations: exhibit.combinations
+        });
+      }
+      
       if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 3) {
         // Use base combination as folder name
         const folderName = formatCombinationForDisplay(baseCombination);
@@ -516,9 +585,28 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         addedExhibitIds.add(exhibit._id);
       } else {
         // Fallback: Try grouping by name pattern (for backward compatibility)
-        const dashIndex = exhibit.name.indexOf(' - ');
+        const exhibitName = exhibit.name || '';
+        const dashIndex = exhibitName.indexOf(' - ');
+        
+        // Special handling for "OneDrive / SharePoint - OneDrive / SharePoint" exhibits
+        // Check if the full name matches this pattern (case-insensitive)
+        const normalizedName = exhibitName.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (normalizedName.includes('onedrive') && normalizedName.includes('sharepoint')) {
+          // Check if it matches the pattern "OneDrive / SharePoint - OneDrive / SharePoint - ..."
+          const onedriveSharePointPattern = /^onedrive\s*\/\s*sharepoint\s*-\s*onedrive\s*\/\s*sharepoint/i;
+          if (onedriveSharePointPattern.test(exhibitName)) {
+            const folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+            if (!groups.has(folderName)) {
+              groups.set(folderName, []);
+            }
+            groups.get(folderName)!.push(exhibit);
+            addedExhibitIds.add(exhibit._id);
+            return; // Skip the rest of the fallback logic
+          }
+        }
+        
         if (dashIndex > 0) {
-          const baseName = exhibit.name.substring(0, dashIndex);
+          const baseName = exhibitName.substring(0, dashIndex);
           let folderName = baseName
             .replace(/\s+(Basic|Standard|Advanced|Premium)\s+Plan$/i, '')
             .trim();
@@ -527,6 +615,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           // but the desired UI label is "SharePoint Online to SharePoint Online".
           if (folderName.toLowerCase() === 'sharepoint to sharepoint online') {
             folderName = 'SharePoint Online to SharePoint Online';
+          }
+          
+          // Special case: "Onedrive To Sharepoint" or "OneDrive To SharePoint" should display as "OneDrive / SharePoint - OneDrive / SharePoint"
+          const normalizedFolderName = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+          if (normalizedFolderName === 'onedrive to sharepoint' || normalizedFolderName === 'onedrive to share point') {
+            folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
           }
           
           if (!folderName || folderName.length < 3) {
@@ -559,7 +653,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       displayOrder: number;
     }> = [];
     
-    // Add groups (only if they have more than 1 exhibit, otherwise treat as ungrouped)
+    // Add groups (display as groups even if they have only 1 exhibit, to ensure proper formatting)
     groups.forEach((exhibits, folderName) => {
       if (exhibits.length > 1) {
         // Deduplicate exhibits within the group by their display label (the part after " - ")
@@ -596,7 +690,15 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           displayOrder: Math.min(...deduplicatedExhibits.map(e => e.displayOrder ?? 0))
         });
       } else {
-        ungrouped.push(exhibits[0]);
+        // Even single-exhibit groups should be displayed with the formatted folder name
+        // This ensures exhibits like "OneDrive / SharePoint - OneDrive / SharePoint" show up correctly
+        result.push({
+          id: `group-${folderName}`,
+          name: folderName,
+          exhibits: exhibits,
+          isGroup: true,
+          displayOrder: exhibits[0].displayOrder ?? 0
+        });
       }
     });
     

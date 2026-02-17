@@ -129,6 +129,20 @@ function normalizeExhibitDisplayNameForTable(rawName: string): string {
   return name;
 }
 
+// Helper function to format combination name for display
+// Converts "Onedrive To Sharepoint" to "OneDrive / SharePoint - OneDrive / SharePoint"
+function formatCombinationNameForDisplay(name: string): string {
+  if (!name) return name;
+  const normalized = name.toLowerCase().replace(/\s+/g, ' ').trim();
+  
+  // Special case: "Onedrive To Sharepoint" or "OneDrive To SharePoint" should display as "OneDrive / SharePoint - OneDrive / SharePoint"
+  if (normalized === 'onedrive to sharepoint' || normalized === 'onedrive to share point') {
+    return 'OneDrive / SharePoint - OneDrive / SharePoint';
+  }
+  
+  return name;
+}
+
 // Helper function to format exhibit description with configuration details
 function formatExhibitDescription(exhibit: any, configuration: ConfigurationData, exhibitConfig?: any): string {
   const category = (exhibit.category || 'content').toLowerCase();
@@ -155,6 +169,9 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
   exhibitName = exhibitName.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)$/i, '');
   // Normalize multiple spaces to single space (fixes "Slack  To  Teams" -> "Slack To Teams")
   exhibitName = exhibitName.replace(/\s+/g, ' ').trim();
+  
+  // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+  exhibitName = formatCombinationNameForDisplay(exhibitName);
   
   // For Multi combination, use the specific config for this exhibit
   // For single migrations, fall back to main configuration if exhibitConfig doesn't have the value
@@ -2725,8 +2742,18 @@ Total Price: {{total price}}`;
 
     setIsStartingWorkflow(true);
     try {
-      // Use the same amount shown in the agreement PDF (post-discount if discount applies)
-      const approvalAmount = shouldApplyDiscount ? finalTotalAfterDiscount : totalCost;
+      // Apply $2,500 minimum to match what's shown in the agreement PDF
+      const MINIMUM_TOTAL = 2500;
+      const baseApprovalAmount = Math.max(totalCost, MINIMUM_TOTAL);
+      
+      // Apply discount if applicable (but ensure it doesn't go below $2,500)
+      let approvalAmount = baseApprovalAmount;
+      if (shouldApplyDiscount) {
+        const discountAmount = baseApprovalAmount * (discountPercent / 100);
+        const amountAfterDiscount = baseApprovalAmount - discountAmount;
+        // Ensure minimum is maintained even after discount
+        approvalAmount = Math.max(amountAfterDiscount, MINIMUM_TOTAL);
+      }
 
       // First, save the PDF to MongoDB if not already saved
       const { templateService } = await import('../utils/templateService');
@@ -3799,7 +3826,10 @@ Total Price: {{total price}}`;
         const userCount = quoteData.configuration?.numberOfUsers || 1;
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
-        const totalCost = quoteData.calculation?.totalCost || 0;
+        // Apply $2,500 minimum to total cost for agreement generation
+        const calculatedTotalCost = quoteData.calculation?.totalCost || 0;
+        const MINIMUM_TOTAL = 2500;
+        const totalCost = calculatedTotalCost < MINIMUM_TOTAL ? MINIMUM_TOTAL : calculatedTotalCost;
         const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
@@ -5401,7 +5431,9 @@ Total Price: {{total price}}`;
                 const baseDesc = exhibit
                   ? formatExhibitDescription(exhibit, configuration, exhibitConfig)
                   : `${combinationName}\n---------------------------------\nConfigured migration`;
-                const descFirstLine = combinationName;
+                // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+                const formattedCombinationName = formatCombinationNameForDisplay(combinationName);
+                const descFirstLine = formattedCombinationName;
                 const descRest = baseDesc.split('\n').slice(1).join('\n');
                 const exhibitDesc = descRest ? `${descFirstLine}\n${descRest}` : descFirstLine;
 
@@ -5481,7 +5513,9 @@ Total Price: {{total price}}`;
                   exhibitData.exhibitOveragePerUser = overageCharges.perUserCost;
                   exhibitData.exhibitOveragePerServer = overageCharges.perServerPerMonthCost;
                   exhibitData.exhibitOveragePerGB = overageCharges.perGBCost;
-                  exhibitData.exhibitCombinationName = overageCharges.combinationName;
+                  
+                  // Format combination name for display (handle special cases like "Onedrive To Sharepoint")
+                  exhibitData.exhibitCombinationName = formatCombinationNameForDisplay(overageCharges.combinationName);
                   // Also add formatted overage charges string for easy template usage
                   exhibitData.exhibitOverageCharges = `Overage Charges: ${overageCharges.perUserCost} per User | ${overageCharges.perServerPerMonthCost} per server per month${category === 'content' ? ` | ${overageCharges.perGBCost} per GB` : ''}`;
                 }
@@ -5508,6 +5542,22 @@ Total Price: {{total price}}`;
           }
 
           (templateData as any).exhibits = exhibitsData;
+          
+          // For backward compatibility: also set top-level tokens for first exhibit (in case template uses static rows)
+          if (exhibitsData.length > 0) {
+            const firstExhibit = exhibitsData[0];
+            // Set top-level exhibit bundled price token for static rows
+            if (firstExhibit.exhibitBundledPrice) {
+              templateData['{{exhibitBundledPrice}}'] = firstExhibit.exhibitBundledPrice;
+            }
+            // Also set other first exhibit fields as top-level tokens
+            if (firstExhibit.exhibitPrice) {
+              templateData['{{exhibitPrice}}'] = firstExhibit.exhibitPrice;
+            }
+            if (firstExhibit.exhibitDesc) {
+              templateData['{{exhibitDesc}}'] = firstExhibit.exhibitDesc;
+            }
+          }
           
           // Recalculate per_user_cost for multicombination from breakdowns after exhibits are populated
           if (configuration?.migrationType === 'Multi combination') {
@@ -5617,6 +5667,7 @@ Total Price: {{total price}}`;
                 const perGB = e.exhibitOveragePerGB && e.exhibitOveragePerGB !== '$0.00' 
                   ? ` | ${e.exhibitOveragePerGB} per GB` 
                   : '';
+                // Use the already formatted combination name (should already be formatted above)
                 return `Overage Charges for ${e.exhibitCombinationName}: ${e.exhibitOveragePerUser} per User | ${e.exhibitOveragePerServer} per server per month${perGB}`;
               });
             
@@ -5922,8 +5973,10 @@ Total Price: {{total price}}`;
               );
               
               // Line 2: combination name in bold (if available)
-              if (p.exhibitName) {
-                lines.push(`**${p.exhibitName}**`);
+              // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+              const formattedExhibitName = p.exhibitName ? formatCombinationNameForDisplay(p.exhibitName) : null;
+              if (formattedExhibitName) {
+                lines.push(`**${formattedExhibitName}**`);
               }
             });
 
@@ -6042,7 +6095,9 @@ Total Price: {{total price}}`;
               // Keep normal spaces. If you see large gaps in Word/PDF, fix the DOCX cell alignment
               // (use Center/Left, not Justify/Distributed) rather than forcing non-breaking spaces,
               // which can cause ugly mid-word wrapping in narrow cells.
-              const displayName = name.replace(/\s+/g, ' ').trim();
+              let displayName = name.replace(/\s+/g, ' ').trim();
+              // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+              displayName = formatCombinationNameForDisplay(displayName);
               const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
               const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
               const months = Number(it.months || 0) > 0 ? Number(it.months) : 1;
@@ -6111,6 +6166,38 @@ Total Price: {{total price}}`;
               }
             }
             
+            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze X-Change Data Migration)
+            const MINIMUM_TOTAL = 2500;
+            if (cloudfuzeManageTotal < MINIMUM_TOTAL && exhibitsData.length > 0) {
+              const deficit = MINIMUM_TOTAL - cloudfuzeManageTotal;
+              
+              // Add deficit to the first exhibit's price
+              const firstExhibit = exhibitsData[0];
+              if (firstExhibit && firstExhibit.exhibitPrice) {
+                const currentPriceStr = firstExhibit.exhibitPrice.replace(/[$,]/g, '');
+                const currentPrice = parseFloat(currentPriceStr) || 0;
+                const newPrice = currentPrice + deficit;
+                
+                // Update exhibit price
+                firstExhibit.exhibitPrice = formatCurrency(newPrice);
+                
+                // Update bundled price (90% of new price)
+                const newBundledPrice = newPrice * 0.9;
+                firstExhibit.exhibitBundledPrice = formatCurrency(newBundledPrice);
+                
+                // Recalculate total with updated exhibit price
+                cloudfuzeManageTotal = MINIMUM_TOTAL;
+                
+                console.log('💰 Applied $2,500 minimum by adding deficit to first exhibit:', {
+                  originalExhibitPrice: formatCurrency(currentPrice),
+                  deficit: formatCurrency(deficit),
+                  newExhibitPrice: formatCurrency(newPrice),
+                  newBundledPrice: formatCurrency(newBundledPrice),
+                  finalTotal: formatCurrency(cloudfuzeManageTotal)
+                });
+              }
+            }
+            
             console.log('🔍 Multi-combination Total Price Calculation:', {
               serverPricesTotal: formatCurrency(total),
               migrationCost: formatCurrency(migrationCost || 0),
@@ -6147,7 +6234,9 @@ Total Price: {{total price}}`;
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
             // NOTE: cfm_user_total ($399) is excluded from the total price calculation
+            // Total should now be at least $2,500 (deficit already added to first exhibit)
             const displayedTotalPrice = cloudfuzeManageTotal;
+            
             if (localShouldApplyDiscount) {
               const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
               const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
@@ -6234,12 +6323,28 @@ Total Price: {{total price}}`;
             templateData['{{server_instance_cost_breakdown}}'] = lines.join('\n\n\n');
           } else {
             templateData['{{server_instance_cost_breakdown}}'] = '';
-            (templateData as any).servers = [];
-            // For single migrations, calculate CloudFuze Manage total
+            // For single migrations, create a servers array with one entry so bundled pricing works
+            const singleInstanceCost = (calculation || safeCalculation)?.instanceCost ?? 0;
+            const instanceType = configuration?.instanceType || 'Small';
+            const numberOfInstances = configuration?.numberOfInstances || 1;
+            const durationMonths = getEffectiveDurationMonths(configuration) || 1;
+            
+            // Create a single server entry for the template loop
+            (templateData as any).servers = [{
+              serverDescription: `${numberOfInstances} X ${instanceType} server for data migration`,
+              combinationName: '',
+              serverPrice: formatCurrency(singleInstanceCost),
+              // Bundled pricing for server (final price after 10% discount = 90% of original)
+              serverPriceBundled: formatCurrency(singleInstanceCost * 0.9),
+              serverBundledPrice: formatCurrency(singleInstanceCost * 0.9),
+              serverMonths: durationMonths,
+              isLast: true
+            }];
+            
             // NOTE: For single migrations, CloudFuze Manage should only include instance costs
             // The exhibit prices already contain all costs (userCost + dataCost + migrationCost + instanceCost)
             // So we should NOT add exhibit prices to cloudfuzeManageTotal for single migrations
-            const singleInstanceCost = (calculation || safeCalculation)?.instanceCost ?? 0;
+            // singleInstanceCost already defined above
             const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
             // For single migrations, CloudFuze Manage is just the instance cost
             // (Migration cost and user/data costs are shown separately in the agreement table)
@@ -6269,46 +6374,22 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotalBundled);
             templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotalBundled);
             
-            // Calculate CloudFuze Manage bundled pricing as sum of:
-            // 1. Instance bundled price (instance_cost_bundled)
-            // 2. Migration bundled price (price_migration_bundled)
-            // 3. All exhibit bundled prices (exhibitBundledPrice)
-            // 4. CloudFuze Manage user total bundled (cfm_user_total_b)
-            let bundledTotal = 0;
-            
-            // Add instance bundled price (final price after 10% discount)
+            // Set instance bundled pricing tokens for single migrations
             const instanceBundled = singleInstanceCost * 0.9; // Final price after 10% discount
-            bundledTotal += instanceBundled;
-            
-            // Add migration bundled price (final price after 10% discount)
-            const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
-            bundledTotal += migrationBundled;
+            templateData['{{instance_cost_bundled}}'] = formatCurrency(instanceBundled);
+            templateData['{{instanceCostBundled}}'] = formatCurrency(instanceBundled);
+            templateData['{{instance_cost_bundled_price}}'] = formatCurrency(instanceBundled);
+            // Also set serverPriceBundled as top-level token for static rows in template
+            templateData['{{serverPriceBundled}}'] = formatCurrency(instanceBundled);
+            templateData['{{serverBundledPrice}}'] = formatCurrency(instanceBundled);
             
             // Set migration bundled pricing tokens
+            const migrationBundled = (migrationCost || 0) * 0.9; // Final price after 10% discount
             templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
             templateData['{{price_migration_bundled}}'] = formatCurrency(migrationBundled);
             templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationBundled);
             templateData['{{migration_price_bundled}}'] = formatCurrency(migrationBundled);
             templateData['{{migrationCostBundled}}'] = formatCurrency(migrationBundled);
-            
-            // Sum all exhibit bundled prices
-            for (const exhibit of exhibitsData) {
-              if (exhibit.exhibitBundledPrice) {
-                const exhibitBundledStr = exhibit.exhibitBundledPrice.replace(/[$,]/g, '');
-                bundledTotal += parseFloat(exhibitBundledStr) || 0;
-              }
-            }
-            
-            // Add CloudFuze Manage user total bundled (cfm_user_total_b)
-            bundledTotal += cfmUserTotalBundled;
-            
-            // Set CloudFuze Manage bundled pricing
-            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(bundledTotal);
-            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(bundledTotal);
-            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(bundledTotal);
-            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(bundledTotal);
-            // Short placeholder alias for better font sizing in templates
-            templateData['{{cfm_total_b}}'] = formatCurrency(bundledTotal);
             
             // For single migrations, the total price should be the sum of:
             // users_cost (userCost + dataCost) + migrationCost + instanceCost
@@ -6319,7 +6400,69 @@ Total Price: {{total price}}`;
             const userCost = (calculation || safeCalculation)?.userCost ?? 0;
             const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
             const usersCost = userCost + dataCost;
-            const displayedTotalPrice = usersCost + (migrationCost || 0) + singleInstanceCost;
+            let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
+            
+            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze X-Change Data Migration)
+            const MINIMUM_TOTAL = 2500;
+            let finalUsersCost = usersCost; // This will be what's displayed
+            if (calculatedDisplayedTotal < MINIMUM_TOTAL) {
+              const deficit = MINIMUM_TOTAL - calculatedDisplayedTotal;
+              finalUsersCost = usersCost + deficit; // Add deficit to usersCost for display
+              calculatedDisplayedTotal = MINIMUM_TOTAL;
+              
+              // Update the first exhibit's price to match
+              if (exhibitsData.length > 0) {
+                const firstExhibit = exhibitsData[0];
+                if (firstExhibit) {
+                  firstExhibit.exhibitPrice = formatCurrency(finalUsersCost);
+                }
+              }
+            }
+            
+            // Set users_cost to the FINAL value (after minimum adjustment if any)
+            templateData['{{users_cost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{user_cost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{userCost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{price_data}}'] = formatCurrency(finalUsersCost);
+            
+            // Calculate bundled price from the FINAL displayed users_cost (90% of finalUsersCost)
+            // This ensures bundled price is always 90% of what's shown in Price(USD) column
+            const usersCostBundled = finalUsersCost * 0.9;
+            templateData['{{exhibitBundledPrice}}'] = formatCurrency(usersCostBundled);
+            
+            // Also update the exhibit's bundled price to match
+            if (exhibitsData.length > 0) {
+              const firstExhibit = exhibitsData[0];
+              if (firstExhibit) {
+                firstExhibit.exhibitBundledPrice = formatCurrency(usersCostBundled);
+              }
+            }
+            
+            // NOW calculate the final bundled total AFTER all values are updated
+            // This should be the sum of the 4 rows in the table:
+            // 1. Exhibit bundled (usersCostBundled)
+            // 2. Migration bundled (migrationBundled)
+            // 3. Instance bundled (instanceBundled)
+            // 4. CloudFuze Manage bundled (cfmUserTotalBundled)
+            const finalBundledTotal = usersCostBundled + migrationBundled + instanceBundled + cfmUserTotalBundled;
+            
+            // Set bundled total tokens (this is what shows in the gray box)
+            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cfm_total_b}}'] = formatCurrency(finalBundledTotal);
+            
+            console.log('💰 Single migration bundled total calculation:', {
+              exhibitBundled: formatCurrency(usersCostBundled),
+              migrationBundled: formatCurrency(migrationBundled),
+              instanceBundled: formatCurrency(instanceBundled),
+              cfmUserTotalBundled: formatCurrency(cfmUserTotalBundled),
+              finalBundledTotal: formatCurrency(finalBundledTotal),
+              sum: usersCostBundled + migrationBundled + instanceBundled + cfmUserTotalBundled
+            });
+            
+            const displayedTotalPrice = calculatedDisplayedTotal;
             
             console.log('🔍 Single Migration Total Price Calculation:', {
               userCost,
