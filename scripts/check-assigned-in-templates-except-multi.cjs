@@ -7,7 +7,7 @@ const path = require('path');
 const JSZip = require('jszip');
 
 const TEMPLATES_DIR = path.join(process.cwd(), 'backend-templates');
-const SKIP_FILE = 'MultiCombinations.docx';
+const SKIP_FILES = new Set(['MultiCombinations.docx', 'MultiCombinations-fixed.docx']);
 const TARGET = 'Assigned';
 
 function listDocxFiles(dir) {
@@ -15,7 +15,7 @@ function listDocxFiles(dir) {
   return fs
     .readdirSync(dir)
     .filter((f) => f.toLowerCase().endsWith('.docx') && !f.startsWith('~$'))
-    .filter((f) => f !== SKIP_FILE)
+    .filter((f) => !SKIP_FILES.has(f))
     .map((f) => path.join(dir, f));
 }
 
@@ -55,7 +55,7 @@ async function main() {
   }
 
   if (offenders.length === 0) {
-    console.log(`✅ OK: No templates contain "${TARGET}" (checked ${files.length}, skipped ${SKIP_FILE}).`);
+    console.log(`✅ OK: No templates contain "${TARGET}" (checked ${files.length}, skipped ${Array.from(SKIP_FILES).join(', ')}).`);
     return;
   }
 

@@ -8,7 +8,8 @@
 const fs = require('fs');
 const JSZip = require('jszip');
 
-const DOCX_PATH = 'backend-templates/MultiCombinations.docx';
+// Use the fixed MultiCombinations template (no Managed Migration Service row / bundled column)
+const DOCX_PATH = 'backend-templates/MultiCombinations-fixed.docx';
 const FROM = 'Dedicated';
 const TO = 'Assigned';
 
