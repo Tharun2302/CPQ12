@@ -665,53 +665,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
-  // Load settings from MongoDB API on component mount
+  // Load settings from MongoDB API on component mount; fallback to localStorage if backend unreachable
   useEffect(() => {
     const loadSettings = async () => {
-      try {
-        setIsLoadingSettings(true);
-        setSettingsError(null);
-        
-        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-          // Migrate old data: ensure authorizedSenders and additionalRecipients exist for every team
-          const teamIds = Object.keys(result.data.teamLeads || {});
-          if (!result.data.authorizedSenders) result.data.authorizedSenders = {};
-          if (!result.data.additionalRecipients) result.data.additionalRecipients = {};
-          teamIds.forEach((k) => {
-            if (!Array.isArray(result.data.authorizedSenders[k])) result.data.authorizedSenders[k] = [];
-            if (!Array.isArray(result.data.additionalRecipients[k])) result.data.additionalRecipients[k] = [];
-          });
-          setTeamApprovalSettings(result.data);
-          
-          // Also save to localStorage as backup/cache
-          try {
-            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(result.data));
-          } catch {}
-        } else {
-          // Try loading from localStorage as fallback
-          try {
-            const saved = localStorage.getItem('cpq_team_approval_settings');
-            if (saved) {
-              const parsed = JSON.parse(saved);
-              const teamIds = Object.keys(parsed.teamLeads || {});
-              if (!parsed.authorizedSenders) parsed.authorizedSenders = {};
-              if (!parsed.additionalRecipients) parsed.additionalRecipients = {};
-              teamIds.forEach((k) => {
-                if (!Array.isArray(parsed.authorizedSenders[k])) parsed.authorizedSenders[k] = [];
-                if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
-              });
-              setTeamApprovalSettings(parsed);
-            }
-          } catch {}
-        }
-      } catch (error) {
-        console.error('Error loading team approval settings:', error);
-        setSettingsError('Failed to load settings. Using defaults.');
-        
-        // Fallback to localStorage
+      const applyFromStorage = () => {
         try {
           const saved = localStorage.getItem('cpq_team_approval_settings');
           if (saved) {
@@ -724,8 +681,50 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
               if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
             });
             setTeamApprovalSettings(parsed);
+            return true;
           }
         } catch {}
+        return false;
+      };
+
+      try {
+        setIsLoadingSettings(true);
+        setSettingsError(null);
+
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          // Migrate old data: ensure authorizedSenders and additionalRecipients exist for every team
+          const teamIds = Object.keys(result.data.teamLeads || {});
+          if (!result.data.authorizedSenders) result.data.authorizedSenders = {};
+          if (!result.data.additionalRecipients) result.data.additionalRecipients = {};
+          teamIds.forEach((k) => {
+            if (!Array.isArray(result.data.authorizedSenders[k])) result.data.authorizedSenders[k] = [];
+            if (!Array.isArray(result.data.additionalRecipients[k])) result.data.additionalRecipients[k] = [];
+          });
+          setTeamApprovalSettings(result.data);
+
+          try {
+            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(result.data));
+          } catch {}
+        } else {
+          applyFromStorage();
+        }
+      } catch (error) {
+        const isNetworkError =
+          error instanceof TypeError &&
+          (error.message === 'Failed to fetch' || (error as Error).message?.toLowerCase().includes('network'));
+        const hadFallback = applyFromStorage();
+        if (hadFallback) {
+          setSettingsError('Backend unreachable. Using saved settings.');
+          if (import.meta.env.DEV && isNetworkError) {
+            console.warn('Team approval settings: backend unreachable, using localStorage. Ensure server is running on', BACKEND_URL);
+          }
+        } else {
+          setSettingsError('Failed to load settings. Using defaults.');
+          if (import.meta.env.DEV) console.error('Error loading team approval settings:', error);
+        }
       } finally {
         setIsLoadingSettings(false);
       }
@@ -763,11 +762,19 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           } catch {}
         }
       } catch (error) {
-        console.error('Error saving team approval settings:', error);
-        // Fallback: save to localStorage
         try {
           localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
         } catch {}
+        if (import.meta.env.DEV) {
+          const isNetworkError =
+            error instanceof TypeError &&
+            (error.message === 'Failed to fetch' || (error as Error).message?.toLowerCase().includes('network'));
+          if (isNetworkError) {
+            console.warn('Team approval settings: backend unreachable, saved to localStorage. Ensure server is running on', BACKEND_URL);
+          } else {
+            console.error('Error saving team approval settings:', error);
+          }
+        }
       }
     };
 
