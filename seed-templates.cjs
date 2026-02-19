@@ -1147,7 +1147,7 @@ async function seedDefaultTemplates(db) {
       name: 'Multi Combination',
       description: 'Universal template for Multi combination migrations (supports all combinations)',
       // NOTE: Use the "-fixed" copy while the original file is locked / pending update.
-      // This version removes the "Managed Migration Service" row and any bundled-pricing column.
+      // To show the Managed Migration Service row in the pricing table, run: node scripts/add-managed-migration-row.cjs
       fileName: 'MultiCombinations-fixed.docx',
       isDefault: false,
       category: 'multi',
