@@ -1,16 +1,24 @@
 const { MongoClient } = require('mongodb');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config();
 
 async function updateAdvancedTemplate() {
   // Use the same connection string as the server
-  const client = new MongoClient('mongodb://localhost:27017');
+  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+  const DB_NAME = process.env.DB_NAME || 'cpq_templates';
+  
+  console.log('🔍 MongoDB Configuration:');
+  console.log(`   URI: ${MONGODB_URI.replace(/\/\/.*@/, '//***:***@')}`);
+  console.log(`   Database: ${DB_NAME}\n`);
+  
+  const client = new MongoClient(MONGODB_URI);
   
   try {
     await client.connect();
     console.log('✅ Connected to MongoDB');
     
-    const db = client.db('cpq_templates');
+    const db = client.db(DB_NAME);
     const templates = db.collection('templates');
     
     // Read the updated Advanced template file
