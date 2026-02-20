@@ -997,13 +997,14 @@ app.post('/api/auth/register', async (req, res) => {
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Create user
+    // Create user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
     const user = {
       id: `user_${Date.now()}`,
       name: name,
       email: email,
       password: hashedPassword,
       provider: 'email',
+      role: 'viewer',
       created_at: new Date(),
       updated_at: new Date()
     };
@@ -1140,12 +1141,15 @@ app.get('/api/auth/me', async (req, res) => {
       });
     }
 
-    // Return user without password
+    // Return user without password (ensure role for frontend: from DB, .env, or settings list)
     const { password: _, ...userWithoutPassword } = user;
+    const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || (await getExhibitAdminEmailsFromDb()).some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
+    const userResponse = { ...userWithoutPassword, role: effectiveRole };
 
     res.json({
       success: true,
-      user: userWithoutPassword
+      user: userResponse
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -1187,12 +1191,13 @@ app.post('/api/auth/microsoft', async (req, res) => {
       );
       user = await db.collection('users').findOne({ email: email });
     } else {
-      // Create new user
+      // Create new user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
       user = {
         id: id || `microsoft_${Date.now()}`,
         name: name,
         email: email,
         provider: 'microsoft',
+        role: 'viewer',
         created_at: new Date(),
         updated_at: new Date()
       };
@@ -1209,13 +1214,17 @@ app.post('/api/auth/microsoft', async (req, res) => {
     // Track daily login
     await trackDailyLogin(user.id, 'microsoft', user.email);
 
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user;
+    // Return user without password (ensure role for frontend: from DB, .env, or settings list)
+    const { password: __, ...userWithoutPassword } = user;
+    const dbEmails = await getExhibitAdminEmailsFromDb();
+    const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
+    const userResponse = { ...userWithoutPassword, role: effectiveRole };
 
     res.json({
       success: true,
       message: 'Microsoft authentication successful',
-      user: userWithoutPassword,
+      user: userResponse,
       token: token
     });
   } catch (error) {
@@ -2134,6 +2143,137 @@ app.get('/api/exhibits/:id/file', async (req, res) => {
 // EXHIBIT UPLOAD/MANAGEMENT API ENDPOINTS
 // ============================================
 
+// Helper: true if email is in EXHIBIT_ADMIN_EMAILS (.env comma-separated list). No DB update needed.
+// In .env add: EXHIBIT_ADMIN_EMAILS=user1@cloudfuze.com,user2@cloudfuze.com
+function isExhibitAdminByEnv(email) {
+  const list = process.env.EXHIBIT_ADMIN_EMAILS;
+  if (!list || typeof list !== 'string') return false;
+  const emails = list.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return emails.includes((email || '').trim().toLowerCase());
+}
+
+// Get exhibit admin emails stored in DB (settings collection). Used by admin UI.
+async function getExhibitAdminEmailsFromDb() {
+  if (!db) return [];
+  try {
+    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
+    return Array.isArray(doc?.emails) ? doc.emails : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Resolve effective exhibit_admin: from DB role, .env EXHIBIT_ADMIN_EMAILS, or DB settings.exhibit_admins list
+async function hasExhibitAdminAccess(user) {
+  if (!user) return false;
+  if (user.role === 'exhibit_admin') return true;
+  if (isExhibitAdminByEnv(user.email)) return true;
+  const dbEmails = await getExhibitAdminEmailsFromDb();
+  const normalized = (user.email || '').trim().toLowerCase();
+  return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
+}
+
+// Helper: require JWT and exhibit_admin (from DB role, .env, or settings list). Returns user or sends 401/403 and null.
+async function getExhibitAdminUser(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  if (token.split('.').length !== 3) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await db.collection('users').findOne({ id: decoded.userId });
+    if (!user) {
+      res.status(401).json({ success: false, error: 'User not found' });
+      return null;
+    }
+    if (!(await hasExhibitAdminAccess(user))) {
+      res.status(403).json({ success: false, error: 'Only exhibit admins can add, edit, or delete exhibits' });
+      return null;
+    }
+    return user;
+  } catch (e) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+}
+
+// ============================================
+// EXHIBIT ADMINS SETTINGS (admin UI to add/remove emails)
+// ============================================
+
+// GET list of exhibit admin emails (from DB settings). Requires exhibit_admin.
+app.get('/api/settings/exhibit-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const emails = await getExhibitAdminEmailsFromDb();
+    res.json({ success: true, emails });
+  } catch (e) {
+    console.error('GET exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST add an email to exhibit admins list. Requires exhibit_admin.
+app.post('/api/settings/exhibit-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const { email } = req.body || {};
+    const trimmed = (email && String(email).trim()) || '';
+    if (!trimmed || !trimmed.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+    const normalized = trimmed.toLowerCase();
+    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    if (emails.map((e) => String(e).trim().toLowerCase()).includes(normalized)) {
+      return res.json({ success: true, emails, message: 'Email already in list' });
+    }
+    const updated = [...emails, trimmed];
+    await db.collection('settings').updateOne(
+      { _id: 'exhibit_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('POST exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// DELETE remove an email from exhibit admins list. Requires exhibit_admin.
+app.delete('/api/settings/exhibit-admins/:email', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const emailParam = decodeURIComponent((req.params.email || '').trim());
+    if (!emailParam) return res.status(400).json({ success: false, error: 'Email required' });
+    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    const normalized = emailParam.toLowerCase();
+    const updated = emails.filter((e) => String(e).trim().toLowerCase() !== normalized);
+    await db.collection('settings').updateOne(
+      { _id: 'exhibit_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('DELETE exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // Upload new exhibit (POST)
 app.post('/api/exhibits', upload.single('file'), async (req, res) => {
   try {
@@ -2143,6 +2283,9 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
         error: 'Database not available' 
       });
     }
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     if (!req.file) {
       return res.status(400).json({ 
@@ -2161,15 +2304,6 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
       return res.status(400).json({ 
         success: false, 
         error: 'Invalid file type. Only DOCX files are allowed.' 
-      });
-    }
-
-    // Validate file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (req.file.size > maxSize) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'File size exceeds 10MB limit' 
       });
     }
 
@@ -2405,6 +2539,9 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
       });
     }
 
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
     const { id } = req.params;
     const { ObjectId } = require('mongodb');
 
@@ -2521,15 +2658,6 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
         });
       }
 
-      // Validate file size
-      const maxSize = 10 * 1024 * 1024; // 10MB
-      if (req.file.size > maxSize) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'File size exceeds 10MB limit' 
-        });
-      }
-
       // Check if new filename conflicts with another exhibit
       if (req.file.originalname !== existing.fileName) {
         const conflictingExhibit = await db.collection('exhibits').findOne({
@@ -2624,6 +2752,9 @@ app.delete('/api/exhibits/:id', async (req, res) => {
         error: 'Database not available' 
       });
     }
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
 
     const { id } = req.params;
     const { ObjectId } = require('mongodb');

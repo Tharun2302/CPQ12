@@ -11,11 +11,20 @@ import {
   Plus,
   Loader2,
   Eye,
-  Info
+  Info,
+  Shield,
+  UserPlus
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
+import { useAuth } from '../hooks/useAuth';
 import '../assets/docx-preview.css';
+
+function getAuthHeaders(): Record<string, string> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
 
 // Helper function to generate name from combination
 function generateNameFromCombination(combination: string): string {
@@ -87,6 +96,9 @@ interface Exhibit {
 }
 
 const ExhibitManager: React.FC = () => {
+  const { user } = useAuth();
+  const canManageExhibits = user?.role === 'exhibit_admin';
+
   const [exhibits, setExhibits] = useState<Exhibit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -98,6 +110,15 @@ const ExhibitManager: React.FC = () => {
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('');
+
+  // Exhibit Admins modal (only used when canManageExhibits)
+  const [showExhibitAdminsModal, setShowExhibitAdminsModal] = useState(false);
+  const [adminEmails, setAdminEmails] = useState<string[]>([]);
+  const [adminEmailsLoading, setAdminEmailsLoading] = useState(false);
+  const [adminEmailsError, setAdminEmailsError] = useState<string | null>(null);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [addingAdmin, setAddingAdmin] = useState(false);
+  const [removingAdmin, setRemovingAdmin] = useState<string | null>(null);
 
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -179,6 +200,7 @@ const ExhibitManager: React.FC = () => {
               updateFormData.append('name', newName);
               fetch(`${BACKEND_URL}/api/exhibits/${exhibit._id}`, {
                 method: 'PUT',
+                headers: getAuthHeaders(),
                 body: updateFormData
               }).catch(err => console.error('Error auto-updating exhibit name:', err));
               
@@ -196,6 +218,84 @@ const ExhibitManager: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const fetchAdminEmails = async () => {
+    try {
+      setAdminEmailsLoading(true);
+      setAdminEmailsError(null);
+      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins`, { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminEmailsError(data.error || 'Failed to load list');
+        setAdminEmails([]);
+        return;
+      }
+      setAdminEmails(data.emails || []);
+    } catch {
+      setAdminEmailsError('Failed to load exhibit admins');
+      setAdminEmails([]);
+    } finally {
+      setAdminEmailsLoading(false);
+    }
+  };
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = newAdminEmail.trim();
+    if (!email || !email.includes('@')) {
+      setAdminEmailsError('Please enter a valid email');
+      return;
+    }
+    setAddingAdmin(true);
+    setAdminEmailsError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminEmailsError(data.error || 'Failed to add');
+        return;
+      }
+      setAdminEmails(data.emails || []);
+      setNewAdminEmail('');
+    } catch {
+      setAdminEmailsError('Failed to add email');
+    } finally {
+      setAddingAdmin(false);
+    }
+  };
+
+  const handleRemoveAdmin = async (email: string) => {
+    setRemovingAdmin(email);
+    setAdminEmailsError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminEmailsError(data.error || 'Failed to remove');
+        return;
+      }
+      setAdminEmails(data.emails || []);
+    } catch {
+      setAdminEmailsError('Failed to remove email');
+    } finally {
+      setRemovingAdmin(null);
+    }
+  };
+
+  useEffect(() => {
+    if (canManageExhibits) fetchAdminEmails();
+  }, [canManageExhibits]);
+
+  useEffect(() => {
+    if (showExhibitAdminsModal && canManageExhibits) fetchAdminEmails();
+  }, [showExhibitAdminsModal]);
 
   // Handle file upload - manual only; no auto-detection from filename
   const handleFileSelect = (file: File) => {
@@ -370,6 +470,7 @@ const ExhibitManager: React.FC = () => {
 
       const response = await fetch(`${BACKEND_URL}/api/exhibits`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formDataToSend,
       });
 
@@ -607,6 +708,7 @@ const ExhibitManager: React.FC = () => {
       const exhibitId = editingExhibit._id || editingExhibit.id;
       const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
         method: 'PUT',
+        headers: getAuthHeaders(),
         body: formDataToSend,
       });
 
@@ -628,18 +730,6 @@ const ExhibitManager: React.FC = () => {
     } finally {
       setIsUploading(false);
     }
-  };
-
-  // Helper function to check if exhibit is older than 3 days
-  const isExhibitOlderThan3Days = (exhibit: Exhibit): boolean => {
-    if (!exhibit.createdAt) return false;
-    
-    const createdAt = new Date(exhibit.createdAt);
-    const now = new Date();
-    const diffTime = now.getTime() - createdAt.getTime();
-    const diffDays = diffTime / (1000 * 60 * 60 * 24); // Convert to days
-    
-    return diffDays > 3;
   };
 
   // Handle view document (show in modal)
@@ -757,6 +847,7 @@ const ExhibitManager: React.FC = () => {
       const exhibitId = exhibit._id || exhibit.id;
       const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       });
 
       const data = await response.json();
@@ -869,16 +960,29 @@ const ExhibitManager: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-900">Exhibit Manager</h2>
           <p className="text-gray-600 mt-1">Manage migration exhibits</p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowUploadModal(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Upload Exhibit
-        </button>
+        {canManageExhibits ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowExhibitAdminsModal(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Shield className="w-5 h-5" />
+              Exhibit Admins
+            </button>
+            <button
+              onClick={() => {
+                resetForm();
+                setShowUploadModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Upload Exhibit
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">You can view exhibits only. Only exhibit admins can add, edit, or delete.</p>
+        )}
       </div>
 
       {/* Success/Error Messages */}
@@ -955,25 +1059,108 @@ const ExhibitManager: React.FC = () => {
                   <Eye className="w-4 h-4" />
                   View
                 </button>
-                <button
-                  onClick={() => handleEdit(exhibit)}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
-                >
-                  <Edit className="w-4 h-4" />
-                  Edit
-                </button>
-                {!isExhibitOlderThan3Days(exhibit) && (
-                  <button
-                    onClick={() => handleDelete(exhibit)}
-                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </button>
+                {canManageExhibits && (
+                  <>
+                    <button
+                      onClick={() => handleEdit(exhibit)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
+                    >
+                      <Edit className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(exhibit)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  </>
                 )}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Exhibit Admins Modal */}
+      {showExhibitAdminsModal && canManageExhibits && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowExhibitAdminsModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-lg max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-blue-600" />
+                  Exhibit Admins
+                </h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  Users with these emails can add, edit, and delete exhibits. You can also set EXHIBIT_ADMIN_EMAILS in .env.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowExhibitAdminsModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <form onSubmit={handleAddAdmin} className="flex gap-2">
+                <input
+                  type="email"
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  disabled={addingAdmin}
+                />
+                <button
+                  type="submit"
+                  disabled={addingAdmin || !newAdminEmail.trim()}
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {addingAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  Add
+                </button>
+              </form>
+              {adminEmailsError && (
+                <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
+                  {adminEmailsError}
+                </div>
+              )}
+              {adminEmailsLoading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                </div>
+              ) : adminEmails.length === 0 ? (
+                <p className="text-gray-500 text-xs">No exhibit admins in the list yet. Add an email above or use .env.</p>
+              ) : (
+                <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                  {adminEmails.map((email) => (
+                    <li key={email} className="py-2 flex items-center justify-between gap-2">
+                      <span className="text-gray-900 text-sm truncate">{email}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAdmin(email)}
+                        disabled={removingAdmin === email}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 text-sm"
+                        title="Remove"
+                      >
+                        {removingAdmin === email ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1320,42 +1507,7 @@ const ExhibitManager: React.FC = () => {
               </div>
 
               <form onSubmit={handleUpdate} className="space-y-4">
-                {/* File Upload (Optional for edit) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Update File (Optional)
-                  </label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                    {uploadFile ? (
-                      <div className="space-y-2">
-                        <FileText className="w-12 h-12 text-blue-600 mx-auto" />
-                        <p className="text-sm font-medium">{uploadFile.name}</p>
-                        <button
-                          type="button"
-                          onClick={() => setUploadFile(null)}
-                          className="text-sm text-red-600 hover:text-red-700"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ) : (
-                      <div>
-                        <p className="text-sm text-gray-600 mb-2">Current: {editingExhibit.fileName}</p>
-                        <label className="cursor-pointer">
-                          <span className="text-blue-600 hover:text-blue-700">Upload new file</span>
-                          <input
-                            type="file"
-                            accept=".docx"
-                            onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Same form fields as upload modal */}
+                {/* Metadata fields first - primary purpose of Edit */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Category *

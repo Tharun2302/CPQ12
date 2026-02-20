@@ -519,7 +519,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                     name: microsoftUser.name,
                     email: microsoftUser.email,
                     provider: 'microsoft' as AuthProviderType,
-                    createdAt: new Date().toISOString()
+                    createdAt: new Date().toISOString(),
+                    role: (microsoftUser as any).role || 'viewer'
                   };
                   localStorage.setItem('cpq_user', JSON.stringify(user));
                   localStorage.setItem('cpq_token', microsoftUser.accessToken);
@@ -547,7 +548,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                   name: microsoftUser.name,
                   email: microsoftUser.email,
                   provider: 'microsoft' as AuthProviderType,
-                  createdAt: new Date().toISOString()
+                  createdAt: new Date().toISOString(),
+                  role: (microsoftUser as any).role || 'viewer'
                 };
                 localStorage.setItem('cpq_user', JSON.stringify(user));
                 localStorage.setItem('cpq_token', microsoftUser.accessToken);
@@ -569,7 +571,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
                 name: microsoftUser.name,
                 email: microsoftUser.email,
                 provider: 'microsoft' as AuthProviderType,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                role: (microsoftUser as any).role || 'viewer'
               };
              
               localStorage.setItem('cpq_user', JSON.stringify(user));

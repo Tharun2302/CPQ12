@@ -79,6 +79,16 @@ function formatDateMMDDYYYY(dateString: string): string {
   }
 }
 
+// Default date: one month from today (YYYY-MM-DD) for Project Start Date and Effective Date
+function getDefaultDateOneMonthFromToday(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper function to limit consecutive spaces to maximum 5
 function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
   // Replace any sequence of more than maxSpaces spaces with exactly maxSpaces spaces
@@ -373,7 +383,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     clientName: '',
     clientEmail: '',
     company: '',
-    effectiveDate: '',
+    effectiveDate: getDefaultDateOneMonthFromToday(),
     discount: undefined,
     paymentTerms: '100% Upfront'
   });
@@ -455,12 +465,22 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           clientName: parsed.clientName || '',
           clientEmail: parsed.clientEmail || '',
           company: parsed.company || '',
-          effectiveDate: parsed.effectiveDate || '',
+          effectiveDate: parsed.effectiveDate || getDefaultDateOneMonthFromToday(),
           paymentTerms: parsed.paymentTerms || '100% Upfront'
         }));
       }
     } catch {}
   }, []);
+
+  // Default Project Start Date to one month from today when configuration has no startDate (once)
+  const defaultStartDateSetRef = useRef(false);
+  useEffect(() => {
+    if (defaultStartDateSetRef.current || !configuration || !onConfigurationChange) return;
+    if (configuration.startDate && configuration.startDate.trim() !== '') return;
+    defaultStartDateSetRef.current = true;
+    const defaultStart = getDefaultDateOneMonthFromToday();
+    onConfigurationChange({ ...configuration, startDate: defaultStart });
+  }, [configuration, onConfigurationChange]);
 
   const [showPreview, setShowPreview] = useState(false);
   
