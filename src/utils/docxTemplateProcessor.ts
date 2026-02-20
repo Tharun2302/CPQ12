@@ -1006,10 +1006,10 @@ export class DocxTemplateProcessor {
           finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '');
           finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '');
 
-          // 3) Remove literal "| X GBs" (after docxtemplater rendered the token)
-          //    Handles: "| 0 GBs", "| 11 GBs", etc. - More aggressive pattern
-          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\d+\s*GBs?/gi, '');
-          // Also handle cases where there might be spaces or formatting: "| 0 GBs", " | 0 GBs ", etc.
+          // 3) Remove literal "| X GBs" ONLY when X is 0 (after docxtemplater rendered the token)
+          //    Keep non-zero GB values like "| 6 GBs" as they represent actual data size
+          //    Handles: "| 0 GBs", " | 0 GBs ", etc. - Only remove zero values
+          // NOTE: We intentionally do NOT remove non-zero GBs (e.g., "| 6 GBs") as email configs now support data size
           finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*0\s*GBs?/gi, '');
           finalDocumentXml = finalDocumentXml.replace(/\|\s*0\s*GBs?/gi, '');
 
@@ -1025,17 +1025,24 @@ export class DocxTemplateProcessor {
 
           // 6) Extra safety: remove any standalone "GBs" or "per GB" text runs that might be orphaned
           //    after the above replacements (only if preceded by pipe or within pricing context)
-          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>\s*\|\s*<\/w:t>\s*<w:t[^>]*>\s*\d+\s*GBs?\s*<\/w:t>/gi, '');
+          // Only remove zero GBs, keep non-zero values
+          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>\s*\|\s*<\/w:t>\s*<w:t[^>]*>\s*0\s*GBs?\s*<\/w:t>/gi, '');
           finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>\s*per\s*GB\.?\s*<\/w:t>/gi, '<w:t></w:t>');
           
           // 7) Remove pipe separator when followed by empty data_description (handles Word's XML structure)
+          // Only remove when GBs is 0, keep non-zero values
           finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>([^<]*Users[^<]*)<\/w:t>\s*<w:t[^>]*>\s*\|\s*<\/w:t>\s*<w:t[^>]*>\s*0\s*GBs?\s*<\/w:t>/gi, '<w:t>$1</w:t>');
           finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>([^<]*Users[^<]*)<\/w:t>\s*<w:t[^>]*>\s*\|\s*0\s*GBs?\s*<\/w:t>/gi, '<w:t>$1</w:t>');
+          // Also handle Mailboxes format - only remove if GBs is 0
+          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>([^<]*Mailboxes[^<]*)<\/w:t>\s*<w:t[^>]*>\s*\|\s*<\/w:t>\s*<w:t[^>]*>\s*0\s*GBs?\s*<\/w:t>/gi, '<w:t>$1</w:t>');
+          finalDocumentXml = finalDocumentXml.replace(/<w:t[^>]*>([^<]*Mailboxes[^<]*)<\/w:t>\s*<w:t[^>]*>\s*\|\s*0\s*GBs?\s*<\/w:t>/gi, '<w:t>$1</w:t>');
           
-          // 8) Handle combined format "Up to X Users | 0 GBs" in a single text run
+          // 8) Handle combined format "Up to X Users | 0 GBs" in a single text run (only remove zero GBs)
           finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*0\s*GBs?/gi, '$1');
           finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '$1');
           finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '$1');
+          // Also handle "Up to X Mailboxes | Y GBs" format - only remove if GBs is 0
+          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Mailboxes)\s*\|\s*0\s*GBs?/gi, '$1');
           
           // 9) Remove trailing pipe when data_description is empty (handles "Up to X Users | " pattern)
           finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*$/gm, '$1');

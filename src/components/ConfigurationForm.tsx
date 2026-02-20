@@ -2925,8 +2925,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   instanceType: emailCfg.instanceType || 'Small',
                   numberOfInstances: emailCfg.numberOfInstances || 0,
                   duration: emailCfg.duration || 0,
-                  messages: emailCfg.messages || 0,
-                  dataSizeGB: 0, // Not used for email
+                  messages: 0,
+                  dataSizeGB: emailCfg.dataSizeGB || 0,
                   combination: emailCfg.exhibitName || '',
                   migrationType: 'email' as any
                 };
@@ -3063,34 +3063,34 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           />
                         </div>
 
-                        {/* Email: Emails (optional) */}
+                        {/* Email: Data Size (GB) */}
                         <div className="group">
                           <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                             <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
-                              <MessageSquare className="w-4 h-4 text-white" />
+                              <Database className="w-4 h-4 text-white" />
                             </div>
-                            Emails (optional)
+                            Data Size (GB)
                           </label>
                           <input
                             type="number"
                             min="0"
-                            step="1"
-                            value={emailCfg.messages || ''}
+                            step="0.01"
+                            value={emailCfg.dataSizeGB || ''}
                             onChange={(e) => {
                               const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              const numValue = value === '' ? 0 : parseFloat(value) || 0;
                               setConfig(prev => ({
                                 ...prev,
                                 emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                  i === emailIndex ? { ...cfg, messages: numValue } : cfg
+                                  i === emailIndex ? { ...cfg, dataSizeGB: numValue } : cfg
                                 ),
                               }));
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter number of emails"
+                            placeholder="Enter data size in GB"
                             autoComplete="off"
                           />
-                          <p className="text-xs text-gray-500 mt-2">Number of emails involved in the email migration (optional).</p>
+                          <p className="text-xs text-gray-500 mt-2">Data size in gigabytes for the email migration (optional).</p>
                         </div>
                       </div>
 

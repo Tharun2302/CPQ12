@@ -85,7 +85,7 @@ export interface ConfigurationData {
     instanceType: 'Small' | 'Standard' | 'Large' | 'Extra Large';
     numberOfInstances: number;
     duration: number;
-    messages?: number;
+    dataSizeGB?: number;
   }>;
 }
 

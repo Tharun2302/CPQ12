@@ -219,8 +219,13 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
     return `${exhibitName}\n---------------------------------\nUp to ${users} Users | ${dataSize} GBs`;
   } else if (category === 'email') {
     const mailboxes = config?.numberOfUsers || 1;
-    // Format: Exhibit name, dashed line separator, then details
-    return `${exhibitName}\n---------------------------------\nUp to ${mailboxes} Mailboxes`;
+    // Get dataSizeGB from exhibitConfig or configuration (similar to content handling)
+    const exhibitDataSize = exhibitConfig?.dataSizeGB;
+    const configDataSize = configuration?.dataSizeGB;
+    const dataSize = (exhibitDataSize && exhibitDataSize > 0) ? exhibitDataSize : 
+                     (configDataSize && configDataSize > 0) ? configDataSize : 0;
+    // Format: Exhibit name, dashed line separator, then details with mailboxes and data size
+    return `${exhibitName}\n---------------------------------\nUp to ${mailboxes} Mailboxes | ${dataSize} GBs`;
   }
   
   return exhibitName;
