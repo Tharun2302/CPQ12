@@ -8,6 +8,8 @@ export interface User {
   email: string;
   provider: AuthProvider;
   createdAt: string;
+  /** Role for permissions; e.g. 'viewer' | 'exhibit_admin'. Only exhibit_admin can add/edit/delete exhibits. */
+  role?: string;
 }
 
 export interface SignInData {
