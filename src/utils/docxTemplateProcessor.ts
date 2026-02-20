@@ -8,6 +8,7 @@ export interface DocxTemplateData {
   '{{Company Name}}'?: string;
   '{{Company_Name}}'?: string; // Underscore version found in template
   '{{users_count}}'?: string;
+  '{{user_label}}'?: string; // User label: "Users" or "Mailboxes"
   '{{users_cost}}'?: string; // FIXED: Template uses underscore notation
   '{{Duration of months}}'?: string;
   '{{Duration_of_months}}'?: string; // Underscore version found in template
@@ -999,12 +1000,28 @@ export class DocxTemplateProcessor {
           // Remove all GB-related patterns from the entire document (not just Overage section).
           // This handles cases where Word splits the text across multiple runs/cells.
 
-          // 1) Remove "| {{data_size}} GBs" token (before docxtemplater renders it)
-          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*data_size[^}]*\}\}\s*GBs/gi, '');
+          // 1) Check if data_size has a non-empty/non-zero value - if so, keep the token
+          // Access templateData as Record to avoid type errors
+          const templateDataRecord = templateData as Record<string, string | undefined>;
+          const dataDescription = templateDataRecord['{{data_description}}'] || templateDataRecord['{{dataDescription}}'] || '';
+          const dataSizeGB = templateDataRecord['{{data_size}}'] || templateDataRecord['{{dataSizeGB}}'] || '0';
+          // Check both dataDescription (if used) and dataSizeGB directly
+          // For templates using {{data_size}} directly, check dataSizeGB value
+          const hasDataDescription = dataDescription && dataDescription.trim() !== '' && dataDescription !== '0 GBs';
+          const hasDataSizeValue = parseFloat(dataSizeGB.toString()) > 0;
+          const hasDataSize = hasDataDescription || hasDataSizeValue;
+          
+          // Only remove data_size token if there's no data size value
+          if (!hasDataSize) {
+            finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*data_size[^}]*\}\}\s*GBs/gi, '');
+          }
 
-          // 2) Remove "| {{data_description}}" token (before docxtemplater renders it)
-          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '');
-          finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '');
+          // 2) Remove "| {{data_description}}" token ONLY if dataDescription is empty or 0
+          // If dataDescription has a value, keep it so docxtemplater can render it
+          if (!hasDataSize) {
+            finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '');
+            finalDocumentXml = finalDocumentXml.replace(/\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '');
+          }
 
           // 3) Remove literal "| X GBs" ONLY when X is 0 (after docxtemplater rendered the token)
           //    Keep non-zero GB values like "| 6 GBs" as they represent actual data size
@@ -1039,8 +1056,11 @@ export class DocxTemplateProcessor {
           
           // 8) Handle combined format "Up to X Users | 0 GBs" in a single text run (only remove zero GBs)
           finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*0\s*GBs?/gi, '$1');
-          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '$1');
-          finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '$1');
+          // Only remove data_description token if there's no data size (keep it if hasDataSize is true)
+          if (!hasDataSize) {
+            finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*data_description[^}]*\}\}/gi, '$1');
+            finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Users)\s*\|\s*\{\{[^}]*dataDescription[^}]*\}\}/gi, '$1');
+          }
           // Also handle "Up to X Mailboxes | Y GBs" format - only remove if GBs is 0
           finalDocumentXml = finalDocumentXml.replace(/(Up to \d+ Mailboxes)\s*\|\s*0\s*GBs?/gi, '$1');
           
@@ -1657,6 +1677,14 @@ export class DocxTemplateProcessor {
       '{{user_count}}': userCount,
       '{{userCount}}': userCount,
       '{{numberOfUsers}}': userCount,
+      
+      // User label: "Mailboxes" for email migrations, "Users" for others
+      '{{user_label}}': (data as any)['{{user_label}}'] || (() => {
+        const isEmailAgreement = migrationType === 'Email' || 
+          (String((data as any)['{{migration type}}'] || (data as any)['{{migration_type}}'] || '').toLowerCase().includes('gmail')) ||
+          (String((data as any)['{{migration type}}'] || (data as any)['{{migration_type}}'] || '').toLowerCase().includes('outlook'));
+        return isEmailAgreement ? 'Mailboxes' : 'Users';
+      })(),
       
       // User cost variations
       '{{users_cost}}': userCost,
