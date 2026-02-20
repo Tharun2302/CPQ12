@@ -79,7 +79,16 @@ function formatDateMMDDYYYY(dateString: string): string {
   }
 }
 
-// Default date: one month from today (YYYY-MM-DD) for Project Start Date and Effective Date
+// Today in YYYY-MM-DD (default for Project Start Date)
+function getTodayDate(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// One month from today in YYYY-MM-DD (default for Effective Date)
 function getDefaultDateOneMonthFromToday(): string {
   const d = new Date();
   d.setMonth(d.getMonth() + 1);
@@ -472,13 +481,13 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     } catch {}
   }, []);
 
-  // Default Project Start Date to one month from today when configuration has no startDate (once)
+  // Default Project Start Date to today when configuration has no startDate (once). User can change if they want.
   const defaultStartDateSetRef = useRef(false);
   useEffect(() => {
     if (defaultStartDateSetRef.current || !configuration || !onConfigurationChange) return;
     if (configuration.startDate && configuration.startDate.trim() !== '') return;
     defaultStartDateSetRef.current = true;
-    const defaultStart = getDefaultDateOneMonthFromToday();
+    const defaultStart = getTodayDate();
     onConfigurationChange({ ...configuration, startDate: defaultStart });
   }, [configuration, onConfigurationChange]);
 
@@ -1129,12 +1138,18 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     }
   };
 
-  // Auto-populate client info from configure session (HIGHEST PRIORITY)
+  // Auto-populate client info from configure session (HIGHEST PRIORITY). Preserve or default effectiveDate (Quote field).
   useEffect(() => {
     console.log('🔍 QuoteGenerator: configureContactInfo changed:', configureContactInfo);
     if (configureContactInfo) {
       console.log('✅ HIGHEST PRIORITY: Auto-filling client info from configure session:', configureContactInfo);
-      setClientInfo(configureContactInfo);
+      const src = configureContactInfo as ClientInfo | null;
+      setClientInfo((prev) => ({
+        ...configureContactInfo,
+        effectiveDate: (src?.effectiveDate && String(src.effectiveDate).trim()) || prev.effectiveDate || getDefaultDateOneMonthFromToday(),
+        paymentTerms: src?.paymentTerms || prev.paymentTerms || '100% Upfront',
+        discount: src?.discount !== undefined ? src.discount : prev.discount
+      }));
     } else {
       console.log('⚠️ No configureContactInfo available, will use HubSpot or default');
     }
@@ -1171,24 +1186,28 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       
       console.log('✅ New client info to set:', newClientInfo);
       console.log('🏢 Company source:', contact.properties.company ? 'HubSpot company field' : 'Email domain extraction');
-      setClientInfo(newClientInfo);
+      setClientInfo((prev) => ({
+        ...prev,
+        ...newClientInfo,
+        effectiveDate: prev.effectiveDate?.trim() || getDefaultDateOneMonthFromToday(),
+        paymentTerms: prev.paymentTerms || '100% Upfront'
+      }));
     }
   }, [hubspotState?.selectedContact, configureContactInfo]);
 
-  // Clear client info when HubSpot is disconnected
+  // Clear only HubSpot-sourced fields when HubSpot is disconnected. Effective Date does not depend on HubSpot — preserve it.
   useEffect(() => {
     if (!hubspotState?.isConnected) {
-      setClientInfo({
+      setClientInfo((prev) => ({
+        ...prev,
         clientName: '',
         clientEmail: '',
-        company: '',
-        effectiveDate: '',
-        paymentTerms: '100% Upfront'
-      });
+        company: ''
+      }));
     }
   }, [hubspotState?.isConnected]);
 
-  // Auto-populate client info from deal data (only if no configure contact info)
+  // Auto-populate client info from deal data (only if no configure contact info). Preserve or default effectiveDate.
   useEffect(() => {
     if (dealData && !hubspotState?.selectedContact && !configureContactInfo) {
       console.log('🔍 Auto-filling client info from deal data:', dealData);
@@ -1200,7 +1219,12 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       };
       
       console.log('✅ New client info from deal data:', newClientInfo);
-      setClientInfo(newClientInfo);
+      setClientInfo((prev) => ({
+        ...prev,
+        ...newClientInfo,
+        effectiveDate: prev.effectiveDate?.trim() || getDefaultDateOneMonthFromToday(),
+        paymentTerms: prev.paymentTerms || '100% Upfront'
+      }));
     } else if (configureContactInfo) {
       console.log('⏭️ Skipping deal data auto-fill - configureContactInfo has priority');
     }
