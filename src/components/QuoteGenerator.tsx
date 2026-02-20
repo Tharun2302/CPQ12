@@ -238,8 +238,13 @@ function formatExhibitDescription(exhibit: any, configuration: ConfigurationData
     return `${exhibitName}\n---------------------------------\nUp to ${users} Users | ${dataSize} GBs`;
   } else if (category === 'email') {
     const mailboxes = config?.numberOfUsers || 1;
-    // Format: Exhibit name, dashed line separator, then details
-    return `${exhibitName}\n---------------------------------\nUp to ${mailboxes} Mailboxes`;
+    // Get dataSizeGB from exhibitConfig or configuration (similar to content handling)
+    const exhibitDataSize = exhibitConfig?.dataSizeGB;
+    const configDataSize = configuration?.dataSizeGB;
+    const dataSize = (exhibitDataSize && exhibitDataSize > 0) ? exhibitDataSize : 
+                     (configDataSize && configDataSize > 0) ? configDataSize : 0;
+    // Format: Exhibit name, dashed line separator, then details with mailboxes and data size
+    return `${exhibitName}\n---------------------------------\nUp to ${mailboxes} Mailboxes | ${dataSize} GBs`;
   }
   
   return exhibitName;
@@ -1509,7 +1514,10 @@ Quote ID: ${quoteData.id}
           (String(configuration?.combination || '').toLowerCase().includes('outlook'));
 
         const dataSizeGB = (() => {
-          if (isEmailAgreement) return 0;
+          // For email agreements, use the actual dataSizeGB from configuration
+          if (isEmailAgreement) {
+            return Number(configuration?.dataSizeGB ?? 0);
+          }
           if (configuration?.migrationType === 'Multi combination') {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const cfgAny: any = configuration as any;
@@ -1554,6 +1562,8 @@ Quote ID: ${quoteData.id}
           '{{userscount}}': (userCount || 1).toString(),
           '{{users}}': (userCount || 1).toString(),
           '{{number_of_users}}': (userCount || 1).toString(),
+          // User label: "Mailboxes" for email migrations, "Users" for others
+          '{{user_label}}': isEmailAgreement ? 'Mailboxes' : 'Users',
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
           // Instance type monthly cost (per server per month)
@@ -1580,10 +1590,10 @@ Quote ID: ${quoteData.id}
           '{{migration type}}': migrationType,
           '{{migration_type}}': migrationType,
           '{{migrationType}}': migrationType,
-          // Data size tokens (blank for Email only)
-          '{{data_size}}': isEmailAgreement ? '' : dataSizeGB.toString(),
-          '{{dataSizeGB}}': isEmailAgreement ? '' : dataSizeGB.toString(),
-          '{{data_size_gb}}': isEmailAgreement ? '' : dataSizeGB.toString(),
+          // Data size tokens (include for Email migration)
+          '{{data_size}}': dataSizeGB.toString(),
+          '{{dataSizeGB}}': dataSizeGB.toString(),
+          '{{data_size_gb}}': dataSizeGB.toString(),
           
           // Pricing breakdown - Row1=(user+data), Row2=migration, Row3=instance so rows sum to total
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
@@ -1881,19 +1891,30 @@ Quote ID: ${quoteData.id}
         };
         
         // Add user description tokens for email agreements
-        const emailUserDescription = `Up to ${userCount || 1} Users`;
+        // For email migration, use "Mailboxes" instead of "Users"
+        const isEmailForEmail = migrationType === 'Email' || 
+          (configuration?.combination || '').toLowerCase().includes('gmail') ||
+          (configuration?.combination || '').toLowerCase().includes('outlook');
+        const emailUserDescription = isEmailForEmail 
+          ? `Up to ${userCount || 1} Mailboxes`
+          : `Up to ${userCount || 1} Users`;
         templateData['{{user_description}}'] = emailUserDescription;
         templateData['{{userDescription}}'] = emailUserDescription;
         templateData['{{users_description}}'] = emailUserDescription;
         
-        // Add data size description tokens - empty for email agreements (Gmail/Outlook)
-        templateData['{{data_description}}'] = '';
-        templateData['{{dataDescription}}'] = '';
+        // Add data size description tokens - include GBs for email agreements if dataSizeGB > 0
+        const emailDataSizeGB = isEmailForEmail ? Number(configuration?.dataSizeGB ?? 0) : 0;
+        const emailDataDescription = emailDataSizeGB > 0 ? `${emailDataSizeGB} GBs` : '';
+        templateData['{{data_description}}'] = emailDataDescription;
+        templateData['{{dataDescription}}'] = emailDataDescription;
         
-        // Add combined description token for email agreements (no GBs)
-        templateData['{{user_data_description}}'] = emailUserDescription;
-        templateData['{{userDataDescription}}'] = emailUserDescription;
-        templateData['{{description}}'] = emailUserDescription;
+        // Add combined description token for email agreements - show "Up to X Mailboxes | Y GBs" format
+        const emailCombinedDescription = emailDataDescription 
+          ? `${emailUserDescription} | ${emailDataDescription}`
+          : emailUserDescription;
+        templateData['{{user_data_description}}'] = emailCombinedDescription;
+        templateData['{{userDataDescription}}'] = emailCombinedDescription;
+        templateData['{{description}}'] = emailCombinedDescription;
 
         const result = await DocxTemplateProcessor.processDocxTemplate(templateFileForEmail as File, templateData);
         if (result.success && result.processedDocx) {
@@ -3972,14 +3993,16 @@ Total Price: {{total price}}`;
           (String(quoteData.configuration?.combination || '').toLowerCase().includes('outlook'));
 
         const dataSizeGB = (() => {
-          if (isEmailAgreementForDataSize) return 0;
-
+          // For email agreements, use the actual dataSizeGB from configuration (not force to 0)
+          // This allows email templates to show data size when configured
           const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+          
           if (cfg?.migrationType === 'Multi combination') {
             const fromContentConfig = Number(cfg?.contentConfig?.dataSizeGB ?? 0);
             const fromContentConfigs = Number(cfg?.contentConfigs?.[0]?.dataSizeGB ?? 0);
             return fromContentConfig > 0 ? fromContentConfig : fromContentConfigs;
           }
+          // Use actual dataSizeGB value (can be > 0 for email agreements)
           return Number(cfg?.dataSizeGB ?? 0);
         })();
         
@@ -4051,6 +4074,8 @@ Total Price: {{total price}}`;
           '{{userscount}}': (userCount || 1).toString(),
           '{{users}}': (userCount || 1).toString(),
           '{{number_of_users}}': (userCount || 1).toString(),
+          // User label: "Mailboxes" for email migrations, "Users" for others
+          '{{user_label}}': isEmailAgreementForDataSize ? 'Mailboxes' : 'Users',
           '{{instance_type}}': instanceType,
           '{{instanceType}}': instanceType,
           '{{instance type}}': instanceType, // Space version
@@ -4107,10 +4132,10 @@ Total Price: {{total price}}`;
           '{{migration type}}': migrationType || 'Content',
           '{{migration_type}}': migrationType || 'Content',
           '{{migrationType}}': migrationType || 'Content',
-          // Data size tokens (blank for Email only)
-          '{{data_size}}': isEmailAgreementForDataSize ? '' : dataSizeGB.toString(),
-          '{{dataSizeGB}}': isEmailAgreementForDataSize ? '' : dataSizeGB.toString(),
-          '{{data_size_gb}}': isEmailAgreementForDataSize ? '' : dataSizeGB.toString(),
+          // Data size tokens - use actual value (email agreements can now have data size)
+          '{{data_size}}': dataSizeGB.toString(),
+          '{{dataSizeGB}}': dataSizeGB.toString(),
+          '{{data_size_gb}}': dataSizeGB.toString(),
           
           // Pricing: price_data + price_migration + instance_cost must equal total (user+data+migration+instance).
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
@@ -5905,25 +5930,28 @@ Total Price: {{total price}}`;
         templateData['{{migration_description_text}}'] = migrationDescription;
         
         // Add user description tokens
-        const userDescription = `Up to ${userCount || 1} Users`;
+        // For email agreements, use "Mailboxes" instead of "Users"
+        const isEmailAgreement = migrationType === 'Email' || 
+          (configuration?.combination || '').toLowerCase().includes('gmail') ||
+          (configuration?.combination || '').toLowerCase().includes('outlook');
+        const userDescription = isEmailAgreement 
+          ? `Up to ${userCount || 1} Mailboxes`
+          : `Up to ${userCount || 1} Users`;
         templateData['{{user_description}}'] = userDescription;
         templateData['{{userDescription}}'] = userDescription;
         templateData['{{users_description}}'] = userDescription;
         
         // Add data size description tokens
-        // For email agreements (Gmail/Outlook), don't show GBs at all
-        const isEmailAgreement = migrationType === 'Email' || 
-          (configuration?.combination || '').toLowerCase().includes('gmail') ||
-          (configuration?.combination || '').toLowerCase().includes('outlook');
-        const dataDescription = isEmailAgreement ? '' : (dataSizeGB > 0 ? `${dataSizeGB} GBs` : '0 GBs');
+        // For email agreements, include GBs if dataSizeGB > 0
+        const dataDescription = dataSizeGB > 0 ? `${dataSizeGB} GBs` : '';
         templateData['{{data_description}}'] = dataDescription;
         templateData['{{dataDescription}}'] = dataDescription;
         
         // Add combined description token for templates that use "{{user_description}} | {{data_description}}"
-        // For email agreements, only show user description without GBs
-        const combinedDescription = isEmailAgreement 
-          ? userDescription 
-          : (dataDescription ? `${userDescription} | ${dataDescription}` : userDescription);
+        // For email agreements, show "Up to X Mailboxes | Y GBs" format
+        const combinedDescription = dataDescription 
+          ? `${userDescription} | ${dataDescription}`
+          : userDescription;
         templateData['{{user_data_description}}'] = combinedDescription;
         templateData['{{userDataDescription}}'] = combinedDescription;
         templateData['{{description}}'] = combinedDescription;

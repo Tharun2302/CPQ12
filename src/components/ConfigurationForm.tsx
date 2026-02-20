@@ -1185,13 +1185,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         if (config.numberOfUsers === undefined || config.numberOfUsers === null) {
           // Value is missing - check if field was touched
           if (!fieldTouched.users) {
-            alert('Please enter the number of users');
+            const fieldLabel = config.migrationType === 'Email' ? 'number of mailboxes' : 'number of users';
+            alert(`Please enter the ${fieldLabel}`);
             return;
           }
         }
         // Check if value is negative
         if (config.numberOfUsers < 0) {
-          alert('Please enter the number of users (minimum 0)');
+          const fieldLabel = config.migrationType === 'Email' ? 'number of mailboxes' : 'number of users';
+          alert(`Please enter the ${fieldLabel} (minimum 0)`);
           return;
         }
       }
@@ -2925,8 +2927,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   instanceType: emailCfg.instanceType || 'Small',
                   numberOfInstances: emailCfg.numberOfInstances || 0,
                   duration: emailCfg.duration || 0,
-                  messages: emailCfg.messages || 0,
-                  dataSizeGB: 0, // Not used for email
+                  messages: 0,
+                  dataSizeGB: emailCfg.dataSizeGB || 0,
                   combination: emailCfg.exhibitName || '',
                   migrationType: 'email' as any
                 };
@@ -3063,34 +3065,34 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           />
                         </div>
 
-                        {/* Email: Emails (optional) */}
+                        {/* Email: Data Size (GB) */}
                         <div className="group">
                           <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                             <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center">
-                              <MessageSquare className="w-4 h-4 text-white" />
+                              <Database className="w-4 h-4 text-white" />
                             </div>
-                            Emails (optional)
+                            Data Size (GB)
                           </label>
                           <input
                             type="number"
                             min="0"
-                            step="1"
-                            value={emailCfg.messages || ''}
+                            step="0.01"
+                            value={emailCfg.dataSizeGB || ''}
                             onChange={(e) => {
                               const value = e.target.value;
-                              const numValue = value === '' ? 0 : parseInt(value) || 0;
+                              const numValue = value === '' ? 0 : parseFloat(value) || 0;
                               setConfig(prev => ({
                                 ...prev,
                                 emailConfigs: (prev.emailConfigs || []).map((cfg, i) =>
-                                  i === emailIndex ? { ...cfg, messages: numValue } : cfg
+                                  i === emailIndex ? { ...cfg, dataSizeGB: numValue } : cfg
                                 ),
                               }));
                             }}
                             className="w-full px-4 py-3 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base"
-                            placeholder="Enter number of emails"
+                            placeholder="Enter data size in GB"
                             autoComplete="off"
                           />
-                          <p className="text-xs text-gray-500 mt-2">Number of emails involved in the email migration (optional).</p>
+                          <p className="text-xs text-gray-500 mt-2">Data size in gigabytes for the email migration (optional).</p>
                         </div>
                       </div>
 
@@ -3311,14 +3313,14 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Number of Users - HIDE for overage agreement */}
+            {/* Number of Users/Mailboxes - HIDE for overage agreement */}
             {config.combination !== 'overage-agreement' && (
               <div className="group">
                 <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                     <Users className="w-4 h-4 text-white" />
                   </div>
-                  Number of Users
+                  {config.migrationType === 'Email' ? 'Number of Mailboxes' : 'Number of Users'}
                 </label>
                 <input
                   type="number"
@@ -3332,7 +3334,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     setFieldTouched(prev => ({ ...prev, users: true }));
                   }}
                   className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
-                  placeholder="Enter number of users"
+                  placeholder={config.migrationType === 'Email' ? 'Enter number of mailboxes' : 'Enter number of users'}
                   autoComplete="off"
                 />
               </div>
@@ -3407,6 +3409,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 autoComplete="off"
               />
             </div>
+
+            {/* Data Size (GB) - Show for Email migration type */}
+            {config.migrationType === 'Email' && config.combination !== 'overage-agreement' && (
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Database className="w-4 h-4 text-white" />
+                  </div>
+                  Data Size (GB)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={config.dataSizeGB || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const numValue = value === '' ? 0 : parseFloat(value) || 0;
+                    handleChange('dataSizeGB', numValue);
+                    setFieldTouched(prev => ({ ...prev, dataSize: true }));
+                  }}
+                  className="w-full px-5 py-4 border-2 border-purple-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-purple-300 text-lg font-medium"
+                  placeholder="Enter data size in GB"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Data size in gigabytes for the email migration (optional).
+                </p>
+              </div>
+            )}
 
             {/* Start Date - MOVED to Quote session (Contact Information section) */}
             {/* The Project Start Date field has been moved to the Quote session above the Effective Date field */}
