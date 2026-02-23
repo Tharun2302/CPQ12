@@ -6,6 +6,7 @@ import ExhibitSelector from './ExhibitSelector';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { PRICING_TIERS, calculateCombinationPricing, formatCurrency } from '../utils/pricing';
 import { getContentTimelineByServerType, formatServerTypeLabel, type SourceEnvironment, type ContentMigrationType } from '../utils/timelineProjection';
+import { BACKEND_URL } from '../config/api';
 
 interface ConfigurationFormProps {
   onConfigurationChange: (config: ConfigurationData) => void;
@@ -102,6 +103,27 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   // State to track collapsed/expanded sections
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [noteExpanded, setNoteExpanded] = useState<boolean>(false);
+
+  // Combinations from API (user-managed via Combination Manager); fallback to hardcoded if empty
+  const [apiCombinations, setApiCombinations] = useState<Array<{ value: string; label: string; migrationType: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${BACKEND_URL}/api/combinations`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.success && Array.isArray(data.combinations)) {
+          setApiCombinations(
+            data.combinations.map((c: any) => ({
+              value: c.value || '',
+              label: c.label || c.value || '',
+              migrationType: c.migrationType || ''
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const toggleSection = (sectionId: string) => {
     setCollapsedSections(prev => {
@@ -451,8 +473,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     return 'Not Available';
   };
 
-  // Helper function to get display label for combination value
+  // Helper function to get display label for combination value (uses API list when available)
   const getCombinationLabel = (combinationValue: string): string => {
+    const fromApi = apiCombinations.find(c => c.value === combinationValue);
+    if (fromApi?.label) return fromApi.label;
     const combinationLabels: Record<string, string> = {
       'dropbox-to-microsoft': 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'dropbox-to-google': 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)',
@@ -493,6 +517,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
       'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'overage-agreement': 'OVERAGE AGREEMENT',
+      'multi-combination': 'ORIGINAL MULTI COMBINATION',
       'slack-to-teams': 'SLACK TO TEAMS',
       'slack-to-google-chat': 'SLACK TO GOOGLE CHAT'
     };
@@ -1083,6 +1108,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     
     // Multi combination validation
     if (config.migrationType === 'Multi combination') {
+      // Require a combination to be selected (e.g. Original Multi combination)
+      if (!config.combination) {
+        alert('Please select a combination');
+        return;
+      }
       // Require at least one exhibit (Messaging, Content, or Email)
       if (!selectedExhibitCategories.hasMessaging && !selectedExhibitCategories.hasContent && !selectedExhibitCategories.hasEmail) {
         alert('Please select at least one exhibit to proceed.');
@@ -1170,9 +1200,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           }
         }
       }
-    }
-    // Skip combination check for Multi combination migration type
-    else if (!config.combination) {
+    } else if (!config.combination) {
       alert('Please select a combination');
       return;
     }
@@ -1646,10 +1674,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                 >
                   <option value="">Select Migration Type</option>
-                  <option value="Multi combination">Multi combination</option>
                   <option value="Messaging">Messaging</option>
                   <option value="Content">Content</option>
                   <option value="Email">Email</option>
+                  <option value="Multi combination">Multi combination</option>
                   <option value="Overage Agreement">Overage</option>
                 </select>
               )}
@@ -1867,15 +1895,15 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-8">
 
-          {/* Template Selection - Show when migration type is selected (except Multi combination) */}
-          {config.migrationType && config.migrationType !== 'Multi combination' && (
+          {/* Template Selection - Show when migration type is selected (Messaging, Content, Email, Multi combination, Overage) */}
+          {config.migrationType && (
             <div data-section="template-selection" className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-lg border border-purple-200 p-8">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <FileText className="w-8 h-8 text-white" />
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Select Combination</h3>
-                <p className="text-gray-600">Choose a combination for your {config.migrationType.toLowerCase()} migration quote</p>
+                <p className="text-gray-600">Choose a combination for your {config.migrationType === 'Multi combination' ? 'multi combination' : config.migrationType.toLowerCase()} migration quote</p>
               </div>
               
               <div className="max-w-md mx-auto">
@@ -1937,24 +1965,24 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       }}
                     >
                       <option value="">Select Combination</option>
-                      {/* Messaging combinations */}
+                      {/* Messaging combinations - from API (Combination Manager) or fallback hardcoded */}
                       {config.migrationType === 'Messaging' && (() => {
-                        const messagingCombinations = [
+                        const fromApi = apiCombinations.filter(c => c.migrationType === 'Messaging');
+                        const messagingCombinations = fromApi.length > 0 ? fromApi : [
                           { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
                           { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }
                         ];
-                        
-                        const filtered = messagingCombinations.filter(combo => 
+                        const filtered = messagingCombinations.filter(combo =>
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                         );
-                        
                         return filtered.map(combo => (
                           <option key={combo.value} value={combo.value}>{combo.label}</option>
                         ));
                       })()}
-                      {/* Content combinations */}
+                      {/* Content combinations - from API or fallback hardcoded */}
                       {config.migrationType === 'Content' && (() => {
-                        const contentCombinations = [
+                        const fromApi = apiCombinations.filter(c => c.migrationType === 'Content');
+                        const contentCombinationsDefault = [
                           { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
                           { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                           { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
@@ -1994,118 +2022,79 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
                           { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
                         ];
-                        
-                        const filtered = contentCombinations.filter(combo => 
+                        const contentCombinations = fromApi.length > 0 ? fromApi : contentCombinationsDefault;
+                        const filtered = contentCombinations.filter(combo =>
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                         );
-                        
                         return filtered.map(combo => (
                           <option key={combo.value} value={combo.value}>{combo.label}</option>
                         ));
                       })()}
-                      {/* Email combinations */}
+                      {/* Email combinations - from API or fallback */}
                       {config.migrationType === 'Email' && (() => {
-                        const emailCombinations = [
+                        const fromApi = apiCombinations.filter(c => c.migrationType === 'Email');
+                        const emailCombinations = fromApi.length > 0 ? fromApi : [
                           { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK' },
                           { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL' },
                           { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK' },
                           { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL' }
                         ];
-                        
-                        const filtered = emailCombinations.filter(combo => 
+                        const filtered = emailCombinations.filter(combo =>
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                         );
-                        
                         return filtered.map(combo => (
                           <option key={combo.value} value={combo.value}>{combo.label}</option>
                         ));
                       })()}
-                      {/* Overage Agreement migration type - show only overage agreement combination */}
+                      {/* Overage Agreement - from API or fallback */}
                       {config.migrationType === 'Overage Agreement' && (() => {
-                        const overageCombinations = [
+                        const fromApi = apiCombinations.filter(c => c.migrationType === 'Overage Agreement');
+                        const overageCombinations = fromApi.length > 0 ? fromApi : [
                           { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
                         ];
-
                         const filtered = overageCombinations.filter(combo =>
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
                         );
-
+                        return filtered.map(combo => (
+                          <option key={combo.value} value={combo.value}>{combo.label}</option>
+                        ));
+                      })()}
+                      {/* Multi combination - from API or fallback */}
+                      {config.migrationType === 'Multi combination' && (() => {
+                        const fromApi = apiCombinations.filter(c => c.migrationType === 'Multi combination');
+                        const multiCombinationOptions = fromApi.length > 0 ? fromApi : [
+                          { value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }
+                        ];
+                        const filtered = multiCombinationOptions.filter(combo =>
+                          combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
+                        );
                         return filtered.map(combo => (
                           <option key={combo.value} value={combo.value}>{combo.label}</option>
                         ));
                       })()}
                     </select>
                     
-                    {/* Show filtered count */}
+                    {/* Show filtered count - uses same API-or-fallback as dropdown */}
                     {combinationSearch && (
                       <div className="mt-2 text-sm text-purple-600">
                         {(() => {
-                          const messagingCombinations = [
-                            { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                            { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }
-                          ];
-                          const contentCombinations = [
-                            { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
-                            { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
-                            { value: 'dropbox-to-box', label: 'DROPBOX TO BOX' },
-                            { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE' },
-                            { value: 'box-to-box', label: 'BOX TO BOX' },
-                            { value: 'box-to-dropbox', label: 'BOX TO DROPBOX' },
-                            { value: 'box-to-sharefile', label: 'BOX TO SHAREFILE' },
-                            { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
-                            { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
-                          { value: 'box-to-sharepoint', label: 'BOX TO SHAREPOINT' },
-                          { value: 'box-to-google-sharedrive', label: 'BOX TO GOOGLE SHARED DRIVE' },
-                            { value: 'box-to-google', label: 'BOX TO GOOGLE (SHARED DRIVE/MYDRIVE)' },
-                            { value: 'google-sharedrive-to-egnyte', label: 'GOOGLE SHARED DRIVE TO EGNYTE' },
-                            { value: 'google-sharedrive-to-google-sharedrive', label: 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE' },
-                            { value: 'google-sharedrive-to-onedrive', label: 'GOOGLE SHARED DRIVE TO ONEDRIVE' },
-                            { value: 'google-sharedrive-to-sharepoint', label: 'GOOGLE SHARED DRIVE TO SHAREPOINT' },
-                            { value: 'google-mydrive-to-dropbox', label: 'GOOGLE MYDRIVE TO DROPBOX' },
-                            { value: 'google-mydrive-to-egnyte', label: 'GOOGLE MYDRIVE TO EGNYTE' },
-                            { value: 'google-mydrive-to-onedrive', label: 'GOOGLE MYDRIVE TO ONEDRIVE' },
-                            { value: 'google-mydrive-to-sharepoint', label: 'GOOGLE MYDRIVE TO SHAREPOINT' },
-                            { value: 'google-mydrive-to-google-sharedrive', label: 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE' },
-                            { value: 'google-mydrive-to-google-mydrive', label: 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE' },
-                            { value: 'onedrive-to-onedrive', label: 'ONEDRIVE TO ONEDRIVE' },
-                            { value: 'onedrive-to-google-mydrive', label: 'ONEDRIVE TO GOOGLE MYDRIVE' },
-                            { value: 'sharefile-to-google-mydrive', label: 'SHAREFILE TO GOOGLE MYDRIVE' },
-                            { value: 'sharefile-to-google-sharedrive', label: 'SHAREFILE TO GOOGLE SHARED DRIVE' },
-                            { value: 'sharefile-to-onedrive', label: 'SHAREFILE TO ONEDRIVE' },
-                            { value: 'sharefile-to-sharepoint', label: 'SHAREFILE TO SHAREPOINT' },
-                            { value: 'sharepoint-online-to-google-sharedrive', label: 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE' },
-                            { value: 'sharepoint-online-to-egnyte', label: 'SHAREPOINT ONLINE TO EGNYTE' },
-                            { value: 'sharefile-to-sharefile', label: 'SHAREFILE TO SHAREFILE' },
-                            { value: 'nfs-to-google', label: 'NFS TO GOOGLE (MYDRIVE/SHARED DRIVE)' },
-                            { value: 'egnyte-to-google', label: 'EGNYTE TO GOOGLE (SHARED DRIVE / MYDRIVE)' },
-                          { value: 'egnyte-to-google-sharedrive', label: 'EGNYTE TO GOOGLE SHARED DRIVE' },
-                          { value: 'nfs-to-microsoft', label: 'NFS TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
-                            { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)' }
-                          ];
-                       const overageCombinations = [
-                         { value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }
-                       ];
-
+                          const msg = apiCombinations.filter(c => c.migrationType === 'Messaging');
+                          const messagingCombinations = msg.length > 0 ? msg : [{ value: 'slack-to-teams', label: 'SLACK TO TEAMS' }, { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }];
+                          const cont = apiCombinations.filter(c => c.migrationType === 'Content');
+                          const contentCombinations = cont.length > 0 ? cont : [{ value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE' }];
+                          const eml = apiCombinations.filter(c => c.migrationType === 'Email');
+                          const emailCombinations = eml.length > 0 ? eml : [{ value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK' }, { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL' }, { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK' }, { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL' }];
+                          const ov = apiCombinations.filter(c => c.migrationType === 'Overage Agreement');
+                          const overageCombinations = ov.length > 0 ? ov : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
+                          const multi = apiCombinations.filter(c => c.migrationType === 'Multi combination');
+                          const multiCombinationOptions = multi.length > 0 ? multi : [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }];
                           let allCombinations: { value: string; label: string }[] = [];
-                          if (config.migrationType === 'Messaging') {
-                            allCombinations = messagingCombinations;
-                          } else if (config.migrationType === 'Content') {
-                            allCombinations = contentCombinations;
-                          } else if (config.migrationType === 'Email') {
-                            const emailCombinations = [
-                              { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK' },
-                              { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL' },
-                              { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK' },
-                              { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL' }
-                            ];
-                            allCombinations = emailCombinations;
-                          } else if (config.migrationType === 'Overage Agreement') {
-                            allCombinations = overageCombinations;
-                          }
-
-                          const filtered = allCombinations.filter(combo => 
-                            combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
-                          );
+                          if (config.migrationType === 'Messaging') allCombinations = messagingCombinations;
+                          else if (config.migrationType === 'Content') allCombinations = contentCombinations;
+                          else if (config.migrationType === 'Email') allCombinations = emailCombinations;
+                          else if (config.migrationType === 'Overage Agreement') allCombinations = overageCombinations;
+                          else if (config.migrationType === 'Multi combination') allCombinations = multiCombinationOptions;
+                          const filtered = allCombinations.filter(combo => combo.label.toLowerCase().includes(combinationSearch.toLowerCase()));
                           return `Showing ${filtered.length} of ${allCombinations.length} combinations`;
                         })()}
                       </div>
@@ -2146,8 +2135,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Exhibits selection - ONLY show for Multi combination migration type */}
-          {config.migrationType === 'Multi combination' && (
+          {/* Exhibits selection - ONLY show for Multi combination after a combination is selected (e.g. Original Multi combination) */}
+          {config.migrationType === 'Multi combination' && config.combination && (
             <div data-section="exhibits-selection">
               <ExhibitSelector
                 combination={config.combination || 'multi-combination'}
@@ -2161,7 +2150,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* Common Instance Type Selector - appears after exhibits are selected */}
-          {config.migrationType === 'Multi combination' && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (() => {
+          {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (() => {
             // Calculate if all instance types are the same
             const allInstanceTypes: string[] = [
               ...(config.messagingConfigs || []).map(cfg => cfg.instanceType || 'Small'),
@@ -2241,7 +2230,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           })()}
 
           {/* MULTI COMBINATION: Show separate sections for Messaging, Content, and Email */}
-          {config.migrationType === 'Multi combination' && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
+          {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
             <>
 
               {/* Messaging Project Configuration Section - one card per messaging exhibit */}
@@ -3238,7 +3227,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* Multi combination: Discount input (global) - show AFTER all project configuration sections */}
-          {config.migrationType === 'Multi combination' && (
+          {config.migrationType === 'Multi combination' && config.combination && (
             <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
               <div className="group max-w-md">
                 <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
@@ -3588,7 +3577,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           )}
 
           {/* Add More Exhibits Option - Show when at least one exhibit is configured */}
-          {config.migrationType === 'Multi combination' && 
+          {config.migrationType === 'Multi combination' && config.combination &&
            (selectedExhibitCategories.hasMessaging || selectedExhibitCategories.hasContent || selectedExhibitCategories.hasEmail) && (
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-lg border border-blue-200 p-4 mb-6">
               <div className="flex items-center justify-between gap-4">

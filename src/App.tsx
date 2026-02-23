@@ -195,6 +195,15 @@ function App() {
         return; // Exit early to allow fresh auto-selection
       }
       
+      // Combination-attached template (from Combination Manager file): keep if combination matches
+      if (selectedTemplate?.id?.startsWith?.('combo-')) {
+        if (currentCombination && templateCombination === currentCombination) {
+          return; // Keep combo template
+        }
+        setSelectedTemplate(null);
+        return;
+      }
+      
       // Check if the selected template still exists in the loaded templates
       const templateExists = templates.find(t => t.id === selectedTemplate.id);
       if (!templateExists) {
@@ -1169,6 +1178,41 @@ function App() {
     }
   }, [templates.length]); // Trigger when templates array changes from empty to populated
 
+  // When Multi combination + combination selected but no DB template: use combination-attached file as template
+  useEffect(() => {
+    const migrationType = configuration?.migrationType;
+    const combination = (configuration?.combination || '').trim().toLowerCase();
+    if (migrationType !== 'Multi combination' || !combination || selectedTemplate) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        const data = await res.json();
+        if (!res.ok || !data.success || cancelled) return;
+        const combos = data.combinations || [];
+        const combo = combos.find((c: any) => (c.value || '').toLowerCase() === combination && c.hasFile);
+        if (!combo || cancelled) return;
+        const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${combo.id}/file`);
+        if (!fileRes.ok || cancelled) return;
+        const blob = await fileRes.blob();
+        const fileName = (combo.fileName || 'agreement.docx').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const file = new File([blob], fileName, { type: blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        if (cancelled) return;
+        setSelectedTemplate({
+          id: `combo-${combo.id}`,
+          name: (combo.label || combo.value) + ' template',
+          combination: combo.value,
+          file
+        });
+        console.log('✅ Using combination-attached file as agreement template:', combo.label);
+      } catch (err) {
+        if (!cancelled) console.error('Error loading combination template:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [configuration?.migrationType, configuration?.combination, selectedTemplate]);
+
   // Save company information to localStorage whenever it changes
   useEffect(() => {
     try {
@@ -1379,27 +1423,27 @@ function App() {
 
     // PRIORITY -1: Special handling for MULTI COMBINATION migration type
     if (config?.migrationType === 'Multi combination') {
-      console.log('🎯 MULTI COMBINATION migration type detected - selecting universal template');
+      console.log('🎯 MULTI COMBINATION migration type detected - matching by combination then fallback');
+      // First try exact combination match (e.g. bundle-multi-combintion)
+      const exactMatches = templates.filter(t => {
+        const templateCombination = (t?.combination || '').toLowerCase();
+        return templateCombination === combination;
+      });
+      if (exactMatches.length > 0) {
+        console.log('✅ Found template for combination:', combination, exactMatches[0].name);
+        return exactMatches[0];
+      }
+      // Fallback: template tagged as multi-combination (original)
       const multiMatches = templates.filter(t => {
         const templateCombination = (t?.combination || '').toLowerCase();
-        const matchesMulti = templateCombination === 'multi-combination';
-        
-        console.log('🎯 Multi Combination matching:', {
-          templateName: t?.name,
-          templateCombination,
-          matchesMulti
-        });
-        
-        return matchesMulti;
+        return templateCombination === 'multi-combination';
       });
-      
       if (multiMatches.length > 0) {
-        console.log('✅ Found MULTI COMBINATION template:', multiMatches[0].name);
+        console.log('✅ Found MULTI COMBINATION fallback template:', multiMatches[0].name);
         return multiMatches[0];
-      } else {
-        console.log('❌ No MULTI COMBINATION template found');
-        return null;
       }
+      console.log('❌ No MULTI COMBINATION template found for combination:', combination);
+      return null;
     }
 
     // PRIORITY 0: Special handling for OVERAGE AGREEMENT (must check BEFORE planType matching)
@@ -2299,6 +2343,68 @@ function App() {
 
              <Route
                path="/exhibits"
+               element={
+                 <ProtectedRoute>
+                   <Dashboard
+                     configuration={configuration}
+                     setConfiguration={setConfiguration}
+                     calculations={calculations}
+                     setCalculations={setCalculations}
+                     selectedTier={selectedTier}
+                     setSelectedTier={setSelectedTier}
+                     showPricing={showPricing}
+                     setShowPricing={setShowPricing}
+                     pricingTiers={pricingTiers}
+                     setPricingTiers={setPricingTiers}
+                     hubspotState={hubspotState}
+                     setHubspotState={setHubspotState}
+                     companyInfo={companyInfo}
+                     setCompanyInfo={setCompanyInfo}
+                     selectedTemplate={selectedTemplate}
+                     setSelectedTemplate={setSelectedTemplate}
+                     templates={templates}
+                     setTemplates={setTemplates}
+                     quotes={quotes}
+                     setQuotes={setQuotes}
+                     dealData={dealData}
+                     setDealData={setDealData}
+                     activeDealData={activeDealData}
+                     setActiveDealData={setActiveDealData}
+                     currentClientInfo={currentClientInfo}
+                     setCurrentClientInfo={setCurrentClientInfo}
+                     configureContactInfo={configureContactInfo}
+                     setConfigureContactInfo={setConfigureContactInfo}
+                     signatureFormData={signatureFormData}
+                     setSignatureFormData={setSignatureFormData}
+                     isSignatureForm={isSignatureForm}
+                     setIsSignatureForm={setIsSignatureForm}
+                     handleConfigurationChange={handleConfigurationChange}
+                     handleSubmitConfiguration={handleSubmitConfiguration}
+                     handleSelectTier={handleSelectTier}
+                     handleTierUpdate={handleTierUpdate}
+                     handleGenerateQuote={handleGenerateQuote}
+                     handleDeleteQuote={handleDeleteQuote}
+                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
+                     handleUpdateQuote={handleUpdateQuote}
+                     handleTemplateSelect={handleTemplateSelect}
+                     handleTemplatesUpdate={handleTemplatesUpdate}
+                     updateCompanyInfo={updateCompanyInfo}
+                     handleSelectHubSpotContact={handleSelectHubSpotContact}
+                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
+                     handleClientInfoChange={handleClientInfoChange}
+                     refreshDealData={refreshDealData}
+                     handleUseDealData={handleUseDealData}
+                    handleSignatureFormComplete={handleSignatureFormComplete}
+                    getCurrentQuoteData={getCurrentQuoteData}
+                    selectedExhibits={selectedExhibits}
+                    onExhibitsChange={handleExhibitsChange}
+                  />
+                 </ProtectedRoute>
+               }
+             />
+
+             <Route
+               path="/combinations"
                element={
                  <ProtectedRoute>
                    <Dashboard

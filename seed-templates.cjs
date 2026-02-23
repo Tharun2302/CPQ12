@@ -1154,7 +1154,19 @@ async function seedDefaultTemplates(db) {
       combination: 'multi-combination',
       planType: 'multi',
       keywords: ['multi', 'combination', 'universal', 'all']
-    }
+    },
+    // Add more Multi combination templates by duplicating the block below and changing name/fileName.
+    // Place the DOCX file in backend-templates/ and run: POST /api/templates/reseed
+    // {
+    //   name: 'My New Multi Combination Template',
+    //   description: 'Optional description',
+    //   fileName: 'my-multi-combination-template.docx',
+    //   isDefault: false,
+    //   category: 'multi',
+    //   combination: 'multi-combination',
+    //   planType: 'standard',
+    //   keywords: ['multi', 'combination']
+    // }
   ];
 
   const templatesDir = path.join(__dirname, 'backend-templates');

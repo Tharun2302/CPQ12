@@ -154,7 +154,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     if (!configuration || configuration.migrationType !== 'Multi combination') {
       return defaultBreakdown;
     }
-    
+
     // If planTier is provided, use it for comparison view (each column shows its own tier)
     // Otherwise, use selectedTier for custom total calculation
     const tierToUse = planTier || PRICING_TIERS.find(t => t.name === selectedTiersPerCombination[combinationName] || 'Standard');
@@ -289,9 +289,9 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     }
     
     // CRITICAL: Only show plans that have corresponding templates in the database
-    // This ensures UI only displays plans for which templates actually exist
-    // This check takes precedence over all other logic to ensure only available templates are shown
-    if (templates && templates.length > 0 && combination) {
+    // Skip this check for Multi combination so Basic/Standard/Advanced plan selection is always visible
+    // (multi-combination uses a single/original template; plan is chosen at quote time)
+    if (configuration?.migrationType !== 'Multi combination' && templates && templates.length > 0 && combination) {
       const tierName = calc.tier.name.toLowerCase();
       const combinationLower = combination.toLowerCase();
       
@@ -553,7 +553,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   <>
                     <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
                       <p className="text-sm text-purple-800 font-bold text-center">
-                        🔀 Multi Combination Pricing Breakdown
+                        🔀 Original Multi Combination Pricing Breakdown
                       </p>
                     </div>
 
@@ -934,7 +934,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         })}
       </div>
 
-      {/* Custom Plan Selection Section - Only for Multi combination */}
+      {/* Custom Plan Selection Section - Only for Multi combination (Original) */}
       {configuration?.migrationType === 'Multi combination' && (
         <div className="mt-8 bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-2xl p-6">
           <h3 className="text-xl font-bold text-purple-900 mb-4 text-center">

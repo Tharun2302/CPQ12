@@ -503,7 +503,7 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
   };
 
   // MULTI COMBINATION: Calculate Messaging + Content (+ Email) separately, then sum
-  // Now supports per-exhibit configs: loop over arrays and sum results
+  // Accept all Multi combination (any combination value); run when migration type is Multi combination
   if (config.migrationType === 'Multi combination') {
     let messagingCalculation, contentCalculation, emailCalculation;
     let totalCombined = 0;
