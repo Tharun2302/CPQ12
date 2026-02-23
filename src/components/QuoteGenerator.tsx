@@ -6301,6 +6301,8 @@ Total Price: {{total price}}`;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+            templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
             
             // 10% discount amount for CFM row (overwritten in bundled block below with same value)
             const cfmUserTotalBundled = cfmUserTotal * 0.1;
@@ -6430,6 +6432,8 @@ Total Price: {{total price}}`;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+            templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
             
             // 10% discount amount per row (Bundled column)
             const cfmUserTotalBundled = cfmUserTotal * 0.1;
@@ -6564,6 +6568,8 @@ Total Price: {{total price}}`;
           templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+          templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
           
           const fallbackCfmUserTotalBundled = fallbackCfmUserTotal * 0.9;
           templateData['{{cfm_user_total_b}}'] = formatCurrency(fallbackCfmUserTotalBundled);
@@ -6775,6 +6781,12 @@ Total Price: {{total price}}`;
           templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
+        }
+        if (!templateData['{{cfm_number_of_users}}']) {
+          templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+        }
+        if (!templateData['{{total_users_count}}']) {
+          templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
         }
         if (!templateData['{{cfm_user_total_b}}']) {
           const fallbackCfmUserTotal = parseFloat((templateData['{{cfm_user_total}}'] || '$0').replace(/[$,]/g, '')) || (totalUserCountFromExhibits * 12 * 3.99);

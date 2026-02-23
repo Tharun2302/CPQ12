@@ -12,7 +12,6 @@ import Settings from './Settings';
 import DigitalSignatureForm from './DigitalSignatureForm';
 import ApprovalWorkflow from './ApprovalWorkflow';
 import ExhibitManager from './ExhibitManager';
-import CombinationManager from './CombinationManager';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
@@ -162,7 +161,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       return 'documents';
     }
 
-    const allowed = ['deal', 'configure', 'quote', 'documents', 'templates', 'approval', 'exhibits', 'combinations'];
+    const allowed = ['deal', 'configure', 'quote', 'documents', 'templates', 'approval', 'exhibits'];
     return allowed.includes(tab) ? tab : 'deal';
   };
 
@@ -633,9 +632,6 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       case 'exhibits':
         return <ExhibitManager />;
-
-      case 'combinations':
-        return <CombinationManager />;
 
       default:
         return <Navigate to="/deal" replace />;

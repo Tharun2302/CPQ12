@@ -2161,20 +2161,57 @@ app.put('/api/combinations/:id', async (req, res) => {
     if (result.matchedCount === 0) {
       return res.status(404).json({ success: false, error: 'Combination not found' });
     }
-    const updated = await db.collection('combinations').findOne({ id });
-    res.json({ success: true, combination: updated });
+    const updated = await db.collection('combinations').findOne({ id }, { projection: { fileData: 0 } });
+    const out = { ...updated, hasFile: !!(updated && updated.fileName) };
+    res.json({ success: true, combination: out });
   } catch (error) {
     console.error('Error updating combination:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Delete combination
+// Upload or replace combination template file (backend combination template)
+app.post('/api/combinations/:id/file', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { id } = req.params;
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: 'File is required' });
+    }
+    const combo = await db.collection('combinations').findOne({ id });
+    if (!combo) {
+      return res.status(404).json({ success: false, error: 'Combination not found' });
+    }
+    const update = {
+      updatedAt: new Date(),
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileData: req.file.buffer.toString('base64'),
+      fileType: req.file.mimetype || (req.file.originalname.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream')
+    };
+    await db.collection('combinations').updateOne(
+      { id },
+      { $set: update }
+    );
+    const updated = await db.collection('combinations').findOne({ id }, { projection: { fileData: 0 } });
+    const out = { ...updated, hasFile: true };
+    res.json({ success: true, combination: out });
+  } catch (error) {
+    console.error('Error uploading combination file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete combination (admin only: require exhibit_admin or admin role)
 app.delete('/api/combinations/:id', async (req, res) => {
   try {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
     const { id } = req.params;
     const result = await db.collection('combinations').deleteOne({ id });
     if (result.deletedCount === 0) {

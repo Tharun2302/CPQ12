@@ -13,6 +13,13 @@ import {
   Upload
 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { useAuth } from '../hooks/useAuth';
+
+function getAuthHeaders(): Record<string, string> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
 
 interface Combination {
   id: string;
@@ -29,6 +36,8 @@ interface Combination {
 const MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement'] as const;
 
 const CombinationManager: React.FC = () => {
+  const { user } = useAuth();
+  const canDeleteCombinations = user?.role === 'exhibit_admin';
   const [combinations, setCombinations] = useState<Combination[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterMigrationType, setFilterMigrationType] = useState<string>('');
@@ -127,8 +136,21 @@ const CombinationManager: React.FC = () => {
           setSubmitError(data.error || 'Update failed');
           return;
         }
-        setSubmitSuccess('Combination updated.');
-        setCombinations((prev) => prev.map((c) => (c.id === editingCombo.id ? (data.combination || c) : c)));
+        let updatedCombo = data.combination;
+        if (formFile) {
+          const fd = new FormData();
+          fd.append('file', formFile);
+          const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${editingCombo.id}/file`, {
+            method: 'POST',
+            body: fd
+          });
+          const fileData = await fileRes.json();
+          if (fileRes.ok && fileData.combination) {
+            updatedCombo = fileData.combination;
+          }
+        }
+        setSubmitSuccess(formFile ? 'Combination and template file updated.' : 'Combination updated.');
+        setCombinations((prev) => prev.map((c) => (c.id === editingCombo.id ? (updatedCombo || c) : c)));
       } else {
         if (formFile) {
           const fd = new FormData();
@@ -173,10 +195,11 @@ const CombinationManager: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/combinations/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${BACKEND_URL}/api/combinations/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
       const data = await res.json();
       if (!res.ok) {
-        setSubmitError(data.error || 'Delete failed');
+        setDeleteConfirm(null);
+        alert(data.error || 'Delete failed');
         return;
       }
       setCombinations((prev) => prev.filter((c) => c.id !== id));
@@ -213,7 +236,7 @@ const CombinationManager: React.FC = () => {
           Combination Manager
         </h1>
         <p className="text-gray-600">
-          Add and edit combinations shown in the Configure page when users select a migration type (Messaging, Content, Email, Multi combination, Overage). Same idea as Exhibits: you manage the list here and it appears in the dropdown.
+          Add and edit combinations shown in the Configure page when users select a migration type (Messaging, Content, Email, Multi combination, Overage).
         </p>
       </div>
 
@@ -351,14 +374,16 @@ const CombinationManager: React.FC = () => {
                           >
                             <Edit className="w-4 h-4" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteConfirm(c.id)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canDeleteCombinations && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirm(c.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </>
                       )}
                     </td>
@@ -426,23 +451,24 @@ const CombinationManager: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
-              {!editingCombo && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <Upload className="w-4 h-4 inline mr-1" />
-                    Upload file (optional)
-                  </label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
-                    onChange={(e) => setFormFile(e.target.files?.[0] ?? null)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">e.g. DOCX or PDF template for this combination.</p>
-                  {formFile && <p className="text-xs text-green-600 mt-1">{formFile.name}</p>}
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <Upload className="w-4 h-4 inline mr-1" />
+                  {editingCombo ? 'Replace template file (optional)' : 'Upload template file (optional)'}
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
+                  onChange={(e) => setFormFile(e.target.files?.[0] ?? null)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">Backend combination template: DOCX or PDF. Stored and used for agreement generation.</p>
+                {editingCombo && editingCombo.hasFile && !formFile && (
+                  <p className="text-xs text-blue-600 mt-1">Current file: {editingCombo.fileName || 'attached'}. Choose a new file to replace.</p>
+                )}
+                {formFile && <p className="text-xs text-green-600 mt-1">{formFile.name}</p>}
+              </div>
               {submitError && <p className="text-sm text-red-600">{submitError}</p>}
               {submitSuccess && <p className="text-sm text-green-600">{submitSuccess}</p>}
               <div className="flex justify-end gap-2 pt-2">

@@ -7,6 +7,7 @@
 # ===========================================
 # Get this from Azure App Registration
 # Go to: https://portal.azure.com > Azure Active Directory > App registrations
+# If not set, Microsoft sign-in is disabled; users can still sign in with email/password.
 VITE_MSAL_CLIENT_ID=your-microsoft-client-id-here
 VITE_MSAL_REDIRECT_URI=
 

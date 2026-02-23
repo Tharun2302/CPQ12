@@ -19,8 +19,6 @@ const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashbo
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
 const MigrationManagerDashboard = lazy(() => import('./components/MigrationManagerDashboard'));
 const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
-const MigrationMonitoringDashboard = lazy(() => import('./components/MigrationMonitoringDashboard'));
-const MigrationLifecycle = lazy(() => import('./components/MigrationLifecycle'));
 
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
@@ -2019,17 +2017,6 @@ function App() {
                   />
                 </ProtectedRoute>
               } />
-              <Route path="/migration-monitoring" element={
-                <ProtectedRoute>
-                  <MigrationMonitoringDashboard />
-                </ProtectedRoute>
-              } />
-              <Route path="/migration-lifecycle" element={
-                <ProtectedRoute>
-                  <MigrationLifecycle />
-                </ProtectedRoute>
-              } />
-
              {/* Main app tabs without /dashboard prefix */}
              <Route
                path="/deal"
@@ -2405,64 +2392,7 @@ function App() {
 
              <Route
                path="/combinations"
-               element={
-                 <ProtectedRoute>
-                   <Dashboard
-                     configuration={configuration}
-                     setConfiguration={setConfiguration}
-                     calculations={calculations}
-                     setCalculations={setCalculations}
-                     selectedTier={selectedTier}
-                     setSelectedTier={setSelectedTier}
-                     showPricing={showPricing}
-                     setShowPricing={setShowPricing}
-                     pricingTiers={pricingTiers}
-                     setPricingTiers={setPricingTiers}
-                     hubspotState={hubspotState}
-                     setHubspotState={setHubspotState}
-                     companyInfo={companyInfo}
-                     setCompanyInfo={setCompanyInfo}
-                     selectedTemplate={selectedTemplate}
-                     setSelectedTemplate={setSelectedTemplate}
-                     templates={templates}
-                     setTemplates={setTemplates}
-                     quotes={quotes}
-                     setQuotes={setQuotes}
-                     dealData={dealData}
-                     setDealData={setDealData}
-                     activeDealData={activeDealData}
-                     setActiveDealData={setActiveDealData}
-                     currentClientInfo={currentClientInfo}
-                     setCurrentClientInfo={setCurrentClientInfo}
-                     configureContactInfo={configureContactInfo}
-                     setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
-                     handleConfigurationChange={handleConfigurationChange}
-                     handleSubmitConfiguration={handleSubmitConfiguration}
-                     handleSelectTier={handleSelectTier}
-                     handleTierUpdate={handleTierUpdate}
-                     handleGenerateQuote={handleGenerateQuote}
-                     handleDeleteQuote={handleDeleteQuote}
-                     handleUpdateQuoteStatus={handleUpdateQuoteStatus}
-                     handleUpdateQuote={handleUpdateQuote}
-                     handleTemplateSelect={handleTemplateSelect}
-                     handleTemplatesUpdate={handleTemplatesUpdate}
-                     updateCompanyInfo={updateCompanyInfo}
-                     handleSelectHubSpotContact={handleSelectHubSpotContact}
-                     handleConfigureContactInfoChange={handleConfigureContactInfoChange}
-                     handleClientInfoChange={handleClientInfoChange}
-                     refreshDealData={refreshDealData}
-                     handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
-                    getCurrentQuoteData={getCurrentQuoteData}
-                    selectedExhibits={selectedExhibits}
-                    onExhibitsChange={handleExhibitsChange}
-                  />
-                 </ProtectedRoute>
-               }
+               element={<Navigate to="/templates" state={{ templateSubTab: 'combinations' }} replace />}
              />
 
              <Route

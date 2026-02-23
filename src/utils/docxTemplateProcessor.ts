@@ -1747,6 +1747,10 @@ export class DocxTemplateProcessor {
       '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
       '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
       
+      // Number of users (for CloudFuze Manage row / table)
+      '{{cfm_number_of_users}}': (data as any)['{{cfm_number_of_users}}'] || (data as any)['{{total_users_count}}'] || userCount || '1',
+      '{{total_users_count}}': (data as any)['{{total_users_count}}'] || (data as any)['{{cfm_number_of_users}}'] || userCount || '1',
+      
       // Migration type variations
       '{{migration type}}': migrationType,
       '{{migration_type}}': migrationType,

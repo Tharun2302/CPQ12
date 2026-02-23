@@ -71,20 +71,25 @@ const SignInForm: React.FC<SignInFormProps> = ({ onSuccess, onError }) => {
 
   const handleMicrosoftLogin = async () => {
     setIsMicrosoftLoading(true);
-    
+    setErrors([]);
+
     try {
       const success = await loginWithMicrosoft();
-      
+
       if (success) {
         onSuccess?.();
       } else {
         setErrors([{ field: 'general', message: 'Microsoft authentication failed. Please try again or use email/password.' }]);
         onError?.('Microsoft authentication failed. Please try again or use email/password.');
       }
-    } catch (error) {
-      console.error('Microsoft login error:', error);
-      setErrors([{ field: 'general', message: 'Microsoft authentication error. Please try again or use email/password.' }]);
-      onError?.('Microsoft authentication error. Please try again or use email/password.');
+    } catch (error: any) {
+      if (error?.code === 'NOT_CONFIGURED' || error?.message === 'NOT_CONFIGURED') {
+        setErrors([{ field: 'general', message: 'Microsoft sign-in is not configured. Use email and password to sign in.' }]);
+      } else {
+        console.error('Microsoft login error:', error);
+        setErrors([{ field: 'general', message: 'Microsoft authentication failed. Please try again or use email/password.' }]);
+        onError?.('Microsoft authentication failed. Please try again or use email/password.');
+      }
     } finally {
       setIsMicrosoftLoading(false);
     }
