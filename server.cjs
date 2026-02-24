@@ -1774,7 +1774,7 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
       });
     }
 
-    const { name, description, isDefault } = req.body;
+    const { name, description, isDefault, combination, planType, category } = req.body;
     const file = req.file;
     
     // Generate unique ID for template
@@ -1788,7 +1788,10 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
       name: name || file.originalname,
       fileName: file.originalname,
       fileType,
-      fileSize: file.size
+      fileSize: file.size,
+      combination: combination || '(none)',
+      planType: planType || '(none)',
+      category: category || '(none)'
     });
 
     const template = {
@@ -1803,24 +1806,33 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    // Optional: link template to a combination/plan/category (e.g. multi-combination)
+    if (combination && String(combination).trim()) template.combination = String(combination).trim().toLowerCase();
+    if (planType && String(planType).trim()) template.planType = String(planType).trim().toLowerCase();
+    if (category && String(category).trim()) template.category = String(category).trim().toLowerCase();
     
     await db.collection('templates').insertOne(template);
 
       console.log('✅ Template saved to database:', templateId);
       
+      const responseTemplate = {
+        id: templateId,
+        name: name || file.originalname,
+        description: description || '',
+        fileName: file.originalname,
+        fileType,
+        fileSize: file.size,
+        isDefault: isDefault === 'true' || false,
+        createdAt: new Date().toISOString()
+      };
+      if (template.combination) responseTemplate.combination = template.combination;
+      if (template.planType) responseTemplate.planType = template.planType;
+      if (template.category) responseTemplate.category = template.category;
+      
       res.json({
         success: true,
         message: 'Template uploaded successfully',
-        template: {
-          id: templateId,
-          name: name || file.originalname,
-          description: description || '',
-          fileName: file.originalname,
-          fileType,
-          fileSize: file.size,
-          isDefault: isDefault === 'true' || false,
-          createdAt: new Date().toISOString()
-        }
+        template: responseTemplate
       });
     
   } catch (error) {
@@ -2028,6 +2040,233 @@ app.post('/api/templates/reseed', async (req, res) => {
       error: 'Failed to reseed templates/exhibits',
       details: error?.message || String(error)
     });
+  }
+});
+
+// ============================================
+// COMBINATIONS API ENDPOINTS (user-managed list for Configure dropdown)
+// ============================================
+
+// Get all combinations (optional filter by migrationType; exclude fileData from list)
+app.get('/api/combinations', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { migrationType } = req.query;
+    const query = migrationType ? { migrationType: String(migrationType) } : {};
+    const raw = await db.collection('combinations')
+      .find(query, { projection: { fileData: 0 } })
+      .sort({ displayOrder: 1, label: 1 })
+      .toArray();
+    const combinations = raw.map(c => ({ ...c, hasFile: !!(c.fileName) }));
+    res.json({ success: true, combinations, count: combinations.length });
+  } catch (error) {
+    console.error('Error fetching combinations:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get combination file (download uploaded document)
+app.get('/api/combinations/:id/file', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { id } = req.params;
+    const combo = await db.collection('combinations').findOne({ id }, { projection: { fileData: 1, fileName: 1, fileType: 1 } });
+    if (!combo || !combo.fileData) {
+      return res.status(404).json({ success: false, error: 'Combination or file not found' });
+    }
+    const buf = Buffer.from(combo.fileData, 'base64');
+    const fileName = combo.fileName || `combination-${id}.docx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', combo.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.send(buf);
+  } catch (error) {
+    console.error('Error fetching combination file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+const ALLOWED_MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement'];
+
+// Create combination (optional file upload - e.g. DOCX template for this combination)
+app.post('/api/combinations', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { value, label, migrationType, displayOrder } = req.body || {};
+    if (!value || !String(value).trim()) {
+      return res.status(400).json({ success: false, error: 'value is required' });
+    }
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ success: false, error: 'label is required' });
+    }
+    const mt = migrationType != null ? String(migrationType).trim() : '';
+    if (!mt) {
+      return res.status(400).json({ success: false, error: 'migrationType is required' });
+    }
+    if (!ALLOWED_MIGRATION_TYPES.includes(mt)) {
+      return res.status(400).json({ success: false, error: `migrationType must be one of: ${ALLOWED_MIGRATION_TYPES.join(', ')}` });
+    }
+    const val = String(value).trim().toLowerCase().replace(/\s+/g, '-');
+    const existing = await db.collection('combinations').findOne({ value: val, migrationType: mt });
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'A combination with this value and migration type already exists' });
+    }
+    const doc = {
+      id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      value: val,
+      label: String(label).trim(),
+      migrationType: mt,
+      displayOrder: typeof displayOrder === 'number' ? displayOrder : (parseInt(displayOrder, 10) || 999),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    if (req.file && req.file.buffer) {
+      doc.fileName = req.file.originalname;
+      doc.fileSize = req.file.size;
+      doc.fileData = req.file.buffer.toString('base64');
+      doc.fileType = req.file.mimetype || (req.file.originalname.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream');
+    }
+    await db.collection('combinations').insertOne(doc);
+    const responseCombo = { id: doc.id, value: doc.value, label: doc.label, migrationType: doc.migrationType, displayOrder: doc.displayOrder, createdAt: doc.createdAt, updatedAt: doc.updatedAt };
+    if (doc.fileName) responseCombo.hasFile = true;
+    res.status(201).json({ success: true, combination: responseCombo });
+  } catch (error) {
+    console.error('Error creating combination:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update combination
+app.put('/api/combinations/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { id } = req.params;
+    const { value, label, migrationType, displayOrder } = req.body || {};
+    const update = { updatedAt: new Date() };
+    if (value !== undefined) update.value = String(value).trim().toLowerCase().replace(/\s+/g, '-');
+    if (label !== undefined) update.label = String(label).trim();
+    if (migrationType !== undefined) update.migrationType = String(migrationType).trim();
+    if (displayOrder !== undefined) update.displayOrder = typeof displayOrder === 'number' ? displayOrder : parseInt(displayOrder, 10) || 999;
+    const result = await db.collection('combinations').updateOne(
+      { id },
+      { $set: update }
+    );
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Combination not found' });
+    }
+    const updated = await db.collection('combinations').findOne({ id }, { projection: { fileData: 0 } });
+    const out = { ...updated, hasFile: !!(updated && updated.fileName) };
+    res.json({ success: true, combination: out });
+  } catch (error) {
+    console.error('Error updating combination:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Upload or replace combination template file (backend combination template)
+app.post('/api/combinations/:id/file', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { id } = req.params;
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: 'File is required' });
+    }
+    const combo = await db.collection('combinations').findOne({ id });
+    if (!combo) {
+      return res.status(404).json({ success: false, error: 'Combination not found' });
+    }
+    const update = {
+      updatedAt: new Date(),
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileData: req.file.buffer.toString('base64'),
+      fileType: req.file.mimetype || (req.file.originalname.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream')
+    };
+    await db.collection('combinations').updateOne(
+      { id },
+      { $set: update }
+    );
+    const updated = await db.collection('combinations').findOne({ id }, { projection: { fileData: 0 } });
+    const out = { ...updated, hasFile: true };
+    res.json({ success: true, combination: out });
+  } catch (error) {
+    console.error('Error uploading combination file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete combination (admin only: require exhibit_admin or admin role)
+app.delete('/api/combinations/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const { id } = req.params;
+    const result = await db.collection('combinations').deleteOne({ id });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Combination not found' });
+    }
+    res.json({ success: true, message: 'Combination deleted' });
+  } catch (error) {
+    console.error('Error deleting combination:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Seed default combinations (from current hardcoded list) so Configure dropdown is populated
+app.post('/api/combinations/seed', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const defaults = [
+      { value: 'slack-to-teams', label: 'SLACK TO TEAMS', migrationType: 'Messaging', displayOrder: 1 },
+      { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT', migrationType: 'Messaging', displayOrder: 2 },
+      { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK', migrationType: 'Email', displayOrder: 1 },
+      { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL', migrationType: 'Email', displayOrder: 2 },
+      { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK', migrationType: 'Email', displayOrder: 3 },
+      { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL', migrationType: 'Email', displayOrder: 4 },
+      { value: 'overage-agreement', label: 'OVERAGE AGREEMENT', migrationType: 'Overage Agreement', displayOrder: 1 },
+      { value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION', migrationType: 'Multi combination', displayOrder: 1 },
+      { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)', migrationType: 'Content', displayOrder: 1 },
+      { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)', migrationType: 'Content', displayOrder: 2 },
+      { value: 'dropbox-to-box', label: 'DROPBOX TO BOX', migrationType: 'Content', displayOrder: 3 },
+      { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE', migrationType: 'Content', displayOrder: 4 },
+      { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE', migrationType: 'Content', displayOrder: 5 },
+      { value: 'box-to-box', label: 'BOX TO BOX', migrationType: 'Content', displayOrder: 6 },
+      { value: 'box-to-dropbox', label: 'BOX TO DROPBOX', migrationType: 'Content', displayOrder: 7 },
+      { value: 'onedrive-to-onedrive', label: 'ONEDRIVE TO ONEDRIVE', migrationType: 'Content', displayOrder: 8 },
+      { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)', migrationType: 'Content', displayOrder: 9 }
+    ];
+    let inserted = 0;
+    for (const d of defaults) {
+      const existing = await db.collection('combinations').findOne({ value: d.value, migrationType: d.migrationType });
+      if (!existing) {
+        await db.collection('combinations').insertOne({
+          id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          ...d,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        inserted++;
+      }
+    }
+    const total = await db.collection('combinations').countDocuments();
+    res.json({ success: true, message: `Seed complete. Inserted ${inserted} new combinations. Total: ${total}.` });
+  } catch (error) {
+    console.error('Error seeding combinations:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -3517,9 +3756,9 @@ app.put('/api/templates/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, description, isDefault } = req.body;
+    const { name, description, isDefault, combination, planType, category } = req.body;
     
-    console.log('📝 Updating template metadata:', id, { name, description, isDefault });
+    console.log('📝 Updating template metadata:', id, { name, description, isDefault, combination, planType, category });
     
     const updateData = {
       updatedAt: new Date().toISOString()
@@ -3528,6 +3767,9 @@ app.put('/api/templates/:id', async (req, res) => {
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (isDefault !== undefined) updateData.isDefault = isDefault;
+    if (combination !== undefined) updateData.combination = combination ? String(combination).trim().toLowerCase() : null;
+    if (planType !== undefined) updateData.planType = planType ? String(planType).trim().toLowerCase() : null;
+    if (category !== undefined) updateData.category = category ? String(category).trim().toLowerCase() : null;
     
     const result = await db.collection('templates').updateOne(
       { id: id },

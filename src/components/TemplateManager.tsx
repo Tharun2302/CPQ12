@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { 
   Upload, 
   FileText, 
@@ -10,15 +10,16 @@ import {
   AlertCircle,
   X,
   FileText as WordIcon,
-  Send
+  Send,
+  Layers
 } from 'lucide-react';
+import CombinationManager from './CombinationManager';
 import { convertPdfToWord, downloadWordFile, isPdfFile, testDocxLibrary } from '../utils/pdfToWordConverter';
 import { extractTemplateContent } from '../utils/pdfMerger';
 import { formatCurrency } from '../utils/pricing';
 import { templateService } from '../utils/templateService';
 import { sanitizeNameInput, sanitizeEmailInput } from '../utils/emojiSanitizer';
 import { track } from '../analytics/clarity';
-import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 
 // Helper function to limit consecutive spaces to maximum 5
@@ -102,15 +103,24 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
   const [convertedPdfCache, setConvertedPdfCache] = useState<{[key: string]: File}>({});  // Cache for DOCX→PDF conversions
   const [isPreConvertingTemplates, setIsPreConvertingTemplates] = useState(false);  // Background conversion status
   const [fileCache, setFileCache] = useState<{[key: string]: File}>({});  // Cache for loaded template files - INSTANT ACCESS! ⚡
-  const [activeTab, setActiveTab] = useState<'templates' | 'upload'>('templates'); // UI tab state
+  const [activeTab, setActiveTab] = useState<'templates' | 'upload' | 'combinations'>('templates'); // UI tab state
+  const location = useLocation();
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     description: '',
     file: null as File | null,
     wordFile: undefined as File | undefined
   });
-  const navigate = useNavigate();
-  const { createWorkflow } = useApprovalWorkflows();
+
+  // Open Combinations sub-tab when navigated from /combinations (redirect with state)
+  useEffect(() => {
+    const state = (location.state as { templateSubTab?: string }) || {};
+    if (state.templateSubTab === 'combinations') {
+      setActiveTab('combinations');
+      // Clear state so refresh doesn't re-open combinations
+      window.history.replaceState({}, document.title, location.pathname);
+    }
+  }, [location.pathname, location.state]);
   
   // Email functionality state
   const [showEmailModal, setShowEmailModal] = useState<string | null>(null);
@@ -643,94 +653,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
       console.log('📢 Dispatching templatesUpdated event (template uploaded)...');
       window.dispatchEvent(new CustomEvent('templatesUpdated'));
 
-      // Create a document entry for this template and start an approval workflow
-      try {
-        console.log('📄 Preparing uploaded template for approval workflow...');
-
-        // Convert file to base64 (similar to ApprovalWorkflow)
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            const withoutPrefix = result.split(',')[1] || '';
-            resolve(withoutPrefix);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(newTemplate.file!);
-        });
-
-        const documentData = {
-          fileName: newTemplate.file!.name,
-          fileData: base64,
-          fileSize: newTemplate.file!.size,
-          clientName: 'Template Library',
-          company: 'Template Library',
-          quoteId: null,
-          metadata: {
-            totalCost: 0
-          },
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          generatedDate: new Date().toISOString()
-        };
-
-        const response = await fetch(`${BACKEND_URL}/api/documents`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(documentData)
-        });
-
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-          throw new Error(result.error || 'Failed to save template document for approval');
-        }
-
-        const documentId = result.documentId as string;
-        console.log('✅ Template saved as document for approval workflow:', documentId);
-
-        // Start a simple Technical + Legal workflow for this template document
-        try {
-          const workflow = await createWorkflow({
-            documentId,
-            documentType: 'Template',
-            clientName: newTemplate.name || 'Template',
-            amount: 0,
-            totalSteps: 2,
-            workflowSteps: [
-              {
-                step: 1,
-                role: 'Technical Team',
-                email: 'saitharunreddy2302@gmail.com',
-                status: 'pending'
-              },
-              {
-                step: 2,
-                role: 'Legal Team',
-                email: 'saitharunreddy2302@gmail.com',
-                status: 'pending'
-              }
-            ]
-          });
-
-          console.log('✅ Template approval workflow created:', workflow?.id);
-        } catch (workflowError) {
-          console.error('❌ Failed to start template approval workflow:', workflowError);
-        }
-
-        // Navigate to Approval page and open Start Approval Workflow tab
-        navigate('/approval', {
-          state: { openStartApprovalTab: true, source: 'template-upload', documentId }
-        });
-      } catch (docError) {
-        console.error('❌ Failed to create document / workflow for uploaded template:', docError);
-      }
-
-      // Navigate to Approval page and open Start Approval Workflow tab
-      navigate('/approval', {
-        state: { openStartApprovalTab: true, source: 'template-upload', templateId: uploadResult.template.id }
-      });
+      // No automatic approval workflow on upload. User can start one from Approval page (Send for approval / manual approval).
 
       // Also save to localStorage as backup
       try {
@@ -1980,7 +1903,7 @@ The client will receive an email with the processed template and a link to compl
         </div>
         <p className="text-gray-600">Here you can see and manage all your deal agreement templates</p>
 
-        {/* Templates / Upload Tabs */}
+        {/* Templates / Combinations Tabs */}
         <div className="mt-6 flex justify-center">
           <div className="inline-flex bg-gray-100 rounded-full p-1">
             <button
@@ -1996,6 +1919,21 @@ The client will receive an email with the processed template and a link to compl
               }`}
             >
               Templates
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('combinations');
+                setShowUploadModal(false);
+              }}
+              className={`px-5 py-2 text-sm font-medium rounded-full transition-colors flex items-center gap-2 ${
+                activeTab === 'combinations'
+                  ? 'bg-white shadow text-blue-700'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              Combinations
             </button>
           </div>
         </div>
@@ -2022,6 +1960,12 @@ The client will receive an email with the processed template and a link to compl
         </div> */}
       </div>
 
+      {activeTab === 'combinations' ? (
+        <div className="mt-8">
+          <CombinationManager />
+        </div>
+      ) : (
+        <>
       {/* Global Selection Success Message */}
       {selectionSuccess && (
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
@@ -2908,6 +2852,8 @@ CloudFuze Team`,
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

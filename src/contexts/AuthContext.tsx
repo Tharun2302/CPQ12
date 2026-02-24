@@ -334,9 +334,10 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       const clientId = import.meta.env.VITE_MSAL_CLIENT_ID as string;
       console.log('🔑 Client ID:', clientId ? 'Found' : 'Missing');
      
-      if (!clientId) {
-        console.warn('Microsoft authentication is not configured - Client ID missing or invalid');
-        return false;
+      if (!clientId || clientId.trim() === '') {
+        const err = new Error('NOT_CONFIGURED') as Error & { code?: string };
+        err.code = 'NOT_CONFIGURED';
+        throw err;
       }
      
       // Create Microsoft OAuth URL with PKCE
@@ -614,7 +615,11 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         window.addEventListener('message', messageListener);
       });
      
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.code === 'NOT_CONFIGURED' || error?.message === 'NOT_CONFIGURED') {
+        setLoading(false);
+        throw error;
+      }
       console.error('Microsoft login error:', error);
       return false;
     } finally {

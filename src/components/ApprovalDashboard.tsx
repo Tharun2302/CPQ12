@@ -11,12 +11,11 @@ import {
   ThumbsUp,
   X,
   XCircle,
-  Menu,
-  ChevronLeft,
+  ArrowLeft,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
-import Navigation from './Navigation';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -104,6 +103,7 @@ const iconForView: Record<ViewKey, React.ComponentType<{ className?: string }>> 
 };
 
 const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualApprovalWorkflow }) => {
+  const navigate = useNavigate();
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [query, setQuery] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
@@ -111,7 +111,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [isSidebarVisible, setIsSidebarVisible] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
 
   const {
@@ -310,31 +309,18 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
 
   return (
     <div className="w-full min-h-screen overflow-hidden bg-white">
-      {/* Main Navigation Sidebar - Hidden by default on approval page */}
-      {isSidebarVisible && (
-        <div className="fixed left-0 top-0 h-full z-50">
-          <Navigation currentTab="approval" />
-        </div>
-      )}
-      
-      {/* Toggle Button */}
+      {/* Back to home */}
       <button
-        onClick={() => setIsSidebarVisible(!isSidebarVisible)}
-        className={`fixed top-4 z-50 p-2 rounded-lg shadow-lg transition-all duration-300 ${
-          isSidebarVisible 
-            ? 'left-[260px] bg-purple-600 text-white hover:bg-purple-700' 
-            : 'left-4 bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-        }`}
-        title={isSidebarVisible ? 'Hide Sidebar' : 'Show Sidebar'}
+        type="button"
+        onClick={() => navigate('/deal')}
+        className="fixed top-4 left-4 z-50 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-lg transition-colors"
+        title="Back to home"
       >
-        {isSidebarVisible ? (
-          <ChevronLeft className="w-5 h-5" />
-        ) : (
-          <Menu className="w-5 h-5" />
-        )}
+        <ArrowLeft className="w-5 h-5" />
+        <span className="text-sm font-medium">Back to home</span>
       </button>
 
-      <div className="flex transition-all duration-300" style={{ marginLeft: isSidebarVisible ? '256px' : '0' }}>
+      <div className="flex">
         {/* Internal Sidebar for Approval Dashboard */}
         <aside className="hidden md:flex w-72 flex-col border-r border-gray-200 bg-white">
           <div className="pt-4" />

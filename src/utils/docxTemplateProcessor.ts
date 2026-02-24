@@ -1732,22 +1732,24 @@ export class DocxTemplateProcessor {
       '{{migration_price}}': migrationCost,
       '{{migrationCost}}': migrationCost,
       '{{migration_cost}}': migrationCost,
-      // Bundled pricing for migration (final price after 10% discount = 90% of original)
-      '{{migrationBundled}}': (data as any)['{{migrationBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
-      '{{price_migration_bundled}}': (data as any)['{{price_migration_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
-      '{{migration_cost_bundled}}': (data as any)['{{migration_cost_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
-      '{{migration_price_bundled}}': (data as any)['{{migration_price_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
-      '{{migrationCostBundled}}': (data as any)['{{migrationCostBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.9),
+      // 10% discount amount per row (Bundled column)
+      '{{migrationBundled}}': (data as any)['{{migrationBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      '{{price_migration_bundled}}': (data as any)['{{price_migration_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      '{{migration_cost_bundled}}': (data as any)['{{migration_cost_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      '{{migration_price_bundled}}': (data as any)['{{migration_price_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
+      '{{migrationCostBundled}}': (data as any)['{{migrationCostBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
       
-      // CloudFuze Manage user total (userCount * 3.99)
-      '{{cfm_user_total}}': (data as any)['{{cfm_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 3.99),
-      '{{cloudfuze_manage_user_total}}': (data as any)['{{cloudfuze_manage_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 3.99),
-      '{{cloudfuzeManageUserTotal}}': (data as any)['{{cloudfuzeManageUserTotal}}'] || formatCurrency((parseInt(userCount) || 1) * 3.99),
+      '{{cfm_user_total}}': (data as any)['{{cfm_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 12 * 3.99),
+      '{{cloudfuze_manage_user_total}}': (data as any)['{{cloudfuze_manage_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 12 * 3.99),
+      '{{cloudfuzeManageUserTotal}}': (data as any)['{{cloudfuzeManageUserTotal}}'] || formatCurrency((parseInt(userCount) || 1) * 12 * 3.99),
       
-      // CloudFuze Manage user total bundled (final price after 10% discount = 90% of original)
-      '{{cfm_user_total_b}}': (data as any)['{{cfm_user_total_b}}'] || formatCurrency(((parseInt(userCount) || 1) * 3.99) * 0.9),
-      '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 3.99) * 0.9),
-      '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 3.99) * 0.9),
+      '{{cfm_user_total_b}}': (data as any)['{{cfm_user_total_b}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
+      '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
+      '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
+      
+      // Number of users (for CloudFuze Manage row / table)
+      '{{cfm_number_of_users}}': (data as any)['{{cfm_number_of_users}}'] || (data as any)['{{total_users_count}}'] || userCount || '1',
+      '{{total_users_count}}': (data as any)['{{total_users_count}}'] || (data as any)['{{cfm_number_of_users}}'] || userCount || '1',
       
       // Migration type variations
       '{{migration type}}': migrationType,

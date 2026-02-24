@@ -19,8 +19,6 @@ const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashbo
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
 const MigrationManagerDashboard = lazy(() => import('./components/MigrationManagerDashboard'));
 const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
-const MigrationMonitoringDashboard = lazy(() => import('./components/MigrationMonitoringDashboard'));
-const MigrationLifecycle = lazy(() => import('./components/MigrationLifecycle'));
 
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
@@ -193,6 +191,15 @@ function App() {
         });
         setSelectedTemplate(null);
         return; // Exit early to allow fresh auto-selection
+      }
+      
+      // Combination-attached template (from Combination Manager file): keep if combination matches
+      if (selectedTemplate?.id?.startsWith?.('combo-')) {
+        if (currentCombination && templateCombination === currentCombination) {
+          return; // Keep combo template
+        }
+        setSelectedTemplate(null);
+        return;
       }
       
       // Check if the selected template still exists in the loaded templates
@@ -1169,6 +1176,41 @@ function App() {
     }
   }, [templates.length]); // Trigger when templates array changes from empty to populated
 
+  // When Multi combination + combination selected but no DB template: use combination-attached file as template
+  useEffect(() => {
+    const migrationType = configuration?.migrationType;
+    const combination = (configuration?.combination || '').trim().toLowerCase();
+    if (migrationType !== 'Multi combination' || !combination || selectedTemplate) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/combinations`);
+        const data = await res.json();
+        if (!res.ok || !data.success || cancelled) return;
+        const combos = data.combinations || [];
+        const combo = combos.find((c: any) => (c.value || '').toLowerCase() === combination && c.hasFile);
+        if (!combo || cancelled) return;
+        const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${combo.id}/file`);
+        if (!fileRes.ok || cancelled) return;
+        const blob = await fileRes.blob();
+        const fileName = (combo.fileName || 'agreement.docx').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const file = new File([blob], fileName, { type: blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        if (cancelled) return;
+        setSelectedTemplate({
+          id: `combo-${combo.id}`,
+          name: (combo.label || combo.value) + ' template',
+          combination: combo.value,
+          file
+        });
+        console.log('✅ Using combination-attached file as agreement template:', combo.label);
+      } catch (err) {
+        if (!cancelled) console.error('Error loading combination template:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [configuration?.migrationType, configuration?.combination, selectedTemplate]);
+
   // Save company information to localStorage whenever it changes
   useEffect(() => {
     try {
@@ -1379,27 +1421,27 @@ function App() {
 
     // PRIORITY -1: Special handling for MULTI COMBINATION migration type
     if (config?.migrationType === 'Multi combination') {
-      console.log('🎯 MULTI COMBINATION migration type detected - selecting universal template');
+      console.log('🎯 MULTI COMBINATION migration type detected - matching by combination then fallback');
+      // First try exact combination match (e.g. bundle-multi-combintion)
+      const exactMatches = templates.filter(t => {
+        const templateCombination = (t?.combination || '').toLowerCase();
+        return templateCombination === combination;
+      });
+      if (exactMatches.length > 0) {
+        console.log('✅ Found template for combination:', combination, exactMatches[0].name);
+        return exactMatches[0];
+      }
+      // Fallback: template tagged as multi-combination (original)
       const multiMatches = templates.filter(t => {
         const templateCombination = (t?.combination || '').toLowerCase();
-        const matchesMulti = templateCombination === 'multi-combination';
-        
-        console.log('🎯 Multi Combination matching:', {
-          templateName: t?.name,
-          templateCombination,
-          matchesMulti
-        });
-        
-        return matchesMulti;
+        return templateCombination === 'multi-combination';
       });
-      
       if (multiMatches.length > 0) {
-        console.log('✅ Found MULTI COMBINATION template:', multiMatches[0].name);
+        console.log('✅ Found MULTI COMBINATION fallback template:', multiMatches[0].name);
         return multiMatches[0];
-      } else {
-        console.log('❌ No MULTI COMBINATION template found');
-        return null;
       }
+      console.log('❌ No MULTI COMBINATION template found for combination:', combination);
+      return null;
     }
 
     // PRIORITY 0: Special handling for OVERAGE AGREEMENT (must check BEFORE planType matching)
@@ -1975,17 +2017,6 @@ function App() {
                   />
                 </ProtectedRoute>
               } />
-              <Route path="/migration-monitoring" element={
-                <ProtectedRoute>
-                  <MigrationMonitoringDashboard />
-                </ProtectedRoute>
-              } />
-              <Route path="/migration-lifecycle" element={
-                <ProtectedRoute>
-                  <MigrationLifecycle />
-                </ProtectedRoute>
-              } />
-
              {/* Main app tabs without /dashboard prefix */}
              <Route
                path="/deal"
@@ -2357,6 +2388,11 @@ function App() {
                   />
                  </ProtectedRoute>
                }
+             />
+
+             <Route
+               path="/combinations"
+               element={<Navigate to="/templates" state={{ templateSubTab: 'combinations' }} replace />}
              />
 
              <Route

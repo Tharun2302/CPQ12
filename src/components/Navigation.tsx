@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, Calendar, Server, BarChart3, Workflow } from 'lucide-react';
+import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, Calendar, Server } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
@@ -34,8 +34,6 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
     { id: 'templates', label: 'Templates', icon: Upload,   path: '/templates' },
     { id: 'exhibits',  label: 'Exhibits',  icon: FolderOpen, path: '/exhibits' },
     { id: 'approval',  label: 'Approval',  icon: CheckCircle, path: '/approval' },
-    { id: 'migration-monitoring', label: 'Migration Monitoring', icon: BarChart3, path: '/migration-monitoring' },
-    { id: 'migration-lifecycle', label: 'Migration Lifecycle', icon: Workflow, path: '/migration-lifecycle' },
     // Settings tab hidden per requirement
     // { id: 'settings', label: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ];
