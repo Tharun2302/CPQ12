@@ -5460,7 +5460,8 @@ Total Price: {{total price}}`;
                 return a.displayName.localeCompare(b.displayName);
               });
 
-              for (const row of sortedRows) {
+              for (let rowIndex = 0; rowIndex < sortedRows.length; rowIndex++) {
+                const row = sortedRows[rowIndex];
                 const category = row.category;
                 const combinationName = row.displayName;
                 const exhibitConfig = row.exhibitConfig;
@@ -5566,8 +5567,13 @@ Total Price: {{total price}}`;
                   };
                 }
 
+                // For multicombination, change all exhibitType to "CloudFuze Migrate"
+                const exhibitType = (finalConfiguration?.migrationType === 'Multi combination')
+                  ? 'CloudFuze Migrate'
+                  : 'CloudFuze X-Change Data Migration';
+
                 const exhibitData: any = {
-                  exhibitType: 'CloudFuze X-Change Data Migration',
+                  exhibitType: exhibitType,
                   exhibitDesc,
                   exhibitPlan: (calculation || safeCalculation)?.tier?.name || 'Standard',
                   exhibitPrice: formatCurrency(price),
