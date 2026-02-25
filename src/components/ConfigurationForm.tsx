@@ -411,6 +411,19 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     onConfigurationChange(config);
   }, [config]);
 
+  // Multi combination: discount UI is intentionally not available.
+  // Clear any previously persisted discount so other screens (e.g. PricingComparison) don't show "Save X% off"
+  // due to a stale sessionStorage value.
+  useEffect(() => {
+    if (config.migrationType !== 'Multi combination') return;
+    setDiscountValue('');
+    try {
+      sessionStorage.setItem('cpq_discount_session', '');
+      localStorage.setItem('cpq_discount', '');
+      window.dispatchEvent(new CustomEvent('discountUpdated'));
+    } catch {}
+  }, [config.migrationType]);
+
   // For Multi combination, keep the top-level duration in sync so all downstream
   // quote generators/templates don't fall back to "1 month".
   useEffect(() => {
@@ -3226,72 +3239,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </>
           )}
 
-          {/* Multi combination: Discount input (global) - show AFTER all project configuration sections */}
-          {config.migrationType === 'Multi combination' && config.combination && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
-              <div className="group max-w-md">
-                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
-                    <Percent className="w-4 h-4 text-white" />
-                  </div>
-                  Discount (%)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={15}
-                  step={0.01}
-                  value={discountValue}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-
-                    // Allow empty value for clearing
-                    if (raw === '') {
-                      setDiscountValue('');
-                      try {
-                        localStorage.setItem('cpq_discount', '');
-                        sessionStorage.setItem('cpq_discount_session', '');
-                        window.dispatchEvent(new CustomEvent('discountUpdated'));
-                      } catch {}
-                      return;
-                    }
-
-                    const numValue = Number(raw);
-
-                    // Check if value exceeds 15%
-                    if (numValue > 15) {
-                      alert('Discount cannot be more than 15%');
-                      return; // Don't update the value
-                    }
-
-                    // Ensure value is not negative
-                    if (numValue < 0) {
-                      setDiscountValue('0');
-                      try {
-                        sessionStorage.setItem('cpq_discount_session', '0');
-                        localStorage.setItem('cpq_discount', '0');
-                        window.dispatchEvent(new CustomEvent('discountUpdated'));
-                      } catch {}
-                      return;
-                    }
-
-                    // Update the display value immediately
-                    setDiscountValue(raw);
-
-                    // Save to sessionStorage + localStorage and notify other components
-                    try {
-                      sessionStorage.setItem('cpq_discount_session', raw);
-                      localStorage.setItem('cpq_discount', raw);
-                      window.dispatchEvent(new CustomEvent('discountUpdated'));
-                    } catch {}
-                  }}
-                  className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                  placeholder="Enter discount percentage (max 15%)"
-                />
-                <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
-              </div>
-            </div>
-          )}
+          {/* Multi combination: Discount input removed - not available for Multi combination migration type */}
 
           {/* OTHER MIGRATION TYPES: Standard single configuration */}
           {config.migrationType && config.migrationType !== 'Multi combination' && !!config.combination && (

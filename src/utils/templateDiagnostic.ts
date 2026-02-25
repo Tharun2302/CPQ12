@@ -48,6 +48,7 @@ export class TemplateDiagnostic {
           nestedTokens.add('exhibitPlan');
           nestedTokens.add('exhibitPrice');
           nestedTokens.add('exhibitBundledPrice');
+          nestedTokens.add('exhibitBundledPrice90');
           nestedTokens.add('exhibitOveragePerUser');
           nestedTokens.add('exhibitOveragePerServer');
           nestedTokens.add('exhibitOveragePerGB');
@@ -64,6 +65,7 @@ export class TemplateDiagnostic {
           nestedTokens.add('serverPrice');
           nestedTokens.add('serverPriceBundled');
           nestedTokens.add('serverBundledPrice');
+          nestedTokens.add('serverPrice90');
           nestedTokens.add('isLast');
         }
 

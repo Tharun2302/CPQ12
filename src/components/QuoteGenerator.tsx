@@ -5578,9 +5578,14 @@ Total Price: {{total price}}`;
                   exhibitData.exhibitPerUserCost = exhibitPerUserCost;
                 }
 
-                // 10% discount amount for this row (Bundled column)
-                const bundledPrice = price * 0.1; // 10% discount amount
+                // 90% of original price (10% discount applied) for Bundled column
+                const bundledPrice = price * 0.9; // 90% of original (10% discount applied)
                 exhibitData.exhibitBundledPrice = formatCurrency(bundledPrice);
+                // Also keep 90% value for _90 suffix tokens (same value)
+                exhibitData.exhibitBundledPrice90 = formatCurrency(bundledPrice);
+                // Keep discount amount separately for savings calculation
+                const bundledDiscountAmount = price * 0.1; // 10% discount amount (for savings)
+                exhibitData.exhibitBundledDiscount = formatCurrency(bundledDiscountAmount);
 
                 // Add overage charges fields for multicombination agreements
                 if (overageCharges) {
@@ -6190,9 +6195,13 @@ Total Price: {{total price}}`;
                 serverDescription: displayServerDescription,
                 combinationName: displayName || '(unknown)',
                 serverPrice: formatCurrency(cost),
-                // 10% discount amount for this row (Bundled column)
-                serverPriceBundled: formatCurrency(cost * 0.1),
-                serverBundledPrice: formatCurrency(cost * 0.1),
+                // 90% of original price (10% discount applied) for Bundled column
+                serverPriceBundled: formatCurrency(cost * 0.9), // Final price
+                serverBundledPrice: formatCurrency(cost * 0.9), // Final price
+                // Also keep 90% value for _90 suffix tokens (same value)
+                serverPrice90: formatCurrency(cost * 0.9),
+                // Keep discount amount separately for savings calculation
+                serverPriceDiscount: formatCurrency(cost * 0.1), // 10% discount amount (for savings)
                 // Per-server duration (use this in template instead of {{Duration_of_months}} if you want each row's own months)
                 serverMonths: months,
                 // Template helpers
@@ -6340,37 +6349,63 @@ Total Price: {{total price}}`;
             templateData['{{total_price}}'] = formatCurrency(displayedTotalPrice);
             templateData['{{totalPrice}}'] = formatCurrency(displayedTotalPrice);
             
-            // 10% discount amount per row; total = total - sum of 10% discounts
-            const migrationBundled = (migrationCost || 0) * 0.1; // 10% discount amount
+            // 90% of original price (10% discount applied) for Bundled column
+            const migrationPrice90 = (migrationCost || 0) * 0.9; // 90% of original (10% discount)
+            const migrationBundled = (migrationCost || 0) * 0.1; // 10% discount amount (for savings)
             templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationPrice90); // Final price
+            // Also keep 90% value for _90 suffix tokens (same value)
+            templateData['{{price_migration_90}}'] = formatCurrency(migrationPrice90);
             
-            const cfmUserTotalBundledDiscount = cfmUserTotal * 0.1; // 10% discount amount
-            templateData['{{cfm_user_total_b}}'] = formatCurrency(cfmUserTotalBundledDiscount);
-            templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotalBundledDiscount);
-            templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotalBundledDiscount);
+            // 90% of original price (10% discount applied) for Bundled column
+            const cfmUserTotal90 = cfmUserTotal * 0.9; // 90% of original (10% discount)
+            const cfmUserTotalBundledDiscount = cfmUserTotal * 0.1; // 10% discount amount (for savings)
+            templateData['{{cfm_user_total_b}}'] = formatCurrency(cfmUserTotal90); // Final price
+            templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotal90); // Final price
+            templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotal90); // Final price
+            // Also keep 90% value for _90 suffix tokens (same value)
+            templateData['{{cfm_user_total_90}}'] = formatCurrency(cfmUserTotal90);
             
+            // Calculate total savings (sum of all 10% discounts) for "Instant saving" row
             let sumOf10PercentDiscounts = migrationBundled + cfmUserTotalBundledDiscount;
             for (const server of serversArray) {
-              const bundledStr = (server.serverPriceBundled || server.serverBundledPrice || '0').replace(/[$,]/g, '');
-              sumOf10PercentDiscounts += parseFloat(bundledStr) || 0;
+              // Use serverPriceDiscount if available, otherwise calculate from serverPrice
+              const serverPrice = parseFloat(server.serverPrice.replace(/[$,]/g, '')) || 0;
+              const serverDiscount = server.serverPriceDiscount 
+                ? parseFloat(server.serverPriceDiscount.replace(/[$,]/g, '')) || 0
+                : serverPrice * 0.1;
+              sumOf10PercentDiscounts += serverDiscount;
             }
             for (const exhibit of exhibitsData) {
-              if (exhibit.exhibitBundledPrice) {
-                const exhibitBundledStr = exhibit.exhibitBundledPrice.replace(/[$,]/g, '');
-                sumOf10PercentDiscounts += parseFloat(exhibitBundledStr) || 0;
-              }
+              // Use exhibitBundledDiscount if available, otherwise calculate from exhibitPrice
+              const exhibitPrice = parseFloat(exhibit.exhibitPrice.replace(/[$,]/g, '')) || 0;
+              const exhibitDiscount = exhibit.exhibitBundledDiscount
+                ? parseFloat(exhibit.exhibitBundledDiscount.replace(/[$,]/g, '')) || 0
+                : exhibitPrice * 0.1;
+              sumOf10PercentDiscounts += exhibitDiscount;
             }
-            // Total row = total amount - sum of 10% discount column
-            const totalAfterBundle = cloudfuzeManageTotal - sumOf10PercentDiscounts;
+            // Add instant saving token (sum of all 10% discounts)
+            templateData['{{instant_saving}}'] = formatCurrency(sumOf10PercentDiscounts);
+            templateData['{{total_savings}}'] = formatCurrency(sumOf10PercentDiscounts);
+            // Template compatibility: some Multi-combination templates use instance_cost_90 for the "Instance saving" row
+            templateData['{{instance_cost_90}}'] = formatCurrency(sumOf10PercentDiscounts);
+            // Multi combination bundled total (matches template expectation):
+            // cfm_total_final = cfm_user_total_90 + sum(serverPrice90) + price_migration_90 + sum(exhibitBundledPrice90)
+            // Since each *_90 token is 90% of the original, this equals:
+            // (cloudfuzeManageTotal + cfmUserTotal) - sumOf10PercentDiscounts
+            // Note: cloudfuzeManageTotal excludes cfmUserTotal by design, so we add it here for the final bundled total.
+            const baseTotalForBundle = cloudfuzeManageTotal + cfmUserTotal;
+            const totalAfterBundle = baseTotalForBundle - sumOf10PercentDiscounts;
             templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(totalAfterBundle);
             templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(totalAfterBundle);
             templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(totalAfterBundle);
             templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(totalAfterBundle);
             templateData['{{cfm_total_b}}'] = formatCurrency(totalAfterBundle);
+            // Final total after bundle (for _90 suffix tokens)
+            templateData['{{cfm_total_final}}'] = formatCurrency(totalAfterBundle);
             
             console.log('🔍 CloudFuze Manage Total Calculation:', {
               serversCount: serversArray.length,
@@ -6399,9 +6434,13 @@ Total Price: {{total price}}`;
               serverDescription: `${numberOfInstances} X ${instanceType} server for data migration`,
               combinationName: '',
               serverPrice: formatCurrency(singleInstanceCost),
-              // 10% discount amount for this row (Bundled column)
-              serverPriceBundled: formatCurrency(singleInstanceCost * 0.1),
-              serverBundledPrice: formatCurrency(singleInstanceCost * 0.1),
+              // 90% of original price (10% discount applied) for Bundled column
+              serverPriceBundled: formatCurrency(singleInstanceCost * 0.9), // Final price
+              serverBundledPrice: formatCurrency(singleInstanceCost * 0.9), // Final price
+              // Also keep 90% value for _90 suffix tokens (same value)
+              serverPrice90: formatCurrency(singleInstanceCost * 0.9),
+              // Keep discount amount separately for savings calculation
+              serverPriceDiscount: formatCurrency(singleInstanceCost * 0.1), // 10% discount amount (for savings)
               serverMonths: durationMonths,
               isLast: true
             }];
@@ -6440,20 +6479,31 @@ Total Price: {{total price}}`;
             templateData['{{cfm_user_total_b}}'] = formatCurrency(cfmUserTotalBundled);
             templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotalBundled);
             templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotalBundled);
+            // 90% of original price (for _90 suffix tokens)
+            const cfmUserTotal90 = cfmUserTotal * 0.9;
+            templateData['{{cfm_user_total_90}}'] = formatCurrency(cfmUserTotal90);
             
-            const instanceBundled = singleInstanceCost * 0.1; // 10% discount amount
-            templateData['{{instance_cost_bundled}}'] = formatCurrency(instanceBundled);
-            templateData['{{instanceCostBundled}}'] = formatCurrency(instanceBundled);
-            templateData['{{instance_cost_bundled_price}}'] = formatCurrency(instanceBundled);
-            templateData['{{serverPriceBundled}}'] = formatCurrency(instanceBundled);
-            templateData['{{serverBundledPrice}}'] = formatCurrency(instanceBundled);
+            // 90% of original price (10% discount applied) for Bundled column
+            const instanceCost90 = singleInstanceCost * 0.9; // 90% of original (10% discount)
+            const instanceBundled = singleInstanceCost * 0.1; // 10% discount amount (for savings)
+            templateData['{{instance_cost_bundled}}'] = formatCurrency(instanceCost90); // Final price
+            templateData['{{instanceCostBundled}}'] = formatCurrency(instanceCost90); // Final price
+            templateData['{{instance_cost_bundled_price}}'] = formatCurrency(instanceCost90); // Final price
+            templateData['{{serverPriceBundled}}'] = formatCurrency(instanceCost90); // Final price
+            templateData['{{serverBundledPrice}}'] = formatCurrency(instanceCost90); // Final price
+            // Also keep 90% value for _90 suffix tokens (same value)
+            templateData['{{instance_cost_90}}'] = formatCurrency(instanceCost90);
             
-            const migrationBundled = (migrationCost || 0) * 0.1; // 10% discount amount
+            // 90% of original price (10% discount applied) for Bundled column
+            const migrationPrice90 = (migrationCost || 0) * 0.9; // 90% of original (10% discount)
+            const migrationBundled = (migrationCost || 0) * 0.1; // 10% discount amount (for savings)
             templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationBundled);
-            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationPrice90); // Final price
+            // Also keep 90% value for _90 suffix tokens (same value)
+            templateData['{{price_migration_90}}'] = formatCurrency(migrationPrice90);
             
             // For single migrations, the total price should be the sum of:
             // users_cost (userCost + dataCost) + migrationCost + instanceCost
@@ -6489,19 +6539,29 @@ Total Price: {{total price}}`;
             templateData['{{userCost}}'] = formatCurrency(finalUsersCost);
             templateData['{{price_data}}'] = formatCurrency(finalUsersCost);
             
-            // 10% discount amount for users/exhibit row (Bundled column)
-            const usersCostBundled = finalUsersCost * 0.1;
-            templateData['{{exhibitBundledPrice}}'] = formatCurrency(usersCostBundled);
+            // 90% of original price (10% discount applied) for Bundled column
+            const usersCost90 = finalUsersCost * 0.9; // 90% of original (10% discount)
+            const usersCostBundled = finalUsersCost * 0.1; // 10% discount amount (for savings)
+            templateData['{{exhibitBundledPrice}}'] = formatCurrency(usersCost90); // Final price
             
             if (exhibitsData.length > 0) {
               const firstExhibit = exhibitsData[0];
               if (firstExhibit) {
-                firstExhibit.exhibitBundledPrice = formatCurrency(usersCostBundled);
+                firstExhibit.exhibitBundledPrice = formatCurrency(usersCost90); // Final price
+                // Also keep 90% value for _90 suffix tokens (same value)
+                firstExhibit.exhibitBundledPrice90 = formatCurrency(usersCost90);
+                // Keep discount amount separately for savings calculation
+                firstExhibit.exhibitBundledDiscount = formatCurrency(usersCostBundled);
               }
             }
             
-            // Total row = total amount - sum of 10% discount column
+            // Calculate total savings (sum of all 10% discounts) for "Instant saving" row
             const sumOf10Percent = usersCostBundled + migrationBundled + instanceBundled + cfmUserTotalBundled;
+            // Add instant saving token (sum of all 10% discounts)
+            templateData['{{instant_saving}}'] = formatCurrency(sumOf10Percent);
+            templateData['{{total_savings}}'] = formatCurrency(sumOf10Percent);
+            
+            // Total row = total amount - sum of 10% discount column
             const finalBundledTotal = calculatedDisplayedTotal - sumOf10Percent;
             
             // Set bundled total tokens (this is what shows in the gray box)
@@ -6510,6 +6570,8 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(finalBundledTotal);
             templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(finalBundledTotal);
             templateData['{{cfm_total_b}}'] = formatCurrency(finalBundledTotal);
+            // Final total after bundle (for _90 suffix tokens)
+            templateData['{{cfm_total_final}}'] = formatCurrency(finalBundledTotal);
             
             console.log('💰 Single migration bundled total calculation:', {
               exhibit10pct: formatCurrency(usersCostBundled),
@@ -6839,7 +6901,17 @@ Total Price: {{total price}}`;
           'cloudfuze_manage_total_bundled',
           'cloudfuzeManageTotalBundled',
           'cloudfuze_manage_price_bundled',
-          'cloudfuzeManagePriceBundled'
+          'cloudfuzeManagePriceBundled',
+          // _90 suffix tokens (90% of original price)
+          'exhibitBundledPrice90',
+          'price_migration_90',
+          'serverPrice90',
+          'cfm_user_total_90',
+          'instance_cost_90',
+          'cfm_total_final',
+          // Instant saving tokens (sum of all 10% discounts)
+          'instant_saving',
+          'total_savings'
         ];
         const filteredMissing = diagnostic.missingTokens.filter(t => !optionalTokens.includes(t));
         const filteredMismatched = diagnostic.mismatchedTokens.filter(t => !optionalTokens.includes(t));

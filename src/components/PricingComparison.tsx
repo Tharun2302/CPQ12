@@ -351,6 +351,18 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Helper function to apply discount calculations
   const calculateDiscountedPrice = (totalCost: number) => {
+    // Multi combination: discount is not available (UI removed in Configure),
+    // so never show strike-through "Save X% off" pricing here even if a stale value exists in sessionStorage.
+    if (configuration?.migrationType === 'Multi combination') {
+      return {
+        originalPrice: totalCost,
+        discountAmount: 0,
+        finalPrice: totalCost,
+        hasDiscount: false,
+        discountPercent: 0
+      };
+    }
+
     const isDiscountAllowed = totalCost >= 2500;
     const isDiscountValid = discount > 0 && discount <= 15;
     const shouldApplyDiscount = isDiscountAllowed && isDiscountValid;
