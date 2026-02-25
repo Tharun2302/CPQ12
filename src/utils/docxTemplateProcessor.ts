@@ -1211,14 +1211,14 @@ export class DocxTemplateProcessor {
             let modifiedXml = finalDocumentXml;
             
             // 1. Remove table rows that contain ONLY discount-related content
+            // NOTE: Do NOT remove rows that contain only 'n/a' as they may be valid content rows (e.g., Instance saving row)
             const discountRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
             modifiedXml = modifiedXml.replace(discountRowRegex, (row) => {
               const rowText = row.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
               
-              // Only remove rows that are clearly discount-related
+              // Only remove rows that are clearly discount-related (must contain 'discount')
               if (rowText === 'discount n/a' || 
                   rowText === 'discount' || 
-                  rowText === 'n/a' ||
                   (rowText.includes('discount') && rowText.includes('n/a') && rowText.length < 50)) {
                 console.log('🧹 Removing discount row:', rowText);
                 return '';
@@ -1227,14 +1227,14 @@ export class DocxTemplateProcessor {
             });
 
             // 2. Remove paragraphs that contain ONLY discount-related content
+            // NOTE: Do NOT remove standalone 'n/a' paragraphs as they may be valid content in other rows (e.g., Instance saving row)
             const discountParaRegex = /<w:p[\s\S]*?<\/w:p>/gi;
             modifiedXml = modifiedXml.replace(discountParaRegex, (para) => {
               const paraText = para.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
               
-              // Only remove paragraphs that are clearly discount-related
+              // Only remove paragraphs that are clearly discount-related (must contain 'discount')
               if (paraText === 'discount n/a' || 
                   paraText === 'discount' || 
-                  paraText === 'n/a' ||
                   (paraText.includes('discount') && paraText.includes('n/a') && paraText.length < 50)) {
                 console.log('🧹 Removing discount paragraph:', paraText);
                 return '';
@@ -1272,12 +1272,12 @@ export class DocxTemplateProcessor {
                     let cleaned = xml;
                     
                     // Remove discount rows in headers/footers
+                    // NOTE: Do NOT remove rows that contain only 'n/a' as they may be valid content
                     const headerDiscountRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
                     cleaned = cleaned.replace(headerDiscountRowRegex, (row) => {
                       const rowText = row.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
                       if (rowText === 'discount n/a' || 
                           rowText === 'discount' || 
-                          rowText === 'n/a' ||
                           (rowText.includes('discount') && rowText.includes('n/a') && rowText.length < 50)) {
                         return '';
                       }
@@ -1285,12 +1285,12 @@ export class DocxTemplateProcessor {
                     });
                     
                     // Remove discount paragraphs in headers/footers
+                    // NOTE: Do NOT remove standalone 'n/a' paragraphs as they may be valid content
                     const headerDiscountParaRegex = /<w:p[\s\S]*?<\/w:p>/gi;
                     cleaned = cleaned.replace(headerDiscountParaRegex, (para) => {
                       const paraText = para.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
                       if (paraText === 'discount n/a' || 
                           paraText === 'discount' || 
-                          paraText === 'n/a' ||
                           (paraText.includes('discount') && paraText.includes('n/a') && paraText.length < 50)) {
                         return '';
                       }
@@ -1310,14 +1310,15 @@ export class DocxTemplateProcessor {
                 mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
               });
 
-              // Verify that Discount/N/A no longer exists in main document
+              // Verify that Discount row no longer exists in main document
+              // NOTE: We only check for 'discount' keyword, not 'n/a' since N/A can be valid content in other rows
               const verifyZip = new PizZip(await buffer.arrayBuffer());
               const verifyXml = verifyZip.file('word/document.xml')?.asText() || '';
               const verifyText = this.extractTextFromDocxXml(verifyXml).toLowerCase();
-              if (!verifyText.includes('discount') && !verifyText.includes('n/a')) {
-                console.log('✅ Verification: Discount/N/A removed from main document');
+              if (!verifyText.includes('discount')) {
+                console.log('✅ Verification: Discount row removed from main document');
               } else {
-                console.warn('⚠️ Verification: Discount/N/A still present in main document after cleanup');
+                console.warn('⚠️ Verification: Discount still present in main document after cleanup');
               }
             }
           }
