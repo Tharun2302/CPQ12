@@ -66,7 +66,7 @@ export const extractContentFromPdf = async (pdfBlob: Blob): Promise<ExtractedCon
   const extractedContent: ExtractedContent = {
     header: {
       companyName: 'CloudFuze',
-      tagline: 'X-Change Enterprise Data Migration Solution'
+      tagline: 'CloudFuze Migrate'
     },
     recipient: {
       name: 'Definitive Healthcare, LLC.',
@@ -95,7 +95,7 @@ export const extractContentFromPdf = async (pdfBlob: Blob): Promise<ExtractedCon
     costBreakdown: {
       title: 'Cost Breakdown',
       items: [
-        { description: 'CloudFuze X-Change Data Migration (Slack to Teams)', amount: 1500 },
+        { description: 'CloudFuze Migrate (Slack to Teams)', amount: 1500 },
         { description: 'Managed Migration Service (One-Time)', amount: 500 }
       ],
       total: 2000
@@ -160,7 +160,7 @@ export const convertToTemplateBlocks = (content: ExtractedContent): ContentBlock
           </div>
           <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #1e40af; margin-bottom: 20px;">
             <p style="margin: 0; color: #374151; font-size: 14px;">
-              This agreement provides ${content.recipient?.name || 'Client'} with pricing for use of the CloudFuze's X-Change Enterprise Data Migration Solution:
+              This agreement provides ${content.recipient?.name || 'Client'} with pricing for use of CloudFuze Migrate:
             </p>
           </div>
           <div style="background: linear-gradient(135deg, #1e40af, #3b82f6); color: white; padding: 10px 15px; border-radius: 6px; margin-bottom: 20px;">
@@ -444,7 +444,7 @@ export const createSOWTemplateFromData = (extractedData: ExtractedContent, templ
     type: 'header',
     content: {
       companyName: extractedData.header?.companyName || 'CloudFuze',
-      tagline: extractedData.header?.tagline || 'X-Change Enterprise Data Migration Solution',
+      tagline: extractedData.header?.tagline || 'CloudFuze Migrate',
       logo: extractedData.header?.logo
     },
     position: { x: 50, y: yOffset },

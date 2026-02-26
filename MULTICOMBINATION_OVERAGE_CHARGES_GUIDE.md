@@ -13,7 +13,7 @@ For multicombination agreements, each exhibit now includes overage charge inform
 When using the `{{#exhibits}}...{{/exhibits}}` loop in your DOCX templates, you now have access to these additional fields:
 
 ### Standard Fields (existing)
-- `{{exhibitType}}` - Type of exhibit (e.g., "CloudFuze X-Change Data Migration")
+- `{{exhibitType}}` - Type of exhibit (e.g., "CloudFuze Migrate")
 - `{{exhibitDesc}}` - Description of the exhibit
 - `{{exhibitPlan}}` - Plan tier (Basic/Standard/Advanced)
 - `{{exhibitPrice}}` - Total price for the exhibit

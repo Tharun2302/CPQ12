@@ -760,22 +760,15 @@ const drawQuoteContentOnPage = async (
     color: rgb(0.9, 0.9, 0.9),
   });
   
-  // Row 1: CloudFuze X-Change Data Migration
-  page.drawText(sanitizeText('CloudFuze X-Change'), {
+  // Row 1: CloudFuze Migrate
+  page.drawText(sanitizeText('CloudFuze Migrate'), {
     x: col1X,
-    y: tableY - 5,
+    y: tableY - 12,
     size: 10,
     font: helveticaBold,
     color: rgb(0, 0, 0),
   });
-  page.drawText(sanitizeText('Data Migration'), {
-    x: col1X,
-    y: tableY - 18,
-    size: 10,
-    font: helveticaBold,
-    color: rgb(0, 0, 0),
-  });
-  
+
   page.drawText(sanitizeText(`${quote.configuration.migrationType} to Teams`), {
     x: col2X,
     y: tableY - 5,
@@ -1275,7 +1268,7 @@ const overlaySowSpecificContent = async (
   // Look for common patterns like "(client name)" or "[Client Name]" and replace them
   
   // Draw the introductory paragraph with the client name - centered
-  const introText = sanitizeText(`This agreement provides ${quote.clientName} with pricing for use of the CloudFuze's X-Change Enterprise Data`);
+  const introText = sanitizeText(`This agreement provides ${quote.clientName} with pricing for use of CloudFuze Migrate`);
   const introTextWidth = helveticaFont.widthOfTextAtSize(introText, 4);
   const introTextX = Math.max(50, (pageWidth - introTextWidth) / 2);
   
@@ -1416,23 +1409,15 @@ const overlaySowSpecificContent = async (
     color: rgb(0.2, 0.4, 0.8),
   });
   
-  // Row 1: CloudFuze X-Change Data Migration
-  page.drawText(sanitizeText('CloudFuze X-Change'), {
+  // Row 1: CloudFuze Migrate
+  page.drawText(sanitizeText('CloudFuze Migrate'), {
     x: col1X + 5,
-    y: row1Y - 12,
+    y: row1Y - 18,
     size: 10,
     font: helveticaBold,
     color: rgb(0, 0, 0),
   });
-  
-  page.drawText(sanitizeText('Data Migration'), {
-    x: col1X + 5,
-    y: row1Y - 25,
-    size: 10,
-    font: helveticaBold,
-    color: rgb(0, 0, 0),
-  });
-  
+
   page.drawText(sanitizeText(`${quote.configuration.migrationType} to Teams`), {
     x: col2X + 5,
     y: row1Y - 12,
@@ -1779,7 +1764,7 @@ export const createTemplatePreviewHTML = async (
           
           <!-- Introduction with Placeholders -->
           <div class="mb-8">
-            <p class="text-base text-gray-700 leading-relaxed">${replacePlaceholders('This agreement provides {{Company Name}} with comprehensive pricing for the use of CloudFuze\'s X-Change Enterprise Data Migration platform and managed services.')}</p>
+            <p class="text-base text-gray-700 leading-relaxed">${replacePlaceholders('This agreement provides {{Company Name}} with comprehensive pricing for the use of CloudFuze Migrate and managed services.')}</p>
           </div>
           
           <!-- Service Offering Bar -->
@@ -1885,7 +1870,7 @@ export const createTemplatePreviewHTML = async (
                 </thead>
                 <tbody>
                   <tr class="border-b border-gray-200">
-                    <td class="p-3 font-semibold">CloudFuze X-Change<br>Data Migration</td>
+                    <td class="p-3 font-semibold">CloudFuze Migrate</td>
                     <td class="p-3">
                       ${replacePlaceholders('{{migration type}} to Teams')}<br><br>
                       ${replacePlaceholders('Up to {{userscount}} Users | All Channels and DMs')}
@@ -2772,7 +2757,7 @@ const replacePlaceholdersInExistingPage = async (
   });
   
   // Description text matching the reference format - positioned even lower and centered
-  const descriptionText = sanitizeText(`This agreement provides ${values['Company Name']} with pricing for use of the CloudFuze's X-Change Enterprise Data Migration Solution:`);
+  const descriptionText = sanitizeText(`This agreement provides ${values['Company Name']} with pricing for use of CloudFuze Migrate:`);
   const descriptionTextWidth = helveticaFont.widthOfTextAtSize(descriptionText, 9);
   const descriptionTextX = Math.max(50, (pageWidth - descriptionTextWidth) / 2);
   
@@ -2911,18 +2896,10 @@ const replacePlaceholdersInExistingPage = async (
     color: rgb(0, 0, 0),
   });
 
-  // Table content - Row 1: CloudFuze X-Change Data Migration
-  page.drawText(sanitizeText('CloudFuze X-Change'), {
+  // Table content - Row 1: CloudFuze Migrate
+  page.drawText(sanitizeText('CloudFuze Migrate'), {
     x: col1X,
-    y: headerRowY - 15,
-    size: 12,
-    font: helveticaBold,
-    color: rgb(0, 0, 0),
-  });
-  
-  page.drawText(sanitizeText('Data Migration'), {
-    x: col1X,
-    y: headerRowY - 30,
+    y: headerRowY - 22,
     size: 12,
     font: helveticaBold,
     color: rgb(0, 0, 0),
@@ -3202,7 +3179,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
 
       <!-- Introduction - EXACTLY as in your image -->
       <p style="text-align: center; color: #555; margin-bottom: 35px; font-size: 18px; line-height: 1.5; max-width: 700px; margin-left: auto; margin-right: auto;">
-        This agreement provides [Client.Company] with pricing for use of the CloudFuze's X-Change Enterprise Data Migration Solution:
+        This agreement provides [Client.Company] with pricing for use of CloudFuze Migrate:
       </p>
 
       <!-- Service Categories Bar - EXACTLY as in your image -->
@@ -3226,7 +3203,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
           <tbody>
             <tr style="background: white;">
               <td style="border: 2px solid #ddd; padding: 16px; font-weight: 600; font-size: 15px; color: #333; vertical-align: top;">
-                CloudFuze X-Change<br>Data Migration
+                CloudFuze Migrate
               </td>
               <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top;">
                 Box to Box for Business<br><br>

@@ -105,20 +105,9 @@ function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
   return value.replace(spaceRegex, ' '.repeat(maxSpaces));
 }
 
-// Helper function to get display name for exhibit category
+// Helper function to get display name for exhibit category (all combinations use CloudFuze Migrate)
 function getCategoryDisplayName(category: string): string {
-  const normalized = (category || 'content').toLowerCase();
-  switch (normalized) {
-    case 'messaging':
-    case 'message':
-      return 'CloudFuze X-Change Messaging Migration';
-    case 'content':
-      return 'CloudFuze X-Change Content Migration';
-    case 'email':
-      return 'CloudFuze X-Change Email Migration';
-    default:
-      return 'CloudFuze X-Change Data Migration';
-  }
+  return 'CloudFuze Migrate';
 }
 
 // Normalize exhibit display name for agreement table: avoid "Basic Plan - Basic Include", show " - Basic - Included Features"
@@ -1545,6 +1534,11 @@ Quote ID: ${quoteData.id}
         const localIsDiscountValid = localHasValidDiscount ? localFinalTotalAfterDiscount >= 2500 : true;
         const localShouldApplyDiscount = localIsDiscountAllowed && localHasValidDiscount && localIsDiscountValid;
         
+        // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+        const combinationNameForPreview = (configuration?.combination || '').toLowerCase();
+        const isBundledPricing299ForPreview = combinationNameForPreview.includes('bundled pricing 2.99') || combinationNameForPreview.includes('bundled pricing 2.99$');
+        const perUserPriceForPreview = isBundledPricing299ForPreview ? 2.99 : 3.99;
+        
         const templateData: Record<string, string> = {
           // Core company and client information
           '{{Company Name}}': finalCompanyName,
@@ -1606,14 +1600,15 @@ Quote ID: ${quoteData.id}
           '{{migration_cost}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           '{{migrationCost}}': formatCurrency(migrationCost || 0),
-          // CloudFuze Manage user total (userCount * 12 * 3.99)
-          '{{cfm_user_total}}': formatCurrency((userCount || 1) * 12 * 3.99),
-          '{{cloudfuze_manage_user_total}}': formatCurrency((userCount || 1) * 12 * 3.99),
-          '{{cloudfuzeManageUserTotal}}': formatCurrency((userCount || 1) * 12 * 3.99),
+          // CloudFuze Manage user total (userCount * 12 * perUserPrice)
+          // Uses perUserPriceForPreview calculated above (2.99 for "bundled pricing 2.99$", 3.99 for others)
+          '{{cfm_user_total}}': formatCurrency((userCount || 1) * 12 * perUserPriceForPreview),
+          '{{cloudfuze_manage_user_total}}': formatCurrency((userCount || 1) * 12 * perUserPriceForPreview),
+          '{{cloudfuzeManageUserTotal}}': formatCurrency((userCount || 1) * 12 * perUserPriceForPreview),
           // 10% discount amount per row (Bundled column shows discount, total = total - sum of these)
-          '{{cfm_user_total_b}}': formatCurrency(((userCount || 1) * 12 * 3.99) * 0.1),
-          '{{cloudfuze_manage_user_total_bundled}}': formatCurrency(((userCount || 1) * 12 * 3.99) * 0.1),
-          '{{cfm_user_bundled}}': formatCurrency(((userCount || 1) * 12 * 3.99) * 0.1),
+          '{{cfm_user_total_b}}': formatCurrency(((userCount || 1) * 12 * perUserPriceForPreview) * 0.1),
+          '{{cloudfuze_manage_user_total_bundled}}': formatCurrency(((userCount || 1) * 12 * perUserPriceForPreview) * 0.1),
+          '{{cfm_user_bundled}}': formatCurrency(((userCount || 1) * 12 * perUserPriceForPreview) * 0.1),
           '{{migrationBundled}}': formatCurrency((migrationCost || 0) * 0.1),
           '{{price_migration_bundled}}': formatCurrency((migrationCost || 0) * 0.1),
           '{{migration_cost_bundled}}': formatCurrency((migrationCost || 0) * 0.1),
@@ -2504,7 +2499,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
     // Create sample template text with placeholders - matches CloudFuze template
     const originalText = `CloudFuze Purchase Agreement for {{Company Name}}
 
-This agreement provides {{Company Name}} with pricing for use of the CloudFuze's X-Change Enterprise Data Migration Solution:
+This agreement provides {{Company Name}} with pricing for use of CloudFuze Migrate:
 
 Cloud-Hosted SaaS Solution | Managed Migration | Dedicated Migration Manager
 
@@ -2512,7 +2507,7 @@ Services and Pricing Table:
 ┌─────────────────────────────────────┬─────────────────────────────────────┬─────────────────┬─────────────┐
 │ Job Requirement                     │ Description                         │ Migration Type  │ Price(USD)  │
 ├─────────────────────────────────────┼─────────────────────────────────────┼─────────────────┼─────────────┤
-│ CloudFuze X-Change Data Migration   │ {{migration type}} to Teams         │ Managed         │ {{price_data}} │
+│ CloudFuze Migrate                    │ {{migration type}} to Teams         │ Managed         │ {{price_data}} │
 │                                     │ ─────────────────────────────────   │ Migration       │             │
 │                                     │ Up to {{userscount}} Users          │ One-Time        │             │
 │                                     │ All Channels and DMs                │                 │             │
@@ -3375,7 +3370,7 @@ Total Price: {{total price}}`;
           <body>
             <div class="document-header">
               <div class="document-title">CloudFuze Purchase Agreement for ${clientInfo.company}</div>
-              <div class="document-subtitle">This agreement provides ${clientInfo.company} with pricing for use of the CloudFuze's X-Change Enterprise Data</div>
+              <div class="document-subtitle">This agreement provides ${clientInfo.company} with pricing for use of CloudFuze Migrate</div>
             </div>
             
             <div class="content-section">
@@ -3396,7 +3391,7 @@ Total Price: {{total price}}`;
                   <div class="table-cell bundled-pricing"><strong>10% Discount</strong></div>
                 </div>
                 <div class="table-row">
-                  <div class="table-cell">CloudFuze X-Change Data Migration</div>
+                  <div class="table-cell">CloudFuze Migrate</div>
                   <div class="table-cell">
                     <p>slack to Teams</p>
                     <p>Up to ${configuration?.numberOfUsers || 1} Users | All Channels and DMs</p>
@@ -5567,10 +5562,8 @@ Total Price: {{total price}}`;
                   };
                 }
 
-                // For multicombination, change all exhibitType to "CloudFuze Migrate"
-                const exhibitType = (finalConfiguration?.migrationType === 'Multi combination')
-                  ? 'CloudFuze Migrate'
-                  : 'CloudFuze X-Change Data Migration';
+                // All combinations (content, messaging, email, multi) use "CloudFuze Migrate"
+                const exhibitType = 'CloudFuze Migrate';
 
                 const exhibitData: any = {
                   exhibitType: exhibitType,
@@ -6258,7 +6251,7 @@ Total Price: {{total price}}`;
               }
             }
             
-            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze X-Change Data Migration)
+            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze Migrate)
             const MINIMUM_TOTAL = 2500;
             if (cloudfuzeManageTotal < MINIMUM_TOTAL && exhibitsData.length > 0) {
               const deficit = MINIMUM_TOTAL - cloudfuzeManageTotal;
@@ -6310,9 +6303,47 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
-            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 12 * 3.99)
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 12 * perUserPrice)
             // For multi-combination, this should be the sum of all users from all exhibits
-            const cfmUserTotal = totalUserCountFromExhibits * 12 * 3.99;
+            // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+            // Check multiple possible locations for combination name
+            const combinationName1 = (finalConfiguration?.combination || '').toLowerCase();
+            const combinationName2 = (configuration?.combination || '').toLowerCase();
+            const templateName = (selectedTemplate?.name || '').toLowerCase();
+            const allCombinationSources = [combinationName1, combinationName2, templateName].filter(Boolean);
+            const combinedName = allCombinationSources.join(' ');
+            
+            // More flexible matching - check for "bundled pricing 2.99" in any form
+            // Also check for variations like "bundled pricing 2.99", "bundled pricing 2.99$", "bundled pricing $2.99", etc.
+            const isBundledPricing299 = 
+              combinationName1.includes('bundled pricing 2.99') || 
+              combinationName1.includes('bundled pricing 2.99$') ||
+              combinationName1.includes('bundled pricing $2.99') ||
+              combinationName1.includes('bundledpricing2.99') ||
+              combinationName2.includes('bundled pricing 2.99') || 
+              combinationName2.includes('bundled pricing 2.99$') ||
+              combinationName2.includes('bundled pricing $2.99') ||
+              combinationName2.includes('bundledpricing2.99') ||
+              templateName.includes('bundled pricing 2.99') ||
+              templateName.includes('bundled pricing 2.99$') ||
+              templateName.includes('bundled pricing $2.99') ||
+              templateName.includes('bundledpricing2.99') ||
+              combinedName.includes('bundled pricing 2.99') ||
+              combinedName.includes('bundledpricing2.99');
+            
+            const perUserPrice = isBundledPricing299 ? 2.99 : 3.99;
+            
+            console.log('🔍 CloudFuze Manage Price Check:', {
+              finalConfigurationCombination: finalConfiguration?.combination,
+              configurationCombination: configuration?.combination,
+              templateName: selectedTemplate?.name,
+              isBundledPricing299,
+              perUserPrice,
+              totalUserCountFromExhibits,
+              calculatedTotal: totalUserCountFromExhibits * 12 * perUserPrice
+            });
+            
+            const cfmUserTotal = totalUserCountFromExhibits * 12 * perUserPrice;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
@@ -6327,7 +6358,7 @@ Total Price: {{total price}}`;
             
             // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
             // This ensures the Total Price matches the sum of all items in the table
-            // NOTE: cfm_user_total ($3.99) is excluded from the total price calculation
+            // NOTE: cfm_user_total ($2.99) is excluded from the total price calculation
             // Total should now be at least $2,500 (deficit already added to first exhibit)
             const displayedTotalPrice = cloudfuzeManageTotal;
             
@@ -6471,9 +6502,39 @@ Total Price: {{total price}}`;
             templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
             templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
             
-            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 12 * 3.99)
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 12 * perUserPrice)
             // For single migrations, this uses the single userCount, but for multi-combination it uses the sum
-            const cfmUserTotal = totalUserCountFromExhibits * 12 * 3.99;
+            // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+            // Check multiple possible locations for combination name
+            const combinationName1 = (finalConfiguration?.combination || '').toLowerCase();
+            const combinationName2 = (configuration?.combination || '').toLowerCase();
+            const templateName = (selectedTemplate?.name || '').toLowerCase();
+            const allCombinationSources = [combinationName1, combinationName2, templateName].filter(Boolean);
+            const combinedName = allCombinationSources.join(' ');
+            
+            // More flexible matching - check for "bundled pricing 2.99" in any form
+            const isBundledPricing299 = 
+              combinationName1.includes('bundled pricing 2.99') || 
+              combinationName1.includes('bundled pricing 2.99$') ||
+              combinationName2.includes('bundled pricing 2.99') || 
+              combinationName2.includes('bundled pricing 2.99$') ||
+              templateName.includes('bundled pricing 2.99') ||
+              templateName.includes('bundled pricing 2.99$') ||
+              combinedName.includes('bundled pricing 2.99');
+            
+            const perUserPrice = isBundledPricing299 ? 2.99 : 3.99;
+            
+            console.log('🔍 CloudFuze Manage Price Check (Single Migration):', {
+              finalConfigurationCombination: finalConfiguration?.combination,
+              configurationCombination: configuration?.combination,
+              templateName: selectedTemplate?.name,
+              isBundledPricing299,
+              perUserPrice,
+              totalUserCountFromExhibits,
+              calculatedTotal: totalUserCountFromExhibits * 12 * perUserPrice
+            });
+            
+            const cfmUserTotal = totalUserCountFromExhibits * 12 * perUserPrice;
             templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
             templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
@@ -6522,7 +6583,7 @@ Total Price: {{total price}}`;
             const usersCost = userCost + dataCost;
             let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
             
-            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze X-Change Data Migration)
+            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze Migrate)
             const MINIMUM_TOTAL = 2500;
             let finalUsersCost = usersCost; // This will be what's displayed
             if (calculatedDisplayedTotal < MINIMUM_TOTAL) {
@@ -6632,7 +6693,32 @@ Total Price: {{total price}}`;
           
           // Ensure CloudFuze Manage tokens are set even if there's an error
           // Use fallback values to prevent template diagnostic errors
-          const fallbackCfmUserTotal = totalUserCountFromExhibits * 12 * 3.99;
+          // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+          // Check multiple possible locations for combination name
+          const combinationNameFallback1 = (finalConfiguration?.combination || '').toLowerCase();
+          const combinationNameFallback2 = (configuration?.combination || '').toLowerCase();
+          const templateNameFallback = (selectedTemplate?.name || '').toLowerCase();
+          const allCombinationSourcesFallback = [combinationNameFallback1, combinationNameFallback2, templateNameFallback].filter(Boolean);
+          const combinedNameFallback = allCombinationSourcesFallback.join(' ');
+          
+          // More flexible matching - check for "bundled pricing 2.99" in any form
+          const isBundledPricing299Fallback = 
+            combinationNameFallback1.includes('bundled pricing 2.99') || 
+            combinationNameFallback1.includes('bundled pricing 2.99$') ||
+            combinationNameFallback1.includes('bundled pricing $2.99') ||
+            combinationNameFallback1.includes('bundledpricing2.99') ||
+            combinationNameFallback2.includes('bundled pricing 2.99') || 
+            combinationNameFallback2.includes('bundled pricing 2.99$') ||
+            combinationNameFallback2.includes('bundled pricing $2.99') ||
+            combinationNameFallback2.includes('bundledpricing2.99') ||
+            templateNameFallback.includes('bundled pricing 2.99') ||
+            templateNameFallback.includes('bundled pricing 2.99$') ||
+            templateNameFallback.includes('bundled pricing $2.99') ||
+            templateNameFallback.includes('bundledpricing2.99') ||
+            combinedNameFallback.includes('bundled pricing 2.99') ||
+            combinedNameFallback.includes('bundledpricing2.99');
+          const perUserPriceFallback = isBundledPricing299Fallback ? 2.99 : 3.99;
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 12 * perUserPriceFallback;
           templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
@@ -6845,7 +6931,32 @@ Total Price: {{total price}}`;
         }
 
         if (!templateData['{{cfm_user_total}}']) {
-          const fallbackCfmUserTotal = totalUserCountFromExhibits * 12 * 3.99;
+          // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+          // Check multiple possible locations for combination name
+          const combinationNameFallback2a = (finalConfiguration?.combination || '').toLowerCase();
+          const combinationNameFallback2b = (configuration?.combination || '').toLowerCase();
+          const templateNameFallback2 = (selectedTemplate?.name || '').toLowerCase();
+          const allCombinationSourcesFallback2 = [combinationNameFallback2a, combinationNameFallback2b, templateNameFallback2].filter(Boolean);
+          const combinedNameFallback2 = allCombinationSourcesFallback2.join(' ');
+          
+          // More flexible matching - check for "bundled pricing 2.99" in any form
+          const isBundledPricing299Fallback2 = 
+            combinationNameFallback2a.includes('bundled pricing 2.99') || 
+            combinationNameFallback2a.includes('bundled pricing 2.99$') ||
+            combinationNameFallback2a.includes('bundled pricing $2.99') ||
+            combinationNameFallback2a.includes('bundledpricing2.99') ||
+            combinationNameFallback2b.includes('bundled pricing 2.99') || 
+            combinationNameFallback2b.includes('bundled pricing 2.99$') ||
+            combinationNameFallback2b.includes('bundled pricing $2.99') ||
+            combinationNameFallback2b.includes('bundledpricing2.99') ||
+            templateNameFallback2.includes('bundled pricing 2.99') ||
+            templateNameFallback2.includes('bundled pricing 2.99$') ||
+            templateNameFallback2.includes('bundled pricing $2.99') ||
+            templateNameFallback2.includes('bundledpricing2.99') ||
+            combinedNameFallback2.includes('bundled pricing 2.99') ||
+            combinedNameFallback2.includes('bundledpricing2.99');
+          const perUserPriceFallback2 = isBundledPricing299Fallback2 ? 2.99 : 3.99;
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 12 * perUserPriceFallback2;
           templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
           templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
@@ -6857,7 +6968,32 @@ Total Price: {{total price}}`;
           templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
         }
         if (!templateData['{{cfm_user_total_b}}']) {
-          const fallbackCfmUserTotal = parseFloat((templateData['{{cfm_user_total}}'] || '$0').replace(/[$,]/g, '')) || (totalUserCountFromExhibits * 12 * 3.99);
+          // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+          // Check multiple possible locations for combination name
+          const combinationNameFallback3a = (finalConfiguration?.combination || '').toLowerCase();
+          const combinationNameFallback3b = (configuration?.combination || '').toLowerCase();
+          const templateNameFallback3 = (selectedTemplate?.name || '').toLowerCase();
+          const allCombinationSourcesFallback3 = [combinationNameFallback3a, combinationNameFallback3b, templateNameFallback3].filter(Boolean);
+          const combinedNameFallback3 = allCombinationSourcesFallback3.join(' ');
+          
+          // More flexible matching - check for "bundled pricing 2.99" in any form
+          const isBundledPricing299Fallback3 = 
+            combinationNameFallback3a.includes('bundled pricing 2.99') || 
+            combinationNameFallback3a.includes('bundled pricing 2.99$') ||
+            combinationNameFallback3a.includes('bundled pricing $2.99') ||
+            combinationNameFallback3a.includes('bundledpricing2.99') ||
+            combinationNameFallback3b.includes('bundled pricing 2.99') || 
+            combinationNameFallback3b.includes('bundled pricing 2.99$') ||
+            combinationNameFallback3b.includes('bundled pricing $2.99') ||
+            combinationNameFallback3b.includes('bundledpricing2.99') ||
+            templateNameFallback3.includes('bundled pricing 2.99') ||
+            templateNameFallback3.includes('bundled pricing 2.99$') ||
+            templateNameFallback3.includes('bundled pricing $2.99') ||
+            templateNameFallback3.includes('bundledpricing2.99') ||
+            combinedNameFallback3.includes('bundled pricing 2.99') ||
+            combinedNameFallback3.includes('bundledpricing2.99');
+          const perUserPriceFallback3 = isBundledPricing299Fallback3 ? 2.99 : 3.99;
+          const fallbackCfmUserTotal = parseFloat((templateData['{{cfm_user_total}}'] || '$0').replace(/[$,]/g, '')) || (totalUserCountFromExhibits * 12 * perUserPriceFallback3);
           const fallbackCfmUserTotalBundled = fallbackCfmUserTotal * 0.1; // 10% discount amount
           templateData['{{cfm_user_total_b}}'] = formatCurrency(fallbackCfmUserTotalBundled);
           templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(fallbackCfmUserTotalBundled);

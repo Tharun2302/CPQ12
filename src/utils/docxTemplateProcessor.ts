@@ -1118,10 +1118,70 @@ export class DocxTemplateProcessor {
       } catch (mojibakeCleanupErr) {
         console.warn('⚠️ Unable to normalize mojibake/NBSP artifacts:', mojibakeCleanupErr);
       }
-      
+
+      // Rebrand: Replace all "CloudFuze X-Change ... Migration" variants with "CloudFuze Migrate"
+      // in the rendered DOCX XML. Handles text in single <w:t> nodes as well as text split across
+      // multiple <w:r> runs within a table cell (<w:tc>).
+      try {
+        const xchangeVariants = [
+          /CloudFuze\s+X-Change\s+Data\s+Migration/gi,
+          /CloudFuze\s+X-Change\s+Content\s+Migration/gi,
+          /CloudFuze\s+X-Change\s+Messaging\s+Migration/gi,
+          /CloudFuze\s+X-Change\s+Email\s+Migration/gi,
+          /CloudFuze\s+X-Change\s+Migration/gi,
+        ];
+
+        // 1) Simple in-text replacement (when the full string lives in one <w:t>)
+        for (const re of xchangeVariants) {
+          finalDocumentXml = finalDocumentXml.replace(re, 'CloudFuze Migrate');
+        }
+
+        // 2) Handle split across runs inside a table cell (<w:tc>…</w:tc>).
+        //    Collect the plain text of each cell; if it matches an X-Change variant,
+        //    rewrite the first <w:t> to "CloudFuze Migrate" and blank the rest.
+        const cellRegex = /<w:tc\b[^>]*>[\s\S]*?<\/w:tc>/gi;
+        const stripXml = (s: string) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        const xchangeCellTest = /CloudFuze\s+X-Change\s+(?:Data|Content|Messaging|Email)?\s*Migration/i;
+
+        finalDocumentXml = finalDocumentXml.replace(cellRegex, (cell) => {
+          const plainText = stripXml(cell);
+          if (!xchangeCellTest.test(plainText)) return cell;
+
+          let firstReplaced = false;
+          return cell.replace(/<w:t(\s[^>]*)?>([^<]*)<\/w:t>/g, (match, attrs, text) => {
+            const trimmed = text.trim();
+            if (!trimmed) return match;
+            if (!firstReplaced) {
+              firstReplaced = true;
+              return `<w:t${attrs || ''}>CloudFuze Migrate</w:t>`;
+            }
+            // Blank out subsequent text nodes that were part of the old label
+            if (/X-Change|Data Migration|Content Migration|Messaging Migration|Email Migration|Migration/i.test(trimmed) ||
+                /^CloudFuze$/i.test(trimmed)) {
+              return `<w:t${attrs || ''}></w:t>`;
+            }
+            return match;
+          });
+        });
+
+        console.log('✅ Rebrand: Replaced X-Change variants with CloudFuze Migrate in DOCX');
+      } catch (rebrandErr) {
+        console.warn('⚠️ Rebrand cleanup failed (non-fatal):', rebrandErr);
+      }
+
+      // Also replace "X-Change Enterprise Data Migration" in intro/agreement text
+      finalDocumentXml = finalDocumentXml.replace(
+        /CloudFuze['']s\s+X-Change\s+Enterprise\s+Data\s+Migration\s+(?:Solution|platform(?:\s+and\s+managed\s+services)?)/gi,
+        'CloudFuze Migrate'
+      );
+      finalDocumentXml = finalDocumentXml.replace(
+        /X-Change\s+Enterprise\s+Data\s+Migration\s+Solution/gi,
+        'CloudFuze Migrate'
+      );
+
       if (finalDocumentXml !== originalFinalXml) {
         this.setZipFile(finalZip, finalXmlPath, finalDocumentXml);
-        console.log('✅ Final cleanup: Removed "undefined" strings and unreplaced tokens');
+        console.log('✅ Final cleanup: Removed "undefined" strings, unreplaced tokens, and rebranded X-Change');
       }
       
       // Generate output from Docxtemplater
@@ -1740,13 +1800,56 @@ export class DocxTemplateProcessor {
       '{{migration_price_bundled}}': (data as any)['{{migration_price_bundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
       '{{migrationCostBundled}}': (data as any)['{{migrationCostBundled}}'] || formatCurrency((parseFloat((migrationCost as string).replace(/[$,]/g, '')) || 0) * 0.1),
       
-      '{{cfm_user_total}}': (data as any)['{{cfm_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 12 * 3.99),
-      '{{cloudfuze_manage_user_total}}': (data as any)['{{cloudfuze_manage_user_total}}'] || formatCurrency((parseInt(userCount) || 1) * 12 * 3.99),
-      '{{cloudfuzeManageUserTotal}}': (data as any)['{{cloudfuzeManageUserTotal}}'] || formatCurrency((parseInt(userCount) || 1) * 12 * 3.99),
-      
-      '{{cfm_user_total_b}}': (data as any)['{{cfm_user_total_b}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
-      '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
-      '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(((parseInt(userCount) || 1) * 12 * 3.99) * 0.1),
+      // CloudFuze Manage user total - check if this is "bundled pricing 2.99$" combination
+      // Use 2.99 for "bundled pricing 2.99$", otherwise use 3.99
+      // Check combination name from multiple possible locations in data object
+      ...(() => {
+        const combinationName1 = ((data as any).configuration?.combination || '').toLowerCase();
+        const combinationName2 = ((data as any).combination || '').toLowerCase();
+        const templateName = ((data as any).templateName || (data as any).template?.name || '').toLowerCase();
+        const allCombinationSources = [combinationName1, combinationName2, templateName].filter(Boolean);
+        const combinedName = allCombinationSources.join(' ');
+        
+        // More flexible matching - check for "bundled pricing 2.99" in any form
+        // Also check for variations like "bundled pricing 2.99", "bundled pricing 2.99$", "bundled pricing $2.99", etc.
+        const isBundledPricing299 = 
+          combinationName1.includes('bundled pricing 2.99') || 
+          combinationName1.includes('bundled pricing 2.99$') ||
+          combinationName1.includes('bundled pricing $2.99') ||
+          combinationName1.includes('bundledpricing2.99') ||
+          combinationName2.includes('bundled pricing 2.99') || 
+          combinationName2.includes('bundled pricing 2.99$') ||
+          combinationName2.includes('bundled pricing $2.99') ||
+          combinationName2.includes('bundledpricing2.99') ||
+          templateName.includes('bundled pricing 2.99') ||
+          templateName.includes('bundled pricing 2.99$') ||
+          templateName.includes('bundled pricing $2.99') ||
+          templateName.includes('bundledpricing2.99') ||
+          combinedName.includes('bundled pricing 2.99') ||
+          combinedName.includes('bundledpricing2.99');
+        
+        const perUserPrice = isBundledPricing299 ? 2.99 : 3.99;
+        const cfmUserTotalValue = (parseInt(userCount) || 1) * 12 * perUserPrice;
+        
+        console.log('🔍 DOCX Processor CloudFuze Manage Price Check:', {
+          configurationCombination: (data as any).configuration?.combination,
+          directCombination: (data as any).combination,
+          templateName: (data as any).templateName || (data as any).template?.name,
+          isBundledPricing299,
+          perUserPrice,
+          userCount,
+          calculatedTotal: cfmUserTotalValue
+        });
+        
+        return {
+          '{{cfm_user_total}}': (data as any)['{{cfm_user_total}}'] || formatCurrency(cfmUserTotalValue),
+          '{{cloudfuze_manage_user_total}}': (data as any)['{{cloudfuze_manage_user_total}}'] || formatCurrency(cfmUserTotalValue),
+          '{{cloudfuzeManageUserTotal}}': (data as any)['{{cloudfuzeManageUserTotal}}'] || formatCurrency(cfmUserTotalValue),
+          '{{cfm_user_total_b}}': (data as any)['{{cfm_user_total_b}}'] || formatCurrency(cfmUserTotalValue * 0.1),
+          '{{cloudfuze_manage_user_total_bundled}}': (data as any)['{{cloudfuze_manage_user_total_bundled}}'] || formatCurrency(cfmUserTotalValue * 0.1),
+          '{{cfm_user_bundled}}': (data as any)['{{cfm_user_bundled}}'] || formatCurrency(cfmUserTotalValue * 0.1),
+        };
+      })(),
       
       // Number of users (for CloudFuze Manage row / table)
       '{{cfm_number_of_users}}': (data as any)['{{cfm_number_of_users}}'] || (data as any)['{{total_users_count}}'] || userCount || '1',

@@ -756,7 +756,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         
         <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
           <p style="margin: 0; color: #374151;">
-            This agreement provides {{Company Name}} with pricing for use of the CloudFuze's X-Change Enterprise Data Migration Solution.
+            This agreement provides {{Company Name}} with pricing for use of CloudFuze Migrate.
           </p>
         </div>
         
@@ -775,7 +775,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
           </thead>
           <tbody>
             <tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 12px; font-weight: bold;">CloudFuze X-Change<br>Data Migration</td>
+              <td style="padding: 12px; font-weight: bold;">CloudFuze Migrate</td>
               <td style="padding: 12px;">{{migration type}} to Teams<br><br>Up to {{userscount}} Users | All Channels and DMs</td>
               <td style="padding: 12px;">Managed Migration<br>One-Time</td>
               <td style="padding: 12px; text-align: right; font-weight: bold;">{{price_migration}}</td>
@@ -1271,7 +1271,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         
         <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
           <p style="margin: 0; color: #374151;">
-            This agreement provides ${quote.company || 'Client'} with pricing for use of the CloudFuze's X-Change Enterprise Data Migration Solution.
+            This agreement provides ${quote.company || 'Client'} with pricing for use of CloudFuze Migrate.
           </p>
         </div>
         
@@ -1290,7 +1290,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
           </thead>
           <tbody>
             <tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 12px; font-weight: bold;">CloudFuze X-Change<br>Data Migration</td>
+              <td style="padding: 12px; font-weight: bold;">CloudFuze Migrate</td>
               <td style="padding: 12px;">${quote.configuration?.migrationType || 'Email'} to Teams<br><br>Up to ${quote.configuration?.numberOfUsers || 1} Users | All Channels and DMs</td>
               <td style="padding: 12px;">Managed Migration<br>One-Time</td>
               <td style="padding: 12px; text-align: right; font-weight: bold;">${formatCurrency(quote.calculation?.migrationCost || 0)}</td>

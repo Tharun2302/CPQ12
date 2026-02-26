@@ -592,7 +592,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
           </thead>
           <tbody>
             <tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: 500;">CloudFuze X-Change<br>Data Migration</td>
+              <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: 500;">CloudFuze Migrate</td>
               <td style="padding: 12px; border: 1px solid #e5e7eb;">
                 ${migrationType} to Teams<br><br>
                 Up to ${numberOfUsers} Users | All Channels and DMs

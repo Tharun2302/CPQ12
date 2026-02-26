@@ -6,7 +6,7 @@ For **single migration** agreements (not multi-combination), the template struct
 
 ## Correct Placeholders for Single Migrations
 
-### 1. CloudFuze X-Change Data Migration Row (Exhibits Loop)
+### 1. CloudFuze Migrate Row (Exhibits Loop)
 
 **Use:** `{{exhibitBundledPrice}}` inside the `{{#exhibits}}...{{/exhibits}}` loop
 
@@ -90,7 +90,7 @@ For **single migration** agreements (not multi-combination), the template struct
 
 | Row | Single Migration | Multi-Combination |
 |-----|-----------------|-------------------|
-| **CloudFuze X-Change** | `{{exhibitBundledPrice}}` (in loop) | `{{exhibitBundledPrice}}` (in loop) |
+| **CloudFuze Migrate** | `{{exhibitBundledPrice}}` (in loop) | `{{exhibitBundledPrice}}` (in loop) |
 | **Managed Migration** | `{{price_migration_bundled}}` (static) | `{{price_migration_bundled}}` (static) |
 | **Instance Type** | `{{instance_cost_bundled}}` (static) | `{{serverPriceBundled}}` (in `{{#servers}}` loop) |
 | **CloudFuze Manage** | `{{cfm_user_total_b}}` (static) | `{{cfm_user_total_b}}` (static) |
@@ -103,7 +103,7 @@ For **single migration** agreements (not multi-combination), the template struct
 
 **Solution:** Use `{{instance_cost_bundled}}` instead.
 
-### Issue 2: Empty Bundled Pricing for CloudFuze X-Change Row
+### Issue 2: Empty Bundled Pricing for CloudFuze Migrate Row
 
 **Problem:** Template not using `{{exhibitBundledPrice}}` in the bundled column.
 
@@ -115,7 +115,7 @@ After updating your template:
 
 1. Generate a single migration agreement
 2. Check that all bundled pricing cells are populated:
-   - CloudFuze X-Change: Should show 90% of exhibit price
+   - CloudFuze Migrate: Should show 90% of exhibit price
    - Managed Migration: Should show 90% of migration cost
    - Instance Type: Should show 90% of instance cost
    - CloudFuze Manage: Should show 90% of cfm_user_total
