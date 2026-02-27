@@ -107,6 +107,13 @@ const ExhibitManager: React.FC = () => {
   const [viewingExhibit, setViewingExhibit] = useState<Exhibit | null>(null);
   const [isLoadingView, setIsLoadingView] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
+  const [isInlineEditMode, setIsInlineEditMode] = useState(false);
+  const [inlineEditName, setInlineEditName] = useState('');
+  const [inlineEditFile, setInlineEditFile] = useState<File | null>(null);
+  const [inlineEditError, setInlineEditError] = useState<string | null>(null);
+  const [inlineEditSuccess, setInlineEditSuccess] = useState<string | null>(null);
+  const [isSavingInlineEdit, setIsSavingInlineEdit] = useState(false);
+  const [isDownloadingInlineDoc, setIsDownloadingInlineDoc] = useState(false);
   const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('');
@@ -173,8 +180,27 @@ const ExhibitManager: React.FC = () => {
       if (container) {
         container.innerHTML = '';
       }
+      setIsInlineEditMode(false);
+      setInlineEditName('');
+      setInlineEditFile(null);
+      setInlineEditError(null);
+      setInlineEditSuccess(null);
     }
   }, [showViewModal]);
+
+  const closeViewModal = () => {
+    const container = document.getElementById('docx-viewer-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+    setShowViewModal(false);
+    setViewingExhibit(null);
+    setViewError(null);
+    setIsInlineEditMode(false);
+    setInlineEditFile(null);
+    setInlineEditError(null);
+    setInlineEditSuccess(null);
+  };
 
   const loadExhibits = async () => {
     try {
@@ -739,6 +765,9 @@ const ExhibitManager: React.FC = () => {
       setShowViewModal(true);
       setIsLoadingView(true);
       setViewError(null);
+      setInlineEditName(exhibit.name || '');
+      setInlineEditError(null);
+      setInlineEditSuccess(null);
 
       const exhibitId = exhibit._id || exhibit.id;
       if (!exhibitId) {
@@ -746,7 +775,9 @@ const ExhibitManager: React.FC = () => {
       }
 
       console.log('Fetching exhibit file:', exhibitId);
-      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
       
       if (!response.ok) {
         // Try to get error message from JSON response
@@ -834,6 +865,107 @@ const ExhibitManager: React.FC = () => {
       const errorMessage = error?.message || 'Failed to load document. Please try again.';
       setViewError(errorMessage);
       setIsLoadingView(false);
+    }
+  };
+
+  const handleInlineSave = async () => {
+    if (!viewingExhibit) return;
+    const exhibitId = viewingExhibit._id || viewingExhibit.id;
+    if (!exhibitId) {
+      setInlineEditError('Exhibit ID is missing');
+      return;
+    }
+
+    const trimmedName = inlineEditName.trim();
+    if (!trimmedName) {
+      setInlineEditError('Name is required');
+      return;
+    }
+
+    try {
+      setIsSavingInlineEdit(true);
+      setInlineEditError(null);
+      setInlineEditSuccess(null);
+
+      const payload = new FormData();
+      payload.append('name', trimmedName);
+      if (inlineEditFile) {
+        if (!inlineEditFile.name.toLowerCase().endsWith('.docx')) {
+          setInlineEditError('Only DOCX files are allowed');
+          setIsSavingInlineEdit(false);
+          return;
+        }
+        payload.append('file', inlineEditFile);
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: payload
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update exhibit');
+      }
+
+      const updatedExhibit: Exhibit = {
+        ...viewingExhibit,
+        name: trimmedName,
+        fileName: inlineEditFile ? inlineEditFile.name : viewingExhibit.fileName
+      };
+
+      setViewingExhibit(updatedExhibit);
+      setExhibits((prev) =>
+        prev.map((ex) => ((ex._id || ex.id) === exhibitId ? { ...ex, ...updatedExhibit } : ex))
+      );
+
+      if (inlineEditFile) {
+        await handleView(updatedExhibit);
+      }
+
+      setInlineEditFile(null);
+      setInlineEditSuccess('Saved successfully');
+      setIsInlineEditMode(false);
+      await loadExhibits();
+    } catch (error: any) {
+      setInlineEditError(error?.message || 'Failed to save changes');
+    } finally {
+      setIsSavingInlineEdit(false);
+    }
+  };
+
+  const handleDownloadViewedDocx = async () => {
+    if (!viewingExhibit) return;
+    const exhibitId = viewingExhibit._id || viewingExhibit.id;
+    if (!exhibitId) {
+      setInlineEditError('Exhibit ID is missing');
+      return;
+    }
+
+    try {
+      setIsDownloadingInlineDoc(true);
+      setInlineEditError(null);
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to download file (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = viewingExhibit.fileName || 'exhibit.docx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error: any) {
+      setInlineEditError(error?.message || 'Failed to download document');
+    } finally {
+      setIsDownloadingInlineDoc(false);
     }
   };
 
@@ -1741,24 +1873,100 @@ const ExhibitManager: React.FC = () => {
                 <h3 className="text-xl font-bold text-gray-900">View Document</h3>
                 <p className="text-sm text-gray-600 mt-1">{viewingExhibit.name}</p>
               </div>
-              <button
-                onClick={() => {
-                  // Clean up viewer container
-                  const container = document.getElementById('docx-viewer-container');
-                  if (container) {
-                    container.innerHTML = '';
-                  }
-                  setShowViewModal(false);
-                  setViewingExhibit(null);
-                  setViewError(null);
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-2">
+                {canManageExhibits && !isInlineEditMode && (
+                  <button
+                    onClick={() => {
+                      setInlineEditName(viewingExhibit.name || '');
+                      setInlineEditFile(null);
+                      setInlineEditError(null);
+                      setInlineEditSuccess(null);
+                      setIsInlineEditMode(true);
+                    }}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={closeViewModal}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
             
             <div className="flex-1 overflow-auto p-6 bg-gray-50 relative">
+              {canManageExhibits && isInlineEditMode && (
+                <div className="mb-4 p-4 bg-white border border-gray-200 rounded-lg space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={inlineEditName}
+                        onChange={(e) => setInlineEditName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Exhibit name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Replace DOCX (optional)</label>
+                      <input
+                        type="file"
+                        accept=".docx"
+                        onChange={(e) => setInlineEditFile(e.target.files?.[0] || null)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Preview is read-only. To change document content, upload a modified DOCX and click Save Changes.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleDownloadViewedDocx}
+                        disabled={isDownloadingInlineDoc}
+                        className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isDownloadingInlineDoc && <Loader2 className="w-3 h-3 animate-spin" />}
+                        {isDownloadingInlineDoc ? 'Downloading...' : 'Download Current DOCX'}
+                      </button>
+                    </div>
+                  </div>
+                  {inlineEditError && (
+                    <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">{inlineEditError}</div>
+                  )}
+                  {inlineEditSuccess && (
+                    <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700">{inlineEditSuccess}</div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsInlineEditMode(false);
+                        setInlineEditFile(null);
+                        setInlineEditError(null);
+                        setInlineEditSuccess(null);
+                        setInlineEditName(viewingExhibit.name || '');
+                      }}
+                      className="px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                      disabled={isSavingInlineEdit}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleInlineSave}
+                      disabled={isSavingInlineEdit}
+                      className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSavingInlineEdit && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {isSavingInlineEdit ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </div>
+              )}
               {isLoadingView && (
                 <div className="flex flex-col items-center justify-center py-12 absolute inset-0 bg-gray-50 z-10">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-4" />
