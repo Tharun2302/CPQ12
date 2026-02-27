@@ -603,7 +603,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
             <tr style="border-bottom: 1px solid #e5e7eb;">
               <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: 500;">Managed Migration<br>Service</td>
               <td style="padding: 12px; border: 1px solid #e5e7eb;">
-                Fully Managed Migration | Dedicated Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support
+                Fully Managed Migration | Assigned Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support
               </td>
               <td style="padding: 12px; border: 1px solid #e5e7eb;">Managed Migration<br>One-Time</td>
               <td style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; font-weight: bold;">${formatCurrency(quote.calculation.userCost + quote.calculation.dataCost + quote.calculation.instanceCost)}</td>

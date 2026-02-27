@@ -104,7 +104,7 @@ export const extractContentFromPdf = async (pdfBlob: Blob): Promise<ExtractedCon
       title: 'Included Features',
       features: [
         'Fully Managed Migration',
-        'Dedicated Project Manager',
+        'Assigned Project Manager',
         'Pre-Migration Analysis',
         'During Migration Consulting',
         'Post-Migration Support',
@@ -165,7 +165,7 @@ export const convertToTemplateBlocks = (content: ExtractedContent): ContentBlock
           </div>
           <div style="background: linear-gradient(135deg, #1e40af, #3b82f6); color: white; padding: 10px 15px; border-radius: 6px; margin-bottom: 20px;">
             <p style="margin: 0; font-size: 14px; font-weight: 500;">
-              Cloud-Hosted SaaS Solution | Managed Migration | Dedicated Migration Manager
+              Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager
             </p>
           </div>
         `
@@ -298,7 +298,7 @@ export const convertToTemplateBlocks = (content: ExtractedContent): ContentBlock
                     <td style="padding: 12px; border: 1px solid #e5e7eb;">
                       ${item.description.includes('(') ? item.description.split('(')[1].split(')')[0] : item.description}
                       ${item.description.includes('Slack to Teams') ? '<br><br>Up to 45 Users | All Channels and DMs' : ''}
-                      ${item.description.includes('Managed Migration Service') ? '<br><br>Fully Managed Migration | Dedicated Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support' : ''}
+                      ${item.description.includes('Managed Migration Service') ? '<br><br>Fully Managed Migration | Assigned Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support' : ''}
                     </td>
                     <td style="padding: 12px; border: 1px solid #e5e7eb;">Managed Migration<br>One-Time</td>
                     <td style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; font-weight: bold;">$${item.amount.toLocaleString()}.00</td>

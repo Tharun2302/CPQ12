@@ -839,7 +839,7 @@ const drawQuoteContentOnPage = async (
     font: helveticaFont,
     color: rgb(0, 0, 0),
   });
-  page.drawText(sanitizeText('Dedicated Project Manager'), {
+  page.drawText(sanitizeText('Assigned Project Manager'), {
     x: col2X,
     y: tableY - 18,
     size: 10,
@@ -1483,7 +1483,7 @@ const overlaySowSpecificContent = async (
     color: rgb(0, 0, 0),
   });
   
-  page.drawText(sanitizeText('Dedicated Project Manager'), {
+  page.drawText(sanitizeText('Assigned Project Manager'), {
     x: col2X + 5,
     y: row2Y - 18,
     size: 9,
@@ -1770,7 +1770,7 @@ export const createTemplatePreviewHTML = async (
           <!-- Service Offering Bar -->
           <div class="mb-8">
             <div class="bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 px-6 py-4 rounded-lg text-base font-semibold text-center border border-blue-200">
-              🚀 Cloud-Hosted SaaS Solution | 🔧 Managed Migration | 👥 Dedicated Migration Manager
+              🚀 Cloud-Hosted SaaS Solution | 🔧 Managed Migration | 👥 Assigned Migration Manager
             </div>
           </div>
 
@@ -1881,7 +1881,7 @@ export const createTemplatePreviewHTML = async (
                   <tr class="border-b border-gray-200">
                     <td class="p-3 font-semibold">Managed Migration<br>Service</td>
                     <td class="p-3">
-                      Fully Managed Migration | Dedicated Project Manager | Pre-Migration Analysis | During Migration Consulting |Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support
+                      Fully Managed Migration | Assigned Project Manager | Pre-Migration Analysis | During Migration Consulting |Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support
                     </td>
                     <td class="p-3">Managed Migration<br>One-Time</td>
                     <td class="p-3 text-right font-bold">${replacePlaceholders('{{price_data}}')}</td>
@@ -2784,7 +2784,7 @@ const replacePlaceholdersInExistingPage = async (
   });
   
   // Service bar text
-  const serviceBarText = sanitizeText('Cloud-Hosted SaaS Solution | Managed Migration | Dedicated Migration Manager');
+  const serviceBarText = sanitizeText('Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager');
   const serviceBarTextWidth = helveticaBold.widthOfTextAtSize(serviceBarText, 12);
   page.drawText(serviceBarText, {
     x: (pageWidth - serviceBarTextWidth) / 2,
@@ -2967,7 +2967,7 @@ const replacePlaceholdersInExistingPage = async (
 
   // Professional description formatting for Managed Migration Service
   const serviceDescLines = [
-    'Fully Managed Migration | Dedicated Project',
+    'Fully Managed Migration | Assigned Project',
     'Pre-Migration Analysis | During Migration',
     'Post-Migration Support and Data',
     'End-to-End Migration Assistance with 24*7',
@@ -3185,7 +3185,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
       <!-- Service Categories Bar - EXACTLY as in your image -->
       <div style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 20px; text-align: center; border-radius: 12px; margin-bottom: 35px; border: 2px solid #2196f3; box-shadow: 0 4px 12px rgba(33,150,243,0.15);">
         <span style="color: #1565c0; font-weight: 700; font-size: 18px; text-shadow: 0 1px 2px rgba(21,101,192,0.1);">
-          🚀 Cloud-Hosted SaaS Solution | 🔧 Managed Migration | 👥 Dedicated Migration Manager
+          🚀 Cloud-Hosted SaaS Solution | 🔧 Managed Migration | 👥 Assigned Migration Manager
         </span>
       </div>
 
@@ -3221,7 +3221,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
                 Managed Migration<br>Service
               </td>
               <td style="border: 2px solid #ddd; padding: 16px; font-size: 14px; color: #555; line-height: 1.4; vertical-align: top;">
-                Fully Managed Migration | Dedicated Project Manager<br>
+                Fully Managed Migration | Assigned Project Manager<br>
                 Pre-Migration Analysis | During Migration Consulting<br>
                 Post-Migration Support and Data Reconciliation Support<br>
                 End-to-End Migration Assistance with 24*7<br>

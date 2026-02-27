@@ -761,7 +761,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         </div>
         
         <div style="background-color: #e0f2fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
-          <strong>Cloud-Hosted SaaS Solution | Managed Migration | Dedicated Migration Manager</strong>
+          <strong>Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager</strong>
         </div>
         
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -1276,7 +1276,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         </div>
         
         <div style="background-color: #e0f2fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
-          <strong>Cloud-Hosted SaaS Solution | Managed Migration | Dedicated Migration Manager</strong>
+          <strong>Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager</strong>
         </div>
         
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">

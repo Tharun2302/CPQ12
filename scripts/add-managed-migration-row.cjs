@@ -18,7 +18,7 @@ const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const TEMPLATES_DIR = path.join(process.cwd(), 'backend-templates');
 
 const MANAGED_MIGRATION_DESCRIPTION =
-  'Fully Managed Migration | Dedicated Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support';
+  'Fully Managed Migration | Assigned Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support';
 
 function listDocxFiles(dir) {
   if (!fs.existsSync(dir)) return [];

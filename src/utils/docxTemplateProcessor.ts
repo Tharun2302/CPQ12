@@ -1178,6 +1178,14 @@ export class DocxTemplateProcessor {
         /X-Change\s+Enterprise\s+Data\s+Migration\s+Solution/gi,
         'CloudFuze Migrate'
       );
+      finalDocumentXml = finalDocumentXml.replace(
+        /Dedicated\s+Migration\s+Manager/gi,
+        'Assigned Migration Manager'
+      );
+      finalDocumentXml = finalDocumentXml.replace(
+        /Dedicated\s+Project\s+Manager/gi,
+        'Assigned Project Manager'
+      );
 
       if (finalDocumentXml !== originalFinalXml) {
         this.setZipFile(finalZip, finalXmlPath, finalDocumentXml);
