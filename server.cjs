@@ -107,6 +107,9 @@ const upload = multer({ storage: storage });
 // MongoDB configuration
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = process.env.DB_NAME || 'cpq_database';
+const BOLDSIGN_API_BASE_URL = (process.env.BOLDSIGN_API_BASE_URL || 'https://api.boldsign.com').replace(/\/$/, '');
+const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY || '';
+const BOLDSIGN_WEBHOOK_KEY = process.env.BOLDSIGN_WEBHOOK_KEY || '';
 
 // MongoDB client
 let client;
@@ -150,6 +153,19 @@ async function initializeDatabase() {
     await documentsCollection.createIndex({ createdAt: -1 }); // For fast sorting in GET /api/documents
     await documentsCollection.createIndex({ status: 1 });
     console.log('✅ Documents collection ready with indexes');
+
+    // eSign tracking collections (BoldSign)
+    const esignRequestsCollection = db.collection('esign_requests');
+    await esignRequestsCollection.createIndex({ boldsignDocumentId: 1 }, { unique: true });
+    await esignRequestsCollection.createIndex({ sourceDocumentId: 1 });
+    await esignRequestsCollection.createIndex({ status: 1 });
+    await esignRequestsCollection.createIndex({ createdAt: -1 });
+
+    const signedDocumentsCollection = db.collection('signed_documents');
+    await signedDocumentsCollection.createIndex({ boldsignDocumentId: 1 }, { unique: true });
+    await signedDocumentsCollection.createIndex({ sourceDocumentId: 1 });
+    await signedDocumentsCollection.createIndex({ createdAt: -1 });
+    console.log('✅ eSign collections ready with indexes');
     
     console.log('✅ Connected to MongoDB Atlas successfully');
     console.log('📊 Database name:', DB_NAME);
@@ -833,6 +849,625 @@ app.get('/api/database/health', async (req, res) => {
   }
 });
 
+// ============================================
+// BOLDSIGN ESIGN INTEGRATION
+// ============================================
+function isBoldSignConfigured() {
+  return Boolean(BOLDSIGN_API_KEY && String(BOLDSIGN_API_KEY).trim());
+}
+
+function parseSigners(rawSigners) {
+  if (!rawSigners) return [];
+  if (Array.isArray(rawSigners)) return rawSigners;
+  if (typeof rawSigners === 'string') {
+    try {
+      const parsed = JSON.parse(rawSigners);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function normalizeSigners(rawSigners, fallbackName, fallbackEmail) {
+  const input = parseSigners(rawSigners);
+  const cleaned = input
+    .map((s, index) => ({
+      name: String(s?.name || '').trim(),
+      email: String(s?.email || '').trim(),
+      signerOrder: Number(s?.signerOrder || index + 1)
+    }))
+    .filter((s) => s.name && s.email && s.email.includes('@'));
+
+  if (!cleaned.length && fallbackEmail) {
+    cleaned.push({
+      name: fallbackName || 'Signer',
+      email: String(fallbackEmail).trim(),
+      signerOrder: 1
+    });
+  }
+
+  const deduped = [];
+  const seen = new Set();
+  for (const signer of cleaned.sort((a, b) => a.signerOrder - b.signerOrder)) {
+    const key = signer.email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(signer);
+  }
+
+  // Optional internal signer (if configured) will sign first, then customer signers.
+  const internalEmail = String(process.env.BOLDSIGN_INTERNAL_SIGNER_EMAIL || '').trim();
+  const internalName = String(process.env.BOLDSIGN_INTERNAL_SIGNER_NAME || 'CloudFuze').trim();
+  if (internalEmail && internalEmail.includes('@')) {
+    const alreadyIncluded = deduped.some((s) => s.email.toLowerCase() === internalEmail.toLowerCase());
+    if (!alreadyIncluded) {
+      deduped.unshift({
+        name: internalName,
+        email: internalEmail,
+        signerOrder: 1
+      });
+      deduped.forEach((s, idx) => {
+        s.signerOrder = idx + 1;
+      });
+    }
+  }
+
+  return deduped;
+}
+
+function mapBoldSignStatus(rawStatus, rawEventType) {
+  const status = String(rawStatus || '').toLowerCase();
+  const eventType = String(rawEventType || '').toLowerCase();
+  const merged = `${status} ${eventType}`;
+
+  if (merged.includes('declined') || merged.includes('rejected') || merged.includes('denied')) return 'rejected';
+  if (merged.includes('completed')) return 'completed';
+  if (merged.includes('signed')) return 'signed';
+  if (merged.includes('viewed')) return 'viewed';
+  if (merged.includes('sent')) return 'sent';
+  if (merged.includes('delivery failed') || merged.includes('send failed') || merged.includes('failed')) return 'failed';
+  if (status) return status;
+  return 'pending';
+}
+
+async function fetchBoldSignDocumentProperties(boldsignDocumentId) {
+  const response = await fetch(
+    `${BOLDSIGN_API_BASE_URL}/v1/document/properties?documentId=${encodeURIComponent(boldsignDocumentId)}`,
+    {
+      method: 'GET',
+      headers: {
+        'X-API-KEY': BOLDSIGN_API_KEY
+      }
+    }
+  );
+
+  const contentType = response.headers.get('content-type') || '';
+  let payload = null;
+  if (contentType.includes('application/json')) {
+    payload = await response.json();
+  } else {
+    const text = await response.text();
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { message: text };
+    }
+  }
+
+  if (!response.ok) {
+    const msg = payload?.error || payload?.message || `BoldSign properties API failed (${response.status})`;
+    const err = new Error(msg);
+    err.statusCode = response.status;
+    throw err;
+  }
+
+  return payload;
+}
+
+async function downloadBoldSignSignedPdf(boldsignDocumentId) {
+  const response = await fetch(
+    `${BOLDSIGN_API_BASE_URL}/v1/document/download?documentId=${encodeURIComponent(boldsignDocumentId)}`,
+    {
+      method: 'GET',
+      headers: {
+        'X-API-KEY': BOLDSIGN_API_KEY
+      }
+    }
+  );
+
+  if (!response.ok) {
+    let details = '';
+    try {
+      details = await response.text();
+    } catch {}
+    const err = new Error(details || `BoldSign download failed (${response.status})`);
+    err.statusCode = response.status;
+    throw err;
+  }
+
+  const contentType = response.headers.get('content-type') || 'application/pdf';
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    fileBuffer: Buffer.from(arrayBuffer),
+    contentType
+  };
+}
+
+async function persistSignedDocumentInSystem({
+  boldsignDocumentId,
+  sourceDocumentId,
+  signedBy,
+  statusPayload
+}) {
+  const { fileBuffer } = await downloadBoldSignSignedPdf(boldsignDocumentId);
+  const nowIso = new Date().toISOString();
+  const fileName = `${boldsignDocumentId}-signed.pdf`;
+  const base64 = fileBuffer.toString('base64');
+
+  const signedDoc = {
+    id: `signed_${boldsignDocumentId}`,
+    boldsignDocumentId,
+    sourceDocumentId: sourceDocumentId || null,
+    fileName,
+    fileData: base64,
+    fileSize: fileBuffer.length,
+    signedBy: signedBy || [],
+    status: 'completed',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    provider: 'boldsign',
+    metadata: statusPayload || {}
+  };
+
+  await db.collection('signed_documents').updateOne(
+    { boldsignDocumentId },
+    { $set: signedDoc },
+    { upsert: true }
+  );
+
+  if (sourceDocumentId) {
+    await db.collection('documents').updateOne(
+      { id: sourceDocumentId },
+      {
+        $set: {
+          eSignStatus: 'completed',
+          signedDocumentId: signedDoc.id,
+          signedCompletedAt: nowIso,
+          updatedAt: nowIso
+        }
+      }
+    );
+  }
+
+  await db.collection('esign_requests').updateOne(
+    { boldsignDocumentId },
+    {
+      $set: {
+        status: 'completed',
+        signedDocumentId: signedDoc.id,
+        completedAt: nowIso,
+        updatedAt: nowIso
+      }
+    }
+  );
+
+  return signedDoc.id;
+}
+
+app.post('/api/boldsign/send-document', upload.single('attachment'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database not available' });
+    }
+    if (!isBoldSignConfigured()) {
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key is not configured. Set BOLDSIGN_API_KEY in environment.'
+      });
+    }
+
+    const {
+      title,
+      message,
+      signers,
+      documentId,
+      clientName,
+      clientEmail,
+      company,
+      quoteId
+    } = req.body || {};
+
+    let sourceBuffer = null;
+    let sourceFileName = null;
+    let sourceContentType = null;
+    let sourceDocumentId = null;
+
+    if (req.file && req.file.buffer) {
+      sourceBuffer = req.file.buffer;
+      sourceFileName = req.file.originalname || 'agreement.docx';
+      sourceContentType = req.file.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      sourceDocumentId = documentId || null;
+    } else if (documentId) {
+      const doc = await db.collection('documents').findOne({ id: documentId });
+      if (!doc) {
+        return res.status(404).json({ success: false, message: 'Source document not found' });
+      }
+      if (doc.docxFileData) {
+        sourceBuffer = Buffer.from(doc.docxFileData, 'base64');
+        sourceFileName = doc.docxFileName || `${documentId}.docx`;
+        sourceContentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      } else if (doc.fileData) {
+        sourceBuffer = Buffer.from(doc.fileData, 'base64');
+        sourceFileName = doc.fileName || `${documentId}.pdf`;
+        sourceContentType = 'application/pdf';
+      }
+      sourceDocumentId = doc.id;
+    }
+
+    if (!sourceBuffer || !sourceFileName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Document upload failed. Provide attachment or valid documentId.'
+      });
+    }
+
+    const normalizedSigners = normalizeSigners(signers, clientName, clientEmail);
+    if (!normalizedSigners.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one valid signer is required (name + email).'
+      });
+    }
+
+    const form = new FormData();
+    form.append(
+      'Files',
+      new Blob([sourceBuffer], { type: sourceContentType || 'application/octet-stream' }),
+      sourceFileName
+    );
+    form.append('Title', String(title || `Agreement - ${company || 'CloudFuze'}`));
+    form.append('Message', String(message || 'Please review and sign the attached agreement.'));
+    form.append(
+      'Signers',
+      JSON.stringify(
+        normalizedSigners.map((s) => ({
+          Name: s.name,
+          EmailAddress: s.email,
+          SignerOrder: s.signerOrder
+        }))
+      )
+    );
+    form.append('EnableSigningOrder', 'true');
+
+    const webhookBase = (process.env.BOLDSIGN_WEBHOOK_BASE_URL || process.env.APP_BASE_URL || '').replace(/\/$/, '');
+    if (webhookBase) {
+      form.append('WebhookUrl', `${webhookBase}/api/boldsign/webhook`);
+    }
+
+    const sendResponse = await fetch(`${BOLDSIGN_API_BASE_URL}/v1/document/send`, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': BOLDSIGN_API_KEY
+      },
+      body: form
+    });
+
+    const sendContentType = sendResponse.headers.get('content-type') || '';
+    let sendPayload = {};
+    if (sendContentType.includes('application/json')) {
+      sendPayload = await sendResponse.json();
+    } else {
+      const text = await sendResponse.text();
+      try {
+        sendPayload = JSON.parse(text);
+      } catch {
+        sendPayload = { message: text };
+      }
+    }
+
+    if (!sendResponse.ok) {
+      if (sendResponse.status === 401 || sendResponse.status === 403) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid BoldSign API key. Please verify BOLDSIGN_API_KEY.'
+        });
+      }
+      return res.status(sendResponse.status).json({
+        success: false,
+        message: sendPayload?.message || sendPayload?.error || 'BoldSign document upload failed',
+        details: sendPayload
+      });
+    }
+
+    const boldsignDocumentId =
+      sendPayload?.documentId ||
+      sendPayload?.documentID ||
+      sendPayload?.id ||
+      sendPayload?.data?.documentId;
+
+    if (!boldsignDocumentId) {
+      return res.status(502).json({
+        success: false,
+        message: 'BoldSign response did not include a documentId',
+        details: sendPayload
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const eSignRecord = {
+      id: `esign_${Date.now()}`,
+      provider: 'boldsign',
+      boldsignDocumentId,
+      sourceDocumentId: sourceDocumentId || null,
+      company: company || '',
+      quoteId: quoteId || '',
+      signers: normalizedSigners,
+      sequentialSigning: true,
+      status: 'sent',
+      statusHistory: [
+        {
+          status: 'sent',
+          eventType: 'Sent',
+          at: nowIso
+        }
+      ],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      rawProviderResponse: sendPayload
+    };
+
+    await db.collection('esign_requests').updateOne(
+      { boldsignDocumentId },
+      { $set: eSignRecord },
+      { upsert: true }
+    );
+
+    if (sourceDocumentId) {
+      await db.collection('documents').updateOne(
+        { id: sourceDocumentId },
+        {
+          $set: {
+            eSignProvider: 'boldsign',
+            eSignDocumentId: boldsignDocumentId,
+            eSignStatus: 'sent',
+            updatedAt: nowIso
+          }
+        }
+      );
+    }
+
+    return res.json({
+      success: true,
+      documentId: boldsignDocumentId,
+      status: 'sent',
+      sequentialSigning: true,
+      signers: normalizedSigners,
+      providerResponse: sendPayload
+    });
+  } catch (error) {
+    console.error('❌ Error sending document to BoldSign:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send document for eSign',
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/boldsign/documents/:boldsignDocumentId/status', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database not available' });
+    }
+    if (!isBoldSignConfigured()) {
+      return res.status(500).json({
+        success: false,
+        message: 'BoldSign API key is not configured. Set BOLDSIGN_API_KEY in environment.'
+      });
+    }
+
+    const { boldsignDocumentId } = req.params;
+    const localRecord = await db.collection('esign_requests').findOne({ boldsignDocumentId });
+    const properties = await fetchBoldSignDocumentProperties(boldsignDocumentId);
+    const providerStatus = properties?.status || properties?.documentStatus || properties?.documentState || '';
+    const normalizedStatus = mapBoldSignStatus(providerStatus, '');
+
+    const nowIso = new Date().toISOString();
+    const update = {
+      status: normalizedStatus,
+      lastProviderStatus: providerStatus,
+      lastPolledAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    const historyEvent = {
+      status: normalizedStatus,
+      eventType: 'Polled',
+      at: nowIso
+    };
+
+    await db.collection('esign_requests').updateOne(
+      { boldsignDocumentId },
+      {
+        $set: update,
+        $push: {
+          statusHistory: {
+            $each: [historyEvent],
+            $slice: -100
+          }
+        }
+      },
+      { upsert: true }
+    );
+
+    let signedDocumentId = localRecord?.signedDocumentId || null;
+    if (normalizedStatus === 'completed' && !signedDocumentId) {
+      signedDocumentId = await persistSignedDocumentInSystem({
+        boldsignDocumentId,
+        sourceDocumentId: localRecord?.sourceDocumentId || null,
+        signedBy: localRecord?.signers || [],
+        statusPayload: properties
+      });
+    }
+
+    return res.json({
+      success: true,
+      documentId: boldsignDocumentId,
+      status: normalizedStatus,
+      providerStatus,
+      signedDocumentId: signedDocumentId || null,
+      localTracking: localRecord || null,
+      providerProperties: properties
+    });
+  } catch (error) {
+    console.error('❌ Error tracking BoldSign status:', error);
+    const statusCode = error.statusCode === 401 || error.statusCode === 403 ? 401 : 500;
+    return res.status(statusCode).json({
+      success: false,
+      message:
+        statusCode === 401
+          ? 'Invalid BoldSign API key while fetching status'
+          : 'Failed to fetch eSign document status',
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/boldsign/documents/:boldsignDocumentId/signed', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database not available' });
+    }
+    const { boldsignDocumentId } = req.params;
+    const signedDoc = await db.collection('signed_documents').findOne({ boldsignDocumentId });
+    if (!signedDoc?.fileData) {
+      return res.status(404).json({ success: false, message: 'Signed document not found' });
+    }
+
+    const fileBuffer = Buffer.from(signedDoc.fileData, 'base64');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${signedDoc.fileName || `${boldsignDocumentId}-signed.pdf`}"`,
+      'Content-Length': fileBuffer.length
+    });
+    return res.send(fileBuffer);
+  } catch (error) {
+    console.error('❌ Error downloading signed BoldSign document:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to download signed document',
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/boldsign/webhook', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const eventType =
+      payload?.event?.eventType ||
+      payload?.eventType ||
+      payload?.EventType ||
+      payload?.type ||
+      '';
+    const boldsignDocumentId =
+      payload?.event?.documentId ||
+      payload?.documentId ||
+      payload?.DocumentId ||
+      payload?.data?.documentId ||
+      '';
+    const providerStatus = payload?.status || payload?.event?.status || '';
+
+    // Check if this is a BoldSign verification request (no documentId or eventType)
+    // BoldSign sends a simple POST to verify the endpoint is reachable
+    const isVerificationRequest = !boldsignDocumentId && !eventType && Object.keys(payload).length === 0;
+
+    // Allow verification requests to succeed even without database
+    if (isVerificationRequest) {
+      return res.status(200).json({ success: true, message: 'Webhook endpoint is ready' });
+    }
+
+    // For actual webhook events, database is required
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database not available' });
+    }
+
+    if (BOLDSIGN_WEBHOOK_KEY) {
+      const incomingKey =
+        req.headers['x-boldsign-webhook-key'] ||
+        req.headers['x-webhook-key'] ||
+        req.headers['x-api-key'];
+      if (!incomingKey || String(incomingKey) !== String(BOLDSIGN_WEBHOOK_KEY)) {
+        return res.status(401).json({ success: false, message: 'Invalid webhook key' });
+      }
+    }
+
+    if (!boldsignDocumentId) {
+      return res.status(400).json({ success: false, message: 'documentId missing in webhook payload' });
+    }
+
+    const normalizedStatus = mapBoldSignStatus(providerStatus, eventType);
+    const nowIso = new Date().toISOString();
+
+    const localRecord = await db.collection('esign_requests').findOne({ boldsignDocumentId });
+    await db.collection('esign_requests').updateOne(
+      { boldsignDocumentId },
+      {
+        $set: {
+          status: normalizedStatus,
+          lastEventType: eventType,
+          lastProviderStatus: providerStatus,
+          updatedAt: nowIso
+        },
+        $push: {
+          statusHistory: {
+            $each: [
+              {
+                status: normalizedStatus,
+                eventType,
+                at: nowIso
+              }
+            ],
+            $slice: -100
+          }
+        }
+      },
+      { upsert: true }
+    );
+
+    if (normalizedStatus === 'completed') {
+      await persistSignedDocumentInSystem({
+        boldsignDocumentId,
+        sourceDocumentId: localRecord?.sourceDocumentId || null,
+        signedBy: localRecord?.signers || [],
+        statusPayload: payload
+      });
+    } else if (normalizedStatus === 'rejected' && localRecord?.sourceDocumentId) {
+      await db.collection('documents').updateOne(
+        { id: localRecord.sourceDocumentId },
+        {
+          $set: {
+            eSignStatus: 'rejected',
+            eSignRejectedAt: nowIso,
+            updatedAt: nowIso
+          }
+        }
+      );
+    }
+
+    return res.json({ success: true, status: normalizedStatus });
+  } catch (error) {
+    console.error('❌ BoldSign webhook processing error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to process BoldSign webhook',
+      error: error.message
+    });
+  }
+});
+
 // Download document for BoldSign (free plan workaround)
 app.get('/api/boldsign/download-document/:documentId', async (req, res) => {
   try {
@@ -904,26 +1539,28 @@ app.get('/api/boldsign/download-document/:documentId', async (req, res) => {
   }
 });
 
-// Create BoldSign redirect (free plan compatible)
+// Create BoldSign redirect (free plan compatible).
+// clientEmail is optional; redirect to BoldSign is always returned when documentId is present.
 app.post('/api/boldsign/create-embedded-send', async (req, res) => {
   try {
-    const { documentId, clientEmail, clientName } = req.body || {};
+    const { documentId, clientEmail: bodyClientEmail, clientName } = req.body || {};
     
     if (!documentId) {
       return res.status(400).json({ success: false, message: 'documentId is required' });
     }
 
-    // Determine best download URL based on where the file exists
     const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
     let resolvedDownloadUrl = null;
+    let clientEmail = String(bodyClientEmail || '').trim();
 
     try {
-      // Prefer documents/:id/file if present
       const doc = await db.collection('documents').findOne({ id: documentId });
       if (doc && doc.fileData) {
         resolvedDownloadUrl = `${baseAppUrl}/api/documents/${documentId}/file`;
+        if (!clientEmail && (doc.clientEmail || doc.client_email)) {
+          clientEmail = String(doc.clientEmail || doc.client_email || '').trim();
+        }
       } else {
-        // Fallback to templates/:id/file if present
         const tpl = await db.collection('templates').findOne({ id: documentId });
         if (tpl && tpl.fileData) {
           resolvedDownloadUrl = `${baseAppUrl}/api/templates/${documentId}/file`;
@@ -933,12 +1570,10 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
       console.warn('⚠️ Could not resolve download URL for documentId:', documentId, e?.message);
     }
 
-    // As a last resort, keep previous fallback (combined resolver)
     if (!resolvedDownloadUrl) {
       resolvedDownloadUrl = `${baseAppUrl}/api/boldsign/download-document/${documentId}`;
     }
 
-    // For free plan: provide BoldSign upload page + resolved download URL
     const APP_BASE = (process.env.BOLDSIGN_APP_URL || 'https://app.boldsign.com').replace(/\/$/, '');
     const uploadUrl = `${APP_BASE}/document/new`;
     
@@ -946,7 +1581,7 @@ app.post('/api/boldsign/create-embedded-send', async (req, res) => {
       success: true, 
       url: uploadUrl,
       downloadUrl: resolvedDownloadUrl,
-      clientEmail,
+      clientEmail: clientEmail || undefined,
       clientName,
       instructions: 'Free plan: Download the document and upload it manually to BoldSign',
       freePlanMode: true

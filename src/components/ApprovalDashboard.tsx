@@ -111,6 +111,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [esignLoadingByWorkflowId, setEsignLoadingByWorkflowId] = useState<Record<string, boolean>>({});
   const objectUrlRef = useRef<string | null>(null);
 
   const {
@@ -300,6 +301,57 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     }
   };
 
+  const startESignFlow = async (workflow: any) => {
+    const workflowId = String(workflow?.id || '');
+    const steps = Array.isArray(workflow?.workflowSteps) ? workflow.workflowSteps : [];
+    const allApprovalsComplete = steps.length > 0 && steps.every((s: any) => s?.status === 'approved');
+    if (!allApprovalsComplete) return;
+
+    const documentId = String(workflow?.documentId || workflow?.id || '').trim();
+    if (!documentId) {
+      alert('Unable to start e-sign: document ID is missing.');
+      return;
+    }
+
+    // Client email is optional; backend will redirect to BoldSign whenever documentId is present.
+    try {
+      if (workflowId) {
+        setEsignLoadingByWorkflowId((prev) => ({ ...prev, [workflowId]: true }));
+      }
+
+      const res = await fetch(`${BACKEND_URL}/api/boldsign/create-embedded-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId,
+          clientEmail: workflow?.clientEmail || '',
+          clientName: workflow?.clientName || workflow?.clientName || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success || !data?.url) {
+        throw new Error(data?.message || data?.error || 'Failed to open BoldSign interface');
+      }
+
+      const popup = window.open(data.url, '_blank', 'noopener,noreferrer');
+      if (!popup) {
+        window.location.href = data.url;
+      }
+
+      if (data?.freePlanMode && data?.downloadUrl) {
+        alert(
+          `BoldSign opened.\n\nFree-plan steps:\n1) Download your document from this link:\n${data.downloadUrl}\n2) Upload it in BoldSign and continue signing flow.`
+        );
+      }
+    } catch (error: any) {
+      alert(error?.message || 'Failed to start e-sign flow.');
+    } finally {
+      if (workflowId) {
+        setEsignLoadingByWorkflowId((prev) => ({ ...prev, [workflowId]: false }));
+      }
+    }
+  };
+
   const sidebarItems: Array<{ key: ViewKey; label: string }> = [
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'pending', label: 'Pending Approvals' },
@@ -461,6 +513,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                 const technicalStep = getStep(workflow, 'Technical Team');
                 const legalStep = getStep(workflow, 'Legal Team');
                 const dealDeskStep = getStep(workflow, 'Deal Desk');
+                const steps = Array.isArray(workflow?.workflowSteps) ? workflow.workflowSteps : [];
+                const allApprovalsComplete = steps.length > 0 && steps.every((s: any) => s?.status === 'approved');
+                const isESignLoading = !!esignLoadingByWorkflowId[String(workflow?.id || '')];
 
                 return (
                   <div
@@ -506,7 +561,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         </div>
                       </div>
 
-                      <div className="shrink-0 w-[140px] flex flex-col items-stretch self-stretch">
+                      <div className="shrink-0 w-[160px] flex flex-col items-stretch self-stretch gap-2">
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
@@ -517,6 +572,29 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                           <FileText className="h-4 w-4 text-white" />
                           <span className="sm:hidden">Preview</span>
                           <span className="hidden sm:inline">Preview Doc</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startESignFlow(workflow)}
+                          disabled={!allApprovalsComplete || isESignLoading}
+                          title={
+                            allApprovalsComplete
+                              ? 'Start e-sign process'
+                              : 'E-Sign is enabled after all approvals complete (including Deal Desk)'
+                          }
+                          aria-label="Start e-sign process"
+                          className={`w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-all whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                            allApprovalsComplete && !isESignLoading
+                              ? 'bg-emerald-600 border border-emerald-600 text-white hover:bg-emerald-700 hover:border-emerald-700 focus-visible:ring-emerald-500/40'
+                              : 'bg-gray-200 border border-gray-200 text-gray-500 cursor-not-allowed'
+                          }`}
+                        >
+                          {isESignLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileCheck className="h-4 w-4" />
+                          )}
+                          <span>E-Sign</span>
                         </button>
                       </div>
                     </div>

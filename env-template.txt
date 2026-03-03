@@ -93,3 +93,23 @@ VITE_APPROVAL_DEALDESK_EMAIL=
 TECHNICAL_TEAM_EMAIL=
 LEGAL_TEAM_EMAIL=
 DEAL_DESK_EMAIL=
+
+# ===========================================
+# BOLDSIGN ESIGN INTEGRATION
+# ===========================================
+# API base URL (production default shown)
+BOLDSIGN_API_BASE_URL=https://api.boldsign.com
+
+# Required: BoldSign API Key (server-side only)
+BOLDSIGN_API_KEY=your-boldsign-api-key
+
+# Optional: secure webhook calls from BoldSign with a shared secret header
+BOLDSIGN_WEBHOOK_KEY=your-boldsign-webhook-secret
+
+# Optional: Public backend base URL for webhook callback registration
+# Example: https://your-domain.com
+BOLDSIGN_WEBHOOK_BASE_URL=
+
+# Optional: Add CloudFuze/internal signer before customer signer
+BOLDSIGN_INTERNAL_SIGNER_NAME=
+BOLDSIGN_INTERNAL_SIGNER_EMAIL=

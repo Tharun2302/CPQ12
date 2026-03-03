@@ -76,6 +76,11 @@ export const API_ENDPOINTS = {
   
   // Convert
   CONVERT_DOCX_TO_PDF: '/api/convert/docx-to-pdf',
+
+  // BoldSign eSign
+  BOLDSIGN_SEND_DOCUMENT: '/api/boldsign/send-document',
+  BOLDSIGN_DOCUMENT_STATUS: (id: string) => `/api/boldsign/documents/${id}/status`,
+  BOLDSIGN_SIGNED_DOWNLOAD: (id: string) => `/api/boldsign/documents/${id}/signed`,
 };
 
 // Debug info (only in development)

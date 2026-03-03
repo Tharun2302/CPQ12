@@ -2501,7 +2501,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
 
 This agreement provides {{Company Name}} with pricing for use of CloudFuze Migrate:
 
-Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager
+Cloud-Hosted SaaS Solution | Managed Migration | Dedicated Migration Manager
 
 Services and Pricing Table:
 ┌─────────────────────────────────────┬─────────────────────────────────────┬─────────────────┬─────────────┐
@@ -2513,7 +2513,7 @@ Services and Pricing Table:
 │                                     │ All Channels and DMs                │                 │             │
 ├─────────────────────────────────────┼─────────────────────────────────────┼─────────────────┼─────────────┤
 │ Managed Migration Service           │ Fully Managed Migration             │ Managed         │ {{price_migration}} │
-│                                     │ Assigned Project Manager            │ Migration       │             │
+│                                     │ Dedicated Project Manager           │ Migration       │             │
 │                                     │ Pre-Migration Analysis              │ One-Time        │             │
 │                                     │ During Migration Consulting         │                 │             │
 │                                     │ Post-Migration Support              │                 │             │
@@ -3375,7 +3375,7 @@ Total Price: {{total price}}`;
             
             <div class="content-section">
               <div class="highlight-box">
-                <strong>Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager</strong>
+                <strong>Cloud-Hosted SaaS Solution | Managed Migration | Dedicated Migration Manager</strong>
               </div>
             </div>
             
@@ -3402,7 +3402,7 @@ Total Price: {{total price}}`;
                 <div class="table-row">
                   <div class="table-cell">Managed Migration Service</div>
                   <div class="table-cell">
-                    <p>Fully Managed Migration | Assigned Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support</p>
+                    <p>Fully Managed Migration | Dedicated Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support</p>
                     <p><strong>Valid for ${formatMonths(getEffectiveDurationMonths(configuration) || 1)}</strong></p>
                   </div>
                   <div class="table-cell">${formatCurrency(calculation?.migrationCost || 0)}</div>
