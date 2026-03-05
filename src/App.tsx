@@ -19,6 +19,11 @@ const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashbo
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
 const MigrationManagerDashboard = lazy(() => import('./components/MigrationManagerDashboard'));
 const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
+const EsignLayout = lazy(() => import('./components/EsignLayout'));
+const EsignDocumentsPage = lazy(() => import('./pages/EsignDocumentsPage'));
+const EsignPlaceFieldsPage = lazy(() => import('./pages/EsignPlaceFieldsPage'));
+const EsignSendPage = lazy(() => import('./pages/EsignSendPage'));
+const EsignSignPage = lazy(() => import('./pages/EsignSignPage'));
 
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
@@ -1980,6 +1985,14 @@ function App() {
               <Route path="/signup" element={<SignUpPage />} />
               <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
               <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
+
+              {/* E-Signature routes (with left sidebar) */}
+              <Route path="/esign" element={<EsignLayout />}>
+                <Route index element={<EsignDocumentsPage />} />
+                <Route path=":documentId/place-fields" element={<EsignPlaceFieldsPage />} />
+                <Route path=":documentId/send" element={<EsignSendPage />} />
+              </Route>
+              <Route path="/sign/:documentId" element={<EsignSignPage />} />
               
              {/* Protected Routes - Dashboard with URL-based tab navigation */}
              <Route path="/approval-tracking" element={
