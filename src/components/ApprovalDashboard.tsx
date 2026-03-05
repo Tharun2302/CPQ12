@@ -12,10 +12,12 @@ import {
   X,
   XCircle,
   ArrowLeft,
+  PenTool,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import AgreementSignatureModal from './AgreementSignatureModal';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -95,6 +97,19 @@ const stepperLabelClass = (idx: number, currentIdx: number, rawStatus?: string) 
   return 'text-gray-600';
 };
 
+// Helper function to check if all approval steps are complete
+const areAllStepsApproved = (workflow: any): boolean => {
+  if (!workflow || !workflow.workflowSteps || workflow.workflowSteps.length === 0) {
+    return false;
+  }
+  
+  // Check if all workflow steps are approved
+  // This enables e-signature when all approval steps have been completed
+  const allStepsApproved = workflow.workflowSteps.every((step: any) => step.status === 'approved');
+  
+  return allStepsApproved;
+};
+
 const iconForView: Record<ViewKey, React.ComponentType<{ className?: string }>> = {
   dashboard: ShieldCheck,
   pending: Clock,
@@ -112,9 +127,12 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [workflowForSignature, setWorkflowForSignature] = useState<any | null>(null);
 
   const {
     workflows,
+    refreshWorkflows,
   } = useApprovalWorkflows();
 
   const now = new Date();
@@ -298,6 +316,21 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       setPreviewError('Failed to load the agreement. Please try again.');
       setIsPreviewLoading(false);
     }
+  };
+
+  const openSignatureModal = (workflow: any) => {
+    setWorkflowForSignature(workflow);
+    setShowSignatureModal(true);
+  };
+
+  const closeSignatureModal = () => {
+    setShowSignatureModal(false);
+    setWorkflowForSignature(null);
+  };
+
+  const handleSignatureComplete = () => {
+    // Refresh workflows to get updated signature data
+    refreshWorkflows();
   };
 
   const sidebarItems: Array<{ key: ViewKey; label: string }> = [
@@ -506,7 +539,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         </div>
                       </div>
 
-                      <div className="shrink-0 w-[140px] flex flex-col items-stretch self-stretch">
+                      <div className="shrink-0 w-[140px] flex flex-col items-stretch self-stretch gap-2">
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
@@ -518,6 +551,19 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                           <span className="sm:hidden">Preview</span>
                           <span className="hidden sm:inline">Preview Doc</span>
                         </button>
+                        {areAllStepsApproved(workflow) && !workflow.signatureData && (
+                          <button
+                            type="button"
+                            onClick={() => openSignatureModal(workflow)}
+                            title="E-Sign Agreement"
+                            aria-label="E-Sign Agreement"
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 border border-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 hover:border-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
+                          >
+                            <PenTool className="h-4 w-4 text-white" />
+                            <span className="sm:hidden">Sign</span>
+                            <span className="hidden sm:inline">E-Sign</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -592,16 +638,29 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     })()}
 
                     {(status === 'approved' || status === 'denied') && (
-                      <div className="mt-4">
-                        {status === 'approved' && (
-                          <span className="inline-flex items-center gap-2 text-emerald-700 text-sm font-semibold">
-                            <CheckCircle className="h-4 w-4" /> Approved
-                          </span>
-                        )}
-                        {status === 'denied' && (
-                          <span className="inline-flex items-center gap-2 text-rose-700 text-sm font-semibold">
-                            <XCircle className="h-4 w-4" /> Rejected
-                          </span>
+                      <div className="mt-4 flex items-center justify-between">
+                        <div>
+                          {status === 'approved' && (
+                            <span className="inline-flex items-center gap-2 text-emerald-700 text-sm font-semibold">
+                              <CheckCircle className="h-4 w-4" /> Approved
+                            </span>
+                          )}
+                          {status === 'denied' && (
+                            <span className="inline-flex items-center gap-2 text-rose-700 text-sm font-semibold">
+                              <XCircle className="h-4 w-4" /> Rejected
+                            </span>
+                          )}
+                        </div>
+                        {workflow.signatureData && (
+                          <div className="inline-flex items-center gap-2 text-indigo-700 text-sm font-semibold">
+                            <PenTool className="h-4 w-4" />
+                            <span>Signed by {workflow.signatureData.signedBy}</span>
+                            {workflow.signatureData.signedAt && (
+                              <span className="text-gray-500 font-normal">
+                                on {new Date(workflow.signatureData.signedAt).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
@@ -674,6 +733,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             </div>
           </div>
         </div>
+      )}
+
+      {/* E-Signature Modal */}
+      {showSignatureModal && workflowForSignature && (
+        <AgreementSignatureModal
+          workflow={workflowForSignature}
+          onClose={closeSignatureModal}
+          onSignatureComplete={handleSignatureComplete}
+        />
       )}
     </div>
   );

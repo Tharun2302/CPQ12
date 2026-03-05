@@ -19,6 +19,9 @@ const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashbo
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
 const MigrationManagerDashboard = lazy(() => import('./components/MigrationManagerDashboard'));
 const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
+// Import PublicSigningPage directly (not lazy) to ensure it loads immediately
+import PublicSigningPage from './components/PublicSigningPage';
+// const PublicSigningPage = lazy(() => import('./components/PublicSigningPage'));
 
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
@@ -1974,7 +1977,9 @@ function App() {
         <Suspense fallback={<LoadingFallback />}>
           <HubSpotAuthHandler>
             <Routes>
-              {/* Public Routes */}
+              {/* Public Routes - Sign route must be before catch-all */}
+              <Route path="/sign" element={<PublicSigningPage />} />
+              <Route path="/sign/*" element={<PublicSigningPage />} />
               <Route path="/" element={<LandingPage />} />
               <Route path="/signin" element={<SignInPage />} />
               <Route path="/signup" element={<SignUpPage />} />
@@ -2457,7 +2462,7 @@ function App() {
                }
              />
               
-              {/* Redirect any other routes to landing page */}
+              {/* Redirect any other routes to landing page - but NOT /sign */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </HubSpotAuthHandler>

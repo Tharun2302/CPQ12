@@ -16,6 +16,13 @@ export interface ApprovalWorkflow {
   workflowSteps: ApprovalStep[];
   createdAt: string;
   updatedAt: string;
+  // E-signature data for fully approved agreements
+  signatureData?: {
+    signatureImage: string; // Base64 data URL
+    signedBy: string; // Name of person who signed
+    signedAt: string; // ISO timestamp
+    signerEmail?: string; // Email of signer
+  };
 }
 
 export interface ApprovalStep {

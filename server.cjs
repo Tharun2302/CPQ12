@@ -759,53 +759,6 @@ async function sendEmail(to, subject, html, attachments = []) {
 
 // NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
 
-// Main route - serve the React app with deal data
-app.get('/', (req, res) => {
-  // Deal Information
-  const dealId = req.query.dealId;
-  const dealName = req.query.dealName;
-  const amount = req.query.amount;
-  const closeDate = req.query.closeDate;
-  const stage = req.query.stage;
-  const ownerId = req.query.ownerId;
-  
-  // Contact Information (from fetched_objects.fetched_object_176195683)
-  const contactEmail = req.query.ContactEmail;
-  const contactFirstName = req.query.ContactFirstName;
-  const contactLastName = req.query.ContactLastName;
-  
-  // Company Information (from fetched_objects.fetched_object_176195685)
-  const companyName = req.query.CompanyName;
-  const companyByContact = req.query.CompanyByContact || req.query.CompanyFromContact;
-  
-  // Log all the captured data
-  console.log({
-    deal: { dealId, dealName, amount, closeDate, stage, ownerId },
-    contact: { email: contactEmail, firstName: contactFirstName, lastName: contactLastName },
-    company: { name: companyName, byContact: companyByContact }
-  });
-  
-  // Create a more comprehensive response
-  const fullContactName = `${contactFirstName} ${contactLastName}`.trim();
-  
-  res.send(`
-    <h2>Deal Information</h2>
-    <p><strong>Deal:</strong> ${dealName} (ID: ${dealId})</p>
-    <p><strong>Amount:</strong> ${amount}</p>
-    <p><strong>Stage:</strong> ${stage || 'N/A'}</p>
-    <p><strong>Close Date:</strong> ${closeDate || 'N/A'}</p>
-    <p><strong>Owner ID:</strong> ${ownerId || 'N/A'}</p>
-    
-    <h2>Contact Information</h2>
-    <p><strong>Name:</strong> ${fullContactName}</p>
-    <p><strong>Email:</strong> ${contactEmail}</p>
-    
-    <h2>Company Information</h2>
-    <p><strong>Company:</strong> ${companyName}</p>
-    <p><strong>Company by Contact:</strong> ${companyByContact}</p>
-  `);
-});
-
 // Database health check endpoint
 app.get('/api/database/health', async (req, res) => {
   try {
@@ -1178,18 +1131,21 @@ app.post('/api/auth/microsoft', async (req, res) => {
     let user = await db.collection('users').findOne({ email: email });
     
     if (user) {
-      // Update existing user
+      // Update existing user - update in memory to avoid redundant query
+      user.name = name;
+      user.provider = 'microsoft';
+      user.updated_at = new Date();
+      
       await db.collection('users').updateOne(
         { email: email },
         { 
           $set: { 
             name: name,
             provider: 'microsoft',
-            updated_at: new Date()
+            updated_at: user.updated_at
           }
         }
       );
-      user = await db.collection('users').findOne({ email: email });
     } else {
       // Create new user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
       user = {
@@ -1211,8 +1167,10 @@ app.post('/api/auth/microsoft', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    // Track daily login
-    await trackDailyLogin(user.id, 'microsoft', user.email);
+    // Track daily login (non-blocking - fire and forget to improve response time)
+    trackDailyLogin(user.id, 'microsoft', user.email).catch(err => {
+      console.error('Failed to track daily login (non-critical):', err);
+    });
 
     // Return user without password (ensure role for frontend: from DB, .env, or settings list)
     const { password: __, ...userWithoutPassword } = user;
@@ -5591,6 +5549,545 @@ app.put('/api/approval-workflows/:id', async (req, res) => {
   }
 });
 
+// Save signature to workflow
+app.post('/api/approval-workflows/:id/signature', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    const { signatureImage, signedBy, signerEmail, recipients, ccEmails, fieldValues } = req.body;
+    
+    console.log('✍️ Saving signature to workflow:', id);
+    
+    // Check for signature in signatureImage or fieldValues
+    let finalSignatureImage = signatureImage;
+    if (!finalSignatureImage && fieldValues) {
+      // Look for signature in fieldValues (signature fields typically have data:image URLs)
+      const signatureFieldValue = Object.values(fieldValues).find((v) => 
+        typeof v === 'string' && v.startsWith('data:image')
+      );
+      if (signatureFieldValue) {
+        finalSignatureImage = signatureFieldValue;
+      }
+    }
+    
+    // Extract signer name from fieldValues if not provided
+    let finalSignedBy = signedBy;
+    if (!finalSignedBy && fieldValues) {
+      // Look for name field in fieldValues
+      const nameFieldValue = Object.values(fieldValues).find((v) => 
+        typeof v === 'string' && v && !v.startsWith('data:image')
+      );
+      if (nameFieldValue) {
+        finalSignedBy = nameFieldValue;
+      }
+    }
+    
+    if (!finalSignatureImage || !finalSignedBy) {
+      return res.status(400).json({
+        success: false,
+        error: 'Signature image and signer name are required'
+      });
+    }
+
+    // Get current workflow
+    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+
+    // Check if document was sent for signing (public signing) OR all steps are approved (admin signing)
+    const wasSentForSigning = workflow.sentForSigningAt;
+    const allStepsApproved = workflow.workflowSteps && 
+      workflow.workflowSteps.every((step) => step.status === 'approved') &&
+      workflow.status === 'approved';
+    
+    // Allow signing if document was sent for signing (public) OR all steps approved (admin)
+    if (!wasSentForSigning && !allStepsApproved) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot sign agreement until all approval steps are completed or document is sent for signing'
+      });
+    }
+
+    // Create signature data
+    const signatureData = {
+      signatureImage: finalSignatureImage,
+      signedBy: finalSignedBy,
+      signerEmail: signerEmail || undefined,
+      signedAt: new Date().toISOString(),
+      recipients: recipients || [],
+      ccEmails: ccEmails || [],
+      fieldValues: fieldValues || {} // Store field values filled by signer
+    };
+
+    // Get signer email from request or fieldValues
+    const signerEmailFromRequest = signerEmail || (fieldValues && Object.values(fieldValues).find(v => 
+      typeof v === 'string' && v.includes('@')
+    ));
+    
+    // Update workflow with signature data
+    const updateResult = await db.collection('approval_workflows').updateOne(
+      { id: id },
+      { 
+        $set: { 
+          signatureData: signatureData,
+          updatedAt: new Date().toISOString()
+        } 
+      }
+    );
+    
+    if (updateResult.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    console.log('✅ Signature saved to workflow');
+    
+    // Check if signing order is enabled and trigger next recipient
+    if (workflow.signingOrder && workflow.signingRecipients && workflow.signingProgress) {
+      const signingProgress = workflow.signingProgress;
+      const signerEmailToCheck = signerEmailFromRequest;
+      
+      // Check if this signer is in the recipients list
+      const signerIndex = workflow.signingRecipients.findIndex(r => 
+        r.email.toLowerCase() === signerEmailToCheck?.toLowerCase()
+      );
+      
+      if (signerIndex >= 0 && signerIndex === signingProgress.currentSigningIndex) {
+        // This is the current signer in sequence - mark as signed and trigger next
+        const updatedSignedRecipients = [...(signingProgress.signedRecipients || []), signerEmailToCheck];
+        const nextSigningIndex = signingProgress.currentSigningIndex + 1;
+        
+        // Update signing progress
+        await db.collection('approval_workflows').updateOne(
+          { id: id },
+          { 
+            $set: { 
+              'signingProgress.signedRecipients': updatedSignedRecipients,
+              'signingProgress.currentSigningIndex': nextSigningIndex,
+              updatedAt: new Date().toISOString()
+            } 
+          }
+        );
+        
+        console.log(`✅ Signer ${signerIndex + 1} signed. Progress: ${updatedSignedRecipients.length}/${workflow.signingRecipients.length}`);
+        
+        // If there are more recipients, send email to next one
+        if (nextSigningIndex < workflow.signingRecipients.length && isEmailConfigured) {
+          const nextRecipient = workflow.signingRecipients[nextSigningIndex];
+          console.log(`📧 Sending email to next recipient in sequence: ${nextRecipient.email}`);
+          
+          try {
+            const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3001';
+            const documentUrl = `${baseUrl}/sign?workflow=${id}`;
+            
+            // Calculate expiry date (7 days from now)
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + 7);
+            const expiryDateStr = expiryDate.toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true
+            }) + ' (GMT' + (expiryDate.getTimezoneOffset() > 0 ? '-' : '+') + 
+            String(Math.abs(expiryDate.getTimezoneOffset() / 60)).padStart(2, '0') + ':00)';
+            
+            const recipientName = nextRecipient.name || nextRecipient.email.split('@')[0];
+            const emailSubject = `Signature Request: CloudFuze has requested you to sign ${workflow.documentId || 'Document'}`;
+            
+            // Email template with sequential signing note
+            const emailMessage = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signature Request</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f5f5;">
+    <tr>
+      <td style="padding: 20px 0;">
+        <table role="presentation" style="width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="padding: 30px 40px 20px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">Signature Request</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="margin: 0 0 20px; color: #333333; font-size: 16px; line-height: 1.5;">
+                Hi ${recipientName},
+              </p>
+              
+              <p style="margin: 0 0 30px; color: #333333; font-size: 16px; line-height: 1.5;">
+                CloudFuze (${process.env.EMAIL_FROM || 'admin.saas@cloudfuze.com'}) has requested you to review and sign the document <strong>${workflow.documentId || 'Document'}</strong>.
+              </p>
+              
+              <!-- Sequential Signing Note -->
+              <p style="margin: 0 0 20px; color: #f59e0b; font-size: 14px; line-height: 1.5; background-color: #fef3c7; padding: 12px; border-radius: 6px; border-left: 4px solid #f59e0b;">
+                <strong>Note:</strong> This document requires sequential signing. The previous signer has completed their signature. It's now your turn to sign.
+              </p>
+              
+              <!-- Review and Sign Button -->
+              <table role="presentation" style="width: 100%; margin: 30px 0;">
+                <tr>
+                  <td style="text-align: center;">
+                    <a href="${documentUrl}" 
+                       style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);">
+                      Review and Sign
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Document Details Link -->
+              <p style="margin: 20px 0; text-align: center;">
+                <a href="${documentUrl}" style="color: #2563eb; text-decoration: none; font-size: 14px;">Document Details</a>
+              </p>
+              
+              <!-- Document Information -->
+              <div style="background-color: #f9fafb; border-radius: 6px; padding: 20px; margin: 30px 0;">
+                <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 140px;"><strong>Document Title:</strong></td>
+                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${workflow.documentId || 'Document'}</td>
+                  </tr>
+                  ${workflow.clientName ? `
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;"><strong>Client:</strong></td>
+                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${workflow.clientName}</td>
+                  </tr>
+                  ` : ''}
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;"><strong>Expiry Date:</strong></td>
+                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${expiryDateStr}</td>
+                  </tr>
+                </table>
+              </div>
+              
+              <p style="margin: 30px 0 0; color: #6b7280; font-size: 14px; line-height: 1.5;">
+                This document requires your signature. Please review the document and sign it using the button above.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 40px; background-color: #f9fafb; border-radius: 0 0 8px 8px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #6b7280; font-size: 12px;">
+                This is an automated message from CloudFuze via zenop.ai
+              </p>
+              <p style="margin: 10px 0 0; color: #9ca3af; font-size: 11px;">
+                If you did not expect this email, please ignore it.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+            `;
+            
+            await sendEmail(nextRecipient.email, emailSubject, emailMessage, []);
+            console.log(`✅ Email sent to next recipient: ${nextRecipient.email}`);
+          } catch (nextEmailError) {
+            console.error('⚠️ Error sending email to next recipient:', nextEmailError);
+            // Don't fail the signature submission if email fails
+          }
+        } else if (nextSigningIndex >= workflow.signingRecipients.length) {
+          console.log('✅ All recipients have signed the document');
+        }
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: 'Signature saved successfully',
+      signatureData: signatureData
+    });
+    
+  } catch (error) {
+    console.error('❌ Error saving signature:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Send document with fields to recipients for signing
+app.post('/api/approval-workflows/:id/send-for-signing', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    const { recipients, ccEmails, documentFields, signingOrder } = req.body;
+    
+    console.log('📧 Sending document for signing:', id);
+    
+    if (!recipients || recipients.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one recipient is required'
+      });
+    }
+
+    // Get current workflow
+    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+
+    // Check if all steps are approved
+    // Match frontend logic: only check if all workflow steps are approved
+    // Don't require workflow.status === 'approved' as it might still be 'in_progress'
+    const allStepsApproved = workflow.workflowSteps && 
+      workflow.workflowSteps.length > 0 &&
+      workflow.workflowSteps.every((step) => step.status === 'approved');
+    
+    if (!allStepsApproved) {
+      console.log('❌ Not all steps approved:', {
+        workflowId: id,
+        workflowStatus: workflow.status,
+        workflowSteps: workflow.workflowSteps?.map(s => ({ role: s.role, status: s.status }))
+      });
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot send document for signing until all approval steps are completed'
+      });
+    }
+    
+    console.log('✅ All steps approved, proceeding with send-for-signing');
+
+    // Save document fields configuration with signing progress tracking
+    const signingProgress = {
+      currentSigningIndex: signingOrder ? 0 : -1, // -1 means all can sign, 0+ means sequential
+      signedRecipients: [], // Array of recipient emails who have signed
+      totalRecipients: recipients.length
+    };
+    
+    await db.collection('approval_workflows').updateOne(
+      { id: id },
+      { 
+        $set: { 
+          documentFields: documentFields || [],
+          signingRecipients: recipients,
+          ccEmails: ccEmails || [],
+          signingOrder: signingOrder || false,
+          signingProgress: signingProgress,
+          sentForSigningAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } 
+      }
+    );
+
+    // Helper function to send email to a recipient
+    const sendEmailToRecipient = async (recipient, recipientIndex) => {
+      const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3001';
+      const documentUrl = `${baseUrl}/sign?workflow=${id}`;
+      
+      // Calculate expiry date (7 days from now)
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 7);
+      const expiryDateStr = expiryDate.toLocaleDateString('en-GB', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }) + ' (GMT' + (expiryDate.getTimezoneOffset() > 0 ? '-' : '+') + 
+      String(Math.abs(expiryDate.getTimezoneOffset() / 60)).padStart(2, '0') + ':00)';
+      
+      const recipientName = recipient.name || recipient.email.split('@')[0];
+      const emailSubject = `Signature Request: CloudFuze has requested you to sign ${workflow.documentId || 'Document'}`;
+      
+      // Add signing order info to email if sequential
+      const signingOrderNote = signingOrder && recipientIndex > 0 
+        ? `<p style="margin: 0 0 20px; color: #f59e0b; font-size: 14px; line-height: 1.5; background-color: #fef3c7; padding: 12px; border-radius: 6px; border-left: 4px solid #f59e0b;">
+            <strong>Note:</strong> This document requires sequential signing. Please sign after the previous signer has completed.
+          </p>`
+        : '';
+      
+      // Professional HTML email template similar to BoldSign
+      const emailMessage = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signature Request</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f5f5;">
+    <tr>
+      <td style="padding: 20px 0;">
+        <table role="presentation" style="width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="padding: 30px 40px 20px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">Signature Request</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="margin: 0 0 20px; color: #333333; font-size: 16px; line-height: 1.5;">
+                Hi ${recipientName},
+              </p>
+              
+              <p style="margin: 0 0 30px; color: #333333; font-size: 16px; line-height: 1.5;">
+                CloudFuze (${process.env.EMAIL_FROM || 'admin.saas@cloudfuze.com'}) has requested you to review and sign the document <strong>${workflow.documentId || 'Document'}</strong>.
+              </p>
+              
+              ${signingOrderNote}
+              
+              <!-- Review and Sign Button -->
+              <table role="presentation" style="width: 100%; margin: 30px 0;">
+                <tr>
+                  <td style="text-align: center;">
+                    <a href="${documentUrl}" 
+                       style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);">
+                      Review and Sign
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Document Details Link -->
+              <p style="margin: 20px 0; text-align: center;">
+                <a href="${documentUrl}" style="color: #2563eb; text-decoration: none; font-size: 14px;">Document Details</a>
+              </p>
+              
+              <!-- Document Information -->
+              <div style="background-color: #f9fafb; border-radius: 6px; padding: 20px; margin: 30px 0;">
+                <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 140px;"><strong>Document Title:</strong></td>
+                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${workflow.documentId || 'Document'}</td>
+                  </tr>
+                  ${workflow.clientName ? `
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;"><strong>Client:</strong></td>
+                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${workflow.clientName}</td>
+                  </tr>
+                  ` : ''}
+                  <tr>
+                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;"><strong>Expiry Date:</strong></td>
+                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${expiryDateStr}</td>
+                  </tr>
+                </table>
+              </div>
+              
+              <p style="margin: 30px 0 0; color: #6b7280; font-size: 14px; line-height: 1.5;">
+                This document requires your signature. Please review the document and sign it using the button above.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 40px; background-color: #f9fafb; border-radius: 0 0 8px 8px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #6b7280; font-size: 12px;">
+                This is an automated message from CloudFuze via zenop.ai
+              </p>
+              <p style="margin: 10px 0 0; color: #9ca3af; font-size: 11px;">
+                If you did not expect this email, please ignore it.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+      `;
+
+      await sendEmail(recipient.email, emailSubject, emailMessage, []);
+      console.log(`✅ Email sent to recipient ${recipientIndex + 1}/${recipients.length}: ${recipient.email}`);
+    };
+
+    // Send emails to recipients
+    if (isEmailConfigured) {
+      try {
+        if (signingOrder) {
+          // Sequential signing: only send to first recipient
+          console.log('📧 Sequential signing enabled - sending email only to first recipient');
+          if (recipients.length > 0) {
+            await sendEmailToRecipient(recipients[0], 0);
+          }
+        } else {
+          // Parallel signing: send to all recipients at once
+          console.log('📧 Parallel signing - sending emails to all recipients');
+          for (let i = 0; i < recipients.length; i++) {
+            await sendEmailToRecipient(recipients[i], i);
+          }
+        }
+        
+        // Send CC emails if any (always send CC emails regardless of signing order)
+        if (ccEmails && ccEmails.length > 0) {
+          const emailSubject = `CC: Signature Request: CloudFuze has requested you to sign ${workflow.documentId || 'Document'}`;
+          for (const ccEmail of ccEmails) {
+            await sendEmail(
+              ccEmail,
+              emailSubject,
+              `You are CC'd on the following document signing request: ${workflow.documentId || 'Document'}`,
+              []
+            );
+          }
+        }
+
+        console.log('✅ Emails sent to recipients');
+      } catch (emailError) {
+        console.error('⚠️ Error sending emails:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Document sent for signing successfully',
+      recipients: recipients
+    });
+    
+  } catch (error) {
+    console.error('❌ Error sending document for signing:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Update workflow step
 app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
   try {
@@ -6861,6 +7358,25 @@ app.put('/api/authorization-requests/:id/status', async (req, res) => {
   } catch (error) {
     console.error('❌ Error updating authorization request status:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Catch-all route: serve React app for all non-API routes
+// This must be AFTER all API routes but BEFORE app.listen
+// This allows React Router to handle client-side routing
+app.use((req, res, next) => {
+  // Skip API routes - they should be handled by their specific routes above
+  if (req.path.startsWith('/api/')) {
+    return next();
+  }
+  
+  // Serve the React app's index.html for all other routes
+  // This allows React Router to handle client-side routing
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('React app not found. Please build the app first.');
   }
 });
 
