@@ -156,7 +156,17 @@ const MicrosoftCallback: React.FC = () => {
     // Only process once - extract code and error from URL params
     const code = searchParams.get('code');
     const error = searchParams.get('error');
-    
+    const state = searchParams.get('state') || '';
+    // Parent origin is passed in state as "nonce|encodedOrigin" so callback can postMessage to opener when ports differ (e.g. 3001 vs 5173)
+    const stateParts = state.split('|');
+    const parentOriginFromState = stateParts.length >= 2 ? decodeURIComponent(stateParts[1]) : '';
+    const targetOrigin =
+      (parentOriginFromState && /^https?:\/\//.test(parentOriginFromState))
+        ? parentOriginFromState
+        : (window.opener && typeof (window.opener as Window & { origin?: string }).origin === 'string')
+          ? (window.opener as Window & { origin?: string }).origin
+          : window.location.origin;
+
     const handleCallback = () => {
 
       if (error) {
@@ -164,7 +174,7 @@ const MicrosoftCallback: React.FC = () => {
         window.opener?.postMessage({
           type: 'MICROSOFT_AUTH_ERROR',
           error: error
-        }, window.location.origin);
+        }, targetOrigin);
         return;
       }
 
@@ -207,7 +217,7 @@ const MicrosoftCallback: React.FC = () => {
           window.opener?.postMessage({
             type: 'MICROSOFT_AUTH_SUCCESS',
             user: userData
-          }, window.location.origin);
+          }, targetOrigin);
         }).catch(error => {
           console.error('❌ Failed to get user data:', error);
           console.error('❌ Error details:', error.message);
@@ -233,7 +243,7 @@ const MicrosoftCallback: React.FC = () => {
             window.opener?.postMessage({
               type: 'MICROSOFT_AUTH_ERROR',
               error: 'Authorization code already used. Please try signing in again.'
-            }, window.location.origin);
+            }, targetOrigin);
             return;
           }
           
@@ -252,7 +262,7 @@ const MicrosoftCallback: React.FC = () => {
           window.opener?.postMessage({
             type: 'MICROSOFT_AUTH_SUCCESS',
             user: fallbackUser
-          }, window.location.origin);
+          }, targetOrigin);
         });
       }
     };

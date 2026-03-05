@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   CheckCircle,
@@ -6,6 +6,7 @@ import {
   FileCheck,
   FileText,
   Loader2,
+  PenLine,
   Search,
   ShieldCheck,
   ThumbsUp,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { useAuth } from '../hooks/useAuth';
 import { BACKEND_URL } from '../config/api';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
@@ -104,6 +106,7 @@ const iconForView: Record<ViewKey, React.ComponentType<{ className?: string }>> 
 
 const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualApprovalWorkflow }) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [query, setQuery] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
@@ -112,10 +115,22 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const [esignCreatingId, setEsignCreatingId] = useState<string | null>(null);
+  const [esignError, setEsignError] = useState<string | null>(null);
 
   const {
     workflows,
+    refreshWorkflows,
   } = useApprovalWorkflows();
+
+  // Refetch workflows when user returns to this tab/window so Deal Desk "Email sent" shows after Legal approval
+  const refreshRef = useRef(refreshWorkflows);
+  refreshRef.current = refreshWorkflows;
+  useEffect(() => {
+    const onFocus = () => refreshRef.current();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
 
   const now = new Date();
   const today0 = startOfDay(now);
@@ -256,6 +271,38 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     setPreviewError(null);
     setDocumentPreviewUrl(null);
     revokeObjectUrlIfAny();
+  };
+
+  // Use same e-sign flow as /esign: create esign doc from approval doc, then go to Place Fields → Send
+  const handleStartEsign = async (workflow: any) => {
+    const docId = workflow?.documentId;
+    if (!docId) {
+      setEsignError('No document linked to this workflow.');
+      return;
+    }
+    setEsignCreatingId(workflow.id);
+    setEsignError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: docId,
+          uploaded_by: user?.email || 'approval-workflow',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Failed to create e-sign document');
+      if (data.success && data.document?.id) {
+        navigate(`/esign/${data.document.id}/place-fields`);
+        return;
+      }
+      throw new Error('Invalid response');
+    } catch (e) {
+      setEsignError(e instanceof Error ? e.message : 'Failed to start e-sign');
+    } finally {
+      setEsignCreatingId(null);
+    }
   };
 
   const openAgreementPreview = async (workflow: any) => {
@@ -454,6 +501,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
               </div>
             </div>
 
+            {esignError && (
+              <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-2 text-rose-800 text-sm flex items-center justify-between gap-2">
+                <span>{esignError}</span>
+                <button type="button" onClick={() => setEsignError(null)} className="text-rose-600 hover:text-rose-800" aria-label="Dismiss">×</button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-3">
               {list.map((workflow: any) => {
                 const status = workflow.status || 'pending';
@@ -510,13 +564,30 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         </div>
                       </div>
 
-                      <div className="shrink-0 w-[140px] flex flex-col items-stretch self-stretch">
+                      <div className="shrink-0 flex flex-col sm:flex-row gap-2 self-stretch">
+                        {status === 'approved' && workflow?.documentId && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEsign(workflow)}
+                            disabled={esignCreatingId === workflow.id}
+                            title="Send for e-signature (same flow as E-Sign page)"
+                            aria-label="Send for e-signature"
+                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {esignCreatingId === workflow.id ? (
+                              <Loader2 className="h-4 w-4 text-white animate-spin" />
+                            ) : (
+                              <PenLine className="h-4 w-4 text-white" />
+                            )}
+                            <span className="hidden sm:inline">eSign</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="w-full flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
                         >
                           <FileText className="h-4 w-4 text-white" />
                           <span className="sm:hidden">Preview</span>
@@ -527,11 +598,16 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
 
                     {/* Approval step summary (Team/Technical/Legal/Deal Desk) */}
                     {(() => {
+                      const dealDeskExtra = dealDeskStep?.comments === 'Notified'
+                        ? 'Email sent'
+                        : dealDeskStep?.comments === 'Notification failed'
+                          ? 'Email failed'
+                          : (dealDeskStep?.comments || '');
                       const steps = [
                         { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
                         { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
                         { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
-                        { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskStep?.comments || '' },
+                        { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra },
                       ];
 
                       const currentIdx = Math.max(0, Number(workflow.currentStep || 1) - 1);

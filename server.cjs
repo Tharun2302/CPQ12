@@ -23,7 +23,14 @@ try {
   console.log('⚠️ libreoffice-convert not available, will use system LibreOffice');
   console.error('libreoffice-convert error:', e.message);
 }
-require('dotenv').config();
+// Load .env from same directory as this script so signing links use correct APP_BASE_URL
+const envPath = path.join(__dirname, '.env');
+require('dotenv').config({ path: envPath });
+if (!process.env.APP_BASE_URL && require('fs').existsSync(envPath)) {
+  const envContent = require('fs').readFileSync(envPath, 'utf8');
+  const match = envContent.match(/^\s*APP_BASE_URL\s*=\s*(.+)/m);
+  if (match) process.env.APP_BASE_URL = match[1].trim().replace(/^["']|["']$/g, '');
+}
 
 const app = express();
 // IMPORTANT: dotenv values are strings. If PORT is provided as a string (e.g. "3001"),
@@ -104,6 +111,23 @@ app.use(
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+// Multer disk storage for e-signature documents (uploads/documents, uploads/signatures)
+const uploadsBase = path.join(__dirname, 'uploads');
+const documentsDir = path.join(uploadsBase, 'documents');
+const signaturesDir = path.join(uploadsBase, 'signatures');
+const signedDir = path.join(uploadsBase, 'signed');
+[documentsDir, signaturesDir, signedDir].forEach((dir) => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+const esignDocumentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, documentsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.pdf';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+  }
+});
+const esignDocumentUpload = multer({ storage: esignDocumentStorage });
+
 // MongoDB configuration
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = process.env.DB_NAME || 'cpq_database';
@@ -150,6 +174,31 @@ async function initializeDatabase() {
     await documentsCollection.createIndex({ createdAt: -1 }); // For fast sorting in GET /api/documents
     await documentsCollection.createIndex({ status: 1 });
     console.log('✅ Documents collection ready with indexes');
+
+    // E-Signature collections
+    const esignDocumentsCollection = db.collection('esign_documents');
+    await esignDocumentsCollection.createIndex({ created_at: -1 });
+    await esignDocumentsCollection.createIndex({ status: 1 });
+    await esignDocumentsCollection.createIndex({ uploaded_by: 1 });
+    const signatureFieldsCollection = db.collection('signature_fields');
+    await signatureFieldsCollection.createIndex({ document_id: 1 });
+    const esignRecipientsCollection = db.collection('esign_recipients');
+    await esignRecipientsCollection.createIndex({ document_id: 1 });
+    // Ensure signing_token index is SPARSE so multiple recipients without a token don't cause E11000
+    try {
+      await esignRecipientsCollection.dropIndex('signing_token_1');
+    } catch (_) {
+      // Ignore if index doesn't exist
+    }
+    await esignRecipientsCollection.updateMany(
+      { signing_token: null },
+      { $unset: { signing_token: '' } }
+    );
+    await esignRecipientsCollection.createIndex({ signing_token: 1 }, { unique: true, sparse: true });
+    const auditLogsCollection = db.collection('audit_logs');
+    await auditLogsCollection.createIndex({ document_id: 1 });
+    await auditLogsCollection.createIndex({ timestamp: -1 });
+    console.log('✅ E-Signature collections ready');
     
     console.log('✅ Connected to MongoDB Atlas successfully');
     console.log('📊 Database name:', DB_NAME);
@@ -611,6 +660,51 @@ function generateClientEmailHTML(workflowData) {
         
         <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
           <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function generateEsignEmailHTML(clientName, documentId, amount, signatureFormLink, baseUrl) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Document Ready for Your Signature</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #4F46E5, #4338CA); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>✍️ Document Ready for eSignature</h1>
+        </div>
+
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello ${clientName},</h2>
+
+          <p>Your approved document is ready for your digital signature. All internal approvals (Team, Technical, Legal) have been completed.</p>
+
+          <div style="background: #EEF2FF; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #C7D2FE;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${documentId}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(amount || 0)}</p>
+            <p><strong>📎 Document:</strong> The approved document is attached to this email.</p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${signatureFormLink}"
+               style="background: #4F46E5; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              ✍️ Sign Document
+            </a>
+          </div>
+
+          <p style="font-size: 14px; color: #6B7280;">Click the button above to complete your digital signature. The form will allow you to review, sign, and approve this document. This link expires in 7 days.</p>
+        </div>
+
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p style="margin: 0; font-size: 12px; color: #6B7280;">This is an automated message from CloudFuze CPQ.</p>
         </div>
       </div>
     </body>
@@ -1624,15 +1718,86 @@ app.get('/api/signature/form/:formId', async (req, res) => {
       });
     }
     
+    const formData = {
+      formId: form.form_id,
+      clientName: form.client_name,
+      clientEmail: form.client_email,
+      block: form.block || 'client',
+      document_id: form.document_id || form.quote_data?.documentId,
+      quoteData: form.quote_data,
+      quote_data: form.quote_data,
+      signature_fields: form.signature_fields || [],
+      status: form.status
+    };
+
     res.json({
       success: true,
-      form: form
+      form: form,
+      formData
     });
   } catch (error) {
     console.error('Get signature form error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch signature form',
+      error: error.message
+    });
+  }
+});
+
+// Client signature form submission (used by client-signature-form.html)
+app.post('/api/signature/client-submit', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot submit signature forms without database connection'
+      });
+    }
+
+    const { formId, signatureData, block } = req.body;
+
+    if (!formId || !signatureData) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: formId, signatureData'
+      });
+    }
+
+    const form = await db.collection('signature_forms').findOne({ form_id: formId });
+    if (!form) {
+      return res.status(404).json({
+        success: false,
+        message: 'Signature form not found'
+      });
+    }
+
+    const updateData = {
+      signature_data: signatureData,
+      status: 'completed',
+      approval_status: 'approved',
+      completed_at: new Date(),
+      updated_at: new Date()
+    };
+    if (block) updateData.block = block;
+
+    await db.collection('signature_forms').updateOne(
+      { form_id: formId },
+      { $set: updateData }
+    );
+
+    console.log('✅ Client signature submitted:', formId, 'block:', form.block || block);
+    res.json({
+      success: true,
+      message: 'Signature submitted successfully',
+      formId
+    });
+  } catch (error) {
+    console.error('❌ client-submit error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit signature',
       error: error.message
     });
   }
@@ -4998,6 +5163,707 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
   }
 });
 
+// ============ E-SIGNATURE BUILT-IN SYSTEM ============
+// Document upload (disk storage), signature fields, signing, signed PDF generation
+
+const { ObjectId } = require('mongodb');
+const crypto = require('crypto');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+
+// Helper: log audit action
+async function logAudit(documentId, action, userEmail, ipAddress) {
+  if (!db) return;
+  try {
+    await db.collection('audit_logs').insertOne({
+      document_id: typeof documentId === 'string' ? new ObjectId(documentId) : documentId,
+      action,
+      user_email: userEmail || 'anonymous',
+      timestamp: new Date(),
+      ip_address: ipAddress || null
+    });
+  } catch (e) {
+    console.warn('Audit log error:', e?.message);
+  }
+}
+
+// POST /api/esign/documents/upload - Upload PDF to disk, save metadata
+app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file provided' });
+
+    const uploadedBy = req.body.uploaded_by || 'anonymous';
+    const fileName = req.file.originalname;
+    const filePath = path.join(documentsDir, req.file.filename);
+
+    const doc = {
+      file_name: fileName,
+      file_path: filePath,
+      uploaded_by: uploadedBy,
+      created_at: new Date(),
+      status: 'draft'
+    };
+    const result = await db.collection('esign_documents').insertOne(doc);
+    const documentId = result.insertedId.toString();
+
+    await logAudit(documentId, 'uploaded', uploadedBy, req.ip || req.connection?.remoteAddress);
+
+    res.json({
+      success: true,
+      document: {
+        id: documentId,
+        file_name: fileName,
+        file_path: filePath,
+        uploaded_by: uploadedBy,
+        created_at: doc.created_at,
+        status: 'draft'
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign document upload error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/from-approval - Create esign document from approval workflow document (same flow as /esign)
+app.post('/api/esign/documents/from-approval', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { documentId, uploaded_by: uploadedBy } = req.body || {};
+    if (!documentId) return res.status(400).json({ success: false, error: 'documentId is required' });
+
+    const document = await db.collection('documents').findOne({ id: documentId });
+    if (!document) return res.status(404).json({ success: false, error: 'Approval document not found' });
+
+    let fileBuffer;
+    if (Buffer.isBuffer(document.fileData)) {
+      fileBuffer = document.fileData;
+    } else if (document.fileData && document.fileData.buffer) {
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (typeof document.fileData === 'string') {
+      fileBuffer = Buffer.from(document.fileData, 'base64');
+    } else {
+      return res.status(400).json({ success: false, error: 'Document has no file data' });
+    }
+
+    const ext = path.extname(document.fileName || '') || '.pdf';
+    const fileName = (document.fileName || `${documentId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const diskFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+    const filePath = path.join(documentsDir, diskFileName);
+    fs.writeFileSync(filePath, fileBuffer);
+
+    const doc = {
+      file_name: fileName,
+      file_path: filePath,
+      uploaded_by: uploadedBy || 'approval-workflow',
+      created_at: new Date(),
+      status: 'draft'
+    };
+    const result = await db.collection('esign_documents').insertOne(doc);
+    const esignId = result.insertedId.toString();
+
+    await logAudit(esignId, 'uploaded', doc.uploaded_by, req.ip || req.connection?.remoteAddress);
+
+    res.json({
+      success: true,
+      document: {
+        id: esignId,
+        file_name: doc.file_name,
+        file_path: doc.file_path,
+        uploaded_by: doc.uploaded_by,
+        created_at: doc.created_at,
+        status: doc.status
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign from-approval error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id - Get document metadata
+app.get('/api/esign/documents/:id', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let doc;
+    try {
+      doc = await db.collection('esign_documents').findOne({ _id: new ObjectId(req.params.id) });
+    } catch {
+      doc = null;
+    }
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (req.query.audit === 'open') {
+      await logAudit(doc._id.toString(), 'opened', req.query.signer_email || null, req.ip || req.connection?.remoteAddress);
+    }
+    res.json({
+      success: true,
+      document: {
+        id: doc._id.toString(),
+        file_name: doc.file_name,
+        file_path: doc.file_path,
+        uploaded_by: doc.uploaded_by,
+        created_at: doc.created_at,
+        status: doc.status,
+        signed_file_path: doc.signed_file_path
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign get document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/file - Serve PDF file from disk
+app.get('/api/esign/documents/:id/file', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let doc;
+    try {
+      doc = await db.collection('esign_documents').findOne({ _id: new ObjectId(req.params.id) });
+    } catch {
+      doc = null;
+    }
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const filePath = doc.signed_file_path || doc.file_path;
+    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `inline; filename="${doc.file_name}"`);
+    res.sendFile(path.resolve(filePath));
+  } catch (error) {
+    console.error('❌ E-sign get file error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/send - Mark as sent (no email sending from this page)
+app.post('/api/esign/documents/:id/send', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const docId = new ObjectId(req.params.id);
+    const { signer_email } = req.body || {};
+
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const signingUrl = `${process.env.APP_BASE_URL || 'http://localhost:5173'}/sign/${docId}`;
+
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { status: 'sent', sent_at: new Date(), signer_email: signer_email || null } }
+    );
+
+    await logAudit(docId, 'sent', req.body.uploaded_by || 'system', req.ip || req.connection?.remoteAddress);
+
+    res.json({
+      success: true,
+      signing_url: signingUrl,
+      message: 'Document marked as sent'
+    });
+  } catch (error) {
+    console.error('❌ E-sign send document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/esign/documents/:id - Delete document, its fields, audit logs, and files
+app.delete('/api/esign/documents/:id', async (req, res) => {
+  const idParam = req.params.id;
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(idParam); } catch {
+      console.warn('E-sign DELETE: invalid document id', idParam);
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) {
+      console.warn('E-sign DELETE: document not found', idParam);
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    await db.collection('signature_fields').deleteMany({ document_id: docId });
+    await db.collection('esign_recipients').deleteMany({ document_id: docId });
+    await db.collection('audit_logs').deleteMany({ document_id: docId });
+    await db.collection('esign_documents').deleteOne({ _id: docId });
+
+    [doc.file_path, doc.signed_file_path].filter(Boolean).forEach((filePath) => {
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn('Could not delete file:', filePath, e.message); }
+    });
+
+    console.log('E-sign DELETE: document deleted', idParam, doc.file_name);
+    res.json({ success: true, message: 'Document deleted' });
+  } catch (error) {
+    console.error('❌ E-sign delete document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/recipients - List recipients for a document
+app.get('/api/esign/documents/:id/recipients', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ _id: 1 }).toArray();
+    res.json({
+      success: true,
+      recipients: recipients.map((r) => ({
+        id: r._id.toString(),
+        name: r.name || r.email || 'Recipient',
+        email: r.email,
+        role: r.role || 'signer',
+        status: r.status || 'pending',
+        signing_token: r.signing_token || null,
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign get recipients error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/recipients - Set recipients (replace all)
+app.post('/api/esign/documents/:id/recipients', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const { recipients: list } = req.body || {};
+    if (!Array.isArray(list)) return res.status(400).json({ success: false, error: 'recipients array required' });
+    await db.collection('esign_recipients').deleteMany({ document_id: docId });
+    const toInsert = list.filter((r) => r && (r.email || r.name)).map((r, idx) => {
+      const doc = {
+        document_id: docId,
+        name: (r.name || r.email || `Recipient ${idx + 1}`).trim(),
+        email: (r.email || '').trim().toLowerCase(),
+        role: r.role || 'signer',
+        status: 'pending',
+        order: idx,
+      };
+      // Only set signing_token when present; omit it otherwise so the unique sparse index allows multiple recipients
+      if (r.signing_token != null && r.signing_token !== '') doc.signing_token = r.signing_token;
+      return doc;
+    });
+    if (toInsert.length) await db.collection('esign_recipients').insertMany(toInsert);
+    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ _id: 1 }).toArray();
+    res.json({
+      success: true,
+      recipients: recipients.map((r) => ({
+        id: r._id.toString(),
+        name: r.name || r.email || 'Recipient',
+        email: r.email,
+        role: r.role || 'signer',
+        status: r.status || 'pending',
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign set recipients error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/send-for-signature - Generate tokens, send emails, mark sent
+app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const docId = new ObjectId(req.params.id);
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const sequential = !!(req.body && req.body.sequential);
+    // Signing links: prefer APP_BASE_URL; in development default to 5173 (Vite) so email links match the app origin
+    let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
+    if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) {
+      baseUrl = 'http://localhost:5173';
+    }
+    let recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+    if (!recipients.length) return res.status(400).json({ success: false, error: 'Add at least one recipient before sending' });
+    if (sequential) {
+      recipients = recipients.slice(0, 1);
+    }
+    const fileName = doc.file_name || 'Document';
+    let emailsSent = 0;
+    for (const rec of recipients) {
+      const token = crypto.randomUUID();
+      await db.collection('esign_recipients').updateOne(
+        { _id: rec._id },
+        { $set: { signing_token: token, status: 'pending' } }
+      );
+      const signingUrl = `${baseUrl}/sign/${token}`;
+      if (process.env.SENDGRID_API_KEY && rec.email) {
+        if (emailsSent === 0) console.log('📧 E-sign email base URL:', baseUrl, '→', signingUrl.substring(0, 50) + '...');
+        const subject = 'Please sign the document';
+        const html = `
+          <p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
+          <p>You have been requested to sign a document.</p>
+          <p><strong>Document:</strong> ${fileName}</p>
+          <p>Click the link below to review and sign:</p>
+          <p><a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">Sign Document</a></p>
+          <p>Or copy this link: ${signingUrl}</p>
+          <p>Thank you.</p>
+        `;
+        try {
+          const result = await sendEmail(rec.email, subject, html);
+          if (result.success) emailsSent++;
+        } catch (err) {
+          console.warn('E-sign send email failed for', rec.email, err?.message || err);
+        }
+      }
+    }
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { status: 'sent', sent_at: new Date(), ...(sequential ? { sequential } : {}) } }
+    );
+    await logAudit(docId, 'sent', req.body.uploaded_by || 'system', req.ip || req.connection?.remoteAddress);
+    res.json({
+      success: true,
+      message: emailsSent > 0 ? `Signing links sent to ${emailsSent} recipient(s).` : 'Document marked as sent. Add SENDGRID_API_KEY to send emails.',
+      emails_sent: emailsSent,
+      sequential: sequential || undefined,
+    });
+  } catch (error) {
+    console.error('❌ E-sign send-for-signature error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/sign-by-token/:token - Resolve token to recipient + document + fields (only that recipient's fields)
+app.get('/api/esign/sign-by-token/:token', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const token = (req.params.token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'Token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      console.warn('E-sign sign-by-token: invalid document_id on recipient', recipient._id, recipient.document_id);
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) {
+      console.warn('E-sign sign-by-token: document not found for docId=', docId.toString(), 'recipient=', recipient._id);
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    const recipientIdStr = recipient._id.toString();
+    const allFields = await db.collection('signature_fields').find({ document_id: docId }).toArray();
+    const hasAnyRecipientAssignment = allFields.some((f) => f.recipient_id);
+    const fields = hasAnyRecipientAssignment
+      ? allFields.filter((f) => f.recipient_id && f.recipient_id.toString() === recipientIdStr)
+      : allFields;
+    res.json({
+      success: true,
+      recipient: {
+        id: recipient._id.toString(),
+        name: recipient.name,
+        email: recipient.email,
+        role: recipient.role,
+        status: recipient.status,
+      },
+      document: {
+        id: doc._id.toString(),
+        file_name: doc.file_name,
+        status: doc.status,
+      },
+      fields: fields.map((f) => ({
+        _id: f._id?.toString(),
+        page: f.page,
+        type: f.type,
+        x: f.x,
+        y: f.y,
+        width: f.width,
+        height: f.height,
+        xPct: f.xPct,
+        yPct: f.yPct,
+        widthPct: f.widthPct,
+        heightPct: f.heightPct,
+        recipient_id: f.recipient_id?.toString(),
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign sign-by-token error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/signature-fields - Save signature field placements (optional recipient_id per field)
+app.post('/api/esign/signature-fields', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, fields } = req.body;
+    if (!document_id || !Array.isArray(fields)) {
+      return res.status(400).json({ success: false, error: 'document_id and fields array required' });
+    }
+    const docId = new ObjectId(document_id);
+    const existing = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!existing) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    await db.collection('signature_fields').deleteMany({ document_id: docId });
+    const toInsert = fields.map((f) => {
+      let recipientId = null;
+      if (f.recipient_id) {
+        try { recipientId = new ObjectId(f.recipient_id); } catch { recipientId = f.recipient_id; }
+      }
+      const base = { document_id: docId, page: Number(f.page) || 1, type: f.type || 'signature', recipient_id: recipientId };
+      if (f.xPct != null) {
+        return { ...base, xPct: Number(f.xPct), yPct: Number(f.yPct), widthPct: Number(f.widthPct) || 20, heightPct: Number(f.heightPct) || 4 };
+      }
+      return { ...base, x: Number(f.x) || 0, y: Number(f.y) || 0, width: Number(f.width) || 100, height: Number(f.height) || 40 };
+    });
+    if (toInsert.length) await db.collection('signature_fields').insertMany(toInsert);
+    res.json({ success: true, message: 'Signature fields saved' });
+  } catch (error) {
+    console.error('❌ E-sign save signature fields error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/signature-fields/:documentId
+app.get('/api/esign/signature-fields/:documentId', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.documentId); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const fields = await db.collection('signature_fields').find({ document_id: docId }).toArray();
+    res.json({ success: true, fields });
+  } catch (error) {
+    console.error('❌ E-sign get signature fields error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/signatures/save - Save signature image and link to document
+app.post('/api/esign/signatures/save', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, field_id, signature_data, signer_email } = req.body;
+    if (!document_id || !signature_data) return res.status(400).json({ success: false, error: 'document_id and signature_data required' });
+
+    const docId = new ObjectId(document_id);
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const buf = Buffer.from(signature_data.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+    const sigFilename = `sig-${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
+    const sigPath = path.join(signaturesDir, sigFilename);
+    fs.writeFileSync(sigPath, buf);
+
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { signature_path: sigPath, signer_email: signer_email || null, signed_at: new Date() } }
+    );
+
+    await logAudit(docId, 'signed', signer_email, req.ip || req.connection?.remoteAddress);
+
+    res.json({ success: true, signature_path: sigPath });
+  } catch (error) {
+    console.error('❌ E-sign save signature error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/generate-signed - Merge field values (signature/name/title/date) into PDF
+app.post('/api/esign/documents/generate-signed', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, signature_data, field_coords, field_values, signer_email, signing_token } = req.body;
+    if (!document_id) return res.status(400).json({ success: false, error: 'document_id required' });
+
+    const docId = new ObjectId(document_id);
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const sourcePath = (doc.signed_file_path && fs.existsSync(doc.signed_file_path)) ? doc.signed_file_path : doc.file_path;
+    if (!fs.existsSync(sourcePath)) return res.status(404).json({ success: false, error: 'Source file not found' });
+
+    const pdfBytes = fs.readFileSync(sourcePath);
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const pages = pdfDoc.getPages();
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    let fields = field_coords && field_coords.length
+      ? field_coords
+      : await db.collection('signature_fields').find({ document_id: docId }).sort({ _id: 1 }).toArray();
+
+    if (signing_token) {
+      const recipient = await db.collection('esign_recipients').findOne({ signing_token });
+      if (recipient) {
+        const recipientIdStr = recipient._id.toString();
+        const hasAnyRecipientAssignment = fields.some((f) => f.recipient_id);
+        fields = hasAnyRecipientAssignment ? fields.filter((f) => f.recipient_id && f.recipient_id.toString() === recipientIdStr) : fields;
+      }
+    }
+
+    const values = field_values || {};
+    if (signature_data && !Object.keys(values).length && fields.length) {
+      values['0'] = signature_data;
+    }
+
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      const fType = (f.type || 'signature').toLowerCase();
+      const val = values[String(i)] ?? values[f._id?.toString()];
+      if (!val) continue;
+
+      const pageNum = (f.page || 1) - 1;
+      if (pageNum < 0 || pageNum >= pages.length) continue;
+      const page = pages[pageNum];
+      const w = page.getWidth();
+      const h = page.getHeight();
+      let x, y, width, height;
+      if (f.xPct != null || f.yPct != null) {
+        const xPct = (Number(f.xPct) ?? 10) / 100;
+        const yPct = (Number(f.yPct) ?? 80) / 100;
+        const wPct = (Number(f.widthPct) ?? 20) / 100;
+        const hPct = (Number(f.heightPct) ?? 4) / 100;
+        x = w * xPct;
+        y = h - (h * yPct) - (h * hPct);
+        width = w * wPct;
+        height = h * hPct;
+      } else {
+        x = Number(f.x) ?? (w * 0.1);
+        y = h - Number(f.y) - (Number(f.height) || 40);
+        width = Number(f.width) || 100;
+        height = Number(f.height) || 40;
+      }
+
+      const isBase64Image = typeof val === 'string' && /^data:image\/\w+;base64,/.test(val);
+      if ((fType === 'signature' && isBase64Image)) {
+        const imgBytes = Buffer.from(val.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+        const pngImage = await pdfDoc.embedPng(imgBytes);
+        page.drawImage(pngImage, { x, y, width, height });
+      } else {
+        const text = typeof val === 'string' ? val : String(val);
+        const fontSize = Math.min(12, height * 0.8);
+        page.drawText(text.substring(0, 50), {
+          x,
+          y: y + (height - fontSize) / 2,
+          size: fontSize,
+          font: helvetica,
+          color: rgb(0, 0, 0),
+          maxWidth: width,
+        });
+      }
+    }
+
+    const outFilename = `signed-${doc._id}-${Date.now()}.pdf`;
+    const outPath = path.join(signedDir, outFilename);
+    fs.writeFileSync(outPath, await pdfDoc.save());
+
+    if (signing_token) {
+      await db.collection('esign_recipients').updateOne(
+        { signing_token },
+        { $set: { status: 'signed' } }
+      );
+      const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
+      const signedCount = await db.collection('esign_recipients').countDocuments({ document_id: docId, status: 'signed' });
+      if (totalCount > 0 && signedCount >= totalCount) {
+        await db.collection('esign_documents').updateOne(
+          { _id: docId },
+          { $set: { status: 'completed', signed_file_path: outPath, signed_at: new Date() } }
+        );
+      } else {
+        await db.collection('esign_documents').updateOne(
+          { _id: docId },
+          { $set: { signed_file_path: outPath, signed_at: new Date(), signer_email: signer_email || null } }
+        );
+      }
+      // Sequential mode: send signing email to the next recipient in order
+      const isSequential = !!doc.sequential;
+      if (!isSequential) {
+        console.log('📧 E-sign: document not in sequential mode (sequential=false), so not sending to next recipient. Use "Sequential" on Send page to enable.');
+      }
+      if (isSequential) {
+        const allRecipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+        const currentIdx = allRecipients.findIndex((r) => r.signing_token === signing_token);
+        const nextRec = currentIdx >= 0 && currentIdx < allRecipients.length - 1 ? allRecipients[currentIdx + 1] : null;
+        const nextNeedsEmail = nextRec && (nextRec.signing_token == null || nextRec.signing_token === '');
+        if (!nextRec) {
+          console.log('📧 E-sign sequential: no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
+        } else if (!nextNeedsEmail) {
+          console.log('📧 E-sign sequential: next recipient already has token, skip email (recipient order=', nextRec.order, ')');
+        } else if (!nextRec.email) {
+          console.log('📧 E-sign sequential: next recipient has no email, skip');
+        }
+        if (nextNeedsEmail && nextRec.email) {
+          const nextToken = crypto.randomUUID();
+          await db.collection('esign_recipients').updateOne(
+            { _id: nextRec._id },
+            { $set: { signing_token: nextToken, status: 'pending' } }
+          );
+          let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
+          if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) baseUrl = 'http://localhost:5173';
+          const signingUrl = `${baseUrl}/sign/${nextToken}`;
+          const fileName = doc.file_name || 'Document';
+          const subject = 'Please sign the document';
+          const html = `
+          <p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
+          <p>You have been requested to sign a document.</p>
+          <p><strong>Document:</strong> ${fileName}</p>
+          <p>Click the link below to review and sign:</p>
+          <p><a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">Sign Document</a></p>
+          <p>Or copy this link: ${signingUrl}</p>
+          <p>Thank you.</p>
+        `;
+          if (process.env.SENDGRID_API_KEY) {
+            try {
+              const result = await sendEmail(nextRec.email, subject, html);
+              if (result.success) console.log('📧 E-sign sequential: sent signing link to next recipient', nextRec.email);
+            } catch (err) {
+              console.warn('E-sign sequential send to next failed for', nextRec.email, err?.message || err);
+            }
+          }
+        }
+      }
+    } else {
+      await db.collection('esign_documents').updateOne(
+        { _id: docId },
+        { $set: { status: 'signed', signed_file_path: outPath, signed_at: new Date(), signer_email: signer_email || null } }
+      );
+    }
+
+    await logAudit(docId, 'signed', signer_email, req.ip || req.connection?.remoteAddress);
+
+    res.json({
+      success: true,
+      signed_file_path: outPath,
+      download_url: `/api/esign/documents/${docId}/file`
+    });
+  } catch (error) {
+    console.error('❌ E-sign generate signed PDF error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// List esign documents
+app.get('/api/esign/documents', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const docs = await db.collection('esign_documents')
+      .find({})
+      .sort({ created_at: -1 })
+      .toArray();
+    res.json({
+      success: true,
+      documents: docs.map((d) => ({
+        id: d._id.toString(),
+        file_name: d.file_name,
+        uploaded_by: d.uploaded_by,
+        created_at: d.created_at,
+        status: d.status
+      }))
+    });
+  } catch (error) {
+    console.error('❌ E-sign list documents error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // API endpoint to fetch PDF documents from MongoDB
 // NOTE: This endpoint is replaced by the one below at line 3725 to avoid duplicates
 // Keeping this comment for reference but the endpoint below should be used
@@ -5040,9 +5906,10 @@ app.get('/api/documents/:id/file', async (req, res) => {
       throw new Error('Unsupported document fileData format');
     }
     
+    const inline = req.query.inline === '1' || req.query.inline === 'true';
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${document.fileName}"`,
+      'Content-Disposition': inline ? `inline; filename="${document.fileName}"` : `attachment; filename="${document.fileName}"`,
       'Content-Length': fileBuffer.length
     });
     
@@ -5845,6 +6712,195 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
   }
 });
 
+// Send approved document for eSignature (creator only)
+app.post('/api/approval-workflows/send-esign', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot send eSign without database connection'
+      });
+    }
+
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { workflowId, creatorEmail, recipients, signatureFields } = req.body;
+
+    if (!workflowId || !creatorEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: workflowId, creatorEmail'
+      });
+    }
+
+    const recipientsList = Array.isArray(recipients) ? recipients : [];
+    const signatureFieldsList = Array.isArray(signatureFields) ? signatureFields : [];
+    if (recipientsList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one recipient is required'
+      });
+    }
+
+    for (const r of recipientsList) {
+      if (!r.email || !r.name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each recipient must have email and name'
+        });
+      }
+    }
+
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        message: 'Workflow not found'
+      });
+    }
+
+    if (workflow.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only approved workflows can be sent for eSignature'
+      });
+    }
+
+    // Allow any authenticated user with dashboard access to send for eSign (not just workflow creator)
+    if (!creatorEmail || !String(creatorEmail).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'creatorEmail is required'
+      });
+    }
+
+    let documentBuffer = null;
+    let documentFileName = null;
+    let documentType = 'application/pdf';
+    if (workflow.documentId) {
+      try {
+        const document = await db.collection('documents').findOne({ id: workflow.documentId });
+        if (document && document.fileData) {
+          if (Buffer.isBuffer(document.fileData)) {
+            documentBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            documentBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            documentBuffer = Buffer.from(document.fileData.data);
+          }
+          documentFileName = document.fileName || `${workflow.documentId}.pdf`;
+          documentType = document.fileType || 'application/pdf';
+        }
+      } catch (docErr) {
+        console.error('❌ Error fetching document for eSign:', docErr);
+      }
+    }
+
+    const baseUrl = process.env.BASE_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const results = [];
+
+    for (const recipient of recipientsList) {
+      const { email, name, block } = recipient;
+      const formId = `form-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+      const recipientBlock = block || 'client';
+      const formSignatureFields = signatureFieldsList.filter((f) => f.block === recipientBlock);
+
+      const signatureForm = {
+        form_id: formId,
+        quote_id: workflowId,
+        workflow_id: workflowId,
+        document_id: workflow.documentId,
+        client_email: email,
+        client_name: name,
+        block: recipientBlock,
+        signature_fields: formSignatureFields,
+        quote_data: {
+          documentId: workflow.documentId,
+          clientName: workflow.clientName,
+          amount: workflow.amount,
+          workflowId: workflow.id,
+          block: recipientBlock,
+          source: 'approval_workflow_esign'
+        },
+        status: 'pending',
+        created_at: new Date(),
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        interactions: [],
+        signature_data: null,
+        approval_status: 'pending'
+      };
+
+      await db.collection('signature_forms').insertOne(signatureForm);
+
+      const attachments = [];
+      if (documentBuffer) {
+        attachments.push({
+          filename: documentFileName,
+          content: documentBuffer,
+          contentType: documentType
+        });
+      }
+
+      const signatureFormLink = `${baseUrl.replace(/\/$/, '')}/client-signature-form.html?formId=${formId}&block=${encodeURIComponent(block || 'client')}`;
+
+      const emailHtml = generateEsignEmailHTML(
+        name,
+        workflow.documentId,
+        workflow.amount,
+        signatureFormLink,
+        baseUrl
+      );
+
+      const emailResult = await sendEmail(
+        email,
+        `Document Ready for Your Signature: ${workflow.documentId}`,
+        emailHtml,
+        attachments
+      );
+
+      if (!emailResult.success) {
+        console.error('❌ eSign email failed for:', email, emailResult.error);
+        results.push({ email, formId, success: false, error: emailResult.error?.message });
+      } else {
+        console.log('✅ eSign email sent:', email, 'formId:', formId, 'block:', block);
+        results.push({ email, formId, success: true });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    if (successCount === 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send any eSign emails',
+        results
+      });
+    }
+
+    res.json({
+      success: true,
+      message: successCount === results.length
+        ? 'eSignature requests sent successfully'
+        : `Sent to ${successCount}/${results.length} recipients. Some emails failed.`,
+      results,
+      formIds: results.filter(r => r.success).map(r => r.formId)
+    });
+  } catch (error) {
+    console.error('❌ send-esign error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'Failed to send eSignature request'
+    });
+  }
+});
+
 // Delete approval workflow
 app.delete('/api/approval-workflows/:id', async (req, res) => {
   try {
@@ -6306,6 +7362,8 @@ async function startServer() {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Database available: ${databaseAvailable}`);
       console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
+      const appBase = process.env.APP_BASE_URL || 'http://localhost:5173';
+      console.log(`🔗 Signing links in emails use: ${appBase} (set APP_BASE_URL in .env to change)`);
       console.log(`🔗 HubSpot API key: ${HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'}`);
       console.log(`🌐 Available endpoints:`);
       console.log(`   - GET  /`);

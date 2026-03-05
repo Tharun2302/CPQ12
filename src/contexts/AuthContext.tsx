@@ -344,7 +344,8 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
       const redirectBase = (import.meta.env.VITE_MSAL_REDIRECT_URI as string) || (window.location.origin + '/auth/microsoft/callback');
       const redirectUri = encodeURIComponent(redirectBase);
       const scopes = encodeURIComponent('openid profile email offline_access https://graph.microsoft.com/User.Read');
-      const state = Math.random().toString(36).substring(2, 15);
+      const parentOrigin = window.location.origin;
+      const state = Math.random().toString(36).substring(2, 15) + '|' + encodeURIComponent(parentOrigin);
  
       // PKCE: generate code verifier and challenge
       let codeVerifier: string | null = null;
@@ -398,6 +399,11 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         return false;
       }
      
+      // Callback can load on redirect URI origin (e.g. 5173) when app is on another port (e.g. 3001)
+      const callbackOrigin = redirectBase.replace(/\/auth\/microsoft\/callback.*$/, '').replace(/\/$/, '');
+      const allowedOrigins = [window.location.origin];
+      if (callbackOrigin && callbackOrigin !== window.location.origin) allowedOrigins.push(callbackOrigin);
+
       // Wait for popup to close or receive message
       return new Promise((resolve) => {
         console.log('⏳ Waiting for popup to close or receive message...');
@@ -407,27 +413,31 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           console.log('⏰ Microsoft auth timeout - popup took too long');
           clearInterval(checkClosed);
           window.removeEventListener('message', messageListener);
-          if (!popup.closed) {
-            popup.close();
-          }
+          try {
+            if (!popup.closed) popup.close();
+          } catch (_) { /* COOP may block */ }
           resolve(false);
         }, 60000); // 60 second timeout
        
         const checkClosed = setInterval(() => {
-          if (popup.closed) {
-            console.log('🪟 Popup window closed');
-            clearInterval(checkClosed);
-            clearTimeout(timeout);
-            resolve(false);
+          try {
+            if (popup.closed) {
+              console.log('🪟 Popup window closed');
+              clearInterval(checkClosed);
+              clearTimeout(timeout);
+              resolve(false);
+            }
+          } catch (_) {
+            // Cross-Origin-Opener-Policy may block reading popup.closed when callback is on another port; ignore
           }
         }, 1000);
        
-        // Listen for messages from popup
+        // Listen for messages from popup (allow same origin or callback origin for cross-port dev)
         const messageListener = async (event: MessageEvent) => {
           console.log('📨 Message received from popup:', event.data);
          
-          if (event.origin !== window.location.origin) {
-            console.log('❌ Message from wrong origin:', event.origin);
+          if (!allowedOrigins.includes(event.origin)) {
+            console.log('❌ Message from wrong origin:', event.origin, 'allowed:', allowedOrigins);
             return;
           }
          

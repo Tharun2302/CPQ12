@@ -1,14 +1,13 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker
+// pdfjs-dist v5+ uses .mjs worker; only set if not already set (e.g. by EsignPdfPageView from node_modules)
 export function configurePDFWorker() {
   try {
-    // Set worker source
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-    
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+    }
     console.log('✅ PDF.js worker configured successfully');
     console.log(`📄 PDF.js version: ${pdfjsLib.version}`);
-    
     return true;
   } catch (error) {
     console.error('❌ Failed to configure PDF.js worker:', error);
@@ -19,9 +18,9 @@ export function configurePDFWorker() {
 // Alternative worker configuration for local development
 export function configurePDFWorkerLocal() {
   try {
-    // For local development, you might want to use a local worker file
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
-    
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+    }
     console.log('✅ PDF.js worker configured for local development');
     return true;
   } catch (error) {
