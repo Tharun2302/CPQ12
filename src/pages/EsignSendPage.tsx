@@ -11,6 +11,7 @@ const EsignSendPage: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [sequential, setSequential] = useState(false);
 
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const signingUrl = `${baseUrl}/sign/${documentId}`;
@@ -45,7 +46,7 @@ const EsignSendPage: React.FC = () => {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ sequential }),
       });
       const data = await res.json();
       if (data.success) setSendForSignatureResult(data.message || 'Sent.');
@@ -80,6 +81,16 @@ const EsignSendPage: React.FC = () => {
             <p className="text-sm text-slate-600">
               Send the document to recipients by email (each gets a unique signing link), or copy the link to share manually.
             </p>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sequential}
+                onChange={(e) => setSequential(e.target.checked)}
+                className="rounded border-slate-300 text-indigo-600"
+              />
+              <span className="text-sm text-slate-700">Sequential: send only to first recipient; after they sign, the next receives the email (with signed document).</span>
+            </label>
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Signing link (single link for all)</label>

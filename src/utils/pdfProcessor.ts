@@ -4,32 +4,12 @@ import jsPDF from 'jspdf';
 import { saveAs } from 'file-saver';
 import { documentServiceMongoDB, SavedDocument } from '../services/documentServiceMongoDB';
 
-// Configure PDF.js worker with multiple fallback CDNs
-// Try multiple sources for better reliability
-if (typeof window !== 'undefined') {
-  const workerSources = [
-    `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
-    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`,
-    'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
-    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
-  ];
-  
-  // Try to set worker source with fallbacks
-  let workerSet = false;
-  for (const workerUrl of workerSources) {
-    try {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-      console.log('✅ PDF.js worker configured:', workerUrl);
-      workerSet = true;
-      break;
-    } catch (error) {
-      console.warn(`⚠️ Failed to set worker from ${workerUrl}, trying next...`);
-    }
-  }
-  
-  if (!workerSet) {
-    console.error('❌ Failed to configure PDF.js worker from all sources');
+// Configure PDF.js worker only if not already set (e.g. by EsignPdfPageView). pdfjs-dist v5+ uses .mjs
+if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  } catch {
+    // leave unset
   }
 }
 
@@ -81,8 +61,8 @@ export async function extractTextFromPDF(pdfFile: File): Promise<string> {
   try {
     // Try multiple worker sources if current one fails
     const workerSources = [
-      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
-      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`,
+      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`,
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`,
       'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
     ];
@@ -151,8 +131,8 @@ export async function extractTextWithPosition(pdfFile: File): Promise<PDFPageCon
   try {
     // Try multiple worker sources if current one fails
     const workerSources = [
-      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`,
-      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`,
+      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`,
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`,
       'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
     ];

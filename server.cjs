@@ -5473,6 +5473,7 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     const docId = new ObjectId(req.params.id);
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const sequential = !!(req.body && req.body.sequential);
     // Signing links: prefer APP_BASE_URL; in development default to 5173 (Vite) so email links match the app origin
     let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
     if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) {
@@ -5480,6 +5481,9 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     }
     let recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
     if (!recipients.length) return res.status(400).json({ success: false, error: 'Add at least one recipient before sending' });
+    if (sequential) {
+      recipients = recipients.slice(0, 1);
+    }
     const fileName = doc.file_name || 'Document';
     let emailsSent = 0;
     for (const rec of recipients) {
@@ -5511,13 +5515,14 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     }
     await db.collection('esign_documents').updateOne(
       { _id: docId },
-      { $set: { status: 'sent', sent_at: new Date() } }
+      { $set: { status: 'sent', sent_at: new Date(), ...(sequential ? { sequential } : {}) } }
     );
     await logAudit(docId, 'sent', req.body.uploaded_by || 'system', req.ip || req.connection?.remoteAddress);
     res.json({
       success: true,
       message: emailsSent > 0 ? `Signing links sent to ${emailsSent} recipient(s).` : 'Document marked as sent. Add SENDGRID_API_KEY to send emails.',
       emails_sent: emailsSent,
+      sequential: sequential || undefined,
     });
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
@@ -5767,6 +5772,53 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           { _id: docId },
           { $set: { signed_file_path: outPath, signed_at: new Date(), signer_email: signer_email || null } }
         );
+      }
+      // Sequential mode: send signing email to the next recipient in order
+      const isSequential = !!doc.sequential;
+      if (!isSequential) {
+        console.log('📧 E-sign: document not in sequential mode (sequential=false), so not sending to next recipient. Use "Sequential" on Send page to enable.');
+      }
+      if (isSequential) {
+        const allRecipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+        const currentIdx = allRecipients.findIndex((r) => r.signing_token === signing_token);
+        const nextRec = currentIdx >= 0 && currentIdx < allRecipients.length - 1 ? allRecipients[currentIdx + 1] : null;
+        const nextNeedsEmail = nextRec && (nextRec.signing_token == null || nextRec.signing_token === '');
+        if (!nextRec) {
+          console.log('📧 E-sign sequential: no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
+        } else if (!nextNeedsEmail) {
+          console.log('📧 E-sign sequential: next recipient already has token, skip email (recipient order=', nextRec.order, ')');
+        } else if (!nextRec.email) {
+          console.log('📧 E-sign sequential: next recipient has no email, skip');
+        }
+        if (nextNeedsEmail && nextRec.email) {
+          const nextToken = crypto.randomUUID();
+          await db.collection('esign_recipients').updateOne(
+            { _id: nextRec._id },
+            { $set: { signing_token: nextToken, status: 'pending' } }
+          );
+          let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
+          if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) baseUrl = 'http://localhost:5173';
+          const signingUrl = `${baseUrl}/sign/${nextToken}`;
+          const fileName = doc.file_name || 'Document';
+          const subject = 'Please sign the document';
+          const html = `
+          <p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
+          <p>You have been requested to sign a document.</p>
+          <p><strong>Document:</strong> ${fileName}</p>
+          <p>Click the link below to review and sign:</p>
+          <p><a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">Sign Document</a></p>
+          <p>Or copy this link: ${signingUrl}</p>
+          <p>Thank you.</p>
+        `;
+          if (process.env.SENDGRID_API_KEY) {
+            try {
+              const result = await sendEmail(nextRec.email, subject, html);
+              if (result.success) console.log('📧 E-sign sequential: sent signing link to next recipient', nextRec.email);
+            } catch (err) {
+              console.warn('E-sign sequential send to next failed for', nextRec.email, err?.message || err);
+            }
+          }
+        }
       }
     } else {
       await db.collection('esign_documents').updateOne(

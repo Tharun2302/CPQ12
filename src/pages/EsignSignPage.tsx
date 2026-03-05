@@ -25,6 +25,14 @@ interface SignatureField {
 
 const DEFAULT_FIELD = { page: 1, type: 'signature' as FieldType, xPct: 10, yPct: 80, widthPct: 20, heightPct: 4 };
 
+const SIGNATURE_FONTS = [
+  { id: 0, name: 'Dancing Script', family: "'Dancing Script', cursive" },
+  { id: 1, name: 'Great Vibes', family: "'Great Vibes', cursive" },
+  { id: 2, name: 'Pacifico', family: "'Pacifico', cursive" },
+  { id: 3, name: 'Allura', family: "'Allura', cursive" },
+  { id: 4, name: 'Sacramento', family: "'Sacramento', cursive" },
+];
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isSigningToken(param: string): boolean {
   return param.length === 36 && UUID_REGEX.test(param);
@@ -37,6 +45,7 @@ const EsignSignPage: React.FC = () => {
 
   const [documentId, setDocumentId] = useState<string | null>(() => (documentIdOrToken && !isSigningToken(documentIdOrToken) ? documentIdOrToken : null));
   const [signingToken, setSigningToken] = useState<string | null>(() => (documentIdOrToken && isSigningToken(documentIdOrToken) ? documentIdOrToken : null));
+  const [recipientName, setRecipientName] = useState<string | null>(null);
   const [doc, setDoc] = useState<{ file_name: string } | null>(null);
   const [fields, setFields] = useState<SignatureField[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +54,7 @@ const EsignSignPage: React.FC = () => {
   const [signatureDrawnData, setSignatureDrawnData] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'draw' | 'type' | 'upload'>('draw');
   const [typedSignature, setTypedSignature] = useState('');
+  const [typedSignatureFontIndex, setTypedSignatureFontIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +76,7 @@ const EsignSignPage: React.FC = () => {
           }
           setDocumentId(data.document.id);
           setSigningToken(documentIdOrToken);
+          setRecipientName(data.recipient?.name || null);
           setDoc(data.document);
           const raw = data.fields || [];
           const normalized = raw.map((f: any) => {
@@ -120,6 +131,7 @@ const EsignSignPage: React.FC = () => {
     setSignatureImage(null);
     setSignatureDrawnData(null);
     setTypedSignature('');
+    setTypedSignatureFontIndex(0);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,11 +143,36 @@ const EsignSignPage: React.FC = () => {
     e.target.value = '';
   };
 
+  const typedSignatureToDataUrl = (): string | null => {
+    const text = typedSignature.trim();
+    if (!text) return null;
+    const font = SIGNATURE_FONTS[typedSignatureFontIndex];
+    if (!font) return null;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const fontSize = 48;
+    const padding = 16;
+    ctx.font = `${fontSize}px ${font.family}`;
+    const metrics = ctx.measureText(text);
+    canvas.width = Math.ceil(metrics.width) + padding * 2;
+    canvas.height = fontSize + padding * 2;
+    ctx.font = `${fontSize}px ${font.family}`;
+    ctx.fillStyle = '#000';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, padding, canvas.height / 2);
+    return canvas.toDataURL('image/png');
+  };
+
   const getSignatureData = (): string | null => {
     if (signatureImage) return signatureImage;
-    if (typedSignature.trim()) return typedSignature;
     if (signatureDrawnData) return signatureDrawnData;
     if (sigCanvasRef.current && !sigCanvasRef.current.isEmpty()) return sigCanvasRef.current.toDataURL('image/png');
+    if (typedSignature.trim()) {
+      const dataUrl = typedSignatureToDataUrl();
+      if (dataUrl) return dataUrl;
+      return typedSignature;
+    }
     return null;
   };
 
@@ -399,6 +436,7 @@ const EsignSignPage: React.FC = () => {
                           onClick={() => {
                             setActiveTab(tab);
                             if (tab === 'upload') fileInputRef.current?.click();
+                            if (tab === 'type' && !typedSignature.trim() && recipientName?.trim()) setTypedSignature(recipientName.trim());
                           }}
                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${
                             activeTab === tab ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -449,14 +487,44 @@ const EsignSignPage: React.FC = () => {
                     )}
 
                     {activeTab === 'type' && (
-                      <input
-                        type="text"
-                        value={typedSignature}
-                        onChange={(e) => setTypedSignature(e.target.value)}
-                        placeholder="Type your full name as signature"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg"
-                        style={{ fontFamily: 'cursive, serif' }}
-                      />
+                      <div className="space-y-4">
+                        <input
+                          type="text"
+                          value={typedSignature}
+                          onChange={(e) => setTypedSignature(e.target.value)}
+                          placeholder="Type your full name as signature"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg"
+                          style={{ fontFamily: SIGNATURE_FONTS[typedSignatureFontIndex]?.family || 'cursive' }}
+                        />
+                        <div>
+                          <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Choose signature style</p>
+                          <p className="text-xs text-slate-500 mb-2">
+                            {typedSignature.trim() ? 'Preview of your signature in each style:' : 'Type your name above to see it in each style.'}
+                          </p>
+                          <div className="space-y-2">
+                            {SIGNATURE_FONTS.map((font, idx) => (
+                              <button
+                                key={font.id}
+                                type="button"
+                                onClick={() => setTypedSignatureFontIndex(idx)}
+                                className={`w-full text-left rounded-lg border-2 px-3 py-2.5 transition-all ${
+                                  typedSignatureFontIndex === idx
+                                    ? 'border-indigo-500 bg-indigo-50'
+                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                                }`}
+                              >
+                                <span
+                                  className={`block text-lg truncate ${typedSignature.trim() ? 'text-slate-800' : 'text-slate-400 italic'}`}
+                                  style={{ fontFamily: font.family }}
+                                >
+                                  {typedSignature.trim() || 'Your name'}
+                                </span>
+                                <span className="text-[11px] text-slate-500 mt-0.5 block">{font.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     )}
 
                     {activeTab === 'upload' && (

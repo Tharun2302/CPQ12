@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Rnd } from 'react-rnd';
 import { PenLine, Loader2, ArrowRight, Type, Briefcase, Calendar, UserPlus, Trash2 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 
 const PDF_SCALE = 1.5;
+/** Minimum field size in pixels (used by Rnd and for persistence) */
+const MIN_FIELD_WIDTH_PX = 120;
+const MIN_FIELD_HEIGHT_PX = 40;
 
 export type FieldType = 'signature' | 'name' | 'title' | 'date';
 
@@ -37,6 +41,27 @@ const FIELD_DEFS: { type: FieldType; label: string; Icon: React.ComponentType<{ 
   { type: 'title', label: 'Title', Icon: Briefcase },
   { type: 'date', label: 'Date', Icon: Calendar },
 ];
+
+/** Per-recipient colors for field overlays and recipient list. Use full class names so Tailwind includes them. */
+const RECIPIENT_COLORS = [
+  { box: 'bg-sky-100 border-2 border-sky-500 text-sky-800 hover:bg-sky-200', dot: 'bg-sky-500' },
+  { box: 'bg-emerald-100 border-2 border-emerald-500 text-emerald-800 hover:bg-emerald-200', dot: 'bg-emerald-500' },
+  { box: 'bg-amber-100 border-2 border-amber-500 text-amber-800 hover:bg-amber-200', dot: 'bg-amber-500' },
+  { box: 'bg-violet-100 border-2 border-violet-500 text-violet-800 hover:bg-violet-200', dot: 'bg-violet-500' },
+  { box: 'bg-rose-100 border-2 border-rose-500 text-rose-800 hover:bg-rose-200', dot: 'bg-rose-500' },
+  { box: 'bg-cyan-100 border-2 border-cyan-500 text-cyan-800 hover:bg-cyan-200', dot: 'bg-cyan-500' },
+];
+const UNASSIGNED_COLOR = { box: 'bg-slate-100 border-2 border-slate-400 text-slate-700 hover:bg-slate-200', dot: 'bg-slate-400' };
+
+function getRecipientColor(
+  recipientId: string | null | undefined,
+  recipients: EsignRecipient[]
+): { box: string; dot: string } {
+  if (!recipientId || !recipients.length) return UNASSIGNED_COLOR;
+  const idx = recipients.findIndex((r) => r.id === recipientId);
+  if (idx < 0) return UNASSIGNED_COLOR;
+  return RECIPIENT_COLORS[idx % RECIPIENT_COLORS.length] ?? UNASSIGNED_COLOR;
+}
 
 const EsignPlaceFieldsPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -231,6 +256,27 @@ const EsignPlaceFieldsPage: React.FC = () => {
     setSignatureFields((prev) => prev.filter((f) => f.id !== id));
   };
 
+  /** Persist fields to backend (pass updated list after drag/resize so size and position are saved). */
+  const saveFieldsToBackend = useCallback(async (fieldsToSave: PlacedField[]) => {
+    if (!documentId || !fieldsToSave.length) return;
+    const payload = fieldsToSave.map((f) => {
+      const base = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
+      if (f.x != null && f.y != null) {
+        return { ...base, x: f.x, y: f.y, width: Math.max(MIN_FIELD_WIDTH_PX / PDF_SCALE, f.width ?? 120), height: Math.max(MIN_FIELD_HEIGHT_PX / PDF_SCALE, f.height ?? 40) };
+      }
+      return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
+    });
+    try {
+      await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: documentId, fields: payload }),
+      });
+    } catch (err) {
+      console.warn('Failed to auto-save field positions:', err);
+    }
+  }, [documentId]);
+
   const handleSaveFields = async () => {
     if (!documentId) return;
     setSaving(true);
@@ -267,7 +313,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-8 px-4">
+    <div className="min-h-screen bg-slate-100 py-8 px-4">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -276,67 +322,81 @@ const EsignPlaceFieldsPage: React.FC = () => {
           </div>
           <button
             onClick={() => navigate(-1)}
-            className="text-slate-600 hover:text-slate-900"
+            className="text-slate-600 hover:text-slate-900 font-medium"
           >
             ← Back
           </button>
         </div>
 
         <div className="flex gap-6">
-          <div className="w-64 shrink-0 space-y-4">
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <p className="text-sm font-semibold text-slate-800 mb-1">Recipients ({recipients.length})</p>
+          <div className="w-64 shrink-0 bg-slate-200/60 rounded-xl border border-slate-200 p-4 space-y-5">
+            <div>
+              <p className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</p>
               <p className="text-xs text-slate-500 mb-2">Add signers and assign fields to them</p>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {recipients.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between gap-1 rounded-lg bg-slate-50 py-1.5 px-2">
-                    <span className="text-xs truncate" title={`${r.name} <${r.email}>`}>{r.name || r.email}</span>
-                    <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
-                  </div>
-                ))}
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {recipients.map((r) => {
+                  const isSelected = selectedRecipientId === r.id;
+                  const recipientColor = getRecipientColor(r.id, recipients);
+                  return (
+                    <div
+                      key={r.id}
+                      className={`rounded-lg overflow-hidden border-2 ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-300 bg-white'}`}
+                    >
+                      <div className="flex items-start justify-between gap-1 p-2.5">
+                        <div className="min-w-0 flex-1 flex items-start gap-2">
+                          <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color for this signer" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600 shrink-0" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="mt-2 space-y-1.5">
-                <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
-                <input type="email" value={newRecipient.email} onChange={(e) => { setNewRecipient((p) => ({ ...p, email: e.target.value })); setRecipientError(null); }} placeholder="Email" className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
-                {recipientError && <p className="text-xs text-red-600">{recipientError}</p>}
-                <button type="button" onClick={addRecipient} disabled={addingRecipient || !newRecipient.email.trim()} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {addingRecipient ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />} Add recipient
+              <div className="mt-2 pt-2 border-t border-slate-200">
+                <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
+                <input type="email" value={newRecipient.email} onChange={(e) => { setNewRecipient((p) => ({ ...p, email: e.target.value })); setRecipientError(null); }} placeholder="Email" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" />
+                {recipientError && <p className="text-xs text-red-600 mt-1">{recipientError}</p>}
+                <button type="button" onClick={addRecipient} disabled={addingRecipient || !newRecipient.email.trim()} className="mt-1.5 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {addingRecipient ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add recipient
                 </button>
               </div>
-              <p className="text-xs text-slate-500 mt-2">Place fields for:</p>
-              <select value={selectedRecipientId || ''} onChange={(e) => setSelectedRecipientId(e.target.value || null)} className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-xs">
+              <p className="text-xs text-slate-500 mt-3">Place fields for:</p>
+              <select value={selectedRecipientId || ''} onChange={(e) => setSelectedRecipientId(e.target.value || null)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
                 <option value="">— None —</option>
                 {recipients.map((r) => (<option key={r.id} value={r.id}>{r.name || r.email}</option>))}
               </select>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-sm font-medium text-slate-700 mb-2">Field types</p>
-            <p className="text-xs text-slate-500 mb-3">Drag onto the document to place</p>
-            <div className="space-y-2">
-              {FIELD_DEFS.map(({ type, label, Icon }) => (
-                <div
-                  key={type}
-                  draggable
-                  onDragStart={(e) => {
-                    setDragSource(type);
-                    e.dataTransfer.setData('text/plain', type);
-                    e.dataTransfer.effectAllowed = 'copy';
-                  }}
-                  onDragEnd={() => setDragSource(null)}
-                  className={`flex items-center gap-2 p-3 rounded-lg border-2 border-dashed cursor-grab active:cursor-grabbing ${
-                    dragSource === type
-                      ? 'border-indigo-400 bg-indigo-50'
-                      : 'border-slate-300 bg-slate-50 hover:border-indigo-300'
-                  }`}
-                >
-                  <Icon className="h-5 w-5 text-indigo-600 shrink-0" />
-                  <span className="font-medium text-slate-800 text-sm">{label}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-amber-600 mt-3 font-medium">
-              Scroll to the page you want, then drag fields onto the document
-            </p>
+            <div>
+              <p className="text-xs text-slate-500 mb-2">Drag onto the document to place</p>
+              <div className="space-y-2">
+                {FIELD_DEFS.map(({ type, label, Icon }) => (
+                  <div
+                    key={type}
+                    draggable
+                    onDragStart={(e) => {
+                      setDragSource(type);
+                      e.dataTransfer.setData('text/plain', type);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    onDragEnd={() => setDragSource(null)}
+                    className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-grab active:cursor-grabbing transition-colors ${
+                      dragSource === type
+                        ? 'border-indigo-400 bg-indigo-50'
+                        : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 text-indigo-600 shrink-0" />
+                    <span className="font-medium text-slate-800 text-sm">{label}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                Scroll to the page you want, then drag fields onto the document
+              </p>
             </div>
           </div>
 
@@ -366,14 +426,72 @@ const EsignPlaceFieldsPage: React.FC = () => {
                       {signatureFields
                         .filter((f) => (f.page || 1) === pageNum)
                         .map((f) => {
-                          const style = (f.x != null && f.y != null)
-                            ? { left: f.x * PDF_SCALE, top: f.y * PDF_SCALE, width: (f.width ?? 120) * PDF_SCALE, height: (f.height ?? 40) * PDF_SCALE }
-                            : { left: `${f.xPct ?? 10}%`, top: `${f.yPct ?? 80}%`, width: `${f.widthPct ?? 20}%`, height: `${f.heightPct ?? 4}%` };
+                          const isPointBased = f.x != null && f.y != null;
+                          const widthPt = f.width ?? 120;
+                          const heightPt = f.height ?? 40;
+                          const color = getRecipientColor(f.recipient_id, recipients);
+                          const minWidthPt = MIN_FIELD_WIDTH_PX / PDF_SCALE;
+                          const minHeightPt = MIN_FIELD_HEIGHT_PX / PDF_SCALE;
+
+                          if (isPointBased) {
+                            return (
+                              <Rnd
+                                key={f.id}
+                                position={{ x: f.x * PDF_SCALE, y: f.y * PDF_SCALE }}
+                                size={{ width: Math.max(MIN_FIELD_WIDTH_PX, widthPt * PDF_SCALE), height: Math.max(MIN_FIELD_HEIGHT_PX, heightPt * PDF_SCALE) }}
+                                minWidth={MIN_FIELD_WIDTH_PX}
+                                minHeight={MIN_FIELD_HEIGHT_PX}
+                                onDragStop={(_e, d) => {
+                                  const xPt = d.x / PDF_SCALE;
+                                  const yPt = d.y / PDF_SCALE;
+                                  const next = signatureFields.map((field) =>
+                                    field.id === f.id ? { ...field, x: xPt, y: yPt, width: field.width ?? 120, height: field.height ?? 40 } : field
+                                  );
+                                  setSignatureFields(next);
+                                  saveFieldsToBackend(next);
+                                }}
+                                onResizeStop={(_e, _dir, ref, _delta, position) => {
+                                  const xPt = position.x / PDF_SCALE;
+                                  const yPt = position.y / PDF_SCALE;
+                                  const wPt = Math.max(minWidthPt, ref.offsetWidth / PDF_SCALE);
+                                  const hPt = Math.max(minHeightPt, ref.offsetHeight / PDF_SCALE);
+                                  const next = signatureFields.map((field) =>
+                                    field.id === f.id ? { ...field, x: xPt, y: yPt, width: wPt, height: hPt } : field
+                                  );
+                                  setSignatureFields(next);
+                                  saveFieldsToBackend(next);
+                                }}
+                                enableResizing={{ bottom: true, right: true, bottomRight: true }}
+                                dragGrid={[1, 1]}
+                                resizeGrid={[1, 1]}
+                                className={`flex items-center justify-center rounded font-medium text-sm cursor-move group ${color.box}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (e.detail === 2) removeField(f.id);
+                                }}
+                                title={`${getFieldLabel(f.type)}${f.recipient_id ? ` • ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}` : ''} (double-click to remove)`}
+                              >
+                                {getFieldLabel(f.type)}
+                                <span
+                                  className="ml-1 text-xs opacity-0 group-hover:opacity-100"
+                                  onClick={(e) => { e.stopPropagation(); removeField(f.id); }}
+                                >
+                                  ×
+                                </span>
+                              </Rnd>
+                            );
+                          }
+
                           return (
                             <div
                               key={f.id}
-                              className="absolute flex items-center justify-center bg-sky-100 border-2 border-sky-500 rounded text-sky-800 font-medium text-sm cursor-pointer hover:bg-sky-200 group"
-                              style={{ ...style, minWidth: 60, minHeight: 24 }}
+                              className={`absolute flex items-center justify-center rounded font-medium text-sm cursor-pointer group ${color.box}`}
+                              style={{
+                                left: `${f.xPct ?? 10}%`,
+                                top: `${f.yPct ?? 80}%`,
+                                width: `${f.widthPct ?? 20}%`,
+                                height: `${f.heightPct ?? 4}%`,
+                              }}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (e.detail === 2) removeField(f.id);
@@ -396,16 +514,16 @@ const EsignPlaceFieldsPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-4 mt-4">
+            <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
               <div className="flex items-center gap-2">
-                <label htmlFor="goto-page" className="text-sm text-slate-600">Go to page</label>
+                <span className="text-sm text-slate-600">Go to page</span>
                 <input
                   id="goto-page"
                   type="number"
                   min={1}
                   max={totalPages}
                   defaultValue={1}
-                  className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
+                  className="w-12 rounded border border-slate-300 px-2 py-1.5 text-sm"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       const n = Math.max(1, Math.min(totalPages, parseInt((e.target as HTMLInputElement).value, 10) || 1));
@@ -420,7 +538,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                     const n = input ? Math.max(1, Math.min(totalPages, parseInt(input.value, 10) || 1)) : 1;
                     scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-50"
+                  className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Go
                 </button>
@@ -431,7 +549,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 <button
                   onClick={handleSaveFields}
                   disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Continue <ArrowRight className="h-4 w-4" /></>}
                 </button>
