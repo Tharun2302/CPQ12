@@ -78,23 +78,44 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 //   that references *new* hashed chunks, or vice-versa, causing runtime errors like:
 //     "Cannot access '<symbol>' before initialization"
 // - Aggressively cache Vite hashed assets under dist/assets for performance.
+const distPath = path.join(__dirname, 'dist');
+const assetsPath = path.join(distPath, 'assets');
+
+// Serve JS/CSS chunks with correct MIME (prevents "application/octet-stream" / "Cannot access 'ze' before initialization")
+app.get('/assets/:filename', (req, res) => {
+  const filename = req.params.filename;
+  if (!/^[a-zA-Z0-9_.-]+\.(js|mjs|css)$/.test(filename)) {
+    return res.status(404).end();
+  }
+  const filePath = path.join(assetsPath, filename);
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return res.status(404).end();
+  }
+  if (filename.endsWith('.js') || filename.endsWith('.mjs')) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  } else if (filename.endsWith('.css')) {
+    res.setHeader('Content-Type', 'text/css; charset=utf-8');
+  }
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(filePath);
+});
+
 app.use(
-  express.static(path.join(__dirname, 'dist'), {
+  express.static(distPath, {
     etag: true,
     lastModified: true,
     setHeaders(res, filePath) {
-      // Set proper MIME types for JavaScript module files
-      if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+      const p = (filePath || '').replace(/\\/g, '/');
+      if (p.endsWith('.js') || p.endsWith('.mjs')) {
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
       }
-      
-      // Vite hashed assets
-      if (filePath.includes(`${path.sep}dist${path.sep}assets${path.sep}`)) {
+      if (p.endsWith('.css')) {
+        res.setHeader('Content-Type', 'text/css; charset=utf-8');
+      }
+      if (p.includes('dist/assets') || p.includes('/assets/')) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         return;
       }
-
-      // Everything else (including index.html if served by static)
       res.setHeader('Cache-Control', 'no-cache');
     },
   })
@@ -6137,9 +6158,10 @@ app.get('/auth/microsoft/callback', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// Catch-all (serve React for any non-API route)
-app.get(/^(?!\/api).*/, (req, res) => {
+// SPA catch-all: do NOT match /assets/* or *.js/*.css (so they get correct MIME and avoid "Cannot access 'ze' before initialization")
+app.get(/^(?!\/api)(?!\/assets)(?!\/[^/]*\.(js|mjs|css|ico|svg|woff2?)(\?.*)?$).*/, (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
