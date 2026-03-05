@@ -5470,6 +5470,28 @@ app.post('/api/approval-workflows', async (req, res) => {
   }
 });
 
+// Helper function to check if all approval steps (Team, Tech, Legal) are approved
+function areAllApprovalStepsComplete(workflowSteps) {
+  if (!Array.isArray(workflowSteps)) return false;
+  
+  const approvalRoles = ['Team Approval', 'Technical Team', 'Legal Team'];
+  const approvalSteps = workflowSteps.filter(s => approvalRoles.includes(s.role));
+  
+  const teamStep = approvalSteps.find(s => s.role === 'Team Approval');
+  const techStep = approvalSteps.find(s => s.role === 'Technical Team');
+  const legalStep = approvalSteps.find(s => s.role === 'Legal Team');
+  
+  const hasTeamApproval = !!teamStep;
+  
+  // If Team Approval exists, all three must be approved. Otherwise, just Tech and Legal.
+  return hasTeamApproval
+    ? (teamStep?.status === 'approved' &&
+       techStep?.status === 'approved' &&
+       legalStep?.status === 'approved')
+    : (techStep?.status === 'approved' &&
+       legalStep?.status === 'approved');
+}
+
 // Get all approval workflows
 app.get('/api/approval-workflows', async (req, res) => {
   try {
@@ -5483,6 +5505,7 @@ app.get('/api/approval-workflows', async (req, res) => {
 
     console.log('📄 Fetching approval workflows from MongoDB...');
     
+    // Sort by createdAt (most recent first) - descending order
     const workflows = await db.collection('approval_workflows')
       .find({})
       .sort({ createdAt: -1 })
@@ -5490,11 +5513,82 @@ app.get('/api/approval-workflows', async (req, res) => {
     
     console.log(`✅ Found ${workflows.length} workflows in database`);
     
-    res.json({
-      success: true,
-      workflows: workflows,
-      count: workflows.length
-    });
+    // Re-evaluate workflows that might be incorrectly marked as 'in_progress'
+    // when all approval steps (Team, Tech, Legal) are actually complete
+    const workflowsToUpdate = [];
+    const workflowsToFixDealDesk = [];
+    
+    for (const workflow of workflows) {
+      if (workflow.status === 'in_progress' || workflow.status === 'pending') {
+        if (areAllApprovalStepsComplete(workflow.workflowSteps)) {
+          workflowsToUpdate.push(workflow.id);
+        }
+      }
+      
+      // Check if Legal Team is approved but Deal Desk is still pending
+      const legalStep = workflow.workflowSteps?.find(s => s.role === 'Legal Team');
+      const dealDeskStep = workflow.workflowSteps?.find(s => s.role === 'Deal Desk');
+      
+      if (legalStep?.status === 'approved' && dealDeskStep && 
+          (dealDeskStep.status === 'pending' || !dealDeskStep.status || dealDeskStep.status !== 'notified')) {
+        workflowsToFixDealDesk.push(workflow.id);
+      }
+    }
+    
+    // Fix Deal Desk steps that should be marked as "notified"
+    if (workflowsToFixDealDesk.length > 0) {
+      console.log(`🔄 Fixing ${workflowsToFixDealDesk.length} workflows: marking Deal Desk as "notified" (Legal Team already approved)`);
+      for (const workflowId of workflowsToFixDealDesk) {
+        await db.collection('approval_workflows').updateOne(
+          { id: workflowId },
+          {
+            $set: {
+              'workflowSteps.$[elem].status': 'notified',
+              'workflowSteps.$[elem].comments': 'Notified',
+              'workflowSteps.$[elem].timestamp': new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            }
+          },
+          {
+            arrayFilters: [{ 'elem.role': 'Deal Desk' }]
+          }
+        );
+      }
+    }
+    
+    // Update workflows that should be marked as approved
+    if (workflowsToUpdate.length > 0) {
+      console.log(`🔄 Updating ${workflowsToUpdate.length} workflows to 'approved' status (all approval steps complete)`);
+      await db.collection('approval_workflows').updateMany(
+        { id: { $in: workflowsToUpdate } },
+        { 
+          $set: { 
+            status: 'approved',
+            updatedAt: new Date().toISOString()
+          }
+        }
+      );
+    }
+    
+    // Refresh the workflows after updates
+    if (workflowsToUpdate.length > 0 || workflowsToFixDealDesk.length > 0) {
+      const updatedWorkflows = await db.collection('approval_workflows')
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+      
+      res.json({
+        success: true,
+        workflows: updatedWorkflows,
+        count: updatedWorkflows.length
+      });
+    } else {
+      res.json({
+        success: true,
+        workflows: workflows,
+        count: workflows.length
+      });
+    }
     
   } catch (error) {
     console.error('❌ Error fetching approval workflows:', error);
@@ -5622,6 +5716,24 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
         : step
     );
     
+    // If Legal Team just approved, automatically mark Deal Desk as "notified"
+    if (stepUpdates.status === 'approved') {
+      const approvedStep = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber));
+      if (approvedStep && approvedStep.role === 'Legal Team') {
+        // Find Deal Desk step and mark it as notified
+        const dealDeskStepIndex = updatedSteps.findIndex(s => s.role === 'Deal Desk');
+        if (dealDeskStepIndex !== -1) {
+          updatedSteps[dealDeskStepIndex] = {
+            ...updatedSteps[dealDeskStepIndex],
+            status: 'notified',
+            comments: 'Notified',
+            timestamp: new Date().toISOString()
+          };
+          console.log('✅ Deal Desk automatically marked as "notified" after Legal Team approval');
+        }
+      }
+    }
+    
     // Update current step and status based on step updates
     let newCurrentStep = workflow.currentStep;
     let newStatus = workflow.status;
@@ -5632,6 +5744,47 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
         newStatus = 'in_progress';
       } else {
         newStatus = 'approved';
+      }
+      
+      // Check if all approval steps (Team, Tech, Legal) are approved
+      // Deal Desk is just a notification, so it doesn't block approval status
+      const approvalRoles = ['Team Approval', 'Technical Team', 'Legal Team'];
+      
+      // Get all approval steps (excluding Deal Desk)
+      const approvalSteps = updatedSteps.filter(s => 
+        approvalRoles.includes(s.role)
+      );
+      
+      // Check if all required approval steps (Team, Tech, Legal) are approved
+      // Note: Some workflows might not have Team Approval (manual workflows), so we check what exists
+      const teamStep = approvalSteps.find(s => s.role === 'Team Approval');
+      const techStep = approvalSteps.find(s => s.role === 'Technical Team');
+      const legalStep = approvalSteps.find(s => s.role === 'Legal Team');
+      
+      const hasTeamApproval = !!teamStep;
+      const hasTechApproval = !!techStep;
+      const hasLegalApproval = !!legalStep;
+      
+      // If Team Approval exists, all three must be approved. Otherwise, just Tech and Legal.
+      const allRequiredApprovalsComplete = hasTeamApproval
+        ? (teamStep?.status === 'approved' &&
+           techStep?.status === 'approved' &&
+           legalStep?.status === 'approved')
+        : (techStep?.status === 'approved' &&
+           legalStep?.status === 'approved');
+      
+      if (allRequiredApprovalsComplete) {
+        // Mark as approved when all required approval steps are approved
+        // Deal Desk notification can still be sent, but doesn't block approval
+        newStatus = 'approved';
+        console.log('✅ All required approval steps (Team, Tech, Legal) are approved. Workflow marked as approved.');
+        console.log('📋 Approval status check:', {
+          hasTeamApproval,
+          teamStatus: teamStep?.status,
+          techStatus: techStep?.status,
+          legalStatus: legalStep?.status,
+          allComplete: allRequiredApprovalsComplete
+        });
       }
     } else if (stepUpdates.status === 'denied') {
       newStatus = 'denied';

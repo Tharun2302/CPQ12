@@ -81,7 +81,7 @@ const stepStatusLabel = (status?: string) => {
 const stepperDotClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
   if (s === 'denied') return 'bg-[#E11D48]';
-  if (s === 'approved') return 'bg-emerald-500';
+  if (s === 'approved' || s === 'notified') return 'bg-emerald-500'; // Treat "notified" same as "approved"
   if (idx < currentIdx) return 'bg-emerald-500';
   if (idx === currentIdx) return 'bg-[#F59E0B]';
   return 'bg-gray-300';
@@ -90,7 +90,7 @@ const stepperDotClass = (idx: number, currentIdx: number, rawStatus?: string) =>
 const stepperLabelClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
   if (s === 'denied') return 'text-red-600';
-  if (s === 'approved') return 'text-emerald-700';
+  if (s === 'approved' || s === 'notified') return 'text-emerald-700'; // Treat "notified" same as "approved"
   if (idx === currentIdx) return 'text-gray-900 font-semibold';
   return 'text-gray-600';
 };
@@ -148,25 +148,29 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       return doc.includes(normalized) || client.includes(normalized) || creator.includes(normalized);
     };
 
-    const pendingAll = safe.filter(isPending).filter(matchesQuery);
-    const approvedAll = safe.filter(isApproved).filter(matchesQuery);
-    const rejectedAll = safe.filter(isRejected).filter(matchesQuery);
-
-    // Dashboard list: show everything (pending + approved + rejected), prioritized by status then recency.
-    const statusRank = (s: string) => {
-      if (s === 'pending' || s === 'in_progress') return 0;
-      if (s === 'approved') return 1;
-      if (s === 'denied') return 2;
-      return 3;
+    // Helper function to sort by createdAt (descending - newest first)
+    const sortByCreatedAt = (a: any, b: any) => {
+      // Sort by createdAt (creation date) - descending order (newest first)
+      // Ensure dates are treated as proper Date objects
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      
+      // Handle invalid dates
+      if (isNaN(dateA) && isNaN(dateB)) return 0;
+      if (isNaN(dateA)) return 1; // Put invalid dates at the end
+      if (isNaN(dateB)) return -1; // Put invalid dates at the end
+      
+      return dateB - dateA; // Descending order (newest first)
     };
+
+    const pendingAll = safe.filter(isPending).filter(matchesQuery).sort(sortByCreatedAt);
+    const approvedAll = safe.filter(isApproved).filter(matchesQuery).sort(sortByCreatedAt);
+    const rejectedAll = safe.filter(isRejected).filter(matchesQuery).sort(sortByCreatedAt);
+
+    // Dashboard list: show everything (pending + approved + rejected), sorted by createdAt (most recent first).
     const allSorted = safe
       .filter(matchesQuery)
-      .sort((a: any, b: any) => {
-        const ra = statusRank(a.status || 'pending');
-        const rb = statusRank(b.status || 'pending');
-        if (ra !== rb) return ra - rb;
-        return +new Date(b.updatedAt || b.createdAt) - +new Date(a.updatedAt || a.createdAt);
-      });
+      .sort(sortByCreatedAt);
 
     const approvedTodayCount = safe.filter(isApproved).filter((w: any) => {
       const d = new Date(w.updatedAt || w.createdAt);
@@ -567,7 +571,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                 ].join('\n');
 
                                 const completed =
-                                  raw === 'approved' || (idx < currentIdx && raw !== 'denied');
+                                  raw === 'approved' || raw === 'notified' || (idx < currentIdx && raw !== 'denied');
                                 return (
                                   <div key={item.label} className="flex-1 min-w-0 flex flex-col items-center" title={title}>
                                     {completed ? (
