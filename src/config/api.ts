@@ -49,7 +49,15 @@ export const API_ENDPOINTS = {
   DOCUMENT_PREVIEW: (id: string) => `/api/documents/${id}/preview`,
   DOCUMENT_FILE: (id: string) => `/api/documents/${id}`,
   
-  // Signature
+  // E-Signature (built-in)
+  ESIGN_UPLOAD: '/api/esign/documents/upload',
+  ESIGN_DOCUMENTS: '/api/esign/documents',
+  ESIGN_DOCUMENT: (id: string) => `/api/esign/documents/${id}`,
+  ESIGN_DOCUMENT_FILE: (id: string) => `/api/esign/documents/${id}/file`,
+  ESIGN_SIGNATURE_FIELDS: (id: string) => `/api/esign/signature-fields/${id}`,
+  ESIGN_GENERATE_SIGNED: '/api/esign/documents/generate-signed',
+
+  // Signature (legacy)
   SIGNATURE_CREATE_FORM: '/api/signature/create-form',
   SIGNATURE_FORM: (id: string) => `/api/signature/form/${id}`,
   SIGNATURE_SUBMIT: '/api/signature/submit',
