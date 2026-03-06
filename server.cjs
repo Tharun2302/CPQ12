@@ -897,35 +897,25 @@ async function sendEmail(to, subject, html, attachments = []) {
 
 // NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
 
-// Main route - serve the React app with deal data
-app.get('/', (req, res) => {
-  // Deal Information
+// HubSpot redirect handler - only when deal/contact params present; otherwise SPA handles /
+app.get('/hubspot-landing', (req, res) => {
   const dealId = req.query.dealId;
   const dealName = req.query.dealName;
   const amount = req.query.amount;
   const closeDate = req.query.closeDate;
   const stage = req.query.stage;
   const ownerId = req.query.ownerId;
-  
-  // Contact Information (from fetched_objects.fetched_object_176195683)
   const contactEmail = req.query.ContactEmail;
   const contactFirstName = req.query.ContactFirstName;
   const contactLastName = req.query.ContactLastName;
-  
-  // Company Information (from fetched_objects.fetched_object_176195685)
   const companyName = req.query.CompanyName;
   const companyByContact = req.query.CompanyByContact || req.query.CompanyFromContact;
-  
-  // Log all the captured data
   console.log({
     deal: { dealId, dealName, amount, closeDate, stage, ownerId },
     contact: { email: contactEmail, firstName: contactFirstName, lastName: contactLastName },
     company: { name: companyName, byContact: companyByContact }
   });
-  
-  // Create a more comprehensive response
   const fullContactName = `${contactFirstName} ${contactLastName}`.trim();
-  
   res.send(`
     <h2>Deal Information</h2>
     <p><strong>Deal:</strong> ${dealName} (ID: ${dealId})</p>
@@ -933,11 +923,9 @@ app.get('/', (req, res) => {
     <p><strong>Stage:</strong> ${stage || 'N/A'}</p>
     <p><strong>Close Date:</strong> ${closeDate || 'N/A'}</p>
     <p><strong>Owner ID:</strong> ${ownerId || 'N/A'}</p>
-    
     <h2>Contact Information</h2>
     <p><strong>Name:</strong> ${fullContactName}</p>
     <p><strong>Email:</strong> ${contactEmail}</p>
-    
     <h2>Company Information</h2>
     <p><strong>Company:</strong> ${companyName}</p>
     <p><strong>Company by Contact:</strong> ${companyByContact}</p>

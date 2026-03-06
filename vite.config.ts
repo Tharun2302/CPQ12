@@ -14,6 +14,13 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   build: {
+    // Exclude docx-vendor from modulepreload to avoid "ze" initialization order issues.
+    // docx-vendor loads on-demand when user opens docx features, after main/vendor are ready.
+    modulePreload: {
+      resolveDependencies: (filename, deps, { hostId, hostType }) => {
+        return deps.filter((dep) => !dep.includes('docx-vendor'));
+      },
+    },
     // Enable code splitting and chunk optimization
     rollupOptions: {
       output: {
