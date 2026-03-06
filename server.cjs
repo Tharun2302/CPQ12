@@ -44,7 +44,8 @@ app.use(cors({
     'http://localhost:3000', 
     'http://localhost:3001',
     'https://zenop.ai',
-    'https://www.zenop.ai'
+    'https://www.zenop.ai',
+    'https://159.89.175.168'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -59,6 +60,7 @@ app.use((req, res, next) => {
     'http://localhost:3001',
     'https://zenop.ai',
     'https://www.zenop.ai',
+    'https://159.89.175.168',
     process.env.APP_BASE_URL?.replace(/\/$/, '')
   ].filter(Boolean));
 
