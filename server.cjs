@@ -5261,7 +5261,7 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
 app.post('/api/esign/documents/from-approval', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { documentId, uploaded_by: uploadedBy } = req.body || {};
+    const { documentId, uploaded_by: uploadedBy, workflowId } = req.body || {};
     if (!documentId) return res.status(400).json({ success: false, error: 'documentId is required' });
 
     const document = await db.collection('documents').findOne({ id: documentId });
@@ -5295,6 +5295,17 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
     const esignId = result.insertedId.toString();
 
     await logAudit(esignId, 'uploaded', doc.uploaded_by, req.ip || req.connection?.remoteAddress);
+
+    if (workflowId && typeof workflowId === 'string' && workflowId.trim()) {
+      try {
+        await db.collection('approval_workflows').updateOne(
+          { id: workflowId.trim() },
+          { $set: { esignDocumentId: esignId, updatedAt: new Date().toISOString() } }
+        );
+      } catch (linkErr) {
+        console.warn('E-sign from-approval: could not link esign doc to workflow', workflowId, linkErr);
+      }
+    }
 
     res.json({
       success: true,
@@ -5358,8 +5369,11 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     const filePath = doc.signed_file_path || doc.file_path;
     if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
+    const attachment = req.query.attachment === '1' || req.query.download === '1';
+    const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${doc.file_name}"`);
+    res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
+    if (attachment) res.set('Cache-Control', 'no-store'); // avoid browser using cached inline response
     res.sendFile(path.resolve(filePath));
   } catch (error) {
     console.error('❌ E-sign get file error:', error);

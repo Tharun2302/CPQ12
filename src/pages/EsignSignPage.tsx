@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
-import { PenLine, Loader2, Check, Type, ImagePlus } from 'lucide-react';
+import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 
@@ -56,7 +56,10 @@ const EsignSignPage: React.FC = () => {
   const [typedSignature, setTypedSignature] = useState('');
   const [typedSignatureFontIndex, setTypedSignatureFontIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [alreadySigned, setAlreadySigned] = useState(false);
+  const [documentFullySigned, setDocumentFullySigned] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSignatureFieldIndex, setSelectedSignatureFieldIndex] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState(1);
@@ -78,6 +81,9 @@ const EsignSignPage: React.FC = () => {
           setSigningToken(documentIdOrToken);
           setRecipientName(data.recipient?.name || null);
           setDoc(data.document);
+          if (data.recipient?.status === 'signed') {
+            setAlreadySigned(true);
+          }
           const raw = data.fields || [];
           const normalized = raw.map((f: any) => {
             const page = Number(f.page) || 1;
@@ -96,7 +102,12 @@ const EsignSignPage: React.FC = () => {
           ]);
           const docData = await docRes.json();
           const fieldsData = await fieldsRes.json();
-          if (docData.success) setDoc(docData.document);
+          if (docData.success) {
+            setDoc(docData.document);
+            if (docData.document?.status === 'completed') {
+              setDocumentFullySigned(true);
+            }
+          }
           if (fieldsData.success && fieldsData.fields?.length) {
             const normalized = fieldsData.fields.map((f: any) => {
               const page = Number(f.page) || 1;
@@ -226,6 +237,30 @@ const EsignSignPage: React.FC = () => {
     }
   };
 
+  const handleDownload = async (fileName?: string) => {
+    if (!documentId) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`, { credentials: 'include' });
+      if (!res.ok) {
+        setError('Download failed');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName ?? doc?.file_name ?? 'document.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Download failed');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const getFieldStyle = (f: SignatureField) => {
     if (f.x != null && f.y != null) {
       return {
@@ -259,6 +294,72 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
+  if (alreadySigned) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+            <Check className="h-8 w-8 text-slate-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have already signed this document</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">This signing link is no longer active for new signatures. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (documentFullySigned) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 mb-4">
+            <Check className="h-8 w-8 text-emerald-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Document fully signed</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">All signers have completed this document. No further signatures needed. You can download the signed document below.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download signed document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (success) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -268,13 +369,24 @@ const EsignSignPage: React.FC = () => {
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">Document Signed Successfully</h2>
           <p className="text-slate-600 mb-6">{doc.file_name}</p>
-          <a
-            href={`${BACKEND_URL}/api/esign/documents/${documentId}/file`}
-            download={doc.file_name}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700"
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Download Signed PDF
-          </a>
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download Signed PDF
+              </>
+            )}
+          </button>
         </div>
       </div>
     );
@@ -584,23 +696,57 @@ const EsignSignPage: React.FC = () => {
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Signing…
-                </>
-              ) : (
-                <>
-                  <Check className="h-5 w-5" />
-                  Sign & Download
-                </>
-              )}
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFieldValues({});
+                  clearSignature();
+                  setSelectedSignatureFieldIndex(null);
+                }}
+                disabled={submitting}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Pencil className="h-5 w-5" />
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-5 w-5" />
+                    Submit
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownload(doc?.file_name)}
+                disabled={downloading}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {downloading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Downloading…
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-5 w-5" />
+                    Download
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ import {
   Clock,
   FileCheck,
   FileText,
+  ListChecks,
   Loader2,
   PenLine,
   Search,
@@ -117,6 +118,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const objectUrlRef = useRef<string | null>(null);
   const [esignCreatingId, setEsignCreatingId] = useState<string | null>(null);
   const [esignError, setEsignError] = useState<string | null>(null);
+  const [esignRecipientsByDocId, setEsignRecipientsByDocId] = useState<Record<string, Array<{ name: string; email?: string; status: string; order?: number }>>>({});
 
   const {
     workflows,
@@ -131,6 +133,36 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, []);
+
+  // Fetch e-sign recipients for workflows that have esignDocumentId
+  useEffect(() => {
+    const docIds = (workflows || [])
+      .map((w: any) => w?.esignDocumentId)
+      .filter((id: string) => typeof id === 'string' && id.trim());
+    const uniqueIds = [...new Set(docIds)] as string[];
+    if (uniqueIds.length === 0) return;
+    let cancelled = false;
+    const fetchAll = async () => {
+      const next: Record<string, Array<{ name: string; email?: string; status: string; order?: number }>> = { ...esignRecipientsByDocId };
+      for (const id of uniqueIds) {
+        if (cancelled) return;
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/esign/documents/${id}/recipients`);
+          const data = await res.json();
+          if (cancelled) return;
+          if (data.success && Array.isArray(data.recipients)) {
+            const sorted = [...data.recipients].sort((a: any, b: any) => (a.order ?? 999) - (b.order ?? 999));
+            next[id] = sorted.map((r: any) => ({ name: r.name || r.email || 'Recipient', email: r.email, status: r.status || 'pending', order: r.order }));
+          }
+        } catch {
+          // ignore per-doc errors
+        }
+      }
+      if (!cancelled) setEsignRecipientsByDocId(next);
+    };
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [(workflows || []).map((w: any) => w?.esignDocumentId).filter(Boolean).join(',')]);
 
   const now = new Date();
   const today0 = startOfDay(now);
@@ -289,6 +321,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
         body: JSON.stringify({
           documentId: docId,
           uploaded_by: user?.email || 'approval-workflow',
+          workflowId: workflow.id,
         }),
       });
       const data = await res.json();
@@ -565,22 +598,34 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                       </div>
 
                       <div className="shrink-0 flex flex-col sm:flex-row gap-2 self-stretch">
-                        {status === 'approved' && workflow?.documentId && (
-                          <button
-                            type="button"
-                            onClick={() => handleStartEsign(workflow)}
-                            disabled={esignCreatingId === workflow.id}
-                            title="Send for e-signature (same flow as E-Sign page)"
-                            aria-label="Send for e-signature"
-                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
-                          >
-                            {esignCreatingId === workflow.id ? (
-                              <Loader2 className="h-4 w-4 text-white animate-spin" />
-                            ) : (
-                              <PenLine className="h-4 w-4 text-white" />
-                            )}
-                            <span className="hidden sm:inline">eSign</span>
-                          </button>
+                        {workflow?.documentId && legalStep?.status === 'approved' && (
+                          workflow.esignDocumentId ? (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/esign/${workflow.esignDocumentId}/status`)}
+                              title="View e-sign status (Recipient 1 & 2)"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0D9488] border border-[#0D9488] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0F766E] hover:border-[#0F766E] transition-all whitespace-nowrap"
+                            >
+                              <ListChecks className="h-4 w-4 text-white" />
+                              <span className="hidden sm:inline">View e-sign status</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEsign(workflow)}
+                              disabled={esignCreatingId === workflow.id}
+                              title="Send for e-signature after Legal — Recipient 1 & 2"
+                              aria-label="Send for e-signature"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {esignCreatingId === workflow.id ? (
+                                <Loader2 className="h-4 w-4 text-white animate-spin" />
+                              ) : (
+                                <PenLine className="h-4 w-4 text-white" />
+                              )}
+                              <span className="hidden sm:inline">Send for signature</span>
+                            </button>
+                          )
                         )}
                         <button
                           type="button"
@@ -596,22 +641,39 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                       </div>
                     </div>
 
-                    {/* Approval step summary (Team/Technical/Legal/Deal Desk) */}
+                    {/* Approval step summary: Team, Tech, Legal, [Recipient 1, Recipient 2, ...], Deal Desk */}
                     {(() => {
                       const dealDeskExtra = dealDeskStep?.comments === 'Notified'
                         ? 'Email sent'
                         : dealDeskStep?.comments === 'Notification failed'
                           ? 'Email failed'
                           : (dealDeskStep?.comments || '');
-                      const steps = [
+                      const baseSteps = [
                         { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
                         { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
                         { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
-                        { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra },
                       ];
+                      const recipientSteps: Array<{ label: string; step: { status: string }; extra: string }> = [];
+                      const esignDocId = workflow.esignDocumentId;
+                      const recipients = esignDocId ? (esignRecipientsByDocId[esignDocId] || []) : [];
+                      if (recipients.length > 0) {
+                        recipients.forEach((rec, i) => {
+                          recipientSteps.push({
+                            label: `Recipient ${i + 1}`,
+                            step: { status: rec.status === 'signed' ? 'signed' : 'pending' },
+                            extra: rec.name || rec.email || '',
+                          });
+                        });
+                      }
+                      const dealDeskStepItem = { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra };
+                      const steps = [...baseSteps, ...recipientSteps, dealDeskStepItem];
 
-                      const currentIdx = Math.max(0, Number(workflow.currentStep || 1) - 1);
-                      const currentItem = steps[currentIdx];
+                      const currentIdx = steps.findIndex((item) => {
+                        const raw = item.step?.status || 'pending';
+                        return raw !== 'approved' && raw !== 'notified' && raw !== 'signed';
+                      });
+                      const resolvedCurrentIdx = currentIdx === -1 ? steps.length - 1 : currentIdx;
+                      const currentItem = steps[resolvedCurrentIdx];
                       const currentExtra = currentItem?.extra
                         ? `${currentItem.label}: ${currentItem.extra}`
                         : `${currentItem?.label || 'Current'}: —`;
@@ -621,7 +683,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                           <div className="flex items-center justify-between">
                             <div className="text-gray-700 text-xs font-bold uppercase tracking-wide">Approvals</div>
                             <div className="text-gray-500 text-xs">
-                              Step {workflow.currentStep || 1} / {workflow.totalSteps || (workflow.workflowSteps?.length || 4)}
+                              Step {resolvedCurrentIdx + 1} / {steps.length}
                             </div>
                           </div>
 
@@ -640,14 +702,16 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                   item.step?.createdAt ||
                                   null;
                                 const ts = tsRaw ? `Time: ${new Date(tsRaw).toLocaleString()}` : null;
+                                const statusLabel = raw === 'signed' ? 'Signed' : stepStatusLabel(raw);
                                 const title = [
-                                  `${item.label}: ${stepStatusLabel(raw)}`,
+                                  `${item.label}: ${statusLabel}`,
                                   ...(item.extra ? [`Info: ${item.extra}`] : []),
                                   ...([who, grp, cmt, ts].filter(Boolean) as string[]),
                                 ].join('\n');
 
                                 const completed =
-                                  raw === 'approved' || raw === 'notified' || (idx < currentIdx && raw !== 'denied');
+                                  raw === 'approved' || raw === 'notified' || raw === 'signed' || (idx < resolvedCurrentIdx && raw !== 'denied');
+                                const dotStatus = raw === 'signed' ? 'approved' : raw;
                                 return (
                                   <div key={item.label} className="flex-1 min-w-0 flex flex-col items-center" title={title}>
                                     {completed ? (
@@ -655,9 +719,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                         <Check className="h-3 w-3 text-white" />
                                       </div>
                                     ) : (
-                                      <div className={`h-4 w-4 rounded-full ring-2 ring-white ${stepperDotClass(idx, currentIdx, raw)}`} />
+                                      <div className={`h-4 w-4 rounded-full ring-2 ring-white ${stepperDotClass(idx, resolvedCurrentIdx, dotStatus)}`} />
                                     )}
-                                    <div className={`mt-1 text-[11px] truncate ${stepperLabelClass(idx, currentIdx, raw)}`}>{item.label}</div>
+                                    <div className={`mt-1 text-[11px] truncate ${stepperLabelClass(idx, resolvedCurrentIdx, dotStatus)}`}>{item.label}</div>
                                   </div>
                                 );
                               })}

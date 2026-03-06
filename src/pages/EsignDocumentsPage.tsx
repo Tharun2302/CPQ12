@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, ListChecks } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface EsignDocument {
@@ -199,6 +199,15 @@ const EsignDocumentsPage: React.FC = () => {
                         Place Fields
                       </button>
                     )}
+                    {(doc.status === 'sent' || doc.status === 'completed') && (
+                      <button
+                        onClick={() => navigate(`/esign/${doc.id}/status`)}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-violet-600 hover:underline"
+                      >
+                        <ListChecks className="h-4 w-4" />
+                        View status
+                      </button>
+                    )}
                     {doc.status === 'sent' && (
                       <button
                         onClick={() => navigate(`/esign/${doc.id}/send`)}
@@ -208,9 +217,9 @@ const EsignDocumentsPage: React.FC = () => {
                         View Link
                       </button>
                     )}
-                    {doc.status === 'signed' && (
+                    {(doc.status === 'signed' || doc.status === 'completed') && (
                       <a
-                        href={`${BACKEND_URL}/api/esign/documents/${doc.id}/file`}
+                        href={`${BACKEND_URL}/api/esign/documents/${doc.id}/file?attachment=1`}
                         target="_blank"
                         rel="noopener noreferrer"
                         download

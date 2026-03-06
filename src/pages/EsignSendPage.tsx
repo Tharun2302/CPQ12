@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Mail, Loader2, Copy, Check } from 'lucide-react';
+import { Mail, Loader2, Copy, Check, ListChecks } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 const EsignSendPage: React.FC = () => {
@@ -114,6 +114,17 @@ const EsignSendPage: React.FC = () => {
               <p className={`text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {sendForSignatureResult}
               </p>
+            )}
+
+            {sendForSignatureResult && (sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document')) && (
+              <button
+                type="button"
+                onClick={() => documentId && navigate(`/esign/${documentId}/status`)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700"
+              >
+                <ListChecks className="h-4 w-4" />
+                View signing status
+              </button>
             )}
 
             <div className="flex flex-wrap gap-3">
