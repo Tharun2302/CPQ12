@@ -18,6 +18,7 @@ import {
   Workflow,
   X,
   Settings,
+  PenLine,
   Plus,
   Trash2,
   RefreshCw
@@ -655,6 +656,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     role4: defaultDealDeskEmail
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
+  const [isAddingEsignFields, setIsAddingEsignFields] = useState(false);
+
+  // SessionStorage key for "Add e-sign fields first" flow (read by EsignPlaceFieldsPage)
+  const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 
   // Team Approval settings - loaded from MongoDB API
   const [teamApprovalSettings, setTeamApprovalSettings] = useState<{
@@ -2992,6 +2997,129 @@ Total Price: {{total price}}`;
       alert('Error starting approval workflow. Please try again.');
     } finally {
       setIsStartingWorkflow(false);
+    }
+  };
+
+  // Add e-sign fields first, then send for approval: save PDF, create e-sign doc, store config, go to place-fields
+  const handleAddEsignFields = async () => {
+    if (!processedAgreement) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
+    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role4) {
+      alert('Please enter Technical, Legal, and Deal Desk email addresses.');
+      return;
+    }
+
+    const autoSelectedTeam = useManualSelection ? manualTeamSelection : getAutoSelectedTeam(calculation?.totalCost || 0, clientInfo.clientName || '');
+    const teamEmail = getTeamApprovalEmail(autoSelectedTeam);
+    if (!teamEmail) {
+      alert('Team Approval email not configured. Please configure team settings.');
+      return;
+    }
+
+    setIsAddingEsignFields(true);
+    try {
+      const MINIMUM_TOTAL = 2500;
+      const baseApprovalAmount = Math.max(totalCost, MINIMUM_TOTAL);
+      let approvalAmount = baseApprovalAmount;
+      if (shouldApplyDiscount) {
+        const discountAmount = baseApprovalAmount * (discountPercent / 100);
+        approvalAmount = Math.max(baseApprovalAmount - discountAmount, MINIMUM_TOTAL);
+      }
+
+      const { templateService } = await import('../utils/templateService');
+      const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
+      const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
+
+      const savedDoc: any = {
+        fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
+        fileData: base64Data,
+        fileSize: pdfBlob.size,
+        clientName: clientInfo.clientName || 'Unknown',
+        clientEmail: clientInfo.clientEmail || '',
+        company: clientInfo.company || 'Unknown Company',
+        templateName: selectedTemplate?.name || 'Agreement',
+        generatedDate: new Date().toISOString(),
+        quoteId: quoteId,
+        metadata: {
+          totalCost: Number(approvalAmount) || 0,
+          duration: configuration?.duration || 0,
+          migrationType: configuration?.migrationType || 'Messaging',
+          numberOfUsers: configuration?.numberOfUsers || 0
+        }
+      };
+      if (originalDocxAgreement) {
+        const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
+        const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+        const dateStr = new Date().toISOString().split('T')[0];
+        savedDoc.docxFileData = docxBase64;
+        savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
+      }
+
+      const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
+      const additionalRecipients = teamApprovalSettings.additionalRecipients[autoSelectedTeam] || [];
+      const isOverageWorkflow =
+        (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+        (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+
+      const creatorEmail = (() => {
+        try {
+          const userRaw = localStorage.getItem('cpq_user');
+          if (userRaw) {
+            const user = JSON.parse(userRaw);
+            if (user?.email) return user.email;
+          }
+        } catch {}
+        return 'abhilasha.kandakatla@cloudfuze.com';
+      })();
+      const requestedByName = (() => {
+        try {
+          const u = getCurrentUser();
+          if (u?.name) return u.name;
+          const userRaw = localStorage.getItem('cpq_user');
+          if (userRaw) {
+            const user = JSON.parse(userRaw);
+            return user?.name || (user?.email ? user.email.split('@')[0] : null);
+          }
+        } catch {}
+        return creatorEmail ? creatorEmail.split('@')[0] : null;
+      })();
+
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId, uploaded_by: creatorEmail })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.document?.id) {
+        throw new Error(data.error || data.message || 'Failed to create e-sign document');
+      }
+
+      const quotePendingApproval = {
+        documentId,
+        esignId: data.document.id,
+        clientName: clientInfo.clientName || 'Unknown Client',
+        amount: Number(approvalAmount) || 0,
+        approvalEmails: { role1: approvalEmails.role1, role2: approvalEmails.role2, role4: approvalEmails.role4 },
+        teamId: autoSelectedTeam,
+        teamEmail,
+        creatorEmail,
+        creatorName: requestedByName || creatorEmail,
+        quoteId,
+        isOverage: isOverageWorkflow,
+        additionalRecipients
+      };
+      sessionStorage.setItem(QUOTE_PENDING_APPROVAL_KEY, JSON.stringify(quotePendingApproval));
+
+      setShowApprovalModal(false);
+      navigate(`/esign/${data.document.id}/place-fields`);
+    } catch (error) {
+      console.error('Error adding e-sign fields flow:', error);
+      alert(error instanceof Error ? error.message : 'Failed to open e-sign place fields. Please try again.');
+    } finally {
+      setIsAddingEsignFields(false);
     }
   };
 
@@ -9138,6 +9266,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         {isStartingWorkflow ? 'Sending for Approval…' : 'Send for Approval'}
                       </button>
                       <button
+                        onClick={() => setShowApprovalModal(true)}
+                        disabled={isAddingEsignFields}
+                        className="text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40 transition-all duration-300"
+                        title="Add e-sign fields first, then send for approval"
+                      >
+                        <PenLine className="w-3 h-3 inline mr-1" />
+                        {isAddingEsignFields ? 'Opening…' : 'Add e-sign fields'}
+                      </button>
+                      <button
                         onClick={handleEmailAgreement}
                         disabled={isEmailingAgreement}
                         className={`transition-colors px-3 py-1 rounded-lg text-xs font-semibold ${
@@ -9574,17 +9711,34 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 
               </div>
               
-              <div className="flex gap-3 mt-6">
+              <div className="flex flex-wrap gap-3 mt-6">
                 <button
                   onClick={() => setShowApprovalModal(false)}
-                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="flex-1 min-w-[100px] px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
+                  onClick={handleAddEsignFields}
+                  disabled={isAddingEsignFields || isStartingWorkflow}
+                  className="flex-1 min-w-[120px] px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-indigo-400 disabled:to-indigo-500 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-2 font-semibold shadow-lg shadow-indigo-500/30"
+                >
+                  {isAddingEsignFields ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Opening…
+                    </>
+                  ) : (
+                    <>
+                      <PenLine className="w-4 h-4" />
+                      Add e-sign fields
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={handleStartApprovalWorkflow}
-                  disabled={isStartingWorkflow}
-                  className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-2 font-semibold shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 ring-2 ring-green-400/50 hover:ring-green-300/60"
+                  disabled={isStartingWorkflow || isAddingEsignFields}
+                  className="flex-1 min-w-[120px] px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-2 font-semibold shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 ring-2 ring-green-400/50 hover:ring-green-300/60"
                 >
                   {isStartingWorkflow ? (
                     <>

@@ -1,9 +1,26 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
-import { PenLine, Loader2, ArrowRight, Type, Briefcase, Calendar, UserPlus, Trash2 } from 'lucide-react';
+import { PenLine, Loader2, ArrowRight, Type, Briefcase, Calendar, UserPlus, Trash2, Workflow } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
+
+const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
+
+export interface QuotePendingApproval {
+  documentId: string;
+  esignId: string;
+  clientName: string;
+  amount: number;
+  approvalEmails: { role1: string; role2: string; role4: string };
+  teamId: string;
+  teamEmail: string;
+  creatorEmail: string;
+  creatorName: string;
+  quoteId?: string;
+  isOverage?: boolean;
+  additionalRecipients?: string[];
+}
 
 const PDF_SCALE = 1.5;
 /** Minimum field size in pixels (used by Rnd and for persistence) */
@@ -79,8 +96,29 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [recipientError, setRecipientError] = useState<string | null>(null);
   const [addingRecipient, setAddingRecipient] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [pendingApproval, setPendingApproval] = useState<QuotePendingApproval | null>(null);
+  const [sendingApproval, setSendingApproval] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   const fileUrl = doc ? `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1` : '';
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(QUOTE_PENDING_APPROVAL_KEY);
+      if (!raw) {
+        setPendingApproval(null);
+        return;
+      }
+      const data = JSON.parse(raw) as QuotePendingApproval;
+      if (data.esignId === documentId && data.documentId && data.teamEmail && data.approvalEmails?.role1) {
+        setPendingApproval(data);
+      } else {
+        setPendingApproval(null);
+      }
+    } catch {
+      setPendingApproval(null);
+    }
+  }, [documentId]);
 
   useEffect(() => {
     if (!documentId) return;
@@ -232,30 +270,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
     }
   };
 
-  const handleFieldDrop = useCallback(
-    (coords: FieldCoords & { fieldType: string }) => {
-      setDragSource(null);
-      setSignatureFields((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: coords.fieldType as FieldType,
-          page: coords.page,
-          recipient_id: selectedRecipientId || undefined,
-          x: coords.x,
-          y: coords.y,
-          width: coords.width,
-          height: coords.height,
-        },
-      ]);
-    },
-    [selectedRecipientId]
-  );
-
-  const removeField = (id: string) => {
-    setSignatureFields((prev) => prev.filter((f) => f.id !== id));
-  };
-
   /** Persist fields to backend (pass updated list after drag/resize so size and position are saved). */
   const saveFieldsToBackend = useCallback(async (fieldsToSave: PlacedField[]) => {
     if (!documentId || !fieldsToSave.length) return;
@@ -276,6 +290,36 @@ const EsignPlaceFieldsPage: React.FC = () => {
       console.warn('Failed to auto-save field positions:', err);
     }
   }, [documentId]);
+
+  const handleFieldDrop = useCallback(
+    (coords: FieldCoords & { fieldType: string }) => {
+      setDragSource(null);
+      const newField: PlacedField = {
+        id: crypto.randomUUID(),
+        type: coords.fieldType as FieldType,
+        page: coords.page,
+        recipient_id: selectedRecipientId || undefined,
+        x: coords.x,
+        y: coords.y,
+        width: coords.width,
+        height: coords.height,
+      };
+      setSignatureFields((prev) => {
+        const next = [...prev, newField];
+        saveFieldsToBackend(next);
+        return next;
+      });
+    },
+    [selectedRecipientId, saveFieldsToBackend]
+  );
+
+  const removeField = (id: string) => {
+    setSignatureFields((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      saveFieldsToBackend(next);
+      return next;
+    });
+  };
 
   const handleSaveFields = async () => {
     if (!documentId) return;
@@ -299,6 +343,88 @@ const EsignPlaceFieldsPage: React.FC = () => {
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSendForApproval = async () => {
+    if (!pendingApproval || !documentId) return;
+    setSendingApproval(true);
+    setApprovalError(null);
+    try {
+      // Persist current signature fields before creating workflow so approvers/signers see them
+      const fieldsPayload = signatureFields.map((f) => {
+        const base = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
+        if (f.x != null && f.y != null) {
+          return { ...base, x: f.x, y: f.y, width: f.width ?? 120, height: f.height ?? 40 };
+        }
+        return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
+      });
+      if (fieldsPayload.length) {
+        await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document_id: documentId, fields: fieldsPayload }),
+        });
+      }
+
+      const workflowPayload = {
+        documentId: pendingApproval.documentId,
+        documentType: 'PDF Agreement',
+        clientName: pendingApproval.clientName,
+        amount: pendingApproval.amount,
+        creatorEmail: pendingApproval.creatorEmail,
+        creatorName: pendingApproval.creatorName,
+        isOverage: pendingApproval.isOverage ?? false,
+        esignDocumentId: documentId,
+        totalSteps: 4,
+        workflowSteps: [
+          { step: 1, role: 'Team Approval', email: pendingApproval.teamEmail, status: 'pending' as const, group: pendingApproval.teamId, comments: '', additionalRecipients: pendingApproval.additionalRecipients ?? [] },
+          { step: 2, role: 'Technical Team', email: pendingApproval.approvalEmails.role1, status: 'pending' as const },
+          { step: 3, role: 'Legal Team', email: pendingApproval.approvalEmails.role2, status: 'pending' as const },
+          { step: 4, role: 'Deal Desk', email: pendingApproval.approvalEmails.role4, status: 'pending' as const },
+        ],
+      };
+      const createRes = await fetch(`${BACKEND_URL}/api/approval-workflows`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(workflowPayload),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok || !createData.workflowId) {
+        throw new Error(createData.error || 'Failed to create approval workflow');
+      }
+      const teamRes = await fetch(`${BACKEND_URL}/api/send-team-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamEmail: pendingApproval.teamEmail,
+          additionalRecipients: pendingApproval.additionalRecipients ?? [],
+          workflowData: {
+            documentId: pendingApproval.documentId,
+            documentType: 'PDF Agreement',
+            clientName: pendingApproval.clientName,
+            amount: pendingApproval.amount,
+            workflowId: createData.workflowId,
+            teamGroup: pendingApproval.teamId,
+            creatorEmail: pendingApproval.creatorEmail,
+            requestedByName: pendingApproval.creatorName || pendingApproval.creatorEmail,
+          },
+        }),
+      });
+      const teamData = teamRes.ok ? await teamRes.json().catch(() => ({})) : {};
+      sessionStorage.removeItem(QUOTE_PENDING_APPROVAL_KEY);
+      setPendingApproval(null);
+      if (teamData?.success) {
+        alert('Approval workflow started. Team Approval has been notified.');
+      } else {
+        alert('Workflow created but team email may have failed. Please check the Approval dashboard.');
+      }
+      navigate('/approval', { state: { openDashboardTab: true, source: 'quote-approval', documentId: pendingApproval.documentId } });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to send for approval';
+      setApprovalError(msg);
+    } finally {
+      setSendingApproval(false);
     }
   };
 
@@ -514,6 +640,17 @@ const EsignPlaceFieldsPage: React.FC = () => {
               ))}
             </div>
 
+            {approvalError && (
+              <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm flex items-center justify-between gap-2">
+                <span>{approvalError}</span>
+                <button type="button" onClick={() => setApprovalError(null)} className="text-red-600 hover:text-red-800 font-medium">×</button>
+              </div>
+            )}
+            {pendingApproval && (
+              <div className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
+                Agreement from Quote — place fields, then send for Team / Technical / Legal approval.
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Go to page</span>
@@ -546,6 +683,16 @@ const EsignPlaceFieldsPage: React.FC = () => {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-slate-600">{signatureFields.length} field(s)</span>
+                {pendingApproval && (
+                  <button
+                    type="button"
+                    onClick={handleSendForApproval}
+                    disabled={sendingApproval || saving}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {sendingApproval ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Workflow className="h-4 w-4" /> Send for Approval</>}
+                  </button>
+                )}
                 <button
                   onClick={handleSaveFields}
                   disabled={saving}
@@ -555,6 +702,12 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 </button>
               </div>
             </div>
+            {!pendingApproval && (
+              <p className="mt-2 text-xs text-slate-500">
+                To send this document for approval after placing fields, start from the Quote page and use <strong>Add e-sign fields</strong>.{' '}
+                <Link to="/quote" className="text-indigo-600 hover:underline">Go to Quote</Link>
+              </p>
+            )}
           </div>
         </div>
       </div>

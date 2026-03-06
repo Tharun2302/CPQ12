@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
-import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye } from 'lucide-react';
+import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye, PenLine } from 'lucide-react';
+import EsignPdfPageView from '../components/EsignPdfPageView';
 import { track } from '../analytics/clarity';
 
 function showSuccessToast(message: string, durationMs = 3000) {
@@ -27,6 +28,26 @@ const TeamApprovalDashboard: React.FC = () => {
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [hasTakenAction, setHasTakenAction] = useState<Set<string>>(new Set());
   const [modalOpenedFromTab, setModalOpenedFromTab] = useState<string>('queue');
+  const [esignFieldCount, setEsignFieldCount] = useState<number>(0);
+  const [esignFields, setEsignFields] = useState<any[]>([]);
+  const [esignRecipients, setEsignRecipients] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [approvalDocNumPages, setApprovalDocNumPages] = useState<number>(1);
+
+  const PDF_SCALE = 1.5;
+  const getFieldLabel = (type: string) => {
+    const t = (type || 'signature').toLowerCase();
+    if (t === 'name') return 'Name';
+    if (t === 'title') return 'Title';
+    if (t === 'date') return 'Date';
+    return 'Signature';
+  };
+  const getRecipientIdFromField = (f: any): string | null => {
+    if (!f?.recipient_id) return null;
+    if (typeof f.recipient_id === 'string') return f.recipient_id;
+    if (f.recipient_id?.$oid) return f.recipient_id.$oid;
+    if (typeof f.recipient_id?.toString === 'function') return f.recipient_id.toString();
+    return null;
+  };
 
   const tabs = [
     { id: 'queue', label: 'My Approval Queue', icon: User, count: workflows.filter(w => (w.status === 'pending' || w.status === 'in_progress') && w.currentStep === 1).length },
@@ -228,38 +249,63 @@ const TeamApprovalDashboard: React.FC = () => {
     setSelectedWorkflow(workflow);
     setModalOpenedFromTab(activeTab);
     setShowDocumentModal(true);
-    
+    setEsignFieldCount(0);
+    setEsignFields([]);
+    setApprovalDocNumPages(1);
+
     if (!workflow?.documentId) return;
     setIsLoadingPreview(true);
     setDocumentPreview(null);
-    
+
+    const esignId = workflow?.esignDocumentId;
+
     try {
-      console.log('🔄 Fetching document preview for:', workflow.documentId);
-      const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      console.log('📄 API Response:', result);
-      
-      if (result.success && result.dataUrl) {
-        setDocumentPreview(result.dataUrl);
-        console.log('✅ Document preview loaded successfully:', result.fileName);
+      if (esignId) {
+        const [fileRes, fieldsRes, recipientsRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
+          fetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
+          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/recipients`),
+        ]);
+        if (fileRes.ok) {
+          const blob = await fileRes.blob();
+          const url = URL.createObjectURL(blob);
+          setDocumentPreview(url);
+          console.log('✅ Document preview loaded from e-sign (with fields)');
+        }
+        if (fieldsRes.ok) {
+          const fieldsData = await fieldsRes.json();
+          const arr = Array.isArray(fieldsData?.fields) ? fieldsData.fields : [];
+          setEsignFieldCount(arr.length);
+          setEsignFields(arr);
+        }
+        if (recipientsRes.ok) {
+          const recData = await recipientsRes.json();
+          const list = Array.isArray(recData?.recipients) ? recData.recipients : [];
+          setEsignRecipients(list.map((r: any) => ({ id: r.id ?? r._id?.toString?.(), name: r.name || r.email || 'Signer', email: r.email || '' })));
+        } else {
+          setEsignRecipients([]);
+        }
+        if (!fileRes.ok) {
+          const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+          if (response.ok) {
+            const result = await response.json();
+            if (result?.success && result?.dataUrl) setDocumentPreview(result.dataUrl);
+          }
+        }
       } else {
-        console.log('⚠️ Document not found or no file data');
-        // Fallback: Try to load document directly
-        try {
+        console.log('🔄 Fetching document preview for:', workflow.documentId);
+        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const result = await response.json();
+        if (result.success && result.dataUrl) {
+          setDocumentPreview(result.dataUrl);
+          console.log('✅ Document preview loaded successfully:', result.fileName);
+        } else {
           const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
           if (directResponse.ok) {
             const blob = await directResponse.blob();
-            const url = URL.createObjectURL(blob);
-            setDocumentPreview(url);
-            console.log('✅ Document loaded via fallback method');
+            setDocumentPreview(URL.createObjectURL(blob));
           }
-        } catch (fallbackError) {
-          console.error('❌ Fallback method also failed:', fallbackError);
         }
       }
     } catch (error) {
@@ -271,29 +317,63 @@ const TeamApprovalDashboard: React.FC = () => {
 
   const handleViewWorkflow = async (wf: any) => {
     setSelectedWorkflow(wf);
-    
-    // Check if this workflow is pending for Team Approval (step 1)
+    setEsignFieldCount(0);
+
     const teamStep = wf?.workflowSteps?.find((step: any) => step.step === 1 && step.role === 'Team Approval');
     const isPendingForTeam = wf?.currentStep === 1 && teamStep?.status === 'pending' && wf?.status !== 'denied';
-    
-    // If it's pending for Team Approval, open from queue tab so approve/deny buttons show
+
     if (isPendingForTeam) {
       setModalOpenedFromTab('queue');
-      setActiveTab('queue'); // Also switch to queue tab
+      setActiveTab('queue');
     } else {
       setModalOpenedFromTab('status');
     }
-    
+
     setShowDocumentModal(true);
+    setEsignFields([]);
+    setApprovalDocNumPages(1);
     if (!wf?.documentId) return;
     setIsLoadingPreview(true);
     setDocumentPreview(null);
+
+    const esignId = wf?.esignDocumentId;
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`);
-      if (resp.ok) {
-        const result = await resp.json();
-        if (result.success && result.dataUrl) {
-          setDocumentPreview(result.dataUrl);
+      if (esignId) {
+        const [fileRes, fieldsRes, recipientsRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
+          fetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
+          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/recipients`),
+        ]);
+        if (fileRes.ok) {
+          const blob = await fileRes.blob();
+          setDocumentPreview(URL.createObjectURL(blob));
+        }
+        if (fieldsRes.ok) {
+          const fieldsData = await fieldsRes.json();
+          const arr = Array.isArray(fieldsData?.fields) ? fieldsData.fields : [];
+          setEsignFieldCount(arr.length);
+          setEsignFields(arr);
+        }
+        if (recipientsRes.ok) {
+          const recData = await recipientsRes.json();
+          const list = Array.isArray(recData?.recipients) ? recData.recipients : [];
+          setEsignRecipients(list.map((r: any) => ({ id: r.id ?? r._id?.toString?.(), name: r.name || r.email || 'Signer', email: r.email || '' })));
+        } else {
+          setEsignRecipients([]);
+        }
+        if (!fileRes.ok) {
+          const resp = await fetch(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`);
+          if (resp.ok) {
+            const result = await resp.json();
+            if (result?.success && result?.dataUrl) setDocumentPreview(result.dataUrl);
+          }
+        }
+      } else {
+        setEsignRecipients([]);
+        const resp = await fetch(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`);
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result.success && result.dataUrl) setDocumentPreview(result.dataUrl);
         }
       }
     } catch {}
@@ -303,10 +383,16 @@ const TeamApprovalDashboard: React.FC = () => {
   };
 
   const closeDocumentModal = () => {
+    if (documentPreview && documentPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(documentPreview);
+    }
     setShowDocumentModal(false);
     setSelectedWorkflow(null);
     setDocumentPreview(null);
     setIsLoadingPreview(false);
+    setEsignFieldCount(0);
+    setEsignFields([]);
+    setApprovalDocNumPages(1);
   };
 
   const getStatusColor = (status: string) => {
@@ -668,26 +754,133 @@ const TeamApprovalDashboard: React.FC = () => {
                   </div>
                 ) : documentPreview ? (
                   <div className="space-y-4">
-                    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                      <iframe
-                        src={documentPreview}
-                        className="w-full h-[70vh] border-0"
-                        title="Document Preview"
-                      />
-                    </div>
-                    <div className="flex justify-center">
-                      <button
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = documentPreview;
-                          link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
-                          link.click();
-                        }}
-                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
-                      >
-                        Download PDF
-                      </button>
-                    </div>
+                    {esignFieldCount > 0 && selectedWorkflow?.esignDocumentId && (
+                      <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <span className="text-sm text-indigo-800">
+                            <PenLine className="w-4 h-4 inline mr-2 align-middle" />
+                            This document has <strong>{esignFieldCount} e-signature field{esignFieldCount !== 1 ? 's' : ''}</strong> (shown below).
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => window.open(`/esign/${selectedWorkflow.esignDocumentId}/place-fields`, '_blank', 'noopener,noreferrer')}
+                            className="text-sm font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap underline"
+                          >
+                            View field positions (new tab) →
+                          </button>
+                        </div>
+                        <p className="text-xs text-indigo-700">
+                          Each field shows which recipient will sign there. They sign via the link sent to their email after approval.
+                        </p>
+                        <p className="text-xs text-indigo-700 mt-1">
+                          After Team, Technical, and Legal approval, the document is sent for signature to those recipients.
+                        </p>
+                      </div>
+                    )}
+                    {documentPreview && esignFields.length > 0 && selectedWorkflow?.esignDocumentId ? (
+                      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                        <div className="overflow-y-auto max-h-[70vh] p-4 space-y-6">
+                          {Array.from({ length: approvalDocNumPages }, (_, i) => i + 1).map((pageNum) => (
+                            <div key={pageNum} className="flex flex-col items-center">
+                              <span className="text-xs text-slate-500 mb-2">Page {pageNum} of {approvalDocNumPages}</span>
+                              <EsignPdfPageView
+                                pdfUrl={documentPreview}
+                                pageNumber={pageNum}
+                                scale={PDF_SCALE}
+                                onPdfInfo={pageNum === 1 ? (info) => setApprovalDocNumPages(info.numPages) : undefined}
+                                className="rounded-lg overflow-hidden border border-slate-200"
+                              >
+                                {esignFields
+                                  .filter((f: any) => (f.page || 1) === pageNum)
+                                  .map((f: any, idx: number) => {
+                                    const isPointBased = f.x != null && f.y != null;
+                                    const label = getFieldLabel(f.type);
+                                    const recipientId = getRecipientIdFromField(f);
+                                    const recipient = recipientId ? esignRecipients.find((r) => r.id === recipientId) : null;
+                                    const recipientLabel = recipient ? `${recipient.name}${recipient.email ? ` (${recipient.email})` : ''} → will sign via email` : null;
+                                    const boxClass = 'absolute flex flex-col items-center justify-center rounded font-medium text-sm bg-sky-100 border-2 border-sky-500 text-sky-800 pointer-events-none px-1 py-0.5';
+                                    const content = (
+                                      <>
+                                        <span>{label}</span>
+                                        {recipientLabel && <span className="text-xs font-normal opacity-90 truncate max-w-full" title={recipientLabel}>{recipientLabel}</span>}
+                                      </>
+                                    );
+                                    if (isPointBased) {
+                                      const w = Math.max(60, (f.width ?? 120) * PDF_SCALE);
+                                      const h = Math.max(24, (f.height ?? 40) * PDF_SCALE);
+                                      return (
+                                        <div
+                                          key={`${pageNum}-${idx}`}
+                                          className={boxClass}
+                                          style={{
+                                            left: (f.x || 0) * PDF_SCALE,
+                                            top: (f.y || 0) * PDF_SCALE,
+                                            width: w,
+                                            height: h,
+                                          }}
+                                        >
+                                          {content}
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div
+                                        key={`${pageNum}-${idx}`}
+                                        className={boxClass}
+                                        style={{
+                                          left: `${f.xPct ?? 10}%`,
+                                          top: `${f.yPct ?? 80}%`,
+                                          width: `${f.widthPct ?? 20}%`,
+                                          height: `${f.heightPct ?? 4}%`,
+                                        }}
+                                      >
+                                        {content}
+                                      </div>
+                                    );
+                                  })}
+                              </EsignPdfPageView>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-center p-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = documentPreview;
+                              link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
+                              link.click();
+                            }}
+                            className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+                          >
+                            Download PDF
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                          <iframe
+                            src={documentPreview}
+                            className="w-full h-[70vh] border-0"
+                            title="Document Preview"
+                          />
+                        </div>
+                        <div className="flex justify-center">
+                          <button
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = documentPreview;
+                              link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
+                              link.click();
+                            }}
+                            className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
+                          >
+                            Download PDF
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8">

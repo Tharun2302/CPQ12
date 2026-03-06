@@ -4975,6 +4975,24 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
       }
     }
 
+    // Auto-send e-sign document to signers when workflow has esignDocumentId (no creator action needed)
+    if (workflowData && workflowData.workflowId && db) {
+      try {
+        const workflowRecord = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
+        const esignId = workflowRecord && workflowRecord.esignDocumentId;
+        if (esignId) {
+          const autoSendResult = await sendDocumentForSignatureInternal(esignId, { uploadedBy: 'approval-auto-send' });
+          if (autoSendResult.success && autoSendResult.emails_sent > 0) {
+            console.log('✅ Auto-sent e-sign document to', autoSendResult.emails_sent, 'recipient(s) after approval');
+          } else if (autoSendResult.success && !autoSendResult.already_sent) {
+            console.log('📧 E-sign document marked as sent (no SENDGRID or no recipients)');
+          }
+        }
+      } catch (autoSendErr) {
+        console.error('❌ Auto-send to signers after approval failed:', autoSendErr);
+      }
+    }
+
     res.json({
       success: dealDeskResult.success,
       message: creatorEmailForNotification
@@ -5512,63 +5530,84 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
   }
 });
 
+// Shared helper: send e-sign document to signers (used by POST route and by approval-completion auto-send)
+async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}) {
+  const { sequential = false, uploadedBy = 'system' } = options;
+  if (!db) return { success: false, error: 'Database not available' };
+  let docId;
+  try {
+    docId = new ObjectId(esignDocumentIdStr);
+  } catch {
+    return { success: false, error: 'Invalid esign document id' };
+  }
+  const doc = await db.collection('esign_documents').findOne({ _id: docId });
+  if (!doc) return { success: false, error: 'Document not found' };
+  if (doc.status === 'sent') {
+    console.log('📧 E-sign document already sent, skipping auto-send');
+    return { success: true, emails_sent: 0, already_sent: true };
+  }
+  let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
+  if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) {
+    baseUrl = 'http://localhost:5173';
+  }
+  let recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+  if (!recipients.length) return { success: false, error: 'Add at least one recipient before sending' };
+  if (sequential) {
+    recipients = recipients.slice(0, 1);
+  }
+  const fileName = doc.file_name || 'Document';
+  let emailsSent = 0;
+  for (const rec of recipients) {
+    const token = crypto.randomUUID();
+    await db.collection('esign_recipients').updateOne(
+      { _id: rec._id },
+      { $set: { signing_token: token, status: 'pending' } }
+    );
+    const signingUrl = `${baseUrl}/sign/${token}`;
+    if (process.env.SENDGRID_API_KEY && rec.email) {
+      if (emailsSent === 0) console.log('📧 E-sign email base URL:', baseUrl, '→', signingUrl.substring(0, 50) + '...');
+      const subject = 'Please sign the document';
+      const html = `
+        <p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
+        <p>You have been requested to sign a document.</p>
+        <p><strong>Document:</strong> ${fileName}</p>
+        <p>Click the link below to review and sign:</p>
+        <p><a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">Sign Document</a></p>
+        <p>Or copy this link: ${signingUrl}</p>
+        <p>Thank you.</p>
+      `;
+      try {
+        const result = await sendEmail(rec.email, subject, html);
+        if (result.success) emailsSent++;
+      } catch (err) {
+        console.warn('E-sign send email failed for', rec.email, err?.message || err);
+      }
+    }
+  }
+  await db.collection('esign_documents').updateOne(
+    { _id: docId },
+    { $set: { status: 'sent', sent_at: new Date(), ...(sequential ? { sequential } : {}) } }
+  );
+  await logAudit(docId, 'sent', uploadedBy, null);
+  return { success: true, emails_sent: emailsSent };
+}
+
 // POST /api/esign/documents/:id/send-for-signature - Generate tokens, send emails, mark sent
 app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const docId = new ObjectId(req.params.id);
-    const doc = await db.collection('esign_documents').findOne({ _id: docId });
-    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    const sequential = !!(req.body && req.body.sequential);
-    // Signing links: prefer APP_BASE_URL; in development default to 5173 (Vite) so email links match the app origin
-    let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
-    if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) {
-      baseUrl = 'http://localhost:5173';
+    const result = await sendDocumentForSignatureInternal(req.params.id, {
+      sequential: !!(req.body && req.body.sequential),
+      uploadedBy: req.body.uploaded_by || 'system',
+    });
+    if (!result.success) {
+      return res.status(result.error === 'Document not found' ? 404 : 400).json({ success: false, error: result.error });
     }
-    let recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
-    if (!recipients.length) return res.status(400).json({ success: false, error: 'Add at least one recipient before sending' });
-    if (sequential) {
-      recipients = recipients.slice(0, 1);
-    }
-    const fileName = doc.file_name || 'Document';
-    let emailsSent = 0;
-    for (const rec of recipients) {
-      const token = crypto.randomUUID();
-      await db.collection('esign_recipients').updateOne(
-        { _id: rec._id },
-        { $set: { signing_token: token, status: 'pending' } }
-      );
-      const signingUrl = `${baseUrl}/sign/${token}`;
-      if (process.env.SENDGRID_API_KEY && rec.email) {
-        if (emailsSent === 0) console.log('📧 E-sign email base URL:', baseUrl, '→', signingUrl.substring(0, 50) + '...');
-        const subject = 'Please sign the document';
-        const html = `
-          <p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
-          <p>You have been requested to sign a document.</p>
-          <p><strong>Document:</strong> ${fileName}</p>
-          <p>Click the link below to review and sign:</p>
-          <p><a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">Sign Document</a></p>
-          <p>Or copy this link: ${signingUrl}</p>
-          <p>Thank you.</p>
-        `;
-        try {
-          const result = await sendEmail(rec.email, subject, html);
-          if (result.success) emailsSent++;
-        } catch (err) {
-          console.warn('E-sign send email failed for', rec.email, err?.message || err);
-        }
-      }
-    }
-    await db.collection('esign_documents').updateOne(
-      { _id: docId },
-      { $set: { status: 'sent', sent_at: new Date(), ...(sequential ? { sequential } : {}) } }
-    );
-    await logAudit(docId, 'sent', req.body.uploaded_by || 'system', req.ip || req.connection?.remoteAddress);
     res.json({
       success: true,
-      message: emailsSent > 0 ? `Signing links sent to ${emailsSent} recipient(s).` : 'Document marked as sent. Add SENDGRID_API_KEY to send emails.',
-      emails_sent: emailsSent,
-      sequential: sequential || undefined,
+      message: result.emails_sent > 0 ? `Signing links sent to ${result.emails_sent} recipient(s).` : 'Document marked as sent. Add SENDGRID_API_KEY to send emails.',
+      emails_sent: result.emails_sent,
+      sequential: req.body?.sequential || undefined,
     });
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
