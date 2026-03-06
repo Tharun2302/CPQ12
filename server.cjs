@@ -91,7 +91,7 @@ const distPath = path.join(__dirname, 'dist');
 const assetsPath = path.join(distPath, 'assets');
 
 // Serve JS/CSS chunks with correct MIME (prevents "application/octet-stream" / "Cannot access 'ze' before initialization")
-// Use sendFile options.headers so Content-Type is not overwritten by Express's default MIME lookup
+// Use writeHead + stream.pipe so headers are locked before any data; prevents Express/middleware from overwriting Content-Type
 app.get('/assets/:filename', (req, res) => {
   const filename = req.params.filename;
   if (!/^[a-zA-Z0-9_.-]+\.(js|mjs|css)$/.test(filename)) {
@@ -102,16 +102,36 @@ app.get('/assets/:filename', (req, res) => {
     return res.status(404).end();
   }
   const contentType = (filename.endsWith('.css')) ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
-  res.sendFile(filePath, {
-    headers: {
-      'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=31536000, immutable'
-    }
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Cache-Control': 'public, max-age=31536000, immutable'
   });
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500).end();
+    else res.destroy();
+  });
+  stream.pipe(res);
+});
+
+// Serve index.html with Vite's inline modulepreload data URL fixed (Vite uses application/octet-stream, browser requires application/javascript)
+function sendIndexHtml(res) {
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  let html = fs.readFileSync(indexPath, 'utf8');
+  html = html.replace(/data:application\/octet-stream/g, 'data:application/javascript');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+}
+
+// GET / must be handled before express.static so we serve fixed index.html (express.static would serve raw with bad data URL)
+app.get('/', (req, res) => {
+  sendIndexHtml(res);
 });
 
 app.use(
   express.static(distPath, {
+    index: false, // Don't auto-serve index.html; we handle / explicitly above with fixed HTML
     etag: true,
     lastModified: true,
     setHeaders(res, filePath) {
@@ -7366,15 +7386,12 @@ app.delete('/api/documents/:id', async (req, res) => {
 
 // Serve the React app for the Microsoft callback (SPA handles the code)
 app.get('/auth/microsoft/callback', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  sendIndexHtml(res);
 });
 
 // SPA catch-all: do NOT match /assets/* or *.js/*.css (so they get correct MIME and avoid "Cannot access 'ze' before initialization")
 app.get(/^(?!\/api)(?!\/assets)(?!\/[^/]*\.(js|mjs|css|ico|svg|woff2?)(\?.*)?$).*/, (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  sendIndexHtml(res);
 });
 
 // Start server after database initialization
