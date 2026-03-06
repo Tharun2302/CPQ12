@@ -91,6 +91,7 @@ const distPath = path.join(__dirname, 'dist');
 const assetsPath = path.join(distPath, 'assets');
 
 // Serve JS/CSS chunks with correct MIME (prevents "application/octet-stream" / "Cannot access 'ze' before initialization")
+// Use sendFile options.headers so Content-Type is not overwritten by Express's default MIME lookup
 app.get('/assets/:filename', (req, res) => {
   const filename = req.params.filename;
   if (!/^[a-zA-Z0-9_.-]+\.(js|mjs|css)$/.test(filename)) {
@@ -100,13 +101,13 @@ app.get('/assets/:filename', (req, res) => {
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     return res.status(404).end();
   }
-  if (filename.endsWith('.js') || filename.endsWith('.mjs')) {
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  } else if (filename.endsWith('.css')) {
-    res.setHeader('Content-Type', 'text/css; charset=utf-8');
-  }
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  res.sendFile(filePath);
+  const contentType = (filename.endsWith('.css')) ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
+  res.sendFile(filePath, {
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=31536000, immutable'
+    }
+  });
 });
 
 app.use(
