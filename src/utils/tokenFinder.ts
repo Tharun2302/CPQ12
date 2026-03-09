@@ -1,12 +1,12 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker - use a more reliable CDN
+// Configure PDF.js worker (pdfjs v5+ uses .mjs; do not set here if EsignPdfPageView already set it from node_modules)
 try {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
-} catch (error) {
-  console.warn('⚠️ Failed to set PDF.js worker, using fallback');
-  // Fallback to a known working version
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  }
+} catch {
+  // leave default
 }
 
 export interface TokenPosition {

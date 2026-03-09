@@ -1,11 +1,13 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   CheckCircle,
   Clock,
   FileCheck,
   FileText,
+  ListChecks,
   Loader2,
+  PenLine,
   Search,
   ShieldCheck,
   ThumbsUp,
@@ -15,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { useAuth } from '../hooks/useAuth';
 import { BACKEND_URL } from '../config/api';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
@@ -104,6 +107,7 @@ const iconForView: Record<ViewKey, React.ComponentType<{ className?: string }>> 
 
 const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualApprovalWorkflow }) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [query, setQuery] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
@@ -112,10 +116,53 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const [esignCreatingId, setEsignCreatingId] = useState<string | null>(null);
+  const [esignError, setEsignError] = useState<string | null>(null);
+  const [esignRecipientsByDocId, setEsignRecipientsByDocId] = useState<Record<string, Array<{ name: string; email?: string; status: string; order?: number }>>>({});
 
   const {
     workflows,
+    refreshWorkflows,
   } = useApprovalWorkflows();
+
+  // Refetch workflows when user returns to this tab/window so Deal Desk "Email sent" shows after Legal approval
+  const refreshRef = useRef(refreshWorkflows);
+  refreshRef.current = refreshWorkflows;
+  useEffect(() => {
+    const onFocus = () => refreshRef.current();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  // Fetch e-sign recipients for workflows that have esignDocumentId
+  useEffect(() => {
+    const docIds = (workflows || [])
+      .map((w: any) => w?.esignDocumentId)
+      .filter((id: string) => typeof id === 'string' && id.trim());
+    const uniqueIds = [...new Set(docIds)] as string[];
+    if (uniqueIds.length === 0) return;
+    let cancelled = false;
+    const fetchAll = async () => {
+      const next: Record<string, Array<{ name: string; email?: string; status: string; order?: number }>> = { ...esignRecipientsByDocId };
+      for (const id of uniqueIds) {
+        if (cancelled) return;
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/esign/documents/${id}/recipients`);
+          const data = await res.json();
+          if (cancelled) return;
+          if (data.success && Array.isArray(data.recipients)) {
+            const sorted = [...data.recipients].sort((a: any, b: any) => (a.order ?? 999) - (b.order ?? 999));
+            next[id] = sorted.map((r: any) => ({ name: r.name || r.email || 'Recipient', email: r.email, status: r.status || 'pending', order: r.order }));
+          }
+        } catch {
+          // ignore per-doc errors
+        }
+      }
+      if (!cancelled) setEsignRecipientsByDocId(next);
+    };
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [(workflows || []).map((w: any) => w?.esignDocumentId).filter(Boolean).join(',')]);
 
   const now = new Date();
   const today0 = startOfDay(now);
@@ -173,11 +220,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       .sort(sortByCreatedAt);
 
     const approvedTodayCount = safe.filter(isApproved).filter((w: any) => {
-      const d = new Date(w.updatedAt || w.createdAt);
-      return isSameDay(d, now);
-    }).length;
-
-    const rejectedTodayCount = safe.filter(isRejected).filter((w: any) => {
       const d = new Date(w.updatedAt || w.createdAt);
       return isSameDay(d, now);
     }).length;
@@ -256,6 +298,39 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     setPreviewError(null);
     setDocumentPreviewUrl(null);
     revokeObjectUrlIfAny();
+  };
+
+  // Use same e-sign flow as /esign: create esign doc from approval doc, then go to Place Fields → Send
+  const handleStartEsign = async (workflow: any) => {
+    const docId = workflow?.documentId;
+    if (!docId) {
+      setEsignError('No document linked to this workflow.');
+      return;
+    }
+    setEsignCreatingId(workflow.id);
+    setEsignError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: docId,
+          uploaded_by: user?.email || 'approval-workflow',
+          workflowId: workflow.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Failed to create e-sign document');
+      if (data.success && data.document?.id) {
+        navigate(`/esign/${data.document.id}/place-fields`);
+        return;
+      }
+      throw new Error('Invalid response');
+    } catch (e) {
+      setEsignError(e instanceof Error ? e.message : 'Failed to start e-sign');
+    } finally {
+      setEsignCreatingId(null);
+    }
   };
 
   const openAgreementPreview = async (workflow: any) => {
@@ -454,6 +529,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
               </div>
             </div>
 
+            {esignError && (
+              <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-2 text-rose-800 text-sm flex items-center justify-between gap-2">
+                <span>{esignError}</span>
+                <button type="button" onClick={() => setEsignError(null)} className="text-rose-600 hover:text-rose-800" aria-label="Dismiss">×</button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-3">
               {list.map((workflow: any) => {
                 const status = workflow.status || 'pending';
@@ -510,13 +592,42 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         </div>
                       </div>
 
-                      <div className="shrink-0 w-[140px] flex flex-col items-stretch self-stretch">
+                      <div className="shrink-0 flex flex-col sm:flex-row gap-2 self-stretch">
+                        {workflow?.documentId && legalStep?.status === 'approved' && (
+                          workflow.esignDocumentId ? (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/esign/${workflow.esignDocumentId}/status`)}
+                              title="View e-sign status (Recipient 1 & 2)"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0D9488] border border-[#0D9488] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0F766E] hover:border-[#0F766E] transition-all whitespace-nowrap"
+                            >
+                              <ListChecks className="h-4 w-4 text-white" />
+                              <span className="hidden sm:inline">View e-sign status</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEsign(workflow)}
+                              disabled={esignCreatingId === workflow.id}
+                              title="Send for e-signature after Legal — Recipient 1 & 2"
+                              aria-label="Send for e-signature"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {esignCreatingId === workflow.id ? (
+                                <Loader2 className="h-4 w-4 text-white animate-spin" />
+                              ) : (
+                                <PenLine className="h-4 w-4 text-white" />
+                              )}
+                              <span className="hidden sm:inline">Send for signature</span>
+                            </button>
+                          )
+                        )}
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="w-full flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
                         >
                           <FileText className="h-4 w-4 text-white" />
                           <span className="sm:hidden">Preview</span>
@@ -525,17 +636,39 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                       </div>
                     </div>
 
-                    {/* Approval step summary (Team/Technical/Legal/Deal Desk) */}
+                    {/* Approval step summary: Team, Tech, Legal, [Recipient 1, Recipient 2, ...], Deal Desk */}
                     {(() => {
-                      const steps = [
+                      const dealDeskExtra = dealDeskStep?.comments === 'Notified'
+                        ? 'Email sent'
+                        : dealDeskStep?.comments === 'Notification failed'
+                          ? 'Email failed'
+                          : (dealDeskStep?.comments || '');
+                      const baseSteps = [
                         { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
                         { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
                         { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
-                        { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskStep?.comments || '' },
                       ];
+                      const recipientSteps: Array<{ label: string; step: { status: string }; extra: string }> = [];
+                      const esignDocId = workflow.esignDocumentId;
+                      const recipients = esignDocId ? (esignRecipientsByDocId[esignDocId] || []) : [];
+                      if (recipients.length > 0) {
+                        recipients.forEach((rec, i) => {
+                          recipientSteps.push({
+                            label: `Recipient ${i + 1}`,
+                            step: { status: rec.status === 'signed' ? 'signed' : 'pending' },
+                            extra: rec.name || rec.email || '',
+                          });
+                        });
+                      }
+                      const dealDeskStepItem = { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra };
+                      const steps = [...baseSteps, ...recipientSteps, dealDeskStepItem];
 
-                      const currentIdx = Math.max(0, Number(workflow.currentStep || 1) - 1);
-                      const currentItem = steps[currentIdx];
+                      const currentIdx = steps.findIndex((item) => {
+                        const raw = item.step?.status || 'pending';
+                        return raw !== 'approved' && raw !== 'notified' && raw !== 'signed';
+                      });
+                      const resolvedCurrentIdx = currentIdx === -1 ? steps.length - 1 : currentIdx;
+                      const currentItem = steps[resolvedCurrentIdx];
                       const currentExtra = currentItem?.extra
                         ? `${currentItem.label}: ${currentItem.extra}`
                         : `${currentItem?.label || 'Current'}: —`;
@@ -545,7 +678,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                           <div className="flex items-center justify-between">
                             <div className="text-gray-700 text-xs font-bold uppercase tracking-wide">Approvals</div>
                             <div className="text-gray-500 text-xs">
-                              Step {workflow.currentStep || 1} / {workflow.totalSteps || (workflow.workflowSteps?.length || 4)}
+                              Step {resolvedCurrentIdx + 1} / {steps.length}
                             </div>
                           </div>
 
@@ -564,14 +697,16 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                   item.step?.createdAt ||
                                   null;
                                 const ts = tsRaw ? `Time: ${new Date(tsRaw).toLocaleString()}` : null;
+                                const statusLabel = raw === 'signed' ? 'Signed' : stepStatusLabel(raw);
                                 const title = [
-                                  `${item.label}: ${stepStatusLabel(raw)}`,
+                                  `${item.label}: ${statusLabel}`,
                                   ...(item.extra ? [`Info: ${item.extra}`] : []),
                                   ...([who, grp, cmt, ts].filter(Boolean) as string[]),
                                 ].join('\n');
 
                                 const completed =
-                                  raw === 'approved' || (idx < currentIdx && raw !== 'denied');
+                                  raw === 'approved' || raw === 'notified' || raw === 'signed' || (idx < resolvedCurrentIdx && raw !== 'denied');
+                                const dotStatus = raw === 'signed' ? 'approved' : raw;
                                 return (
                                   <div key={item.label} className="flex-1 min-w-0 flex flex-col items-center" title={title}>
                                     {completed ? (
@@ -579,9 +714,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                         <Check className="h-3 w-3 text-white" />
                                       </div>
                                     ) : (
-                                      <div className={`h-4 w-4 rounded-full ring-2 ring-white ${stepperDotClass(idx, currentIdx, raw)}`} />
+                                      <div className={`h-4 w-4 rounded-full ring-2 ring-white ${stepperDotClass(idx, resolvedCurrentIdx, dotStatus)}`} />
                                     )}
-                                    <div className={`mt-1 text-[11px] truncate ${stepperLabelClass(idx, currentIdx, raw)}`}>{item.label}</div>
+                                    <div className={`mt-1 text-[11px] truncate ${stepperLabelClass(idx, resolvedCurrentIdx, dotStatus)}`}>{item.label}</div>
                                   </div>
                                 );
                               })}

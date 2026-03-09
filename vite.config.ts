@@ -14,45 +14,12 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   build: {
-    // Enable code splitting and chunk optimization
+    // Single vendor chunk avoids "ze"/"R" before initialization - no cross-chunk load order issues
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          // Use function-based chunking to avoid initialization order issues
-          // CRITICAL: Don't manually chunk React/ReactDOM - let Vite handle it automatically
-          // This prevents "Cannot access 'R' before initialization" errors in production
-          
-          // Node modules go into vendor chunks
+          // Put ALL node_modules in one vendor chunk to prevent init-order errors
           if (id.includes('node_modules')) {
-            // IMPORTANT: Let Vite automatically handle React chunks
-            // Manual chunking of React can cause initialization order issues
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
-              // Return undefined to let Vite's automatic chunking handle React
-              // This ensures proper initialization order
-              return undefined;
-            }
-            
-            // Auth vendor
-            if (id.includes('@azure/msal')) {
-              return 'auth-vendor';
-            }
-            
-            // PDF vendor
-            if (id.includes('pdfjs-dist') || id.includes('@react-pdf') || id.includes('pdf-lib')) {
-              return 'pdf-vendor';
-            }
-            
-            // DOCX vendor
-            if (id.includes('docx') || id.includes('docxtemplater') || id.includes('mammoth') || id.includes('docx-preview')) {
-              return 'docx-vendor';
-            }
-            
-            // Utils vendor
-            if (id.includes('axios') || id.includes('date-fns') || id.includes('uuid')) {
-              return 'utils-vendor';
-            }
-            
-            // Other node_modules
             return 'vendor';
           }
         },
