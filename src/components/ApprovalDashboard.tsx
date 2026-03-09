@@ -81,7 +81,7 @@ const stepStatusLabel = (status?: string) => {
 const stepperDotClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
   if (s === 'denied') return 'bg-[#E11D48]';
-  if (s === 'approved' || s === 'notified') return 'bg-emerald-500'; // Treat "notified" same as "approved"
+  if (s === 'approved') return 'bg-emerald-500';
   if (idx < currentIdx) return 'bg-emerald-500';
   if (idx === currentIdx) return 'bg-[#F59E0B]';
   return 'bg-gray-300';
@@ -90,7 +90,7 @@ const stepperDotClass = (idx: number, currentIdx: number, rawStatus?: string) =>
 const stepperLabelClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
   if (s === 'denied') return 'text-red-600';
-  if (s === 'approved' || s === 'notified') return 'text-emerald-700'; // Treat "notified" same as "approved"
+  if (s === 'approved') return 'text-emerald-700';
   if (idx === currentIdx) return 'text-gray-900 font-semibold';
   return 'text-gray-600';
 };
@@ -571,7 +571,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                 ].join('\n');
 
                                 const completed =
-                                  raw === 'approved' || raw === 'notified' || (idx < currentIdx && raw !== 'denied');
+                                  raw === 'approved' || (idx < currentIdx && raw !== 'denied');
                                 return (
                                   <div key={item.label} className="flex-1 min-w-0 flex flex-col items-center" title={title}>
                                     {completed ? (
