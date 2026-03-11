@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
-import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download } from 'lucide-react';
+import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 
@@ -59,7 +59,18 @@ const EsignSignPage: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [alreadySigned, setAlreadySigned] = useState(false);
+  const [alreadyReviewed, setAlreadyReviewed] = useState(false);
+  const [reviewedSuccess, setReviewedSuccess] = useState(false);
+  const [alreadyDenied, setAlreadyDenied] = useState(false);
+  const [deniedSuccess, setDeniedSuccess] = useState(false);
+  const [reviewComment, setReviewComment] = useState('');
   const [documentFullySigned, setDocumentFullySigned] = useState(false);
+  const [recipientRole, setRecipientRole] = useState<'signer' | 'reviewer' | null>(null);
+  const [markingReviewed, setMarkingReviewed] = useState(false);
+  const [signerChoice, setSignerChoice] = useState<'approve' | 'deny' | null>(null);
+  const [signerComment, setSignerComment] = useState('');
+  const [signDeniedSuccess, setSignDeniedSuccess] = useState(false);
+  const [denyingSign, setDenyingSign] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSignatureFieldIndex, setSelectedSignatureFieldIndex] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState(1);
@@ -71,7 +82,15 @@ const EsignSignPage: React.FC = () => {
       try {
         if (isSigningToken(documentIdOrToken)) {
           const res = await fetch(`${BACKEND_URL}/api/esign/sign-by-token/${documentIdOrToken}`);
-          const data = await res.json();
+          const text = await res.text();
+          let data: { success?: boolean; error?: string; document?: any; recipient?: any; fields?: any[] };
+          try {
+            data = text.startsWith('<') ? {} : JSON.parse(text);
+          } catch {
+            setError(res.ok ? 'Invalid response from server' : 'Unable to load document. Please check the link or try again later.');
+            setLoading(false);
+            return;
+          }
           if (!data.success) {
             setError(data.error || 'Invalid or expired signing link');
             setLoading(false);
@@ -81,8 +100,16 @@ const EsignSignPage: React.FC = () => {
           setSigningToken(documentIdOrToken);
           setRecipientName(data.recipient?.name || null);
           setDoc(data.document);
+          const role = (data.recipient?.role || 'signer').toString().toLowerCase();
+          setRecipientRole(role === 'reviewer' ? 'reviewer' : 'signer');
           if (data.recipient?.status === 'signed') {
             setAlreadySigned(true);
+          }
+          if (data.recipient?.status === 'reviewed') {
+            setAlreadyReviewed(true);
+          }
+          if (data.recipient?.status === 'denied') {
+            setAlreadyDenied(true);
           }
           const raw = data.fields || [];
           const normalized = raw.map((f: any) => {
@@ -261,6 +288,82 @@ const EsignSignPage: React.FC = () => {
     }
   };
 
+  const handleReviewAction = async (action: 'approve' | 'deny') => {
+    if (!signingToken) return;
+    if (action === 'deny' && !reviewComment.trim()) {
+      setError('Comment is required when denying');
+      return;
+    }
+    setMarkingReviewed(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/mark-reviewed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signing_token: signingToken,
+          action,
+          comment: reviewComment.trim() || undefined,
+        }),
+      });
+      const text = await res.text();
+      let data: { success?: boolean; error?: string; action?: string };
+      try {
+        data = text.startsWith('<') ? {} : JSON.parse(text);
+      } catch {
+        setError(res.ok ? 'Invalid response from server' : `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      if (data.success) {
+        if (data.action === 'deny') {
+          setDeniedSuccess(true);
+        } else {
+          setReviewedSuccess(true);
+        }
+      } else {
+        setError(data.error || 'Request failed');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Request failed');
+    } finally {
+      setMarkingReviewed(false);
+    }
+  };
+
+  const handleDenySigning = async () => {
+    if (!signingToken) return;
+    if (!signerComment.trim()) {
+      setError('Comment is required when declining to sign');
+      return;
+    }
+    setDenyingSign(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/deny-signing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signing_token: signingToken, comment: signerComment.trim() }),
+      });
+      const text = await res.text();
+      let data: { success?: boolean; error?: string };
+      try {
+        data = text.startsWith('<') ? {} : JSON.parse(text);
+      } catch {
+        setError(res.ok ? 'Invalid response from server' : `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      if (data.success) {
+        setSignDeniedSuccess(true);
+      } else {
+        setError(data.error || 'Request failed');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Request failed');
+    } finally {
+      setDenyingSign(false);
+    }
+  };
+
   const getFieldStyle = (f: SignatureField) => {
     if (f.x != null && f.y != null) {
       return {
@@ -309,6 +412,105 @@ const EsignSignPage: React.FC = () => {
             onClick={() => handleDownload(doc.file_name)}
             disabled={downloading}
             className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (alreadyReviewed) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 mb-4">
+            <Check className="h-8 w-8 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have already reviewed this document</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">This link is no longer active. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (alreadyDenied) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+            <XCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have already denied this document</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">This link is no longer active. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (deniedSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+            <XCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have denied the review</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">You have completed your decision. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {downloading ? (
               <>
@@ -392,7 +594,209 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
+  if (reviewedSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 mb-4">
+            <Check className="h-8 w-8 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Document marked as reviewed</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">You have completed your review. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (recipientRole === 'reviewer') {
+    const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+    return (
+      <div className="min-h-screen bg-slate-50 py-6 px-4">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-xl font-bold text-slate-900 mb-2">Review document</h1>
+          <p className="text-slate-600 text-sm mb-4">{doc.file_name}</p>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+            <iframe
+              src={fileUrl}
+              title="Document"
+              className="w-full h-[70vh] border-0"
+            />
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-4">
+            <label className="block text-sm font-medium text-slate-700 mb-2">Comment (optional for Approve; required for Deny)</label>
+            <textarea
+              value={reviewComment}
+              onChange={(e) => setReviewComment(e.target.value)}
+              placeholder="Add a comment..."
+              rows={3}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+          </div>
+          {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => handleReviewAction('approve')}
+              disabled={markingReviewed}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {markingReviewed ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <Check className="h-5 w-5" />
+                  Approve
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleReviewAction('deny')}
+              disabled={markingReviewed}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {markingReviewed ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-5 w-5" />
+                  Deny
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+
+  if (signDeniedSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+            <XCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have declined to sign</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">You have completed your decision. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (signerChoice === null && signingToken) {
+    const signerPreviewFileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+    return (
+      <div className="min-h-screen bg-slate-50 py-8 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div className="bg-indigo-600 px-6 py-4">
+              <h1 className="text-xl font-bold text-white">Sign Document</h1>
+              <p className="text-indigo-100 text-sm mt-0.5">{doc.file_name}</p>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <p className="text-sm font-medium text-slate-700 mb-2">Review the document below, then choose to approve or decline to sign.</p>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <iframe
+                    src={signerPreviewFileUrl}
+                    title="Document preview"
+                    className="w-full h-[60vh] border-0"
+                  />
+                </div>
+              </div>
+              <p className="text-slate-600">Do you approve this document and wish to sign, or decline to sign?</p>
+              <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+                <label className="block text-sm font-medium text-slate-700 mb-2">Comment (optional for Approve; required for Deny)</label>
+                <textarea
+                  value={signerComment}
+                  onChange={(e) => setSignerComment(e.target.value)}
+                  placeholder="Add a comment..."
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              {error && <p className="text-red-600 text-sm">{error}</p>}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSignerChoice('approve')}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700"
+                >
+                  <Check className="h-5 w-5" />
+                  Approve (proceed to sign)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDenySigning}
+                  disabled={denyingSign}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {denyingSign ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Submitting…
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-5 w-5" />
+                      Deny (decline to sign)
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">

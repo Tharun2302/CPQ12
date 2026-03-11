@@ -657,6 +657,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   });
   const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
   const [isAddingEsignFields, setIsAddingEsignFields] = useState(false);
+  const [addEsignFieldsProgress, setAddEsignFieldsProgress] = useState('');
 
   // SessionStorage key for "Add e-sign fields first" flow (read by EsignPlaceFieldsPage)
   const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
@@ -3006,19 +3007,12 @@ Total Price: {{total price}}`;
       alert('No agreement available. Please generate an agreement first.');
       return;
     }
-    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role4) {
-      alert('Please enter Technical, Legal, and Deal Desk email addresses.');
-      return;
-    }
 
-    const autoSelectedTeam = useManualSelection ? manualTeamSelection : getAutoSelectedTeam(calculation?.totalCost || 0, clientInfo.clientName || '');
-    const teamEmail = getTeamApprovalEmail(autoSelectedTeam);
-    if (!teamEmail) {
-      alert('Team Approval email not configured. Please configure team settings.');
-      return;
-    }
+    const autoSelectedTeam = useManualSelection ? manualTeamSelection : getAutoSelectedTeam(calculation?.totalCost || 0, clientInfo.clientName || '') || 'SMB';
+    const teamEmail = getTeamApprovalEmail(autoSelectedTeam) || '';
 
     setIsAddingEsignFields(true);
+    setAddEsignFieldsProgress('Converting…');
     try {
       const MINIMUM_TOTAL = 2500;
       const baseApprovalAmount = Math.max(totalCost, MINIMUM_TOTAL);
@@ -3030,6 +3024,7 @@ Total Price: {{total price}}`;
 
       const { templateService } = await import('../utils/templateService');
       const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      setAddEsignFieldsProgress('Saving…');
       const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
       const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
 
@@ -3059,6 +3054,7 @@ Total Price: {{total price}}`;
       }
 
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
+      setAddEsignFieldsProgress('Opening…');
       const additionalRecipients = teamApprovalSettings.additionalRecipients[autoSelectedTeam] || [];
       const isOverageWorkflow =
         (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
@@ -3102,7 +3098,11 @@ Total Price: {{total price}}`;
         esignId: data.document.id,
         clientName: clientInfo.clientName || 'Unknown Client',
         amount: Number(approvalAmount) || 0,
-        approvalEmails: { role1: approvalEmails.role1, role2: approvalEmails.role2, role4: approvalEmails.role4 },
+        approvalEmails: {
+          role1: approvalEmails.role1 || '',
+          role2: approvalEmails.role2 || '',
+          role4: approvalEmails.role4 || ''
+        },
         teamId: autoSelectedTeam,
         teamEmail,
         creatorEmail,
@@ -3120,6 +3120,7 @@ Total Price: {{total price}}`;
       alert(error instanceof Error ? error.message : 'Failed to open e-sign place fields. Please try again.');
     } finally {
       setIsAddingEsignFields(false);
+      setAddEsignFieldsProgress('');
     }
   };
 
@@ -9266,13 +9267,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         {isStartingWorkflow ? 'Sending for Approval…' : 'Send for Approval'}
                       </button>
                       <button
-                        onClick={() => setShowApprovalModal(true)}
+                        onClick={handleAddEsignFields}
                         disabled={isAddingEsignFields}
                         className="text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40 transition-all duration-300"
-                        title="Add e-sign fields first, then send for approval"
+                        title="Go to e-sign and add signature fields to this agreement"
                       >
                         <PenLine className="w-3 h-3 inline mr-1" />
-                        {isAddingEsignFields ? 'Opening…' : 'Add e-sign fields'}
+                        {isAddingEsignFields ? (addEsignFieldsProgress || 'Opening…') : 'Add e-sign fields'}
                       </button>
                       <button
                         onClick={handleEmailAgreement}
@@ -9726,7 +9727,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   {isAddingEsignFields ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Opening…
+                      {addEsignFieldsProgress || 'Opening…'}
                     </>
                   ) : (
                     <>

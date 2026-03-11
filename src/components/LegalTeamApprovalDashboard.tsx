@@ -15,10 +15,12 @@ function showSuccessToast(message: string, durationMs = 3000) {
 
 interface LegalTeamApprovalDashboardProps {
   ceoEmail?: string;
+  initialWorkflowId?: string;
 }
 
-const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({ 
-  ceoEmail = 'ceo@company.com'
+const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
+  ceoEmail = 'ceo@company.com',
+  initialWorkflowId
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
   const [showCommentModal, setShowCommentModal] = useState(false);
@@ -50,11 +52,11 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
   console.log('📊 Available workflows:', workflows.length);
   console.log('📋 Workflows data:', workflows);
 
-  // Auto-open document preview when coming from Gmail link (only if workflow is still awaiting Legal approval)
+  // Auto-open document preview when coming from email link or approval portal gate
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const workflowId = urlParams.get('workflow');
-    
+    const workflowId = urlParams.get('workflow') || initialWorkflowId;
+
     if (workflowId) {
       // First try to find in loaded workflows
       const foundWorkflow = workflows.find(w => w.id === workflowId);
@@ -74,7 +76,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
         fetchSpecificWorkflow(workflowId);
       }
     }
-  }, [workflows]);
+  }, [workflows, initialWorkflowId]);
 
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {
@@ -745,7 +747,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
               <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
                 <Crown className="w-6 h-6 text-purple-600" />
               </div>
-              <h1 className="text-4xl font-bold text-gray-900">Legal Team Approval Portal</h1>
+              <h1 className="text-4xl font-bold text-gray-900">Legal Approval Portal</h1>
             </div>
             <p className="text-xl text-gray-600">Legal review and approval of document workflows</p>
             <p className="text-sm text-gray-500 mt-1">Logged in as: {ceoEmail}</p>

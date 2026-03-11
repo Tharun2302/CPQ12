@@ -11,6 +11,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 let libre;
 try {
   libre = require('libreoffice-convert');
@@ -126,6 +127,24 @@ function sendIndexHtml(res) {
 
 // GET / must be handled before express.static so we serve fixed index.html (express.static would serve raw with bad data URL)
 app.get('/', (req, res) => {
+  sendIndexHtml(res);
+});
+
+// Redirect e-sign dashboard/sign from backend port to frontend (so old email links to 3001 still work)
+app.get('/esign-inbox', (req, res) => {
+  const host = req.get('host') || '';
+  if (host.includes('3001')) {
+    const front = host.replace('3001', '5173');
+    return res.redirect(302, `http://${front}${req.originalUrl}`);
+  }
+  sendIndexHtml(res);
+});
+app.get('/sign/:documentId', (req, res) => {
+  const host = req.get('host') || '';
+  if (host.includes('3001')) {
+    const front = host.replace('3001', '5173');
+    return res.redirect(302, `http://${front}${req.originalUrl}`);
+  }
   sendIndexHtml(res);
 });
 
@@ -513,7 +532,24 @@ function formatUsdAmount(value) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function generateTeamEmailHTML(workflowData) {
+// Approval portal access tokens (secure links for role-based portals)
+const APPROVAL_TOKEN_EXPIRY_DAYS = 7;
+async function createApprovalAccessToken(db, workflowId, role) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + APPROVAL_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  await db.collection('approval_access_tokens').updateOne(
+    { workflowId, role },
+    { $set: { workflowId, role, token, expiresAt, updatedAt: new Date().toISOString() } },
+    { upsert: true }
+  );
+  return token;
+}
+
+function generateTeamEmailHTML(workflowData, token) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const approvalLink = token
+    ? `${baseUrl}/approval/${workflowData.workflowId}?role=teamlead&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/team-approval?workflow=${workflowData.workflowId}`;
   const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
   return `
     <!DOCTYPE html>
@@ -545,7 +581,7 @@ function generateTeamEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/team-approval?workflow=${workflowData.workflowId}" 
+            <a href="${approvalLink}" 
                style="background: #0ea5e9; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -562,7 +598,11 @@ function generateTeamEmailHTML(workflowData) {
     </html>
   `;
 }
-function generateManagerEmailHTML(workflowData) {
+function generateManagerEmailHTML(workflowData, token) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const approvalLink = token
+    ? `${baseUrl}/approval/${workflowData.workflowId}?role=technical&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/technical-approval?workflow=${workflowData.workflowId}`;
   return `
     <!DOCTYPE html>
     <html>
@@ -592,7 +632,7 @@ function generateManagerEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/technical-approval?workflow=${workflowData.workflowId}" 
+            <a href="${approvalLink}" 
                style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -610,7 +650,11 @@ function generateManagerEmailHTML(workflowData) {
   `;
 }
 
-function generateCEOEmailHTML(workflowData) {
+function generateCEOEmailHTML(workflowData, token) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const approvalLink = token
+    ? `${baseUrl}/approval/${workflowData.workflowId}?role=legal&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/legal-approval?workflow=${workflowData.workflowId}`;
   return `
     <!DOCTYPE html>
     <html>
@@ -640,7 +684,7 @@ function generateCEOEmailHTML(workflowData) {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/legal-approval?workflow=${workflowData.workflowId}" 
+            <a href="${approvalLink}" 
                style="background: #8B5CF6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Review & Approve
             </a>
@@ -757,6 +801,10 @@ function generateEsignEmailHTML(clientName, documentId, amount, signatureFormLin
 }
 
 function generateDealDeskEmailHTML(workflowData) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const downloadLink = workflowData.workflowId && workflowData.documentId
+    ? `${baseUrl}/api/approval-workflows/${workflowData.workflowId}/document`
+    : null;
   return `
     <!DOCTYPE html>
     <html>
@@ -773,7 +821,7 @@ function generateDealDeskEmailHTML(workflowData) {
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
           <h2>Hello Deal Desk Team,</h2>
           
-          <p>The approval workflow has been completed successfully:</p>
+          <p>The approval workflow has been completed successfully. The <strong>final signed document</strong> is attached to this email.</p>
           
           <div style="background: #EFF6FF; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #93C5FD;">
             <h3>📄 Document Details</h3>
@@ -781,23 +829,27 @@ function generateDealDeskEmailHTML(workflowData) {
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Status:</strong> All Approvals Complete</p>
-            <p><strong>📎 Document:</strong> The approved PDF document is attached to this email.</p>
+            <p><strong>📎 Final signed PDF:</strong> The approved document is attached to this email.</p>
+            ${downloadLink ? `
+            <p style="margin-top: 12px;"><a href="${downloadLink}" style="color: #2563EB; font-weight: bold;">Download the final signed document</a></p>
+            ` : ''}
           </div>
           
           <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
             <h3>✅ Approval Summary</h3>
             <ul style="margin: 0; padding-left: 20px;">
+              <li>✅ Team Lead - Approved</li>
               <li>✅ Technical Team - Approved</li>
               <li>✅ Legal Team - Approved</li>
             </ul>
           </div>
           
-          <p>The document is now ready for your review and any necessary follow-up actions.</p>
+          <p>The document is now ready for your review and any necessary follow-up actions. Deal Desk does not have an approval dashboard; this email and attachment are your delivery.</p>
           
           <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
             <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Next Steps</p>
             <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
-              Please review the approved document and proceed with any necessary deal desk processes.
+              Please review the final signed document and proceed with any necessary deal desk processes.
             </p>
           </div>
         </div>
@@ -4474,12 +4526,22 @@ app.post('/api/send-manager-email', async (req, res) => {
       }
     }
 
+    // Create secure token for role-based portal link
+    let token = null;
+    if (db && workflowData.workflowId) {
+      try {
+        token = await createApprovalAccessToken(db, workflowData.workflowId, 'technical');
+      } catch (err) {
+        console.error('❌ Failed to create approval token for technical:', err);
+      }
+    }
+
     // Send email to Manager only with attachment (fire-and-forget for faster UX)
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedManagerEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-      generateManagerEmailHTML(workflowData),
+      generateManagerEmailHTML(workflowData, token),
       attachments
     )
       .then(result => {
@@ -4561,12 +4623,22 @@ app.post('/api/send-team-email', async (req, res) => {
       }
     }
 
+    // Create secure token for role-based portal link
+    let token = null;
+    if (db && workflowData.workflowId) {
+      try {
+        token = await createApprovalAccessToken(db, workflowData.workflowId, 'teamlead');
+      } catch (err) {
+        console.error('❌ Failed to create approval token for team lead:', err);
+      }
+    }
+
     // Send email to Team with attachment (fire-and-forget for faster UX)
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedTeamEmail,
       `${teamLabel ? `[${teamLabel}] ` : ''}Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-      generateTeamEmailHTML(workflowData),
+      generateTeamEmailHTML(workflowData, token),
       attachments
     )
       .then(result => {
@@ -4647,12 +4719,22 @@ app.post('/api/send-ceo-email', async (req, res) => {
       }
     }
 
+    // Create secure token for role-based portal link
+    let token = null;
+    if (db && workflowData.workflowId) {
+      try {
+        token = await createApprovalAccessToken(db, workflowData.workflowId, 'legal');
+      } catch (err) {
+        console.error('❌ Failed to create approval token for legal:', err);
+      }
+    }
+
     // Send email to CEO only with attachment (fire-and-forget for faster UX)
     const sendStartedAt = Date.now();
     sendEmail(
       resolvedCeoEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-      generateCEOEmailHTML(workflowData),
+      generateCEOEmailHTML(workflowData, token),
       attachments
     )
       .then(result => {
@@ -5217,7 +5299,6 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
 // Document upload (disk storage), signature fields, signing, signed PDF generation
 
 const { ObjectId } = require('mongodb');
-const crypto = require('crypto');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 // Helper: log audit action
@@ -5470,7 +5551,7 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
     try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ _id: 1 }).toArray();
+    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
     res.json({
       success: true,
       recipients: recipients.map((r) => ({
@@ -5479,6 +5560,8 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         email: r.email,
         role: r.role || 'signer',
         status: r.status || 'pending',
+        order: r.order,
+        comment: r.comment || null,
         signing_token: r.signing_token || null,
       })),
     });
@@ -5546,16 +5629,52 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     console.log('📧 E-sign document already sent, skipping auto-send');
     return { success: true, emails_sent: 0, already_sent: true };
   }
-  let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
-  if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) {
-    baseUrl = 'http://localhost:5173';
+  const FRONTEND_DEV = 'http://localhost:5173';
+  let baseUrl = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
+  let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
+  if (baseUrl.includes('localhost:3001')) {
+    baseUrl = FRONTEND_DEV;
+    baseUrlForDashboard = FRONTEND_DEV;
   }
+  if (baseUrlForDashboard.includes('localhost:3001')) baseUrlForDashboard = FRONTEND_DEV;
   let recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
   if (!recipients.length) return { success: false, error: 'Add at least one recipient before sending' };
   if (sequential) {
     recipients = recipients.slice(0, 1);
   }
   const fileName = doc.file_name || 'Document';
+  const getEsignEmailByRole = (rec, fName, signingUrl, inboxUrl) => {
+    const roleLower = (rec.role || 'signer').toString().toLowerCase();
+    const nameLower = (rec.name || '').toString().toLowerCase().trim();
+    const isReviewer = roleLower === 'reviewer' || rec.role === 'Technical Team' || rec.role === 'Legal Team';
+    const ctaText = isReviewer ? 'Review Document' : 'Sign Document';
+    const isTechnical = rec.role === 'Technical Team' || nameLower === 'technical';
+    const isLegal = rec.role === 'Legal Team' || nameLower === 'legal';
+    const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : 'E-Sign Team Lead Dashboard';
+    const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
+    if (isReviewer) {
+      return {
+        subject: 'Please review the document',
+        html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
+        <p>You have been requested to <strong>review</strong> a document.</p>
+        <p><strong>Document:</strong> ${fName}</p>
+        <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
+        <p><strong>Option 2 – Direct link:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+        <p>Or copy: ${signingUrl}</p>
+        <p>Thank you.</p>`
+      };
+    }
+    return {
+      subject: 'Please sign the document',
+      html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
+        <p>You have been requested to sign a document.</p>
+        <p><strong>Document:</strong> ${fName}</p>
+        <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
+        <p><strong>Option 2 – Sign directly:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+        <p>Or copy: ${signingUrl}</p>
+        <p>Thank you.</p>`
+    };
+  };
   let emailsSent = 0;
   for (const rec of recipients) {
     const token = crypto.randomUUID();
@@ -5564,18 +5683,12 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       { $set: { signing_token: token, status: 'pending' } }
     );
     const signingUrl = `${baseUrl}/sign/${token}`;
+    const inboxUrl = `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(token)}`;
     if (process.env.SENDGRID_API_KEY && rec.email) {
-      if (emailsSent === 0) console.log('📧 E-sign email base URL:', baseUrl, '→', signingUrl.substring(0, 50) + '...');
-      const subject = 'Please sign the document';
-      const html = `
-        <p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
-        <p>You have been requested to sign a document.</p>
-        <p><strong>Document:</strong> ${fileName}</p>
-        <p>Click the link below to review and sign:</p>
-        <p><a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">Sign Document</a></p>
-        <p>Or copy this link: ${signingUrl}</p>
-        <p>Thank you.</p>
-      `;
+      if (emailsSent === 0) {
+        console.log('📧 E-sign email URLs:', { signing: signingUrl.substring(0, 60) + '...', dashboard: inboxUrl.substring(0, 60) + '...' });
+      }
+      const { subject, html } = getEsignEmailByRole(rec, fileName, signingUrl, inboxUrl);
       try {
         const result = await sendEmail(rec.email, subject, html);
         if (result.success) emailsSent++;
@@ -5611,6 +5724,149 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/fixed-role-recipients - Get Team → Tech → Legal → Deal Desk recipients (for approval-style e-sign)
+app.get('/api/esign/fixed-role-recipients', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const teamParam = (req.query.team || '').toString().trim().toUpperCase();
+    const settingsCollection = db.collection('team_approval_settings');
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+    const teamLeads = (settings && settings.teamLeads) ? settings.teamLeads : {};
+    const teamIds = Object.keys(teamLeads || {});
+    const team = teamParam && teamLeads[teamParam] ? teamParam : (teamIds[0] || 'DEV');
+    const teamLeadEmail = teamLeads[team] || process.env.TEAM_APPROVAL_EMAIL || '';
+    const techEmail = process.env.TECHNICAL_TEAM_EMAIL || process.env.TECH_EMAIL || 'cpq.zenop.ai.technical@cloudfuze.com';
+    const legalEmail = process.env.LEGAL_TEAM_EMAIL || process.env.LEGAL_EMAIL || 'cpq.zenop.ai.legal@cloudfuze.com';
+    const dealDeskEmail = process.env.DEAL_DESK_EMAIL || 'salesops@cloudfuze.com';
+    const recipients = [
+      { role: 'Team Approval', name: `Team Lead (${team})`, email: teamLeadEmail, order: 0 },
+      { role: 'Technical Team', name: 'Technical Team', email: techEmail, order: 1 },
+      { role: 'Legal Team', name: 'Legal Team', email: legalEmail, order: 2 },
+      { role: 'Deal Desk', name: 'Deal Desk', email: dealDeskEmail, order: 3 },
+    ].filter((r) => r.email);
+    res.json({ success: true, recipients, selectedTeam: team });
+  } catch (error) {
+    console.error('❌ E-sign fixed-role-recipients error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/pending-for-email - List documents pending signature for an email (for E-Sign Portal / Team Lead Dashboard)
+app.get('/api/esign/pending-for-email', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const email = (req.query.email || '').toString().trim().toLowerCase();
+    if (!email) return res.status(400).json({ success: false, error: 'email query required' });
+    // Case-insensitive email match so dashboard finds items regardless of how email was stored
+    const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const recipients = await db.collection('esign_recipients')
+      .find({ email: emailRegex, status: 'pending', signing_token: { $exists: true, $ne: '' } })
+      .toArray();
+    const docIds = [...new Set(recipients.map((r) => r.document_id).filter(Boolean))];
+    const docs = await db.collection('esign_documents')
+      .find({ _id: { $in: docIds }, status: 'sent' })
+      .toArray();
+    const docMap = new Map(docs.map((d) => [d._id.toString(), d]));
+    const items = recipients
+      .map((r) => {
+        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
+        const doc = docMap.get(docId);
+        if (!doc || !r.signing_token) return null;
+        return {
+          documentId: docId,
+          file_name: doc.file_name || 'Document',
+          signing_token: r.signing_token,
+          role: r.role || 'signer',
+        };
+      })
+      .filter(Boolean);
+    res.json({ success: true, items });
+  } catch (error) {
+    console.error('❌ E-sign pending-for-email error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/inbox-by-token - Open dashboard by link from email (no login). Token = signing_token.
+// Returns queue (pending docs for this recipient's email) and history (signed/reviewed).
+app.get('/api/esign/inbox-by-token', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const token = (req.query.token || '').toString().trim();
+    if (!token) return res.status(400).json({ success: false, error: 'Token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(403).json({ success: false, error: 'Invalid or expired link' });
+    const email = (recipient.email || '').toString().trim().toLowerCase();
+    if (!email) return res.status(403).json({ success: false, error: 'Invalid link' });
+    const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+    const role = (recipient.role || 'Signer').toString();
+    const nameLower = (recipient.name || '').toString().toLowerCase().trim();
+    let roleLabel = role === 'Technical Team' ? 'Technical' : role === 'Legal Team' ? 'Legal' : role === 'Team Approval' ? 'Team Lead' : role;
+    if (roleLabel === role && (nameLower === 'technical' || nameLower === 'legal')) roleLabel = nameLower.charAt(0).toUpperCase() + nameLower.slice(1);
+
+    // Queue: all pending for this email (doc status 'sent')
+    const pendingRecipients = await db.collection('esign_recipients')
+      .find({ email: emailRegex, status: 'pending', signing_token: { $exists: true, $ne: '' } })
+      .sort({ _id: 1 })
+      .toArray();
+    const pendingDocIds = [...new Set(pendingRecipients.map((r) => r.document_id).filter(Boolean))];
+    const pendingDocs = await db.collection('esign_documents')
+      .find({ _id: { $in: pendingDocIds.map((id) => (id instanceof ObjectId ? id : new ObjectId(id.toString()))) }, status: 'sent' })
+      .toArray();
+    const pendingDocMap = new Map(pendingDocs.map((d) => [d._id.toString(), d]));
+    const queue = pendingRecipients
+      .map((r) => {
+        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
+        const doc = pendingDocMap.get(docId);
+        if (!doc || !r.signing_token) return null;
+        return {
+          documentId: docId,
+          file_name: doc.file_name || 'Document',
+          signing_token: r.signing_token,
+          role: (r.role || 'signer').toString(),
+        };
+      })
+      .filter(Boolean);
+
+    // History: signed or reviewed for this email
+    const historyRecipients = await db.collection('esign_recipients')
+      .find({ email: emailRegex, status: { $in: ['signed', 'reviewed'] } })
+      .sort({ _id: -1 })
+      .limit(50)
+      .toArray();
+    const historyDocIds = [...new Set(historyRecipients.map((r) => r.document_id).filter(Boolean))];
+    const historyDocs = historyDocIds.length
+      ? await db.collection('esign_documents').find({ _id: { $in: historyDocIds.map((id) => (id instanceof ObjectId ? id : new ObjectId(id.toString()))) } }).toArray()
+      : [];
+    const historyDocMap = new Map(historyDocs.map((d) => [d._id.toString(), d]));
+    const history = historyRecipients
+      .map((r) => {
+        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
+        const doc = historyDocMap.get(docId);
+        if (!doc) return null;
+        return {
+          documentId: docId,
+          file_name: doc.file_name || 'Document',
+          status: r.status,
+          documentStatus: doc.status || 'sent',
+        };
+      })
+      .filter(Boolean);
+
+    res.json({
+      success: true,
+      role: roleLabel,
+      workflow: 'Team Lead → Technical → Legal → Deal Desk',
+      queue,
+      history,
+    });
+  } catch (error) {
+    console.error('❌ E-sign inbox-by-token error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -5673,6 +5929,204 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ E-sign sign-by-token error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/mark-reviewed - Reviewer approves or denies (option: comment; deny requires comment)
+app.post('/api/esign/mark-reviewed', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token, action, comment } = req.body || {};
+    const token = (signing_token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (recipient.status === 'reviewed') {
+      return res.json({ success: true, message: 'Already reviewed', already_reviewed: true });
+    }
+    if (recipient.status === 'denied') {
+      return res.json({ success: true, message: 'Already denied', already_denied: true });
+    }
+    const act = (action || 'approve').toString().toLowerCase();
+    if (act === 'deny' && (!comment || typeof comment !== 'string' || !comment.trim())) {
+      return res.status(400).json({ success: false, error: 'Comment is required when denying' });
+    }
+    if (act === 'deny') {
+      await db.collection('esign_recipients').updateOne(
+        { signing_token: token },
+        { $set: { status: 'denied', review_decision: 'denied', comment: (comment || '').trim() } }
+      );
+      await db.collection('esign_documents').updateOne(
+        { _id: docId },
+        { $set: { status: 'denied' } }
+      );
+      try {
+        await logAudit(docId.toString(), 'review_denied', recipient.email || null, req.ip || req.connection?.remoteAddress);
+      } catch (auditErr) { /* non-fatal */ }
+      return res.json({
+        success: true,
+        message: 'Review denied',
+        action: 'deny',
+        document_id: docId.toString(),
+      });
+    }
+    // approve (default)
+    await db.collection('esign_recipients').updateOne(
+      { signing_token: token },
+      { $set: { status: 'reviewed', review_decision: 'approved', ...(comment != null && String(comment).trim() ? { comment: String(comment).trim() } : {}) } }
+    );
+    const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
+    const completedCount = await db.collection('esign_recipients').countDocuments({
+      document_id: docId,
+      status: { $in: ['signed', 'reviewed'] },
+    });
+    if (totalCount > 0 && completedCount >= totalCount) {
+      await db.collection('esign_documents').updateOne(
+        { _id: docId },
+        { $set: { status: 'completed', signed_at: doc.signed_at || new Date() } }
+      );
+    }
+    // Sequential mode: send signing link to the next recipient after this one marks as reviewed
+    const isSequential = !!doc.sequential;
+    if (isSequential) {
+      const allRecipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+      const recipientIdStr = (recipient._id && recipient._id.toString ? recipient._id.toString() : String(recipient._id));
+      const currentIdx = allRecipients.findIndex((r) => (r._id && r._id.toString ? r._id.toString() : String(r._id)) === recipientIdStr);
+      const nextRec = currentIdx >= 0 && currentIdx < allRecipients.length - 1 ? allRecipients[currentIdx + 1] : null;
+      const nextNeedsEmail = nextRec && (nextRec.signing_token == null || nextRec.signing_token === '');
+      console.log('📧 E-sign sequential (mark-reviewed): doc.sequential=', isSequential, 'currentIdx=', currentIdx, 'total=', allRecipients.length, 'nextRec=', nextRec ? { role: nextRec.role, email: nextRec.email ? '(set)' : '(empty)', hasToken: !!nextRec.signing_token } : 'none');
+      if (!nextRec) {
+        console.log('📧 E-sign sequential (mark-reviewed): no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
+      } else if (!nextNeedsEmail) {
+        console.log('📧 E-sign sequential (mark-reviewed): next recipient already has link, skip email. order=', nextRec.order, 'email=', nextRec.email);
+      } else if (!nextRec.email || !nextRec.email.trim()) {
+        console.warn('📧 E-sign sequential (mark-reviewed): next recipient has no email — add email for', nextRec.name || nextRec.role || 'recipient', 'in Place Fields so they can receive the link.');
+      } else if (nextNeedsEmail && nextRec.email) {
+        const nextToken = crypto.randomUUID();
+        await db.collection('esign_recipients').updateOne(
+          { _id: nextRec._id },
+          { $set: { signing_token: nextToken, status: 'pending' } }
+        );
+        let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
+        let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
+        if (baseUrl.includes('localhost:3001')) { baseUrl = 'http://localhost:5173'; baseUrlForDashboard = 'http://localhost:5173'; }
+        const signingUrl = `${baseUrl}/sign/${nextToken}`;
+        const inboxUrl = `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(nextToken)}`;
+        const nextNameLower = (nextRec.name || '').toString().toLowerCase().trim();
+        const isTechnical = nextRec.role === 'Technical Team' || nextNameLower === 'technical';
+        const isLegal = nextRec.role === 'Legal Team' || nextNameLower === 'legal';
+        const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : 'E-Sign Team Lead Dashboard';
+        const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
+        const fileName = doc.file_name || 'Document';
+        const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
+        const isNextReviewer = roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team';
+        const ctaText = isNextReviewer ? 'Review Document' : 'Sign Document';
+        const subject = isNextReviewer ? 'Please review the document' : 'Please sign the document';
+        const html = isNextReviewer
+          ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
+          <p>You have been requested to <strong>review</strong> a document.</p>
+          <p><strong>Document:</strong> ${fileName}</p>
+          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
+          <p><strong>Option 2 – Direct link:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          <p>Or copy: ${signingUrl}</p>
+          <p>Thank you.</p>`
+          : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
+          <p>You have been requested to sign a document.</p>
+          <p><strong>Document:</strong> ${fileName}</p>
+          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
+          <p><strong>Option 2 – Sign directly:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          <p>Or copy: ${signingUrl}</p>
+          <p>Thank you.</p>`;
+        if (process.env.SENDGRID_API_KEY) {
+          try {
+            console.log('📧 E-sign sequential (mark-reviewed): sending email to next recipient', nextRec.role, nextRec.email);
+            const result = await sendEmail(nextRec.email, subject, html);
+            if (result.success) console.log('📧 E-sign sequential (mark-reviewed): sent signing link to next recipient', nextRec.email);
+            else console.warn('📧 E-sign sequential (mark-reviewed): sendEmail returned success=false for', nextRec.email, result);
+          } catch (err) {
+            console.warn('E-sign sequential send to next (mark-reviewed) failed for', nextRec.email, err?.message || err);
+          }
+        } else {
+          console.warn('📧 E-sign sequential (mark-reviewed): SENDGRID_API_KEY not set — next recipient', nextRec.role, nextRec.email, 'did not receive email. Set SENDGRID_API_KEY in .env and restart server.');
+        }
+      }
+    } else {
+      const recipientCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
+      if (recipientCount > 1) {
+        console.log('📧 E-sign (mark-reviewed): document has', recipientCount, 'recipients but sequential is false — enable "Sequential" when sending to get Team Lead → Technical → Legal emails.');
+      }
+    }
+    try {
+      await logAudit(docId.toString(), 'reviewed', recipient.email || null, req.ip || req.connection?.remoteAddress);
+    } catch (auditErr) {
+      // non-fatal
+    }
+    res.json({
+      success: true,
+      message: 'Document marked as reviewed',
+      action: 'approve',
+      document_id: docId.toString(),
+    });
+  } catch (error) {
+    console.error('❌ E-sign mark-reviewed error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/deny-signing - Signer declines to sign (comment required)
+app.post('/api/esign/deny-signing', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token, comment } = req.body || {};
+    const token = (signing_token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    if (!comment || typeof comment !== 'string' || !comment.trim()) {
+      return res.status(400).json({ success: false, error: 'Comment is required when declining to sign' });
+    }
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    if (recipient.status === 'signed') {
+      return res.status(400).json({ success: false, error: 'You have already signed this document' });
+    }
+    if (recipient.status === 'denied') {
+      return res.json({ success: true, message: 'Already declined', already_denied: true });
+    }
+    await db.collection('esign_recipients').updateOne(
+      { signing_token: token },
+      { $set: { status: 'denied', sign_decision: 'denied', comment: comment.trim() } }
+    );
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { status: 'denied' } }
+    );
+    try {
+      await logAudit(docId.toString(), 'sign_denied', recipient.email || null, req.ip || req.connection?.remoteAddress);
+    } catch (auditErr) { /* non-fatal */ }
+    res.json({
+      success: true,
+      message: 'You have declined to sign',
+      action: 'deny',
+      document_id: docId.toString(),
+    });
+  } catch (error) {
+    console.error('❌ E-sign deny-signing error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -5846,8 +6300,11 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         { $set: { status: 'signed' } }
       );
       const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
-      const signedCount = await db.collection('esign_recipients').countDocuments({ document_id: docId, status: 'signed' });
-      if (totalCount > 0 && signedCount >= totalCount) {
+      const completedCount = await db.collection('esign_recipients').countDocuments({
+        document_id: docId,
+        status: { $in: ['signed', 'reviewed'] },
+      });
+      if (totalCount > 0 && completedCount >= totalCount) {
         await db.collection('esign_documents').updateOne(
           { _id: docId },
           { $set: { status: 'completed', signed_file_path: outPath, signed_at: new Date() } }
@@ -5882,26 +6339,45 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
             { $set: { signing_token: nextToken, status: 'pending' } }
           );
           let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
-          if (process.env.NODE_ENV !== 'production' && baseUrl.includes('localhost:3001')) baseUrl = 'http://localhost:5173';
+          let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
+          if (baseUrl.includes('localhost:3001')) { baseUrl = 'http://localhost:5173'; baseUrlForDashboard = 'http://localhost:5173'; }
           const signingUrl = `${baseUrl}/sign/${nextToken}`;
+          const inboxUrl = `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(nextToken)}`;
+          const nextNameLower = (nextRec.name || '').toString().toLowerCase().trim();
+          const isTechnical = nextRec.role === 'Technical Team' || nextNameLower === 'technical';
+          const isLegal = nextRec.role === 'Legal Team' || nextNameLower === 'legal';
+          const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : 'E-Sign Team Lead Dashboard';
+          const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
           const fileName = doc.file_name || 'Document';
-          const subject = 'Please sign the document';
-          const html = `
-          <p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
+          const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
+          const isNextReviewer = roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team';
+          const ctaText = isNextReviewer ? 'Review Document' : 'Sign Document';
+          const subject = isNextReviewer ? 'Please review the document' : 'Please sign the document';
+          const html = isNextReviewer
+            ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
+          <p>You have been requested to <strong>review</strong> a document.</p>
+          <p><strong>Document:</strong> ${fileName}</p>
+          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
+          <p><strong>Option 2 – Direct link:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          <p>Or copy: ${signingUrl}</p>
+          <p>Thank you.</p>`
+            : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to sign a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
-          <p>Click the link below to review and sign:</p>
-          <p><a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">Sign Document</a></p>
-          <p>Or copy this link: ${signingUrl}</p>
-          <p>Thank you.</p>
-        `;
+          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
+          <p><strong>Option 2 – Sign directly:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          <p>Or copy: ${signingUrl}</p>
+          <p>Thank you.</p>`;
           if (process.env.SENDGRID_API_KEY) {
             try {
+              console.log('📧 E-sign sequential (after sign): sending email to next recipient', nextRec.role, nextRec.email);
               const result = await sendEmail(nextRec.email, subject, html);
               if (result.success) console.log('📧 E-sign sequential: sent signing link to next recipient', nextRec.email);
             } catch (err) {
               console.warn('E-sign sequential send to next failed for', nextRec.email, err?.message || err);
             }
+          } else {
+            console.warn('📧 E-sign sequential (after sign): SENDGRID_API_KEY not set — next recipient', nextRec.role, nextRec.email, 'did not receive email.');
           }
         }
       }
@@ -6548,6 +7024,108 @@ app.get('/api/approval-workflows', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// Verify approval portal access (token required for role-based portals)
+app.get('/api/approval-workflows/verify-access', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { workflowId, role, token } = req.query;
+    if (!workflowId || !role || !token) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Missing workflowId, role, or token'
+      });
+    }
+
+    const normalizedRole = String(role).toLowerCase();
+    const validRoles = ['teamlead', 'technical', 'legal'];
+    if (!validRoles.includes(normalizedRole)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Invalid role'
+      });
+    }
+
+    const record = await db.collection('approval_access_tokens').findOne({
+      workflowId: String(workflowId),
+      role: normalizedRole,
+      token: String(token)
+    });
+
+    if (!record) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Invalid or unknown token'
+      });
+    }
+
+    const now = new Date();
+    const expiresAt = record.expiresAt instanceof Date ? record.expiresAt : new Date(record.expiresAt);
+    if (expiresAt < now) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Token has expired'
+      });
+    }
+
+    res.json({
+      success: true,
+      workflowId: record.workflowId,
+      role: normalizedRole
+    });
+  } catch (error) {
+    console.error('❌ Error verifying approval access:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Access Denied'
+    });
+  }
+});
+
+// Download workflow document (for Deal Desk email link - final signed PDF)
+app.get('/api/approval-workflows/:workflowId/document', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).send('Database not available');
+    }
+    const { workflowId } = req.params;
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow || !workflow.documentId) {
+      return res.status(404).send('Workflow or document not found');
+    }
+    const document = await db.collection('documents').findOne({ id: workflow.documentId });
+    if (!document || !document.fileData) {
+      return res.status(404).send('Document file not found');
+    }
+    let fileBuffer;
+    if (Buffer.isBuffer(document.fileData)) {
+      fileBuffer = document.fileData;
+    } else if (document.fileData.buffer) {
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (document.fileData.data) {
+      fileBuffer = Buffer.from(document.fileData.data);
+    } else {
+      return res.status(500).send('Invalid document data');
+    }
+    const filename = document.fileName || `${workflow.documentId}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error('❌ Error serving workflow document:', error);
+    res.status(500).send('Failed to download document');
   }
 });
 

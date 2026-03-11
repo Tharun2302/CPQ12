@@ -15,10 +15,12 @@ function showSuccessToast(message: string, durationMs = 3000) {
 
 interface TechnicalTeamApprovalDashboardProps {
   managerEmail?: string;
+  initialWorkflowId?: string;
 }
 
-const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardProps> = ({ 
-  managerEmail = 'cpq.zenop.ai.technical@cloudfuze.com'
+const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardProps> = ({
+  managerEmail = 'cpq.zenop.ai.technical@cloudfuze.com',
+  initialWorkflowId
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any>(null);
@@ -44,11 +46,11 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   console.log('📊 Available workflows:', workflows.length);
   console.log('📋 Workflows data:', workflows);
 
-  // Auto-open document preview when coming from Gmail link (only if workflow is still awaiting Technical approval)
+  // Auto-open document preview when coming from email link or approval portal gate
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const workflowId = urlParams.get('workflow');
-    
+    const workflowId = urlParams.get('workflow') || initialWorkflowId;
+
     if (workflowId) {
       // First try to find in loaded workflows
       const foundWorkflow = workflows.find(w => w.id === workflowId);
@@ -68,7 +70,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
         fetchSpecificWorkflow(workflowId);
       }
     }
-  }, [workflows]);
+  }, [workflows, initialWorkflowId]);
 
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {

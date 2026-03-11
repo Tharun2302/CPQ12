@@ -1,11 +1,64 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
-import { PenLine, Loader2, ArrowRight, Type, Briefcase, Calendar, UserPlus, Trash2, Workflow } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, ListChecks, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
+const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
+const SAVED_GROUPS_KEY = 'esign_saved_groups';
+
+export interface SavedRecipient {
+  id: string;
+  name: string;
+  email: string;
+  role: 'signer' | 'reviewer';
+}
+
+export interface SavedGroup {
+  id: string;
+  name: string;
+  recipients: { name: string; email: string; role: 'signer' | 'reviewer' }[];
+}
+
+function getSavedRecipients(): SavedRecipient[] {
+  try {
+    const raw = localStorage.getItem(SAVED_RECIPIENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecipientsToStorage(list: SavedRecipient[]) {
+  try {
+    localStorage.setItem(SAVED_RECIPIENTS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save recipients to storage', e);
+  }
+}
+
+function getSavedGroups(): SavedGroup[] {
+  try {
+    const raw = localStorage.getItem(SAVED_GROUPS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGroupsToStorage(list: SavedGroup[]) {
+  try {
+    localStorage.setItem(SAVED_GROUPS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save groups to storage', e);
+  }
+}
 
 export interface QuotePendingApproval {
   documentId: string;
@@ -92,14 +145,23 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [dragSource, setDragSource] = useState<FieldType | null>(null);
   const [recipients, setRecipients] = useState<EsignRecipient[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
-  const [newRecipient, setNewRecipient] = useState({ name: '', email: '' });
+  const [newRecipient, setNewRecipient] = useState({ name: '', email: '', role: 'signer' as 'signer' | 'reviewer' });
   const [recipientError, setRecipientError] = useState<string | null>(null);
   const [addingRecipient, setAddingRecipient] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [pendingApproval, setPendingApproval] = useState<QuotePendingApproval | null>(null);
   const [sendingApproval, setSendingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
-
+  const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sequential, setSequential] = useState(false);
+  const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => getSavedRecipients());
+  const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => getSavedGroups());
+  const [groupNameInput, setGroupNameInput] = useState('');
+  /** When editing a group, this holds the group id and a draft of name + recipients */
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; recipients: { name: string; email: string; role: 'signer' | 'reviewer' }[] } | null>(null);
+  /** Group id when "View" is expanded to show who's in the group */
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const fileUrl = doc ? `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1` : '';
 
   useEffect(() => {
@@ -151,6 +213,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
       if (recipientsData.success && recipientsData.recipients?.length) {
         setRecipients(recipientsData.recipients);
         setSelectedRecipientId(recipientsData.recipients[0]?.id || null);
+        if (recipientsData.recipients.length >= 2) setSequential(true);
       }
       if (fieldsData.success && fieldsData.fields?.length) {
         setSignatureFields(
@@ -236,23 +299,30 @@ const EsignPlaceFieldsPage: React.FC = () => {
     }
     setRecipientError(null);
     setAddingRecipient(true);
+    const role = newRecipient.role || 'signer';
     const optimistic: EsignRecipient = {
       id: `temp-${Date.now()}`,
       name: name || email,
       email,
-      role: 'signer',
+      role,
     };
     setRecipients((prev) => [...prev, optimistic]);
     setSelectedRecipientId(optimistic.id);
-    setNewRecipient({ name: '', email: '' });
-    const listToSave = [...recipients, { id: '', name: name || email, email, role: 'signer' as const }];
+    setNewRecipient({ name: '', email: '', role: 'signer' });
+    const listToSave = [...recipients, { id: '', name: name || email, email, role }];
     const result = await saveRecipientsAndSet(listToSave, true);
     setAddingRecipient(false);
     if (!result.success) {
       setRecipients((prev) => prev.filter((r) => r.id !== optimistic.id));
       setSelectedRecipientId(recipients[0]?.id || null);
-      setNewRecipient({ name: name || '', email });
+      setNewRecipient({ name: name || '', email, role: newRecipient.role || 'signer' });
     }
+  };
+
+  const updateRecipientRole = async (recipientId: string, newRole: 'signer' | 'reviewer') => {
+    const updated = recipients.map((r) => (r.id === recipientId ? { ...r, role: newRole } : r));
+    setRecipients(updated);
+    await saveRecipientsAndSet(updated);
   };
 
   const removeRecipient = async (id: string) => {
@@ -268,6 +338,143 @@ const EsignPlaceFieldsPage: React.FC = () => {
       setRecipients([]);
       setSelectedRecipientId(null);
     }
+  };
+
+  const moveRecipientUp = async (index: number) => {
+    if (index <= 0 || index >= recipients.length) return;
+    const newList = [...recipients];
+    [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
+    await saveRecipientsAndSet(newList);
+  };
+
+  const moveRecipientDown = async (index: number) => {
+    if (index < 0 || index >= recipients.length - 1) return;
+    const newList = [...recipients];
+    [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
+    await saveRecipientsAndSet(newList);
+  };
+
+  const saveCurrentRecipientsToSaved = () => {
+    const current = recipients.map((r) => ({
+      id: r.id.startsWith('temp-') ? `saved-${r.email}-${Date.now()}` : r.id,
+      name: r.name || r.email,
+      email: r.email,
+      role: ((r.role || 'signer').toLowerCase() === 'reviewer' ? 'reviewer' : 'signer') as 'signer' | 'reviewer',
+    }));
+    const existing = getSavedRecipients();
+    const byEmail = new Map(existing.map((s) => [s.email.toLowerCase(), s]));
+    current.forEach((c) => {
+      byEmail.set(c.email.toLowerCase(), { ...c, id: byEmail.get(c.email.toLowerCase())?.id ?? c.id });
+    });
+    const merged = Array.from(byEmail.values());
+    saveRecipientsToStorage(merged);
+    setSavedRecipients(merged);
+  };
+
+  const addFromSaved = async (saved: SavedRecipient) => {
+    const listToSave = [...recipients, { id: '', name: saved.name || saved.email, email: saved.email, role: saved.role }];
+    const result = await saveRecipientsAndSet(listToSave, true);
+    if (!result.success) setRecipientError('Failed to add recipient');
+  };
+
+  const removeSavedRecipient = (id: string) => {
+    const next = savedRecipients.filter((s) => s.id !== id);
+    saveRecipientsToStorage(next);
+    setSavedRecipients(next);
+  };
+
+  const saveCurrentAsGroup = () => {
+    const name = groupNameInput.trim();
+    if (!name || recipients.length === 0) return;
+    const newGroup: SavedGroup = {
+      id: `group-${Date.now()}`,
+      name,
+      recipients: recipients.map((r) => ({
+        name: r.name || r.email,
+        email: r.email,
+        role: ((r.role || 'signer').toLowerCase() === 'reviewer' ? 'reviewer' : 'signer') as 'signer' | 'reviewer',
+      })),
+    };
+    const next = [...savedGroups, newGroup];
+    saveGroupsToStorage(next);
+    setSavedGroups(next);
+    setGroupNameInput('');
+  };
+
+  const addGroupToDocument = async (group: SavedGroup) => {
+    const existingEmails = new Set(recipients.map((r) => r.email.toLowerCase()));
+    const toAdd = group.recipients.filter((g) => !existingEmails.has(g.email.toLowerCase()));
+    if (toAdd.length === 0) {
+      setRecipientError('All members of this group are already added');
+      return;
+    }
+    const listToSave = [
+      ...recipients,
+      ...toAdd.map((g) => ({ id: '' as string, name: g.name || g.email, email: g.email, role: g.role })),
+    ];
+    const result = await saveRecipientsAndSet(listToSave, true);
+    if (!result.success) setRecipientError('Failed to add group');
+    else setRecipientError(null);
+  };
+
+  const removeGroup = (id: string) => {
+    const next = savedGroups.filter((g) => g.id !== id);
+    saveGroupsToStorage(next);
+    setSavedGroups(next);
+    if (editingGroup?.id === id) setEditingGroup(null);
+  };
+
+  const startEditingGroup = (g: SavedGroup) => {
+    setExpandedGroupId(null);
+    setEditingGroup({
+      id: g.id,
+      name: g.name,
+      recipients: g.recipients.map((r) => ({ ...r })),
+    });
+  };
+
+  const updateEditingGroupName = (name: string) => {
+    setEditingGroup((prev) => (prev ? { ...prev, name } : null));
+  };
+
+  const updateEditingGroupRecipient = (index: number, field: 'name' | 'email' | 'role', value: string) => {
+    setEditingGroup((prev) => {
+      if (!prev || index < 0 || index >= prev.recipients.length) return prev;
+      const next = prev.recipients.map((r, i) =>
+        i === index ? { ...r, [field]: field === 'role' ? value as 'signer' | 'reviewer' : value } : r
+      );
+      return { ...prev, recipients: next };
+    });
+  };
+
+  const removeRecipientFromEditingGroup = (index: number) => {
+    setEditingGroup((prev) => {
+      if (!prev || index < 0 || index >= prev.recipients.length) return prev;
+      const next = prev.recipients.filter((_, i) => i !== index);
+      return { ...prev, recipients: next };
+    });
+  };
+
+  const addRecipientToEditingGroup = () => {
+    setEditingGroup((prev) => {
+      if (!prev) return prev;
+      return { ...prev, recipients: [...prev.recipients, { name: '', email: '', role: 'signer' }] };
+    });
+  };
+
+  const saveEditingGroup = () => {
+    if (!editingGroup) return;
+    const name = editingGroup.name.trim();
+    const recipients = editingGroup.recipients.filter((r) => r.email.trim());
+    if (!name || recipients.length === 0) return;
+    const next = savedGroups.map((g) =>
+      g.id === editingGroup.id
+        ? { ...g, name, recipients }
+        : g
+    );
+    saveGroupsToStorage(next);
+    setSavedGroups(next);
+    setEditingGroup(null);
   };
 
   /** Persist fields to backend (pass updated list after drag/resize so size and position are saved). */
@@ -321,8 +528,19 @@ const EsignPlaceFieldsPage: React.FC = () => {
     });
   };
 
-  const handleSaveFields = async () => {
+  /** Save fields then send for signature (no navigation to send page). */
+  const handleSendForSignature = async () => {
     if (!documentId) return;
+    setSendForSignatureResult(null);
+
+    if (sequential && recipients.length > 0) {
+      const missing = recipients.filter((r) => !(r.email || '').trim());
+      if (missing.length > 0) {
+        setSendForSignatureResult('Every recipient must have an email when using Sequential flow (Team Lead → Technical → Legal). Add emails in the recipient list.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const fields = signatureFields.map((f) => {
@@ -332,14 +550,38 @@ const EsignPlaceFieldsPage: React.FC = () => {
         }
         return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
       });
-      const res = await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+      const fieldsRes = await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ document_id: documentId, fields }),
       });
-      const data = await res.json();
-      if (data.success) {
-        navigate(`/esign/${documentId}/send`);
+      const fieldsData = await fieldsRes.json();
+      if (!fieldsData.success) {
+        setSendForSignatureResult('Failed to save fields.');
+        return;
+      }
+      setSaving(false);
+      setSending(true);
+      try {
+        const sendRes = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sequential }),
+        });
+        const sendData = await sendRes.json();
+        if (sendData.success) {
+          const msg = sendData.message || 'Sent.';
+          const dashNote = sendData.emails_sent > 0
+            ? ' Recipients will receive an email link to view and sign.'
+            : ' No emails were sent — set SENDGRID_API_KEY on the server to send links to recipients.';
+          setSendForSignatureResult(msg + dashNote);
+        } else {
+          setSendForSignatureResult(sendData.error || 'Failed to send.');
+        }
+      } catch {
+        setSendForSignatureResult('Failed to send.');
+      } finally {
+        setSending(false);
       }
     } finally {
       setSaving(false);
@@ -439,107 +681,84 @@ const EsignPlaceFieldsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 py-8 px-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Place Fields</h1>
-            <p className="text-slate-600 mt-1">Drag signature, name, title, and date fields onto the document</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/80 py-6 px-4">
+      {editingGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setEditingGroup(null)}>
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">Edit group</h2>
+              <button type="button" onClick={() => setEditingGroup(null)} className="p-1 rounded text-slate-400 hover:text-slate-600">×</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Group name</label>
+                <input
+                  type="text"
+                  value={editingGroup.name}
+                  onChange={(e) => updateEditingGroupName(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="e.g. Legal team"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-slate-700">Recipients in group</label>
+                  <button type="button" onClick={addRecipientToEditingGroup} className="text-xs font-medium text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1">
+                    <UserPlus className="h-3.5 w-3.5" /> Add
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {editingGroup.recipients.map((r, index) => (
+                    <div key={index} className="flex gap-2 items-start rounded border border-slate-200 p-2 bg-slate-50/80">
+                      <div className="flex-1 min-w-0 grid grid-cols-1 gap-1.5">
+                        <input type="text" value={r.name} onChange={(e) => updateEditingGroupRecipient(index, 'name', e.target.value)} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
+                        <input type="email" value={r.email} onChange={(e) => updateEditingGroupRecipient(index, 'email', e.target.value)} placeholder="Email" className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
+                        <select value={r.role} onChange={(e) => updateEditingGroupRecipient(index, 'role', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-xs bg-white">
+                          <option value="signer">Signer</option>
+                          <option value="reviewer">Reviewer</option>
+                        </select>
+                      </div>
+                      <button type="button" onClick={() => removeRecipientFromEditingGroup(index)} className="p-1 rounded text-slate-400 hover:text-red-600 shrink-0" title="Remove from group">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-slate-200 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingGroup(null)} className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">
+                Cancel
+              </button>
+              <button type="button" onClick={saveEditingGroup} disabled={!editingGroup.name.trim() || editingGroup.recipients.every((r) => !r.email.trim())} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                Save
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => navigate(-1)}
-            className="text-slate-600 hover:text-slate-900 font-medium"
-          >
-            ← Back
-          </button>
+        </div>
+      )}
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Place Fields</h1>
+          <p className="text-slate-600 mt-1 text-sm">Drag signature, name, title, and date fields onto the document.</p>
         </div>
 
-        <div className="flex gap-6">
-          <div className="w-64 shrink-0 bg-slate-200/60 rounded-xl border border-slate-200 p-4 space-y-5">
-            <div>
-              <p className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</p>
-              <p className="text-xs text-slate-500 mb-2">Add signers and assign fields to them</p>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {recipients.map((r) => {
-                  const isSelected = selectedRecipientId === r.id;
-                  const recipientColor = getRecipientColor(r.id, recipients);
-                  return (
-                    <div
-                      key={r.id}
-                      className={`rounded-lg overflow-hidden border-2 ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-300 bg-white'}`}
-                    >
-                      <div className="flex items-start justify-between gap-1 p-2.5">
-                        <div className="min-w-0 flex-1 flex items-start gap-2">
-                          <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color for this signer" />
-                          <div className="min-w-0 flex-1">
-                            <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
-                            <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
-                          </div>
-                        </div>
-                        <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600 shrink-0" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-2 pt-2 border-t border-slate-200">
-                <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
-                <input type="email" value={newRecipient.email} onChange={(e) => { setNewRecipient((p) => ({ ...p, email: e.target.value })); setRecipientError(null); }} placeholder="Email" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" />
-                {recipientError && <p className="text-xs text-red-600 mt-1">{recipientError}</p>}
-                <button type="button" onClick={addRecipient} disabled={addingRecipient || !newRecipient.email.trim()} className="mt-1.5 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {addingRecipient ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add recipient
-                </button>
-              </div>
-              <p className="text-xs text-slate-500 mt-3">Place fields for:</p>
-              <select value={selectedRecipientId || ''} onChange={(e) => setSelectedRecipientId(e.target.value || null)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
-                <option value="">— None —</option>
-                {recipients.map((r) => (<option key={r.id} value={r.id}>{r.name || r.email}</option>))}
-              </select>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 mb-2">Drag onto the document to place</p>
-              <div className="space-y-2">
-                {FIELD_DEFS.map(({ type, label, Icon }) => (
-                  <div
-                    key={type}
-                    draggable
-                    onDragStart={(e) => {
-                      setDragSource(type);
-                      e.dataTransfer.setData('text/plain', type);
-                      e.dataTransfer.effectAllowed = 'copy';
-                    }}
-                    onDragEnd={() => setDragSource(null)}
-                    className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-grab active:cursor-grabbing transition-colors ${
-                      dragSource === type
-                        ? 'border-indigo-400 bg-indigo-50'
-                        : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Icon className="h-5 w-5 text-indigo-600 shrink-0" />
-                    <span className="font-medium text-slate-800 text-sm">{label}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500 mt-3">
-                Scroll to the page you want, then drag fields onto the document
-              </p>
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex gap-6 flex-col lg:flex-row">
+          {/* Document area first (left / full width on mobile) */}
+          <div className="flex-1 flex flex-col min-w-0 order-2 lg:order-1">
             <div
               ref={scrollContainerRef}
-              className="rounded-xl border-2 border-dashed border-slate-200 overflow-y-auto overflow-x-hidden bg-slate-100 min-h-[500px] max-h-[75vh]"
+              className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-y-auto overflow-x-hidden min-h-[500px] max-h-[76vh]"
             >
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <div
                   key={pageNum}
                   data-page={pageNum}
-                  className="flex flex-col items-center py-4 first:pt-4 last:pb-4"
+                  className="flex flex-col items-center py-6 first:pt-6 last:pb-6"
                 >
-                  <span className="text-xs font-medium text-slate-500 mb-2">Page {pageNum} of {totalPages}</span>
+                  <span className="text-xs font-medium text-slate-400 mb-2">Page {pageNum} of {totalPages}</span>
                   <div
-                    className={`rounded-lg overflow-hidden shadow-sm ${dragSource ? 'ring-2 ring-indigo-400 ring-offset-2' : ''}`}
+                    className={`rounded-lg overflow-hidden shadow-md ${dragSource ? 'ring-2 ring-indigo-400 ring-offset-2' : ''}`}
                   >
                     <EsignPdfPageView
                       pdfUrl={fileUrl}
@@ -563,7 +782,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                             return (
                               <Rnd
                                 key={f.id}
-                                position={{ x: f.x * PDF_SCALE, y: f.y * PDF_SCALE }}
+                                position={{ x: (f.x ?? 0) * PDF_SCALE, y: (f.y ?? 0) * PDF_SCALE }}
                                 size={{ width: Math.max(MIN_FIELD_WIDTH_PX, widthPt * PDF_SCALE), height: Math.max(MIN_FIELD_HEIGHT_PX, heightPt * PDF_SCALE) }}
                                 minWidth={MIN_FIELD_WIDTH_PX}
                                 minHeight={MIN_FIELD_HEIGHT_PX}
@@ -591,7 +810,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 dragGrid={[1, 1]}
                                 resizeGrid={[1, 1]}
                                 className={`flex items-center justify-center rounded font-medium text-sm cursor-move group ${color.box}`}
-                                onClick={(e) => {
+                                onClick={(e: React.MouseEvent) => {
                                   e.stopPropagation();
                                   if (e.detail === 2) removeField(f.id);
                                 }}
@@ -600,7 +819,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 {getFieldLabel(f.type)}
                                 <span
                                   className="ml-1 text-xs opacity-0 group-hover:opacity-100"
-                                  onClick={(e) => { e.stopPropagation(); removeField(f.id); }}
+                                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeField(f.id); }}
                                 >
                                   ×
                                 </span>
@@ -618,7 +837,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 width: `${f.widthPct ?? 20}%`,
                                 height: `${f.heightPct ?? 4}%`,
                               }}
-                              onClick={(e) => {
+                              onClick={(e: React.MouseEvent) => {
                                 e.stopPropagation();
                                 if (e.detail === 2) removeField(f.id);
                               }}
@@ -627,7 +846,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                               {getFieldLabel(f.type)}
                               <span
                                 className="ml-1 text-xs opacity-0 group-hover:opacity-100"
-                                onClick={(e) => { e.stopPropagation(); removeField(f.id); }}
+                                onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeField(f.id); }}
                               >
                                 ×
                               </span>
@@ -641,16 +860,44 @@ const EsignPlaceFieldsPage: React.FC = () => {
             </div>
 
             {approvalError && (
-              <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm flex items-center justify-between gap-2">
+              <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center justify-between gap-2">
                 <span>{approvalError}</span>
                 <button type="button" onClick={() => setApprovalError(null)} className="text-red-600 hover:text-red-800 font-medium">×</button>
               </div>
             )}
-            {pendingApproval && (
-              <div className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
-                Agreement from Quote — place fields, then send for Team / Technical / Legal approval.
+            {sendForSignatureResult && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <p className={`text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {sendForSignatureResult}
+                </p>
+                {sendForSignatureResult && (sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document')) && documentId && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/esign/${documentId}/status`)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-xl font-semibold hover:bg-violet-700 shadow-sm"
+                  >
+                    <ListChecks className="h-4 w-4" />
+                    View signing status
+                  </button>
+                )}
               </div>
             )}
+            <label className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sequential}
+                onChange={(e) => setSequential(e.target.checked)}
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-slate-700">
+                Sequential: send only to first recipient; after they sign or review, the next receives the email.
+                {recipients.length >= 2 && (
+                  <span className="block mt-0.5 text-amber-700 font-medium">
+                    Recommended for Team Lead → Technical → Legal flow.
+                  </span>
+                )}
+              </span>
+            </label>
             <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Go to page</span>
@@ -660,7 +907,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                   min={1}
                   max={totalPages}
                   defaultValue={1}
-                  className="w-12 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  className="w-14 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       const n = Math.max(1, Math.min(totalPages, parseInt((e.target as HTMLInputElement).value, 10) || 1));
@@ -675,39 +922,220 @@ const EsignPlaceFieldsPage: React.FC = () => {
                     const n = input ? Math.max(1, Math.min(totalPages, parseInt(input.value, 10) || 1)) : 1;
                     scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }}
-                  className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Go
                 </button>
                 <span className="text-sm text-slate-500">1–{totalPages}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-slate-600">{signatureFields.length} field(s)</span>
-                {pendingApproval && (
-                  <button
-                    type="button"
-                    onClick={handleSendForApproval}
-                    disabled={sendingApproval || saving}
-                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              <button
+                onClick={handleSendForSignature}
+                disabled={saving || sending}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 shadow-md hover:shadow-lg transition-shadow"
+              >
+                {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Send for Signature</>}
+              </button>
+            </div>
+          </div>
+
+          {/* Right panel: recipients & fields */}
+          <div className="w-full lg:w-80 shrink-0 order-1 lg:order-2">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden sticky top-24 max-h-[85vh] overflow-y-auto">
+              <div className="p-4 space-y-5">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</h2>
+                  <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers get fields; Reviewers mark as Reviewed.</p>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {recipients.map((r, index) => {
+                  const isSelected = selectedRecipientId === r.id;
+                  const recipientColor = getRecipientColor(r.id, recipients);
+                  const isReviewer = (r.role || 'signer').toLowerCase() === 'reviewer';
+                  return (
+                    <div
+                      key={r.id}
+                      className={`rounded-lg overflow-hidden border-2 ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-300 bg-white'}`}
+                    >
+                      <div className="flex items-start justify-between gap-1 p-2.5">
+                        <div className="min-w-0 flex-1 flex items-start gap-2">
+                          <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
+                            <span className={`inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                              {(r.role || 'signer').toLowerCase() === 'reviewer' ? 'Reviewer' : 'Signer'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end">
+                          {recipients.length > 1 && (
+                            <>
+                              <button type="button" onClick={() => moveRecipientUp(index)} disabled={index === 0} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => moveRecipientDown(index)} disabled={index === recipients.length - 1} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
+                            </>
+                          )}
+                          <select
+                            value={(r.role || 'signer').toLowerCase()}
+                            onChange={(e) => updateRecipientRole(r.id, e.target.value as 'signer' | 'reviewer')}
+                            className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-5 pl-1"
+                            title="Change role"
+                          >
+                            <option value="signer">Signer</option>
+                            <option value="reviewer">Reviewer</option>
+                          </select>
+                          <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2 pt-2 border-t border-slate-200">
+                <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
+                <input type="email" value={newRecipient.email} onChange={(e) => { setNewRecipient((p) => ({ ...p, email: e.target.value })); setRecipientError(null); }} placeholder="Email" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-xs text-slate-600">Role:</span>
+                  <select
+                    value={newRecipient.role}
+                    onChange={(e) => setNewRecipient((p) => ({ ...p, role: e.target.value as 'signer' | 'reviewer' }))}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
                   >
-                    {sendingApproval ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Workflow className="h-4 w-4" /> Send for Approval</>}
-                  </button>
-                )}
-                <button
-                  onClick={handleSaveFields}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Continue <ArrowRight className="h-4 w-4" /></>}
+                    <option value="signer">Signer</option>
+                    <option value="reviewer">Reviewer</option>
+                  </select>
+                </div>
+                {recipientError && <p className="text-xs text-red-600 mt-1">{recipientError}</p>}
+                <button type="button" onClick={addRecipient} disabled={addingRecipient || !newRecipient.email.trim()} className="mt-1.5 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {addingRecipient ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add recipient
                 </button>
+                {recipients.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    <button type="button" onClick={saveCurrentRecipientsToSaved} className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800">
+                      <Bookmark className="h-3.5 w-3.5" /> Save current to list
+                    </button>
+                    <div className="flex gap-1.5 items-center flex-wrap">
+                      <input
+                        type="text"
+                        value={groupNameInput}
+                        onChange={(e) => setGroupNameInput(e.target.value)}
+                        placeholder="Group name"
+                        className="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1 text-xs"
+                      />
+                      <button type="button" onClick={saveCurrentAsGroup} disabled={!groupNameInput.trim()} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50">
+                        <Users className="h-3.5 w-3.5" /> Save as group
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {savedGroups.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-200">
+                  <p className="text-xs font-medium text-slate-700 mb-1">Saved groups</p>
+                  <p className="text-[10px] text-slate-500 mb-1.5">Use &quot;Add to document&quot; to add this group&apos;s recipients to the current document.</p>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {savedGroups.map((g) => {
+                      const isExpanded = expandedGroupId === g.id;
+                      return (
+                        <div key={g.id} className="rounded border border-slate-200 bg-white overflow-hidden">
+                          <div className="flex items-center justify-between gap-1 px-2 py-1.5">
+                            <button type="button" onClick={() => setExpandedGroupId(isExpanded ? null : g.id)} className="min-w-0 flex-1 flex items-center gap-1 text-left">
+                              <span className="text-slate-400">{isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}</span>
+                              <p className="text-xs font-medium text-slate-800 truncate">{g.name}</p>
+                              <p className="text-[10px] text-slate-500 shrink-0">({g.recipients.length})</p>
+                            </button>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button type="button" onClick={() => addGroupToDocument(g)} className="p-1 rounded text-indigo-600 hover:bg-indigo-50 font-medium text-xs" title="Add all to current document">
+                                Add to document
+                              </button>
+                              <button type="button" onClick={() => startEditingGroup(g)} className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-indigo-50" title="Edit group">
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button type="button" onClick={() => removeGroup(g.id)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Remove group">
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div className="border-t border-slate-100 bg-slate-50/70 px-2 py-1.5 space-y-1 max-h-32 overflow-y-auto">
+                              {g.recipients.map((r, i) => (
+                                <div key={i} className="flex items-center justify-between gap-2 text-[10px]">
+                                  <span className="text-slate-700 truncate">{r.name || r.email}</span>
+                                  <span className="text-slate-500 truncate shrink-0 max-w-[120px]">{r.email}</span>
+                                  <span className={`shrink-0 px-1 py-0.5 rounded text-[9px] font-medium ${r.role === 'reviewer' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>{r.role}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {savedRecipients.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-200">
+                  <p className="text-xs font-medium text-slate-700 mb-1.5">Saved recipients</p>
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                    {savedRecipients.map((s) => {
+                      const alreadyAdded = recipients.some((r) => r.email.toLowerCase() === s.email.toLowerCase());
+                      return (
+                        <div key={s.id} className="flex items-center justify-between gap-1 rounded border border-slate-200 bg-white px-2 py-1.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-slate-800 truncate">{s.name || s.email}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{s.email}</p>
+                          </div>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button type="button" onClick={() => addFromSaved(s)} disabled={alreadyAdded} className="p-1 rounded text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed" title={alreadyAdded ? 'Already added' : 'Add to document'}>
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button" onClick={() => removeSavedRecipient(s.id)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Remove from saved">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-slate-500 mt-3">Place fields for:</p>
+              <select value={selectedRecipientId || ''} onChange={(e) => setSelectedRecipientId(e.target.value || null)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+                <option value="">— None —</option>
+                {recipients.map((r) => (<option key={r.id} value={r.id}>{r.name || r.email} ({(r.role || 'signer').toLowerCase() === 'reviewer' ? 'Reviewer' : 'Signer'})</option>))}
+              </select>
+              {selectedRecipientId && recipients.find((r) => r.id === selectedRecipientId)?.role?.toLowerCase() === 'reviewer' && (
+                <p className="text-xs text-amber-700 mt-1">Reviewers don&apos;t need fields; they will mark as Reviewed from their link.</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 mb-2">Drag onto the document to place</p>
+              <div className="space-y-2">
+                {FIELD_DEFS.map(({ type, label, Icon }) => (
+                  <div
+                    key={type}
+                    draggable
+                    onDragStart={(e) => {
+                      setDragSource(type);
+                      e.dataTransfer.setData('text/plain', type);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    onDragEnd={() => setDragSource(null)}
+                    className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-grab active:cursor-grabbing transition-colors ${
+                      dragSource === type
+                        ? 'border-indigo-400 bg-indigo-50'
+                        : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 text-indigo-600 shrink-0" />
+                    <span className="font-medium text-slate-800 text-sm">{label}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                Scroll to the page you want, then drag fields onto the document.
+              </p>
+            </div>
               </div>
             </div>
-            {!pendingApproval && (
-              <p className="mt-2 text-xs text-slate-500">
-                To send this document for approval after placing fields, start from the Quote page and use <strong>Add e-sign fields</strong>.{' '}
-                <Link to="/quote" className="text-indigo-600 hover:underline">Go to Quote</Link>
-              </p>
-            )}
           </div>
         </div>
       </div>

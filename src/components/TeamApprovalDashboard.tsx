@@ -13,7 +13,11 @@ function showSuccessToast(message: string, durationMs = 3000) {
   setTimeout(() => el.remove(), durationMs);
 }
 
-const TeamApprovalDashboard: React.FC = () => {
+interface TeamApprovalDashboardProps {
+  initialWorkflowId?: string;
+}
+
+const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWorkflowId } = {}) => {
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   const [activeTab, setActiveTab] = useState('queue');
   const [isActing, setIsActing] = useState(false);
@@ -415,25 +419,23 @@ const TeamApprovalDashboard: React.FC = () => {
     }
   };
 
-  // Auto-open from email link (?workflow=ID) only if workflow is still awaiting Team approval
+  // Auto-open from email link (?workflow=ID or initialWorkflowId from approval portal gate)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const workflowId = urlParams.get('workflow');
+    const workflowId = urlParams.get('workflow') || initialWorkflowId;
     if (!workflowId) return;
-    
+
     const fromStore = workflows.find(w => w.id === workflowId);
     if (fromStore && fromStore.currentStep === 1) {
       console.log('🔗 Opening document from email link for workflow:', workflowId);
       handleViewWorkflow(fromStore);
       return;
     }
-    
+
     // Fallback: fetch specific workflow if not in store yet
     if (workflows.length > 0) {
-      // Workflows are loaded but this one not found
       console.error('❌ Workflow not found in loaded workflows:', workflowId);
     } else {
-      // Workflows not loaded yet, fetch this specific workflow directly
       console.log('🔄 Workflows not loaded yet, fetching specific workflow:', workflowId);
       (async () => {
         try {
@@ -450,7 +452,7 @@ const TeamApprovalDashboard: React.FC = () => {
         }
       })();
     }
-  }, [workflows]);
+  }, [workflows, initialWorkflowId]);
 
   const renderTabContent = () => {
     // Filter workflows for team approval-specific view
@@ -663,7 +665,7 @@ const TeamApprovalDashboard: React.FC = () => {
               <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center">
                 <User className="w-6 h-6 text-teal-600" />
               </div>
-              <h1 className="text-4xl font-bold text-gray-900">Team Approval Portal</h1>
+              <h1 className="text-4xl font-bold text-gray-900">Team Lead Approval Portal</h1>
             </div>
             <p className="text-xl text-gray-600">Review and approve or deny pending requests before Technical Team review</p>
           </div>
