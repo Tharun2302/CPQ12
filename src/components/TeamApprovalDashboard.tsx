@@ -761,7 +761,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                           <span className="text-sm text-indigo-800">
                             <PenLine className="w-4 h-4 inline mr-2 align-middle" />
-                            This document has <strong>{esignFieldCount} e-signature field{esignFieldCount !== 1 ? 's' : ''}</strong> (shown below).
+                            This document has <strong>{esignFieldCount} signature field{esignFieldCount !== 1 ? 's' : ''}</strong> (shown below).
                           </span>
                           <button
                             type="button"

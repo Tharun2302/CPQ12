@@ -55,7 +55,7 @@ const EsignTechnicalDashboard: React.FC = () => {
   useEffect(() => {
     if (!userEmail) {
       setLoading(false);
-      setError('Sign in to see your e-sign queue.');
+      setError('Sign in to see your queue.');
       return;
     }
     fetchQueue();
@@ -97,8 +97,8 @@ const EsignTechnicalDashboard: React.FC = () => {
 
   const queueCount = items.length;
   const tabs = [
-    { id: 'queue', label: 'My E-Sign Queue', icon: User, count: queueCount },
-    { id: 'status', label: 'E-Sign Status', icon: BarChart3, count: queueCount },
+    { id: 'queue', label: 'My Queue', icon: User, count: queueCount },
+    { id: 'status', label: 'Workflow Status', icon: BarChart3, count: queueCount },
   ];
 
   return (
@@ -113,9 +113,9 @@ const EsignTechnicalDashboard: React.FC = () => {
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                   <User className="w-6 h-6 text-blue-600" />
                 </div>
-                <h1 className="text-4xl font-bold text-gray-900">E-Sign Technical Dashboard</h1>
+                <h1 className="text-4xl font-bold text-gray-900">Technical Dashboard</h1>
               </div>
-              <p className="text-xl text-gray-600">Technical e-signature: sign or review documents (fixed roles: Team → Tech → Legal → Deal Desk)</p>
+              <p className="text-xl text-gray-600">Sign or review documents (Team → Tech → Legal → Deal Desk)</p>
               {userEmail && <p className="text-sm text-gray-500 mt-1">Logged in as: {userEmail}</p>}
             </div>
           </div>
@@ -200,7 +200,7 @@ const EsignTechnicalDashboard: React.FC = () => {
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <FileText className="w-8 h-8 text-gray-400" />
                   </div>
-                  <p className="text-gray-500 italic text-lg">No documents in your e-sign queue.</p>
+                  <p className="text-gray-500 italic text-lg">No documents in your queue.</p>
                   <p className="text-gray-400 text-sm mt-1">When a document reaches the Technical step (fixed roles), it will appear here.</p>
                 </div>
               )}

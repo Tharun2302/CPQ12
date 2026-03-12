@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { FileText, Loader2, PenLine, ShieldX, ArrowRight, User, BarChart3, CheckCircle } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { FileText, Loader2, PenLine, ShieldX, ArrowRight, User, BarChart3, CheckCircle, X, Eye, Check, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface QueueItem {
@@ -32,11 +32,102 @@ interface InboxResponse {
  */
 const EsignInboxByToken: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const token = searchParams.get('token') || '';
 
   const [status, setStatus] = useState<'loading' | 'denied' | 'ok'>('loading');
   const [data, setData] = useState<InboxResponse | null>(null);
   const [activeTab, setActiveTab] = useState<'queue' | 'status'>('queue');
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [selectedQueueItem, setSelectedQueueItem] = useState<QueueItem | null>(null);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [showDenyComment, setShowDenyComment] = useState(false);
+  const [denyComment, setDenyComment] = useState('');
+  const refreshInbox = useCallback(() => {
+    if (!token) return;
+    fetch(`${BACKEND_URL}/api/esign/inbox-by-token?token=${encodeURIComponent(token)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: InboxResponse | null) => {
+        if (json?.success) setData(json);
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const openDocumentModal = useCallback((item: QueueItem) => {
+    setSelectedQueueItem(item);
+    setShowDocumentModal(true);
+    setShowDenyComment(false);
+    setDenyComment('');
+    setReviewError(null);
+  }, []);
+
+  const closeDocumentModal = useCallback(() => {
+    setShowDocumentModal(false);
+    setSelectedQueueItem(null);
+    setShowDenyComment(false);
+    setDenyComment('');
+    setReviewError(null);
+  }, []);
+
+  const isReviewer = (selectedQueueItem?.role || '').toString().toLowerCase() === 'reviewer';
+
+  const handleApprove = useCallback(async () => {
+    if (!selectedQueueItem?.signing_token) return;
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/mark-reviewed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signing_token: selectedQueueItem.signing_token, action: 'approve' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (json.success) {
+        closeDocumentModal();
+        refreshInbox();
+      } else {
+        setReviewError(json.error || 'Failed to approve');
+      }
+    } catch {
+      setReviewError('Request failed');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }, [selectedQueueItem?.signing_token, closeDocumentModal, refreshInbox]);
+
+  const handleDeny = useCallback(async () => {
+    if (!selectedQueueItem?.signing_token) return;
+    if (!showDenyComment) {
+      setShowDenyComment(true);
+      return;
+    }
+    const comment = denyComment.trim();
+    if (!comment) {
+      setReviewError('Comment is required when denying');
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/mark-reviewed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signing_token: selectedQueueItem.signing_token, action: 'deny', comment }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (json.success) {
+        closeDocumentModal();
+        refreshInbox();
+      } else {
+        setReviewError(json.error || 'Failed to deny');
+      }
+    } catch {
+      setReviewError('Request failed');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }, [selectedQueueItem?.signing_token, showDenyComment, denyComment, closeDocumentModal, refreshInbox]);
 
   useEffect(() => {
     if (!token) {
@@ -56,6 +147,11 @@ const EsignInboxByToken: React.FC = () => {
       })
       .then((json: InboxResponse | null) => {
         if (json?.success) {
+          const queue = json.queue ?? [];
+          if (queue.length > 0 && queue[0].signing_token) {
+            navigate(`/sign/${queue[0].signing_token}`, { replace: true });
+            return;
+          }
           setData(json);
           setStatus('ok');
         } else {
@@ -65,7 +161,7 @@ const EsignInboxByToken: React.FC = () => {
       .catch(() => setStatus('denied'));
 
     return () => controller.abort();
-  }, [token]);
+  }, [token, navigate]);
 
   if (status === 'loading') {
     return (
@@ -87,25 +183,24 @@ const EsignInboxByToken: React.FC = () => {
           <p className="text-slate-600">
             {token
               ? 'This link is invalid or has expired. Please use the link from your email to open your dashboard.'
-              : 'No login required. Use the link from your e-sign email (Option 1 – “E-Sign Team Lead Dashboard”) to open your queue and documents.'}
+              : 'No login required. Use the link from your email (Option 1 – “Team Lead Dashboard”) to open your queue and documents.'}
           </p>
         </div>
       </div>
     );
   }
 
-  const workflow = data?.workflow || 'Team Lead → Technical → Legal → Deal Desk';
   const queue = data?.queue ?? [];
   const history = data?.history ?? [];
 
   const roleKey = (data?.role || '').toString().toLowerCase();
   const dashboardTitle =
-    roleKey === 'technical' ? 'E-Sign Technical Dashboard'
-    : roleKey === 'legal' ? 'E-Sign Legal Dashboard'
-    : 'E-Sign Team Lead Dashboard';
+    roleKey === 'technical' ? 'Technical Dashboard'
+    : roleKey === 'legal' ? 'Legal Dashboard'
+    : 'Team Lead Dashboard';
 
   const tabs = [
-    { id: 'queue' as const, label: 'My E-Sign Queue', icon: User, count: queue.length },
+    { id: 'queue' as const, label: 'My Queue', icon: User, count: queue.length },
     { id: 'status' as const, label: 'Workflow Status', icon: BarChart3, count: history.length },
   ];
 
@@ -119,7 +214,6 @@ const EsignInboxByToken: React.FC = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">{dashboardTitle}</h1>
-              <p className="text-slate-600 text-sm mt-0.5">Review and sign documents. No login required—your email link is your access.</p>
             </div>
           </div>
         </div>
@@ -153,14 +247,9 @@ const EsignInboxByToken: React.FC = () => {
       </div>
 
       <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="mb-6 rounded-xl bg-indigo-50 border border-indigo-100 px-4 py-3">
-          <p className="text-sm font-medium text-indigo-900">Workflow</p>
-          <p className="text-indigo-700 text-sm mt-0.5">{workflow}</p>
-        </div>
-
         {activeTab === 'queue' && (
           <>
-            <h2 className="text-lg font-semibold text-slate-900 mb-3">My E-Sign Queue</h2>
+            <h2 className="text-lg font-semibold text-slate-900 mb-3">My Queue</h2>
             {queue.length === 0 ? (
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center text-slate-500">
                 <FileText className="w-12 h-12 mx-auto text-slate-300 mb-3" />
@@ -173,13 +262,18 @@ const EsignInboxByToken: React.FC = () => {
                     key={doc.documentId + doc.signing_token}
                     className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center justify-between gap-4"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => openDocumentModal(doc)}
+                      className="flex items-center gap-3 min-w-0 flex-1 text-left hover:bg-slate-50 -m-2 p-2 rounded-lg transition-colors"
+                    >
                       <FileText className="w-10 h-10 text-slate-400 shrink-0" />
                       <div className="min-w-0">
                         <p className="font-medium text-slate-900 truncate">{doc.file_name}</p>
-                        <p className="text-sm text-slate-500">Ready for your signature</p>
+                        <p className="text-sm text-slate-500">Click to view document, then review or sign</p>
                       </div>
-                    </div>
+                      <Eye className="w-5 h-5 text-slate-400 shrink-0" />
+                    </button>
                     <a
                       href={`${window.location.origin}/sign/${doc.signing_token}`}
                       className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium text-sm hover:bg-emerald-700 transition-colors"
@@ -228,6 +322,109 @@ const EsignInboxByToken: React.FC = () => {
           </>
         )}
       </main>
+
+      {/* Document preview modal (like approval flow) */}
+      {showDocumentModal && selectedQueueItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-3">
+                <FileText className="w-8 h-8 text-indigo-600 shrink-0" />
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Document Preview</h2>
+                  <p className="text-sm text-slate-500 truncate max-w-md">{selectedQueueItem.file_name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeDocumentModal}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden bg-slate-100">
+              <iframe
+                src={`${BACKEND_URL}/api/esign/documents/${selectedQueueItem.documentId}/file?inline=1`}
+                className="w-full h-full min-h-[60vh] border-0"
+                title="Document preview"
+              />
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 shrink-0 space-y-3">
+              {reviewError && (
+                <p className="text-sm text-red-600">{reviewError}</p>
+              )}
+              {showDenyComment && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium text-slate-700">Reason for denial (required)</label>
+                  <textarea
+                    value={denyComment}
+                    onChange={(e) => setDenyComment(e.target.value)}
+                    placeholder="Enter reason..."
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[80px]"
+                    rows={3}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setShowDenyComment(false); setDenyComment(''); setReviewError(null); }}
+                    className="self-start text-sm text-slate-600 hover:text-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeDocumentModal}
+                  disabled={reviewSubmitting}
+                  className="px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Close
+                </button>
+                {isReviewer ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleApprove}
+                      disabled={reviewSubmitting}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {reviewSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeny}
+                      disabled={reviewSubmitting}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {reviewSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                      {showDenyComment ? 'Confirm denial' : 'Deny'}
+                    </button>
+                    <a
+                      href={`${window.location.origin}/sign/${selectedQueueItem.signing_token}`}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700"
+                    >
+                      Review Document
+                      <ArrowRight className="w-4 h-4" />
+                    </a>
+                  </>
+                ) : (
+                  <a
+                    href={`${window.location.origin}/sign/${selectedQueueItem.signing_token}`}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700"
+                  >
+                    Sign Document
+                    <ArrowRight className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

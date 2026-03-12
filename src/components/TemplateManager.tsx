@@ -1648,7 +1648,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     try {
       // Validate signature fields
       if (!signatureForm.eSignature.trim()) {
-        throw new Error('Please enter your E-Signature before sending.');
+        throw new Error('Please enter your signature before sending.');
       }
       if (!signatureForm.name.trim()) {
         throw new Error('Please enter your Full Name before sending.');
@@ -2657,10 +2657,10 @@ CloudFuze Team`,
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* E-Signature */}
+                  {/* Signature */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-800 mb-2">
-                      E-Signature *
+                      Signature *
                     </label>
                     <input
                       type="text"

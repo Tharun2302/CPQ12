@@ -9270,10 +9270,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         onClick={handleAddEsignFields}
                         disabled={isAddingEsignFields}
                         className="text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40 transition-all duration-300"
-                        title="Go to e-sign and add signature fields to this agreement"
+                        title="Go to agreements and add signature fields to this agreement"
                       >
                         <PenLine className="w-3 h-3 inline mr-1" />
-                        {isAddingEsignFields ? (addEsignFieldsProgress || 'Opening…') : 'Add e-sign fields'}
+                        {isAddingEsignFields ? (addEsignFieldsProgress || 'Opening…') : 'Add signature fields'}
                       </button>
                       <button
                         onClick={handleEmailAgreement}
@@ -9732,7 +9732,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   ) : (
                     <>
                       <PenLine className="w-4 h-4" />
-                      Add e-sign fields
+                      Add signature fields
                     </>
                   )}
                 </button>

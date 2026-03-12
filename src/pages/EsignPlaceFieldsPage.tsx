@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
-import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, ListChecks, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 
@@ -571,9 +571,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         const sendData = await sendRes.json();
         if (sendData.success) {
           const msg = sendData.message || 'Sent.';
-          const dashNote = sendData.emails_sent > 0
-            ? ' Recipients will receive an email link to view and sign.'
-            : ' No emails were sent — set SENDGRID_API_KEY on the server to send links to recipients.';
+          const dashNote = sendData.emails_sent > 0 ? ' Recipients will receive an email link to view and sign.' : '';
           setSendForSignatureResult(msg + dashNote);
         } else {
           setSendForSignatureResult(sendData.error || 'Failed to send.');
@@ -866,20 +864,10 @@ const EsignPlaceFieldsPage: React.FC = () => {
               </div>
             )}
             {sendForSignatureResult && (
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="mt-4">
                 <p className={`text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>
                   {sendForSignatureResult}
                 </p>
-                {sendForSignatureResult && (sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document')) && documentId && (
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/esign/${documentId}/status`)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-xl font-semibold hover:bg-violet-700 shadow-sm"
-                  >
-                    <ListChecks className="h-4 w-4" />
-                    View signing status
-                  </button>
-                )}
               </div>
             )}
             <label className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-200 cursor-pointer">

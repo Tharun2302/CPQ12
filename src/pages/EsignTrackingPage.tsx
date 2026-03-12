@@ -115,7 +115,7 @@ const EsignTrackingPage: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error}</p>
-          <Link to="/esign" className="text-indigo-600 hover:underline">Back to E-Signature Documents</Link>
+          <Link to="/esign" className="text-indigo-600 hover:underline">Back to e sign</Link>
         </div>
       </div>
     );
@@ -142,11 +142,11 @@ const EsignTrackingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
       <div className="max-w-xl mx-auto">
-        <Link to="/esign" className="text-sm text-slate-500 hover:text-slate-800 mb-2 inline-block">← Back to E-Signature Documents</Link>
+        <Link to="/esign" className="text-sm text-slate-500 hover:text-slate-800 mb-2 inline-block">← Back to e sign</Link>
 
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-6 py-4">
-            <h1 className="text-xl font-bold text-white">E-Signature Status</h1>
+            <h1 className="text-xl font-bold text-white">Agreement Status</h1>
             <p className="text-indigo-100 text-sm mt-0.5 truncate">{doc.file_name}</p>
             {doc.status === 'denied' ? (
               <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/90 text-white">
@@ -154,7 +154,7 @@ const EsignTrackingPage: React.FC = () => {
               </span>
             ) : isSentOrCompleted ? (
               <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-white/20 text-white">
-                Sent for e-signature
+                Sent for signature
               </span>
             ) : null}
           </div>

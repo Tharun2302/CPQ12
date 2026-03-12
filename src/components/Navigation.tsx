@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine } from 'lucide-react';
+import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
@@ -31,7 +31,8 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
     // { id: 'pricing-config', label: 'Pricing', icon: DollarSign, path: '/dashboard/pricing-config' },
     { id: 'quote',     label: 'Quote',     icon: FileText, path: '/quote' },
     { id: 'documents', label: 'Documents', icon: FileText, path: '/documents' },
-    { id: 'esign',     label: 'E-Sign',   icon: PenLine, path: '/esign' },
+    { id: 'esign',     label: 'e sign',   icon: PenLine, path: '/esign' },
+    { id: 'esign-tracking', label: 'Agreement Status', icon: BarChart3, path: '/esign-tracking' },
     { id: 'templates', label: 'Templates', icon: Upload,   path: '/templates' },
     { id: 'exhibits',  label: 'Exhibits',  icon: FolderOpen, path: '/exhibits' },
     { id: 'approval',  label: 'Approval',  icon: CheckCircle, path: '/approval' },

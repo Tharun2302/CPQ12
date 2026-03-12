@@ -928,7 +928,18 @@ async function sendEmail(to, subject, html, attachments = []) {
     return { success: true, data: result };
   } catch (error) {
     console.error('❌ Email send error:', error);
-    
+
+    if (error.code === 401) {
+      console.error('📧 SendGrid 401 Unauthorized — check SENDGRID_API_KEY in .env:');
+      console.error('   1. Create an API key at https://app.sendgrid.com/settings/api_keys (Mail Send permission)');
+      console.error('   2. Set in .env: SENDGRID_API_KEY=SG.xxxx... (no quotes, no spaces)');
+      console.error('   3. Restart the server after changing .env');
+    }
+    if (error.code === 403) {
+      console.error('📧 SendGrid 403 Forbidden — verify your sender (EMAIL_FROM) in SendGrid:');
+      console.error('   Go to https://app.sendgrid.com/settings/sender_auth and verify', emailPayload.from, 'or your domain.');
+    }
+
     // Check if it's a bounce/suppression error
     if (error.response) {
       const errorBody = error.response.body;
@@ -942,7 +953,7 @@ async function sendEmail(to, subject, html, attachments = []) {
         });
       }
     }
-    
+
     return { success: false, error: error };
   }
 }
@@ -5687,15 +5698,26 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     if (process.env.SENDGRID_API_KEY && rec.email) {
       if (emailsSent === 0) {
         console.log('📧 E-sign email URLs:', { signing: signingUrl.substring(0, 60) + '...', dashboard: inboxUrl.substring(0, 60) + '...' });
+        console.log('📧 Sender (EMAIL_FROM):', process.env.EMAIL_FROM || 'noreply@yourdomain.com', '— must be verified in SendGrid');
       }
       const { subject, html } = getEsignEmailByRole(rec, fileName, signingUrl, inboxUrl);
       try {
         const result = await sendEmail(rec.email, subject, html);
-        if (result.success) emailsSent++;
+        if (result.success) {
+          emailsSent++;
+          console.log('✅ E-sign email sent to', rec.email);
+        } else {
+          console.warn('❌ E-sign email not sent to', rec.email, '—', result.error?.message || result.error?.code || result.error);
+        }
       } catch (err) {
         console.warn('E-sign send email failed for', rec.email, err?.message || err);
       }
+    } else if (rec.email) {
+      console.warn('📧 E-sign skip (no SENDGRID_API_KEY):', rec.email);
     }
+  }
+  if (emailsSent === 0 && recipients.some(r => r.email)) {
+    console.warn('📧 No e-sign emails were sent. Check: 1) SENDGRID_API_KEY valid, 2) EMAIL_FROM verified in SendGrid (Settings → Sender Authentication), 3) Recipient not on suppression list. Activity: https://app.sendgrid.com/email_activity');
   }
   await db.collection('esign_documents').updateOne(
     { _id: docId },
@@ -5718,7 +5740,7 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     }
     res.json({
       success: true,
-      message: result.emails_sent > 0 ? `Signing links sent to ${result.emails_sent} recipient(s).` : 'Document marked as sent. Add SENDGRID_API_KEY to send emails.',
+      message: result.emails_sent > 0 ? `Signing links sent to ${result.emails_sent} recipient(s).` : 'Document marked as sent.',
       emails_sent: result.emails_sent,
       sequential: req.body?.sequential || undefined,
     });
@@ -5999,19 +6021,17 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
     // Sequential mode: send signing link to the next recipient after this one marks as reviewed
     const isSequential = !!doc.sequential;
     if (isSequential) {
-      const allRecipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+      const docIdStr = docId.toString();
+      const allRecipients = await db.collection('esign_recipients').find({ $or: [{ document_id: docId }, { document_id: docIdStr }] }).sort({ order: 1, _id: 1 }).toArray();
       const recipientIdStr = (recipient._id && recipient._id.toString ? recipient._id.toString() : String(recipient._id));
       const currentIdx = allRecipients.findIndex((r) => (r._id && r._id.toString ? r._id.toString() : String(r._id)) === recipientIdStr);
       const nextRec = currentIdx >= 0 && currentIdx < allRecipients.length - 1 ? allRecipients[currentIdx + 1] : null;
-      const nextNeedsEmail = nextRec && (nextRec.signing_token == null || nextRec.signing_token === '');
-      console.log('📧 E-sign sequential (mark-reviewed): doc.sequential=', isSequential, 'currentIdx=', currentIdx, 'total=', allRecipients.length, 'nextRec=', nextRec ? { role: nextRec.role, email: nextRec.email ? '(set)' : '(empty)', hasToken: !!nextRec.signing_token } : 'none');
+      console.log('📧 E-sign sequential (mark-reviewed): doc.sequential=', isSequential, 'currentIdx=', currentIdx, 'total=', allRecipients.length, 'nextRec=', nextRec ? { role: nextRec.role, email: nextRec.email ? '(set)' : '(empty)' } : 'none');
       if (!nextRec) {
         console.log('📧 E-sign sequential (mark-reviewed): no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
-      } else if (!nextNeedsEmail) {
-        console.log('📧 E-sign sequential (mark-reviewed): next recipient already has link, skip email. order=', nextRec.order, 'email=', nextRec.email);
       } else if (!nextRec.email || !nextRec.email.trim()) {
         console.warn('📧 E-sign sequential (mark-reviewed): next recipient has no email — add email for', nextRec.name || nextRec.role || 'recipient', 'in Place Fields so they can receive the link.');
-      } else if (nextNeedsEmail && nextRec.email) {
+      } else {
         const nextToken = crypto.randomUUID();
         await db.collection('esign_recipients').updateOne(
           { _id: nextRec._id },
@@ -6321,18 +6341,15 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         console.log('📧 E-sign: document not in sequential mode (sequential=false), so not sending to next recipient. Use "Sequential" on Send page to enable.');
       }
       if (isSequential) {
-        const allRecipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+        const docIdStr = docId.toString();
+        const allRecipients = await db.collection('esign_recipients').find({ $or: [{ document_id: docId }, { document_id: docIdStr }] }).sort({ order: 1, _id: 1 }).toArray();
         const currentIdx = allRecipients.findIndex((r) => r.signing_token === signing_token);
         const nextRec = currentIdx >= 0 && currentIdx < allRecipients.length - 1 ? allRecipients[currentIdx + 1] : null;
-        const nextNeedsEmail = nextRec && (nextRec.signing_token == null || nextRec.signing_token === '');
         if (!nextRec) {
-          console.log('📧 E-sign sequential: no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
-        } else if (!nextNeedsEmail) {
-          console.log('📧 E-sign sequential: next recipient already has token, skip email (recipient order=', nextRec.order, ')');
-        } else if (!nextRec.email) {
-          console.log('📧 E-sign sequential: next recipient has no email, skip');
-        }
-        if (nextNeedsEmail && nextRec.email) {
+          console.log('📧 E-sign sequential (after sign): no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
+        } else if (!nextRec.email || !nextRec.email.trim()) {
+          console.log('📧 E-sign sequential (after sign): next recipient has no email, skip');
+        } else {
           const nextToken = crypto.randomUUID();
           await db.collection('esign_recipients').updateOne(
             { _id: nextRec._id },
@@ -6421,6 +6438,53 @@ app.get('/api/esign/documents', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ E-sign list documents error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/agreement-status - All documents with recipient status for tracking dashboard
+app.get('/api/esign/agreement-status', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const docs = await db.collection('esign_documents')
+      .find({})
+      .sort({ created_at: -1 })
+      .toArray();
+    const docIds = docs.map((d) => d._id);
+    const docIdStrings = docIds.map((id) => id.toString());
+    // document_id can be stored as ObjectId or string depending on where it was set
+    const recipientsByDoc = await db.collection('esign_recipients')
+      .find({ $or: [{ document_id: { $in: docIdStrings } }, { document_id: { $in: docIds } }] })
+      .toArray();
+    const byDocId = {};
+    recipientsByDoc.forEach((r) => {
+      const docIdStr = r.document_id && typeof r.document_id.toString === 'function' ? r.document_id.toString() : String(r.document_id || '');
+      if (!docIdStr) return;
+      if (!byDocId[docIdStr]) byDocId[docIdStr] = [];
+      byDocId[docIdStr].push({
+        id: r._id.toString(),
+        name: r.name || r.email || 'Recipient',
+        email: r.email || '',
+        role: r.role || 'signer',
+        status: r.status || 'pending',
+        order: r.order ?? 999
+      });
+    });
+    const agreements = docs.map((d) => {
+      const recs = (byDocId[d._id.toString()] || []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      return {
+        id: d._id.toString(),
+        file_name: d.file_name,
+        uploaded_by: d.uploaded_by,
+        created_at: d.created_at,
+        sent_at: d.sent_at,
+        status: d.status,
+        recipients: recs
+      };
+    });
+    res.json({ success: true, agreements });
+  } catch (error) {
+    console.error('❌ E-sign agreement-status error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
@@ -40,6 +40,7 @@ function isSigningToken(param: string): boolean {
 
 const EsignSignPage: React.FC = () => {
   const { documentId: documentIdOrToken } = useParams<{ documentId: string }>();
+  const navigate = useNavigate();
   const sigCanvasRef = useRef<SignatureCanvas | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -595,6 +596,14 @@ const EsignSignPage: React.FC = () => {
   }
 
   if (reviewedSuccess) {
+    if (signingToken) {
+      navigate(`/esign-inbox?token=${encodeURIComponent(signingToken)}`, { replace: true });
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
