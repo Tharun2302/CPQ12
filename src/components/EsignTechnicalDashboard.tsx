@@ -19,7 +19,7 @@ const EsignTechnicalDashboard: React.FC = () => {
   if (!loading && !user) return <Navigate to="/esign-inbox" replace />;
 
   const [items, setItems] = useState<PendingItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [queueLoading, setQueueLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('queue');
   const [selectedItem, setSelectedItem] = useState<PendingItem | null>(null);
@@ -29,7 +29,7 @@ const EsignTechnicalDashboard: React.FC = () => {
 
   const fetchQueue = useCallback(async () => {
     if (!userEmail) return;
-    setLoading(true);
+    setQueueLoading(true);
     setError(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/pending-for-email?email=${encodeURIComponent(userEmail)}`);
@@ -48,13 +48,13 @@ const EsignTechnicalDashboard: React.FC = () => {
       setError(e instanceof Error ? e.message : 'Failed to load');
       setItems([]);
     } finally {
-      setLoading(false);
+      setQueueLoading(false);
     }
   }, [userEmail]);
 
   useEffect(() => {
     if (!userEmail) {
-      setLoading(false);
+      setQueueLoading(false);
       setError('Sign in to see your queue.');
       return;
     }
@@ -163,10 +163,10 @@ const EsignTechnicalDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => fetchQueue()}
-                    disabled={loading}
+                    disabled={queueLoading}
                     className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`h-4 w-4 ${queueLoading ? 'animate-spin' : ''}`} />
                     Refresh
                   </button>
                 )}
@@ -183,19 +183,19 @@ const EsignTechnicalDashboard: React.FC = () => {
                 </div>
               )}
 
-              {loading && (
+              {queueLoading && (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
                 </div>
               )}
 
-              {error && !loading && (
+              {error && !queueLoading && (
                 <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-red-800 text-center">
                   {error}
                 </div>
               )}
 
-              {!loading && !error && userEmail && items.length === 0 && (
+              {!queueLoading && !error && userEmail && items.length === 0 && (
                 <div className="text-center py-12">
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <FileText className="w-8 h-8 text-gray-400" />
@@ -205,7 +205,7 @@ const EsignTechnicalDashboard: React.FC = () => {
                 </div>
               )}
 
-              {!loading && !error && userEmail && items.length > 0 && (
+              {!queueLoading && !error && userEmail && items.length > 0 && (
                 <div className="space-y-4">
                   {items.map((item) => (
                     <div key={item.signing_token} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
