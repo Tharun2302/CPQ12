@@ -747,6 +747,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
             <div
               ref={scrollContainerRef}
               className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-y-auto overflow-x-hidden min-h-[500px] max-h-[76vh]"
+              onDragOver={(e) => e.preventDefault()}
             >
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <div

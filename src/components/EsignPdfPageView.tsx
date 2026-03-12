@@ -136,7 +136,7 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
         className="block"
         style={{ display: loading ? 'none' : 'block' }}
       />
-      {/* Field layer: same size as canvas. Fields use position:absolute relative to this page. */}
+      {/* Field layer: same size as canvas. Fields use position:absolute relative to this page. z-index so drop target is above canvas. */}
       <div
         className="absolute inset-0"
         style={{
@@ -145,6 +145,7 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
           width: dimensions?.width ?? '100%',
           height: dimensions?.height ?? '100%',
           pointerEvents: loading ? 'none' : 'auto',
+          zIndex: 10,
         }}
         onDragOver={onDrop ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } : undefined}
         onDrop={onDrop ? (e) => {
