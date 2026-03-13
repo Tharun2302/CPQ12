@@ -130,18 +130,18 @@ app.get('/', (req, res) => {
   sendIndexHtml(res);
 });
 
-// Redirect e-sign dashboard/sign from backend port to frontend (so old email links to 3001 still work)
+// Redirect e-sign dashboard/sign from backend port to frontend only in local dev (Vite on 5173). In production the same server serves the app on 3001, so do not redirect.
 app.get('/esign-inbox', (req, res) => {
-  const host = req.get('host') || '';
-  if (host.includes('3001')) {
+  const host = (req.get('host') || '').toLowerCase();
+  if (host.includes('localhost') && host.includes('3001')) {
     const front = host.replace('3001', '5173');
     return res.redirect(302, `http://${front}${req.originalUrl}`);
   }
   sendIndexHtml(res);
 });
 app.get('/sign/:documentId', (req, res) => {
-  const host = req.get('host') || '';
-  if (host.includes('3001')) {
+  const host = (req.get('host') || '').toLowerCase();
+  if (host.includes('localhost') && host.includes('3001')) {
     const front = host.replace('3001', '5173');
     return res.redirect(302, `http://${front}${req.originalUrl}`);
   }
