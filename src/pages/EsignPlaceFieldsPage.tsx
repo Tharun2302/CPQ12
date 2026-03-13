@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
+import { v4 as uuidv4 } from 'uuid';
 import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
@@ -219,7 +220,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         setSignatureFields(
           fieldsData.fields.map((f: any) => {
             const page = f.page || 1;
-            const id = f._id?.toString() || crypto.randomUUID();
+            const id = f._id?.toString() || uuidv4();
             const recipient_id = f.recipient_id?.toString() || null;
             if (f.x != null && f.y != null) {
               return {
@@ -502,7 +503,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
     (coords: FieldCoords & { fieldType: string }) => {
       setDragSource(null);
       const newField: PlacedField = {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         type: coords.fieldType as FieldType,
         page: coords.page,
         recipient_id: selectedRecipientId || undefined,
