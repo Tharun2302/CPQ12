@@ -3012,7 +3012,7 @@ Total Price: {{total price}}`;
     const teamEmail = getTeamApprovalEmail(autoSelectedTeam) || '';
 
     setIsAddingEsignFields(true);
-    setAddEsignFieldsProgress('Converting…');
+    setAddEsignFieldsProgress('Preparing…');
     try {
       const MINIMUM_TOTAL = 2500;
       const baseApprovalAmount = Math.max(totalCost, MINIMUM_TOTAL);
@@ -3022,8 +3022,14 @@ Total Price: {{total price}}`;
         approvalAmount = Math.max(baseApprovalAmount - discountAmount, MINIMUM_TOTAL);
       }
 
-      const { templateService } = await import('../utils/templateService');
-      const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      let pdfBlob: Blob;
+      if (processedAgreement.type === 'application/pdf') {
+        pdfBlob = processedAgreement;
+      } else {
+        setAddEsignFieldsProgress('Converting…');
+        const { templateService } = await import('../utils/templateService');
+        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      }
       setAddEsignFieldsProgress('Saving…');
       const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
       const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
@@ -3945,8 +3951,17 @@ Total Price: {{total price}}`;
         }
       };
 
-      const latestTemplateFile = await fetchLatestTemplateFile();
-      const templateFileForAgreement = latestTemplateFile || selectedTemplate.file;
+      // Use cached template file immediately when available to avoid blocking on network fetch.
+      // Only await fetch when we have no valid cached file (faster "Preview Agreement").
+      let templateFileForAgreement: File | null = null;
+      if (selectedTemplate.file && selectedTemplate.file.size > 0) {
+        templateFileForAgreement = selectedTemplate.file;
+        // Refresh template in background for next run (non-blocking)
+        fetchLatestTemplateFile().catch(() => {});
+      } else {
+        templateFileForAgreement = await fetchLatestTemplateFile();
+      }
+      templateFileForAgreement = templateFileForAgreement || selectedTemplate.file || null;
 
       // Validate that we have a template file
       if (!templateFileForAgreement) {
@@ -3962,7 +3977,7 @@ Total Price: {{total price}}`;
         name: templateFileForAgreement.name,
         size: templateFileForAgreement.size,
         type: templateFileForAgreement.type,
-        source: latestTemplateFile ? 'backend' : 'cached'
+        source: templateFileForAgreement === selectedTemplate.file ? 'cached' : 'backend'
       });
 
       // Process based on template file type - DOCX is now the primary method
@@ -7617,30 +7632,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('📄 Processed document size:', processedDocument.size, 'bytes');
         console.log('📄 Processed document type:', processedDocument.type);
 
-        // For DOCX, store the original before converting to PDF for preview
+        // For DOCX: show preview immediately (no wait for PDF conversion) so agreement appears fast.
+        // PDF conversion runs in background or on Download PDF click.
         let isPdfConversionSuccessful = false;
         if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           // Store original DOCX for Word downloads
           setOriginalDocxAgreement(processedDocument);
           console.log('💾 Stored original DOCX for Word downloads');
-          
-          try {
-            console.log('🔄 Converting DOCX agreement to PDF for preview...');
-            const { templateService } = await import('../utils/templateService');
-            const pdfBlob = await templateService.convertDocxToPdf(processedDocument);
-            console.log('✅ DOCX converted to PDF for preview. Size:', pdfBlob.size, 'bytes');
-            
-            // Verify the PDF is not empty
-            if (pdfBlob && pdfBlob.size > 0) {
-              processedDocument = pdfBlob;
-              isPdfConversionSuccessful = true;
-            } else {
-              console.warn('⚠️ PDF blob is empty, will render DOCX directly');
-            }
-          } catch (error) {
-            console.error('❌ Failed to convert DOCX to PDF for preview. Will render DOCX directly.', error);
-            isPdfConversionSuccessful = false;
-          }
+          // Show DOCX preview first; optionally convert to PDF in background (see below)
         } else {
           // For PDF templates, clear the original DOCX since we don't have one
           setOriginalDocxAgreement(null);
@@ -7656,8 +7655,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         // Store the document for preview and downloads
         setProcessedAgreement(processedDocumentBlob);
 
-        // If PDF conversion succeeded, show PDF in iframe
-        if (isPdfConversionSuccessful && processedDocumentBlob.type === 'application/pdf') {
+        // If we already have a PDF (e.g. PDF template), show it in iframe
+        if (processedDocumentBlob.type === 'application/pdf') {
           const previewUrl = URL.createObjectURL(processedDocumentBlob);
           setPreviewUrl(previewUrl);
           setShowInlinePreview(true);
@@ -7665,16 +7664,28 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.log('🔗 Preview URL created for PDF:', previewUrl);
           return;
         }
-        
-        // Otherwise, render DOCX directly (don't return early)
-        
-        // For DOCX files render with docx-preview to match exact document formatting
+
+        // For DOCX: show preview immediately with DOCX (no blocking PDF conversion)
         if (processedDocumentBlob.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-          // Open modal first so container exists, then render
           setShowAgreementPreview(true);
           await delayFrame();
           try {
             await renderDocxPreview(processedDocumentBlob);
+            // Optional: convert to PDF in background and update preview when ready (non-blocking)
+            (async () => {
+              try {
+                const { templateService } = await import('../utils/templateService');
+                const pdfBlob = await templateService.convertDocxToPdf(processedDocumentBlob);
+                if (pdfBlob && pdfBlob.size > 0) {
+                  setProcessedAgreement(pdfBlob);
+                  const url = URL.createObjectURL(pdfBlob);
+                  setPreviewUrl(url);
+                  setShowInlinePreview(true);
+                }
+              } catch (_e) {
+                // Keep DOCX preview; PDF only on Download
+              }
+            })();
             return;
           } catch (err) {
             console.warn('docx-preview render failed in initial flow, trying mammoth HTML fallback.', err);
