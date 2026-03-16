@@ -134,7 +134,9 @@ const EsignSignPage: React.FC = () => {
           ]);
           const docData = await docRes.json();
           const fieldsData = await fieldsRes.json();
-          if (docData.success) {
+          if (!docRes.ok && docData?.error) {
+            setError(docData.error);
+          } else if (docData.success) {
             setDoc(docData.document);
             if (docData.document?.status === 'completed') {
               setDocumentFullySigned(true);

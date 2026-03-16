@@ -958,6 +958,34 @@ async function sendEmail(to, subject, html, attachments = []) {
   }
 }
 
+// Notify document creator by email when a recipient denies (review or sign)
+async function sendEsignDeniedNotificationToCreator(doc, recipient, comment, deniedBy) {
+  const creatorEmail = (doc && doc.uploaded_by) ? String(doc.uploaded_by).trim() : '';
+  if (!creatorEmail || !creatorEmail.includes('@')) return;
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign denied notification: SENDGRID_API_KEY not set — creator not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const recipientLabel = recipient.name || recipient.email || 'A recipient';
+  const subject = `E-sign document denied: ${fileName}`;
+  const commentBlock = comment ? `<p><strong>Comment from ${recipientLabel}:</strong></p><p>${comment.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : '';
+  const html = `
+    <p>Your e-sign document has been denied.</p>
+    <p><strong>Document:</strong> ${fileName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+    <p><strong>Denied by:</strong> ${recipientLabel} (${deniedBy === 'review' ? 'reviewer' : 'signer'})</p>
+    ${commentBlock}
+    <p>You can view the status and any comments in Agreement Status in the app.</p>
+  `;
+  try {
+    const result = await sendEmail(creatorEmail, subject, html);
+    if (result.success) console.log('✅ E-sign denied notification sent to creator', creatorEmail);
+    else console.warn('❌ E-sign denied notification not sent to creator', creatorEmail, result.error);
+  } catch (err) {
+    console.warn('E-sign denied notification to creator failed', creatorEmail, err?.message || err);
+  }
+}
+
 // NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
 
 // HubSpot redirect handler - only when deal/contact params present; otherwise SPA handles /
@@ -5342,6 +5370,7 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
       file_name: fileName,
       file_path: filePath,
       uploaded_by: uploadedBy,
+      upload_source: 'manual',
       created_at: new Date(),
       status: 'draft'
     };
@@ -5357,6 +5386,7 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
         file_name: fileName,
         file_path: filePath,
         uploaded_by: uploadedBy,
+        upload_source: 'manual',
         created_at: doc.created_at,
         status: 'draft'
       }
@@ -5398,6 +5428,7 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
       file_name: fileName,
       file_path: filePath,
       uploaded_by: uploadedBy || 'approval-workflow',
+      upload_source: 'approval',
       created_at: new Date(),
       status: 'draft'
     };
@@ -5445,6 +5476,7 @@ app.get('/api/esign/documents/:id', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     if (req.query.audit === 'open') {
       await logAudit(doc._id.toString(), 'opened', req.query.signer_email || null, req.ip || req.connection?.remoteAddress);
     }
@@ -5477,6 +5509,7 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     const filePath = doc.signed_file_path || doc.file_path;
     if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
     const attachment = req.query.attachment === '1' || req.query.download === '1';
@@ -5594,7 +5627,11 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
     try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+    const docIdStr = docId.toString();
+    const recipients = await db.collection('esign_recipients')
+      .find({ $or: [{ document_id: docId }, { document_id: docIdStr }] })
+      .sort({ order: 1, _id: 1 })
+      .toArray();
     res.json({
       success: true,
       recipients: recipients.map((r) => ({
@@ -5695,9 +5732,11 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     const hasExplicitAction = rec.action === 'signer' || rec.action === 'reviewer';
     const isReviewer = hasExplicitAction ? (rec.action === 'reviewer') : (roleLower === 'reviewer' || rec.role === 'Technical Team' || rec.role === 'Legal Team');
     const ctaText = isReviewer ? 'Review Document' : 'Sign Document';
-    const isTechnical = rec.role === 'Technical Team' || nameLower === 'technical';
-    const isLegal = rec.role === 'Legal Team' || nameLower === 'legal';
-    const isTeamLead = rec.role === 'Team Lead' || rec.role === 'Team Approval';
+    // Only show dashboard when Role is explicitly set to a dashboard role (not by name). Role "None" = no dashboard.
+    const roleStr = (rec.role || '').toString().trim();
+    const isTechnical = roleStr === 'Technical Team';
+    const isLegal = roleStr === 'Legal Team';
+    const isTeamLead = roleStr === 'Team Lead' || roleStr === 'Team Approval';
     const showDashboardLink = isTechnical || isLegal || isTeamLead;
     const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
     const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
@@ -6022,6 +6061,7 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
     }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     if (recipient.status === 'reviewed') {
       return res.json({ success: true, message: 'Already reviewed', already_reviewed: true });
     }
@@ -6033,9 +6073,10 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Comment is required when denying' });
     }
     if (act === 'deny') {
+      const commentTrimmed = (comment || '').trim();
       await db.collection('esign_recipients').updateOne(
         { signing_token: token },
-        { $set: { status: 'denied', review_decision: 'denied', comment: (comment || '').trim() } }
+        { $set: { status: 'denied', review_decision: 'denied', comment: commentTrimmed } }
       );
       await db.collection('esign_documents').updateOne(
         { _id: docId },
@@ -6044,6 +6085,9 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
       try {
         await logAudit(docId.toString(), 'review_denied', recipient.email || null, req.ip || req.connection?.remoteAddress);
       } catch (auditErr) { /* non-fatal */ }
+      try {
+        await sendEsignDeniedNotificationToCreator(doc, recipient, commentTrimmed, 'review');
+      } catch (mailErr) { /* non-fatal */ }
       return res.json({
         success: true,
         message: 'Review denied',
@@ -6180,15 +6224,18 @@ app.post('/api/esign/deny-signing', async (req, res) => {
     } catch (e) {
       return res.status(400).json({ success: false, error: 'Invalid document' });
     }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (doc && doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     if (recipient.status === 'signed') {
       return res.status(400).json({ success: false, error: 'You have already signed this document' });
     }
     if (recipient.status === 'denied') {
       return res.json({ success: true, message: 'Already declined', already_denied: true });
     }
+    const commentTrimmed = comment.trim();
     await db.collection('esign_recipients').updateOne(
       { signing_token: token },
-      { $set: { status: 'denied', sign_decision: 'denied', comment: comment.trim() } }
+      { $set: { status: 'denied', sign_decision: 'denied', comment: commentTrimmed } }
     );
     await db.collection('esign_documents').updateOne(
       { _id: docId },
@@ -6197,6 +6244,9 @@ app.post('/api/esign/deny-signing', async (req, res) => {
     try {
       await logAudit(docId.toString(), 'sign_denied', recipient.email || null, req.ip || req.connection?.remoteAddress);
     } catch (auditErr) { /* non-fatal */ }
+    try {
+      await sendEsignDeniedNotificationToCreator(doc, recipient, commentTrimmed, 'sign');
+    } catch (mailErr) { /* non-fatal */ }
     res.json({
       success: true,
       message: 'You have declined to sign',
@@ -6295,6 +6345,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     const docId = new ObjectId(document_id);
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     const sourcePath = (doc.signed_file_path && fs.existsSync(doc.signed_file_path)) ? doc.signed_file_path : doc.file_path;
     if (!fs.existsSync(sourcePath)) return res.status(404).json({ success: false, error: 'Source file not found' });
 
@@ -6534,7 +6585,8 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         email: r.email || '',
         role: r.role || 'signer',
         status: r.status || 'pending',
-        order: r.order ?? 999
+        order: r.order ?? 999,
+        comment: r.comment || null
       });
     });
     const agreements = docs.map((d) => {
@@ -6543,6 +6595,7 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         id: d._id.toString(),
         file_name: d.file_name,
         uploaded_by: d.uploaded_by,
+        upload_source: d.upload_source || 'manual',
         created_at: d.created_at,
         sent_at: d.sent_at,
         status: d.status,

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, ListChecks, Check, Clock, XCircle, Eye, MoreVertical } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { useAuth } from '../hooks/useAuth';
 
 interface EsignDocument {
   id: string;
@@ -29,6 +30,7 @@ interface StatusModalDoc {
 
 const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [documents, setDocuments] = useState<EsignDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -72,7 +74,7 @@ const EsignDocumentsPage: React.FC = () => {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('uploaded_by', uploadedBy || 'anonymous');
+      formData.append('uploaded_by', user?.email || uploadedBy || 'anonymous');
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/upload`, {
         method: 'POST',
         body: formData,
