@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, ListChecks, Check, Clock, XCircle, Eye } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, ListChecks, Check, Clock, XCircle, Eye, MoreVertical } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface EsignDocument {
@@ -8,7 +8,7 @@ interface EsignDocument {
   file_name: string;
   uploaded_by: string;
   created_at: string;
-  status: 'draft' | 'sent' | 'signed' | 'completed';
+  status: 'draft' | 'sent' | 'signed' | 'completed' | 'voided';
 }
 
 interface StatusModalRecipient {
@@ -35,6 +35,8 @@ const EsignDocumentsPage: React.FC = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedBy, setUploadedBy] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [statusModalId, setStatusModalId] = useState<string | null>(null);
   const [statusModalDoc, setStatusModalDoc] = useState<StatusModalDoc | null>(null);
   const [statusModalRecipients, setStatusModalRecipients] = useState<StatusModalRecipient[]>([]);
@@ -87,6 +89,25 @@ const EsignDocumentsPage: React.FC = () => {
     } finally {
       setUploading(false);
       e.target.value = '';
+    }
+  };
+
+  const handleVoid = async (docId: string) => {
+    if (!window.confirm('Void this document? Signing links will stop working. The document will stay in the list as voided.')) return;
+    setVoidingId(docId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        await loadDocuments();
+        if (statusModalId === docId) closeStatusModal();
+      } else {
+        alert(data.error || `Void failed${!res.ok ? ` (${res.status})` : ''}`);
+      }
+    } catch {
+      alert('Void failed. Check the console or try again.');
+    } finally {
+      setVoidingId(null);
     }
   };
 
@@ -186,6 +207,7 @@ const EsignDocumentsPage: React.FC = () => {
     sent: 'bg-blue-100 text-blue-800',
     signed: 'bg-emerald-100 text-emerald-800',
     completed: 'bg-violet-100 text-violet-800',
+    voided: 'bg-slate-200 text-slate-700',
   };
 
   return (
@@ -269,7 +291,7 @@ const EsignDocumentsPage: React.FC = () => {
                         Place Fields
                       </button>
                     )}
-                    {(doc.status === 'sent' || doc.status === 'completed') && (
+                    {(doc.status === 'sent' || doc.status === 'completed' || doc.status === 'voided') && (
                       <button
                         type="button"
                         onClick={() => openStatusModal(doc.id)}
@@ -279,36 +301,67 @@ const EsignDocumentsPage: React.FC = () => {
                         View status
                       </button>
                     )}
-                    {doc.status === 'sent' && (
+                    <div className="relative">
                       <button
-                        onClick={() => navigate(`/esign/${doc.id}/send`)}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-violet-600 hover:underline"
+                        type="button"
+                        onClick={() => setOpenActionsId((id) => (id === doc.id ? null : doc.id))}
+                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400"
+                        title="Actions"
+                        aria-expanded={openActionsId === doc.id}
                       >
-                        <ExternalLink className="h-4 w-4" />
-                        View Link
+                        <MoreVertical className="h-5 w-5" />
                       </button>
-                    )}
-                    {(doc.status === 'signed' || doc.status === 'completed') && (
-                      <a
-                        href={`${BACKEND_URL}/api/esign/documents/${doc.id}/file?attachment=1`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-violet-600 hover:underline"
-                      >
-                        <Download className="h-4 w-4" />
-                        Download
-                      </a>
-                    )}
-                    <button
-                      onClick={() => handleDelete(doc.id)}
-                      disabled={deletingId === doc.id}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-red-600 hover:underline disabled:opacity-50"
-                      title="Delete document"
-                    >
-                      {deletingId === doc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      Delete
-                    </button>
+                      {openActionsId === doc.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpenActionsId(null)} />
+                          <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                            {doc.status === 'sent' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => { handleVoid(doc.id); setOpenActionsId(null); }}
+                                  disabled={voidingId === doc.id}
+                                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                >
+                                  {voidingId === doc.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : null}
+                                  Void
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { navigate(`/esign/${doc.id}/send`); setOpenActionsId(null); }}
+                                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                >
+                                  <ExternalLink className="h-4 w-4 shrink-0" />
+                                  View Link
+                                </button>
+                              </>
+                            )}
+                            {(doc.status === 'signed' || doc.status === 'completed') && (
+                              <a
+                                href={`${BACKEND_URL}/api/esign/documents/${doc.id}/file?attachment=1`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                download
+                                onClick={() => setOpenActionsId(null)}
+                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              >
+                                <Download className="h-4 w-4 shrink-0" />
+                                Download
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => { handleDelete(doc.id); setOpenActionsId(null); }}
+                              disabled={deletingId === doc.id}
+                              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              {deletingId === doc.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Trash2 className="h-4 w-4 shrink-0" />}
+                              Delete
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </li>
               ))}
@@ -340,6 +393,8 @@ const EsignDocumentsPage: React.FC = () => {
                   <p className="text-slate-700 font-medium truncate">{statusModalDoc.file_name}</p>
                   {statusModalDoc.status === 'denied' ? (
                     <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/90 text-white">Denied</span>
+                  ) : statusModalDoc.status === 'voided' ? (
+                    <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-200 text-slate-700">Voided</span>
                   ) : (statusModalDoc.status === 'sent' || statusModalDoc.status === 'completed') ? (
                     <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-100 text-indigo-800">Sent for signature</span>
                   ) : null}
@@ -375,6 +430,11 @@ const EsignDocumentsPage: React.FC = () => {
                     <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 mt-4">
                       <XCircle className="h-5 w-5 text-red-600 shrink-0" />
                       <span className="font-medium text-red-800">This document was denied by a recipient.</span>
+                    </div>
+                  )}
+                  {statusModalDoc.status === 'voided' && (
+                    <div className="flex items-center gap-2 rounded-lg bg-slate-100 border border-slate-200 px-4 py-3 mt-4">
+                      <span className="font-medium text-slate-700">This document was voided. Signing links no longer work.</span>
                     </div>
                   )}
                   {statusModalDoc.status === 'completed' && (

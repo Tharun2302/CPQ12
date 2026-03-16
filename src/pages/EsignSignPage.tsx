@@ -67,6 +67,7 @@ const EsignSignPage: React.FC = () => {
   const [reviewComment, setReviewComment] = useState('');
   const [documentFullySigned, setDocumentFullySigned] = useState(false);
   const [recipientRole, setRecipientRole] = useState<'signer' | 'reviewer' | null>(null);
+  const [showDashboard, setShowDashboard] = useState(true);
   const [markingReviewed, setMarkingReviewed] = useState(false);
   const [signerChoice, setSignerChoice] = useState<'approve' | 'deny' | null>(null);
   const [signerComment, setSignerComment] = useState('');
@@ -101,8 +102,11 @@ const EsignSignPage: React.FC = () => {
           setSigningToken(documentIdOrToken);
           setRecipientName(data.recipient?.name || null);
           setDoc(data.document);
-          const role = (data.recipient?.role || 'signer').toString().toLowerCase();
-          setRecipientRole(role === 'reviewer' ? 'reviewer' : 'signer');
+          const role = (data.recipient?.role || 'signer').toString();
+          const action = data.recipient?.action;
+          const isReviewer = action === 'reviewer' || (action !== 'signer' && (role.toLowerCase() === 'reviewer' || role === 'Technical Team' || role === 'Legal Team'));
+          setRecipientRole(isReviewer ? 'reviewer' : 'signer');
+          setShowDashboard(data.recipient?.show_dashboard !== false);
           if (data.recipient?.status === 'signed') {
             setAlreadySigned(true);
           }
@@ -564,6 +568,14 @@ const EsignSignPage: React.FC = () => {
   }
 
   if (success) {
+    if (signingToken && showDashboard) {
+      navigate(`/esign-inbox?token=${encodeURIComponent(signingToken)}`, { replace: true });
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
@@ -596,7 +608,7 @@ const EsignSignPage: React.FC = () => {
   }
 
   if (reviewedSuccess) {
-    if (signingToken) {
+    if (signingToken && showDashboard) {
       navigate(`/esign-inbox?token=${encodeURIComponent(signingToken)}`, { replace: true });
       return (
         <div className="min-h-screen flex items-center justify-center">

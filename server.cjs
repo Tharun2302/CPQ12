@@ -5554,6 +5554,38 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
   }
 });
 
+// POST /api/esign/documents/:id/void - Void a sent document (invalidates links, keeps record)
+app.post('/api/esign/documents/:id/void', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be voided' });
+    }
+    await db.collection('esign_recipients').updateMany(
+      { document_id: docId },
+      { $unset: { signing_token: '' } }
+    );
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { status: 'voided', voided_at: new Date() } }
+    );
+    try {
+      await logAudit(docId.toString(), 'voided', req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress);
+    } catch (auditErr) { /* non-fatal */ }
+    console.log('E-sign VOID: document voided', req.params.id, doc.file_name);
+    res.json({ success: true, message: 'Document voided. Signing links no longer work.' });
+  } catch (error) {
+    console.error('❌ E-sign void document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET /api/esign/documents/:id/recipients - List recipients for a document
 app.get('/api/esign/documents/:id/recipients', async (req, res) => {
   try {
@@ -5570,6 +5602,7 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         name: r.name || r.email || 'Recipient',
         email: r.email,
         role: r.role || 'signer',
+        action: r.action || null,
         status: r.status || 'pending',
         order: r.order,
         comment: r.comment || null,
@@ -5602,6 +5635,7 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
         status: 'pending',
         order: idx,
       };
+      if (r.action === 'signer' || r.action === 'reviewer') doc.action = r.action;
       // Only set signing_token when present; omit it otherwise so the unique sparse index allows multiple recipients
       if (r.signing_token != null && r.signing_token !== '') doc.signing_token = r.signing_token;
       return doc;
@@ -5615,6 +5649,7 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
         name: r.name || r.email || 'Recipient',
         email: r.email,
         role: r.role || 'signer',
+        action: r.action || null,
         status: r.status || 'pending',
       })),
     });
@@ -5657,31 +5692,40 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   const getEsignEmailByRole = (rec, fName, signingUrl, inboxUrl) => {
     const roleLower = (rec.role || 'signer').toString().toLowerCase();
     const nameLower = (rec.name || '').toString().toLowerCase().trim();
-    const isReviewer = roleLower === 'reviewer' || rec.role === 'Technical Team' || rec.role === 'Legal Team';
+    const hasExplicitAction = rec.action === 'signer' || rec.action === 'reviewer';
+    const isReviewer = hasExplicitAction ? (rec.action === 'reviewer') : (roleLower === 'reviewer' || rec.role === 'Technical Team' || rec.role === 'Legal Team');
     const ctaText = isReviewer ? 'Review Document' : 'Sign Document';
     const isTechnical = rec.role === 'Technical Team' || nameLower === 'technical';
     const isLegal = rec.role === 'Legal Team' || nameLower === 'legal';
-    const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : 'E-Sign Team Lead Dashboard';
+    const isTeamLead = rec.role === 'Team Lead' || rec.role === 'Team Approval';
+    const showDashboardLink = isTechnical || isLegal || isTeamLead;
+    const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
     const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
     if (isReviewer) {
+      const dashboardBlock = showDashboardLink
+        ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
+        <p><strong>Option 2 – Direct link:</strong> `
+        : '<p><strong>Signing link:</strong> ';
       return {
         subject: 'Please review the document',
         html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
         <p>You have been requested to <strong>review</strong> a document.</p>
         <p><strong>Document:</strong> ${fName}</p>
-        <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
-        <p><strong>Option 2 – Direct link:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+        ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
         <p>Or copy: ${signingUrl}</p>
         <p>Thank you.</p>`
       };
     }
+    const signDashboardBlock = showDashboardLink
+      ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
+        <p><strong>Option 2 – Sign directly:</strong> `
+      : '<p><strong>Signing link:</strong> ';
     return {
       subject: 'Please sign the document',
       html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
         <p>You have been requested to sign a document.</p>
         <p><strong>Document:</strong> ${fName}</p>
-        <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
-        <p><strong>Option 2 – Sign directly:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+        ${signDashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
         <p>Or copy: ${signingUrl}</p>
         <p>Thank you.</p>`
     };
@@ -5914,6 +5958,9 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
       console.warn('E-sign sign-by-token: document not found for docId=', docId.toString(), 'recipient=', recipient._id);
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
+    if (doc.status === 'voided') {
+      return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    }
     const recipientIdStr = recipient._id.toString();
     const allFields = await db.collection('signature_fields').find({ document_id: docId }).toArray();
     const hasAnyRecipientAssignment = allFields.some((f) => f.recipient_id);
@@ -5927,7 +5974,9 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
         name: recipient.name,
         email: recipient.email,
         role: recipient.role,
+        action: recipient.action || null,
         status: recipient.status,
+        show_dashboard: recipient.role === 'Team Lead' || recipient.role === 'Team Approval' || recipient.role === 'Technical Team' || recipient.role === 'Legal Team',
       },
       document: {
         id: doc._id.toString(),
@@ -6045,26 +6094,35 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         const nextNameLower = (nextRec.name || '').toString().toLowerCase().trim();
         const isTechnical = nextRec.role === 'Technical Team' || nextNameLower === 'technical';
         const isLegal = nextRec.role === 'Legal Team' || nextNameLower === 'legal';
-        const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : 'E-Sign Team Lead Dashboard';
+        const isTeamLead = nextRec.role === 'Team Lead' || nextRec.role === 'Team Approval';
+        const showNextDashboard = isTechnical || isLegal || isTeamLead;
+        const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
         const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
         const fileName = doc.file_name || 'Document';
         const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
-        const isNextReviewer = roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team';
+        const nextHasAction = nextRec.action === 'signer' || nextRec.action === 'reviewer';
+        const isNextReviewer = nextHasAction ? (nextRec.action === 'reviewer') : (roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team');
         const ctaText = isNextReviewer ? 'Review Document' : 'Sign Document';
         const subject = isNextReviewer ? 'Please review the document' : 'Please sign the document';
+        const nextReviewBlock = showNextDashboard
+          ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
+          <p><strong>Option 2 – Direct link:</strong> `
+          : '<p><strong>Signing link:</strong> ';
+        const nextSignBlock = showNextDashboard
+          ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
+          <p><strong>Option 2 – Sign directly:</strong> `
+          : '<p><strong>Signing link:</strong> ';
         const html = isNextReviewer
           ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to <strong>review</strong> a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
-          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
-          <p><strong>Option 2 – Direct link:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          ${nextReviewBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`
           : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to sign a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
-          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
-          <p><strong>Option 2 – Sign directly:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          ${nextSignBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`;
         if (process.env.SENDGRID_API_KEY) {
@@ -6363,26 +6421,35 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           const nextNameLower = (nextRec.name || '').toString().toLowerCase().trim();
           const isTechnical = nextRec.role === 'Technical Team' || nextNameLower === 'technical';
           const isLegal = nextRec.role === 'Legal Team' || nextNameLower === 'legal';
-          const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : 'E-Sign Team Lead Dashboard';
+          const isTeamLead = nextRec.role === 'Team Lead' || nextRec.role === 'Team Approval';
+          const showNextDashboard = isTechnical || isLegal || isTeamLead;
+          const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
           const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
           const fileName = doc.file_name || 'Document';
           const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
-          const isNextReviewer = roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team';
+          const nextHasAction = nextRec.action === 'signer' || nextRec.action === 'reviewer';
+          const isNextReviewer = nextHasAction ? (nextRec.action === 'reviewer') : (roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team');
           const ctaText = isNextReviewer ? 'Review Document' : 'Sign Document';
           const subject = isNextReviewer ? 'Please review the document' : 'Please sign the document';
+          const nextReviewBlock2 = showNextDashboard
+            ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
+          <p><strong>Option 2 – Direct link:</strong> `
+            : '<p><strong>Signing link:</strong> ';
+          const nextSignBlock2 = showNextDashboard
+            ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
+          <p><strong>Option 2 – Sign directly:</strong> `
+            : '<p><strong>Signing link:</strong> ';
           const html = isNextReviewer
             ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to <strong>review</strong> a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
-          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
-          <p><strong>Option 2 – Direct link:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          ${nextReviewBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`
             : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to sign a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
-          <p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
-          <p><strong>Option 2 – Sign directly:</strong> <a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+          ${nextSignBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`;
           if (process.env.SENDGRID_API_KEY) {

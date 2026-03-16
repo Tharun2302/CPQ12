@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Loader2, RefreshCw, BarChart3, Check, Clock, XCircle, Eye, PenLine, Download } from 'lucide-react';
+import { FileText, Loader2, RefreshCw, BarChart3, Check, Clock, XCircle, Eye, PenLine, Download, Trash2, MoreVertical } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
@@ -41,6 +41,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const [statusModalRecipients, setStatusModalRecipients] = useState<RecipientStatus[]>([]);
   const [statusModalLoading, setStatusModalLoading] = useState(false);
   const [statusModalDownloading, setStatusModalDownloading] = useState(false);
+  const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [openActionsId, setOpenActionsId] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
@@ -86,6 +89,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
       case 'completed': return 'Completed';
       case 'sent': return 'Sent';
       case 'denied': return 'Denied';
+      case 'voided': return 'Voided';
       case 'draft': return 'Draft';
       default: return status || 'Draft';
     }
@@ -96,6 +100,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
       case 'completed': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       case 'sent': return 'bg-amber-100 text-amber-800 border-amber-200';
       case 'denied': return 'bg-red-100 text-red-800 border-red-200';
+      case 'voided': return 'bg-slate-200 text-slate-700 border-slate-300';
       default: return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
@@ -197,6 +202,52 @@ const EsignAgreementStatusDashboard: React.FC = () => {
       handleDownload(statusModalId, statusModalDoc.file_name);
     } finally {
       setStatusModalDownloading(false);
+    }
+  };
+
+  const handleVoid = async (agreementId: string) => {
+    if (!window.confirm('Void this agreement? Signing links will stop working. The document will stay in the list as voided.')) return;
+    setVoidingId(agreementId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/void`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        await fetchStatus();
+        if (statusModalId === agreementId) closeStatusModal();
+      } else {
+        alert(data.error || `Void failed${!res.ok ? ` (${res.status})` : ''}`);
+      }
+    } catch {
+      alert('Failed to void agreement.');
+    } finally {
+      setVoidingId(null);
+    }
+  };
+
+  const handleDelete = async (agreementId: string) => {
+    if (!window.confirm('Delete this agreement? This cannot be undone.')) return;
+    setDeletingId(agreementId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}`, { method: 'DELETE' });
+      const contentType = res.headers.get('Content-Type') || '';
+      let data: { success?: boolean; error?: string } = {};
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch {
+          data = { success: false, error: 'Invalid response' };
+        }
+      }
+      if (res.ok && data.success) {
+        await fetchStatus();
+        if (statusModalId === agreementId) closeStatusModal();
+      } else {
+        alert((data as { error?: string }).error || `Delete failed${!res.ok ? ` (${res.status})` : ''}`);
+      }
+    } catch {
+      alert('Failed to delete agreement.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -313,7 +364,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 Place fields
                               </Link>
                             )}
-                            {ag.status !== 'draft' && (
+                            {(ag.status === 'sent' || ag.status === 'completed' || ag.status === 'voided') && (
                               <button
                                 type="button"
                                 onClick={() => openStatusModal(ag.id)}
@@ -323,6 +374,54 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 View status
                               </button>
                             )}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setOpenActionsId((id) => (id === ag.id ? null : ag.id))}
+                                className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400"
+                                title="Actions"
+                                aria-expanded={openActionsId === ag.id}
+                              >
+                                <MoreVertical className="h-5 w-5" />
+                              </button>
+                              {openActionsId === ag.id && (
+                                <>
+                                  <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpenActionsId(null)} />
+                                  <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                                    {ag.status === 'sent' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => { handleVoid(ag.id); setOpenActionsId(null); }}
+                                        disabled={voidingId === ag.id}
+                                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                      >
+                                        {voidingId === ag.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : null}
+                                        Void
+                                      </button>
+                                    )}
+                                    {(ag.status === 'signed' || ag.status === 'completed') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => { handleDownload(ag.id, ag.file_name); setOpenActionsId(null); }}
+                                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                      >
+                                        <Download className="h-4 w-4 shrink-0" />
+                                        Download
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => { handleDelete(ag.id); setOpenActionsId(null); }}
+                                      disabled={deletingId === ag.id}
+                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                    >
+                                      {deletingId === ag.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Trash2 className="h-4 w-4 shrink-0" />}
+                                      Delete
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -357,6 +456,8 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                     <p className="text-slate-700 font-medium truncate">{statusModalDoc.file_name}</p>
                     {statusModalDoc.status === 'denied' ? (
                       <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/90 text-white">Denied</span>
+                    ) : statusModalDoc.status === 'voided' ? (
+                      <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-200 text-slate-700">Voided</span>
                     ) : (statusModalDoc.status === 'sent' || statusModalDoc.status === 'completed') ? (
                       <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-100 text-indigo-800">Sent for signature</span>
                     ) : null}
@@ -392,6 +493,11 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 mt-4">
                         <XCircle className="h-5 w-5 text-red-600 shrink-0" />
                         <span className="font-medium text-red-800">This document was denied by a recipient.</span>
+                      </div>
+                    )}
+                    {statusModalDoc.status === 'voided' && (
+                      <div className="flex items-center gap-2 rounded-lg bg-slate-100 border border-slate-200 px-4 py-3 mt-4">
+                        <span className="font-medium text-slate-700">This document was voided. Signing links no longer work.</span>
                       </div>
                     )}
                     {statusModalDoc.status === 'completed' && (

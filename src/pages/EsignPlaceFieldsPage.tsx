@@ -2,13 +2,31 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
-import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
 const SAVED_GROUPS_KEY = 'esign_saved_groups';
+const DEFAULT_GROUP_KEY = 'esign_default_group_id';
+
+function getDefaultGroupId(): string | null {
+  try {
+    return localStorage.getItem(DEFAULT_GROUP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setDefaultGroupIdInStorage(id: string | null) {
+  try {
+    if (id) localStorage.setItem(DEFAULT_GROUP_KEY, id);
+    else localStorage.removeItem(DEFAULT_GROUP_KEY);
+  } catch (e) {
+    console.warn('Failed to save default group', e);
+  }
+}
 
 export interface SavedRecipient {
   id: string;
@@ -88,6 +106,7 @@ export interface EsignRecipient {
   name: string;
   email: string;
   role: string;
+  action?: 'signer' | 'reviewer' | null;
   status?: string;
 }
 
@@ -124,6 +143,15 @@ const RECIPIENT_COLORS = [
 ];
 const UNASSIGNED_COLOR = { box: 'bg-slate-100 border-2 border-slate-400 text-slate-700 hover:bg-slate-200', dot: 'bg-slate-400' };
 
+function getRoleDisplayLabel(role: string): string {
+  const r = (role || 'signer').trim();
+  if (r === 'Team Lead' || r === 'Team Approval') return 'Team Lead';
+  if (r === 'Technical Team') return 'Technical Team';
+  if (r === 'Legal Team') return 'Legal Team';
+  if (r.toLowerCase() === 'reviewer') return 'Reviewer';
+  return 'Signer';
+}
+
 function getRecipientColor(
   recipientId: string | null | undefined,
   recipients: EsignRecipient[]
@@ -158,6 +186,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [sequential, setSequential] = useState(false);
   const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => getSavedRecipients());
   const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => getSavedGroups());
+  const [defaultGroupId, setDefaultGroupIdState] = useState<string | null>(() => getDefaultGroupId());
   const [groupNameInput, setGroupNameInput] = useState('');
   /** When editing a group, this holds the group id and a draft of name + recipients */
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; recipients: { name: string; email: string; role: 'signer' | 'reviewer' }[] } | null>(null);
@@ -216,6 +245,8 @@ const EsignPlaceFieldsPage: React.FC = () => {
         setSelectedRecipientId(recipientsData.recipients[0]?.id || null);
         if (recipientsData.recipients.length >= 2) setSequential(true);
       }
+      // Default group is no longer auto-added when document has no recipients.
+      // Add recipients via "Add to document" on a saved group.
       if (fieldsData.success && fieldsData.fields?.length) {
         setSignatureFields(
           fieldsData.fields.map((f: any) => {
@@ -258,7 +289,14 @@ const EsignPlaceFieldsPage: React.FC = () => {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipients: list.map((r) => ({ name: r.name, email: r.email, role: r.role || 'signer' })) }),
+        body: JSON.stringify({
+          recipients: list.map((r) => ({
+            name: r.name,
+            email: r.email,
+            role: r.role || 'signer',
+            ...(r.action ? { action: r.action } : {}),
+          })),
+        }),
       });
       const text = await res.text();
       try {
@@ -320,8 +358,18 @@ const EsignPlaceFieldsPage: React.FC = () => {
     }
   };
 
-  const updateRecipientRole = async (recipientId: string, newRole: 'signer' | 'reviewer') => {
-    const updated = recipients.map((r) => (r.id === recipientId ? { ...r, role: newRole } : r));
+  const updateRecipientRole = async (recipientId: string, newRole: string) => {
+    const updated = recipients.map((r) => {
+      if (r.id !== recipientId) return r;
+      const isGeneric = newRole === 'signer' || newRole === 'reviewer';
+      return { ...r, role: newRole, ...(isGeneric ? { action: undefined } : {}) };
+    });
+    setRecipients(updated);
+    await saveRecipientsAndSet(updated);
+  };
+
+  const updateRecipientAction = async (recipientId: string, action: 'signer' | 'reviewer') => {
+    const updated = recipients.map((r) => (r.id === recipientId ? { ...r, action } : r));
     setRecipients(updated);
     await saveRecipientsAndSet(updated);
   };
@@ -402,6 +450,8 @@ const EsignPlaceFieldsPage: React.FC = () => {
     setGroupNameInput('');
   };
 
+  const SOW_ROLES = ['Team Lead', 'Technical Team', 'Legal Team'];
+  const SOW_ACTIONS: ('signer' | 'reviewer')[] = ['signer', 'reviewer', 'reviewer'];
   const addGroupToDocument = async (group: SavedGroup) => {
     const existingEmails = new Set(recipients.map((r) => r.email.toLowerCase()));
     const toAdd = group.recipients.filter((g) => !existingEmails.has(g.email.toLowerCase()));
@@ -409,13 +459,25 @@ const EsignPlaceFieldsPage: React.FC = () => {
       setRecipientError('All members of this group are already added');
       return;
     }
+    const isDefaultGroup = group.id === defaultGroupId;
     const listToSave = [
       ...recipients,
-      ...toAdd.map((g) => ({ id: '' as string, name: g.name || g.email, email: g.email, role: g.role })),
+      ...toAdd.map((g, idx) => ({
+        id: '' as string,
+        name: g.name || g.email,
+        email: g.email,
+        role: isDefaultGroup && idx < SOW_ROLES.length ? SOW_ROLES[idx] : g.role,
+        action: isDefaultGroup && idx < SOW_ACTIONS.length ? SOW_ACTIONS[idx] : undefined,
+      })),
     ];
     const result = await saveRecipientsAndSet(listToSave, true);
     if (!result.success) setRecipientError('Failed to add group');
     else setRecipientError(null);
+  };
+
+  const setDefaultGroup = (id: string | null) => {
+    setDefaultGroupIdState(id);
+    setDefaultGroupIdInStorage(id);
   };
 
   const removeGroup = (id: string) => {
@@ -423,6 +485,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
     saveGroupsToStorage(next);
     setSavedGroups(next);
     if (editingGroup?.id === id) setEditingGroup(null);
+    if (defaultGroupId === id) setDefaultGroup(null);
   };
 
   const startEditingGroup = (g: SavedGroup) => {
@@ -939,7 +1002,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 {recipients.map((r, index) => {
                   const isSelected = selectedRecipientId === r.id;
                   const recipientColor = getRecipientColor(r.id, recipients);
-                  const isReviewer = (r.role || 'signer').toLowerCase() === 'reviewer';
+                  const effectiveAction = r.action ?? (r.role === 'Technical Team' || r.role === 'Legal Team' ? 'reviewer' : (r.role?.toLowerCase() === 'reviewer' ? 'reviewer' : 'signer'));
+                  const isReviewer = effectiveAction === 'reviewer';
+                  const roleForDropdown = r.role === 'Team Lead' || r.role === 'Technical Team' || r.role === 'Legal Team' ? r.role : '— None —';
                   return (
                     <div
                       key={r.id}
@@ -951,9 +1016,43 @@ const EsignPlaceFieldsPage: React.FC = () => {
                           <div className="min-w-0 flex-1">
                             <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
                             <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
-                            <span className={`inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                              {(r.role || 'signer').toLowerCase() === 'reviewer' ? 'Reviewer' : 'Signer'}
-                            </span>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              {roleForDropdown !== '— None —' && (
+                                <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                                  {getRoleDisplayLabel(r.role)}
+                                </span>
+                              )}
+                              <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                                {effectiveAction === 'reviewer' ? 'Review' : 'Sign'}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                              <span className="text-[9px] text-slate-500">Role:</span>
+                              <select
+                                value={roleForDropdown}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  updateRecipientRole(r.id, v === '— None —' ? (effectiveAction) : v);
+                                }}
+                                className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
+                                title="Dashboard label in email (None = generic)"
+                              >
+                                <option value="— None —">— None —</option>
+                                <option value="Team Lead">Team Lead</option>
+                                <option value="Technical Team">Technical Team</option>
+                                <option value="Legal Team">Legal Team</option>
+                              </select>
+                              <span className="text-[9px] text-slate-500">Action:</span>
+                              <select
+                                value={effectiveAction}
+                                onChange={(e) => updateRecipientAction(r.id, e.target.value as 'signer' | 'reviewer')}
+                                className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
+                                title="Sign or Review"
+                              >
+                                <option value="signer">Sign</option>
+                                <option value="reviewer">Review</option>
+                              </select>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end">
@@ -963,15 +1062,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                               <button type="button" onClick={() => moveRecipientDown(index)} disabled={index === recipients.length - 1} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
                             </>
                           )}
-                          <select
-                            value={(r.role || 'signer').toLowerCase()}
-                            onChange={(e) => updateRecipientRole(r.id, e.target.value as 'signer' | 'reviewer')}
-                            className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-5 pl-1"
-                            title="Change role"
-                          >
-                            <option value="signer">Signer</option>
-                            <option value="reviewer">Reviewer</option>
-                          </select>
                           <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       </div>
@@ -1020,19 +1110,24 @@ const EsignPlaceFieldsPage: React.FC = () => {
               {savedGroups.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-200">
                   <p className="text-xs font-medium text-slate-700 mb-1">Saved groups</p>
-                  <p className="text-[10px] text-slate-500 mb-1.5">Use &quot;Add to document&quot; to add this group&apos;s recipients to the current document.</p>
+                  <p className="text-[10px] text-slate-500 mb-1.5">Use &quot;Add to document&quot; to add a group. Default (★) is your preferred group when adding.</p>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto">
                     {savedGroups.map((g) => {
                       const isExpanded = expandedGroupId === g.id;
+                      const isDefault = defaultGroupId === g.id;
                       return (
-                        <div key={g.id} className="rounded border border-slate-200 bg-white overflow-hidden">
+                        <div key={g.id} className={`rounded border overflow-hidden ${isDefault ? 'border-amber-400 bg-amber-50/50' : 'border-slate-200 bg-white'}`}>
                           <div className="flex items-center justify-between gap-1 px-2 py-1.5">
                             <button type="button" onClick={() => setExpandedGroupId(isExpanded ? null : g.id)} className="min-w-0 flex-1 flex items-center gap-1 text-left">
                               <span className="text-slate-400">{isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}</span>
                               <p className="text-xs font-medium text-slate-800 truncate">{g.name}</p>
+                              {isDefault && <span className="shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-200 text-amber-900">Default</span>}
                               <p className="text-[10px] text-slate-500 shrink-0">({g.recipients.length})</p>
                             </button>
                             <div className="flex items-center gap-0.5 shrink-0">
+                              <button type="button" onClick={() => setDefaultGroup(isDefault ? null : g.id)} className={`p-1 rounded ${isDefault ? 'text-amber-600 hover:bg-amber-100' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`} title={isDefault ? 'Remove as default group' : 'Set as default group (preferred when you add to document)'}>
+                                <Star className={`h-3.5 w-3.5 ${isDefault ? 'fill-current' : ''}`} />
+                              </button>
                               <button type="button" onClick={() => addGroupToDocument(g)} className="p-1 rounded text-indigo-600 hover:bg-indigo-50 font-medium text-xs" title="Add all to current document">
                                 Add to document
                               </button>
@@ -1090,7 +1185,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-3">Place fields for:</p>
               <select value={selectedRecipientId || ''} onChange={(e) => setSelectedRecipientId(e.target.value || null)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
                 <option value="">— None —</option>
-                {recipients.map((r) => (<option key={r.id} value={r.id}>{r.name || r.email} ({(r.role || 'signer').toLowerCase() === 'reviewer' ? 'Reviewer' : 'Signer'})</option>))}
+                {recipients.map((r) => (<option key={r.id} value={r.id}>{r.name || r.email} ({getRoleDisplayLabel(r.role)})</option>))}
               </select>
               {selectedRecipientId && recipients.find((r) => r.id === selectedRecipientId)?.role?.toLowerCase() === 'reviewer' && (
                 <p className="text-xs text-amber-700 mt-1">Reviewers don&apos;t need fields; they will mark as Reviewed from their link.</p>
