@@ -6609,6 +6609,160 @@ app.get('/api/esign/agreement-status', async (req, res) => {
   }
 });
 
+// POST /api/chat - Internal chatbot (login patterns + default; add more patterns as needed)
+app.post('/api/chat', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available', reply: 'Service temporarily unavailable.' });
+    }
+    const msg = (req.body && req.body.message) ? String(req.body.message).trim() : '';
+    const lower = msg.toLowerCase();
+
+    // ---- First contact / help: show main topics (Login, E-signature) ----
+    if (!msg || lower === 'help' || lower === 'hi' || lower === 'hello' || lower === 'hey') {
+      return res.json({
+        reply: 'I can help with:',
+        topics: [
+          { label: 'Login', query: 'topic:login' },
+          { label: 'E-signature', query: 'topic:esign' }
+        ]
+      });
+    }
+
+    // ---- Topic menu: show Login-related questions ----
+    if (lower === 'topic:login') {
+      return res.json({
+        reply: 'What do you want to know about login?',
+        topics: [
+          { label: 'Who can login?', query: 'who can login' },
+          { label: 'How to login?', query: 'how to login' },
+          { label: 'Manual / developer login?', query: 'manual login' }
+        ]
+      });
+    }
+
+    // ---- Topic menu: show E-signature-related questions ----
+    if (lower === 'topic:esign') {
+      return res.json({
+        reply: 'What do you want to know about e-signature?',
+        topics: [
+          { label: 'How e-sign works', query: 'how e-sign works' },
+          { label: 'Add signature fields after agreement', query: 'add signature field after agreement' },
+          { label: 'Recipients & send for signature', query: 'how to add recipients' },
+          { label: 'Track e-signature / Agreement Status', query: 'track e-signature' },
+          { label: 'Void e-signature', query: 'void e-signature' },
+          { label: 'Download after signature', query: 'download after signature' }
+        ]
+      });
+    }
+
+    // Shared: remaining questions in topic + other topic (for after each detailed reply)
+    const loginSubTopics = [
+      { label: 'Who can login?', query: 'who can login' },
+      { label: 'How to login?', query: 'how to login' },
+      { label: 'Manual / developer login?', query: 'manual login' },
+      { label: 'E-signature', query: 'topic:esign' }
+    ];
+    const esignSubTopics = [
+      { label: 'How e-sign works', query: 'how e-sign works' },
+      { label: 'Add signature fields after agreement', query: 'add signature field after agreement' },
+      { label: 'Recipients & send for signature', query: 'how to add recipients' },
+      { label: 'Track e-signature / Agreement Status', query: 'track e-signature' },
+      { label: 'Void e-signature', query: 'void e-signature' },
+      { label: 'Download after signature', query: 'download after signature' },
+      { label: 'Login', query: 'topic:login' }
+    ];
+
+    // ---- LOGIN: login page, who can login, how to login, manual / developer login ----
+    if (lower.includes('login') || lower.includes('login page') || lower.includes('sign in') || lower.includes('signin') ||
+        lower.includes('sign in page') || lower.includes('who can login') || lower.includes('how to login') || lower.includes('how do i login') ||
+        lower.includes('manual login') || lower.includes('developer login') || lower.includes('cloudfuze') ||
+        lower.includes('microsoft')) {
+      const isManual = lower.includes('manual') || lower.includes('developer') || lower.includes('hardcoded') || lower.includes('password');
+      const reply = isManual
+        ? '**Manual login** is not allowed for regular users. Only **developers** have a single hardcoded password for access. Everyone else must use **Microsoft** sign-in with a **CloudFuze domain** account.'
+        : '**Who can login:** Only people with a **CloudFuze domain** can log in, using **Microsoft** (SSO). There is no manual email/password login for regular users—use the Sign in page and choose Microsoft.';
+      return res.json({
+        reply,
+        links: [{ label: 'Sign in', path: '/signin' }],
+        topics: loginSubTopics
+      });
+    }
+
+    // ---- E-SIGN: how e-sign works / step-by-step / manual e-sign workflow ----
+    const howSignatureWorks = (lower.includes('how e-sign works') || lower.includes('how esign works') || lower.includes('how e-signature works') ||
+        lower.includes('how signature works') || lower.includes('esignature works') || lower.includes('e-signature works') ||
+        (lower.includes('signature') && lower.includes('work') && (lower.includes('how') || lower.includes('esign'))) ||
+        lower.includes('step by step esign') || lower.includes('manual esign') || lower.includes('e-sign workflow') || lower.includes('esign workflow') ||
+        lower.includes('e-signature workflow') || lower.includes('how does e-sign work'));
+    if (howSignatureWorks) {
+      return res.json({
+        reply: '**How e-signature works (step-by-step)**\n\n1. **Upload** a PDF on the e-sign page (or create from approval workflow).\n2. Open the document → **Place fields** → add **recipients** (name, email), then place **signature fields** on the PDF.\n3. **Save** fields and click **Send for signature**. Signers get an email with a link.\n4. They open the link, review, and sign. You track status on **Agreement Status**.\n5. When all have signed, you can **download** the signed document from Agreement Status.',
+        links: [{ label: 'E-Sign', path: '/esign' }, { label: 'Agreement Status', path: '/esign-tracking' }],
+        topics: esignSubTopics
+      });
+    }
+
+    // ---- E-SIGN: add signature field after generating agreement ----
+    if (lower.includes('add signature field') || lower.includes('add esign field') || lower.includes('signature field after agreement') ||
+        lower.includes('after generate agreement') || lower.includes('place signature') || lower.includes('add signature after agreement')) {
+      return res.json({
+        reply: '**Adding signature fields after generating the agreement**\n\nAfter you generate the agreement, click **Add signature fields** on the quote/agreement preview. That takes you to the e-sign **Place fields** page for that document. There you add **recipients** (name, email) and **place signature blocks** on the PDF. Save, then use **Send for signature** to email the document to signers.',
+        links: [{ label: 'E-Sign', path: '/esign' }, { label: 'Agreement Status', path: '/esign-tracking' }],
+        topics: esignSubTopics
+      });
+    }
+
+    // ---- E-SIGN: recipients, how to add, send for signature ----
+    if (lower.includes('recipient') || lower.includes('add recipient') || lower.includes('how to add recipients') ||
+        lower.includes('send for signature') || lower.includes('how to send for signature') || lower.includes('esign recipient')) {
+      return res.json({
+        reply: '**E-signature recipients**\n\n• **Add recipients** on the **Place fields** page for the document: open the document → Place fields → add each signer with **name** and **email**. You can set **order** if signing is sequential.\n• **Place signature fields** on the PDF for each recipient, then **Save**.\n• **Send for signature:** click **Send** (or **Send for signature**). The system emails each signer a link; they open it, review, and sign.\n• Track who has signed on the **Agreement Status** page.',
+        links: [{ label: 'E-Sign', path: '/esign' }, { label: 'Agreement Status', path: '/esign-tracking' }],
+        topics: esignSubTopics
+      });
+    }
+
+    // ---- E-SIGN: track e-signature / Agreement Status ----
+    if (lower.includes('track e-sign') || lower.includes('track esign') || lower.includes('agreement status') ||
+        lower.includes('e-sign status') || lower.includes('who signed') || lower.includes('signature status')) {
+      return res.json({
+        reply: '**Tracking e-signature**\n\nUse the **Agreement Status** page to see all e-sign documents and each recipient\'s status (pending, signed, denied). Open a document to see details and **download** the signed PDF when complete.',
+        links: [{ label: 'Agreement Status', path: '/esign-tracking' }, { label: 'E-Sign', path: '/esign' }],
+        topics: esignSubTopics
+      });
+    }
+
+    // ---- E-SIGN: void e-signature / void document ----
+    if (lower.includes('void e-sign') || lower.includes('void esign') || lower.includes('void document') ||
+        lower.includes('cancel e-sign') || lower.includes('invalidate signature') || lower.includes('void signature link')) {
+      return res.json({
+        reply: '**Voiding an e-signature**\n\nOn the **Agreement Status** page (or the e-sign document list), open the document and use **Void**. Voiding invalidates the signing link and marks the document as voided; the record is kept for audit. Signers can no longer sign via the old link.',
+        links: [{ label: 'Agreement Status', path: '/esign-tracking' }, { label: 'E-Sign', path: '/esign' }],
+        topics: esignSubTopics
+      });
+    }
+
+    // ---- E-SIGN: download after signature ----
+    if (lower.includes('download after signature') || lower.includes('download signed') || lower.includes('signed document download') ||
+        lower.includes('get signed pdf') || lower.includes('download esign') || lower.includes('download after sign')) {
+      return res.json({
+        reply: '**Downloading after signature**\n\nWhen all signers have signed, open the document on the **Agreement Status** page and use **Download** (or open the document and download the file). The signed PDF is available from the same document record.',
+        links: [{ label: 'Agreement Status', path: '/esign-tracking' }, { label: 'E-Sign', path: '/esign' }],
+        topics: esignSubTopics
+      });
+    }
+
+    // Default
+    return res.json({
+      reply: 'How can I help?'
+    });
+  } catch (error) {
+    console.error('❌ Chat API error:', error);
+    res.status(500).json({ success: false, error: error.message, reply: 'Something went wrong. Please try again.' });
+  }
+});
+
 // API endpoint to fetch PDF documents from MongoDB
 // NOTE: This endpoint is replaced by the one below at line 3725 to avoid duplicates
 // Keeping this comment for reference but the endpoint below should be used

@@ -31,6 +31,7 @@ const EsignTeamLeadDashboard = lazy(() => import('./components/EsignTeamLeadDash
 const EsignTechnicalDashboard = lazy(() => import('./components/EsignTechnicalDashboard'));
 const EsignLegalDashboard = lazy(() => import('./components/EsignLegalDashboard'));
 const EsignAgreementStatusDashboard = lazy(() => import('./components/EsignAgreementStatusDashboard'));
+import InternalChatBot from './components/InternalChatBot';
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
 
@@ -2489,6 +2490,7 @@ function App() {
               {/* Redirect any other routes to landing page */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            <InternalChatBot />
           </HubSpotAuthHandler>
         </Suspense>
       </AuthProvider>
