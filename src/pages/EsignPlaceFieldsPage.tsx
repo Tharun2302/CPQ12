@@ -108,6 +108,7 @@ export interface EsignRecipient {
   role: string;
   action?: 'signer' | 'reviewer' | null;
   status?: string;
+  email_message?: string | null;
 }
 
 interface PlacedField {
@@ -295,6 +296,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
             email: r.email,
             role: r.role || 'signer',
             ...(r.action ? { action: r.action } : {}),
+            ...(r.email_message != null && r.email_message.trim() !== '' ? { email_message: r.email_message.trim() } : {}),
           })),
         }),
       });
@@ -370,6 +372,12 @@ const EsignPlaceFieldsPage: React.FC = () => {
 
   const updateRecipientAction = async (recipientId: string, action: 'signer' | 'reviewer') => {
     const updated = recipients.map((r) => (r.id === recipientId ? { ...r, action } : r));
+    setRecipients(updated);
+    await saveRecipientsAndSet(updated);
+  };
+
+  const updateRecipientEmailMessage = async (recipientId: string, email_message: string) => {
+    const updated = recipients.map((r) => (r.id === recipientId ? { ...r, email_message: email_message || undefined } : r));
     setRecipients(updated);
     await saveRecipientsAndSet(updated);
   };
@@ -625,6 +633,12 @@ const EsignPlaceFieldsPage: React.FC = () => {
         return;
       }
       setSaving(false);
+      // Save current recipients (including any message-in-email) so the sent email includes them
+      const recipientsSaved = await saveRecipientsAndSet(recipients);
+      if (!recipientsSaved?.success) {
+        setSendForSignatureResult('Could not save recipients. Please try again.');
+        return;
+      }
       setSending(true);
       try {
         const sendRes = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
@@ -1052,6 +1066,20 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 <option value="signer">Sign</option>
                                 <option value="reviewer">Review</option>
                               </select>
+                            </div>
+                            <div className="mt-1.5">
+                              <label className="text-[9px] text-slate-500 block mb-0.5">Message in email (optional)</label>
+                              <input
+                                type="text"
+                                value={r.email_message ?? ''}
+                                onChange={(e) => setRecipients((prev) => prev.map((x) => (x.id === r.id ? { ...x, email_message: e.target.value } : x)))}
+                                onBlur={(e) => {
+                                  const val = e.target.value.trim();
+                                  if (val !== (r.email_message ?? '').trim()) updateRecipientEmailMessage(r.id, val);
+                                }}
+                                placeholder="Custom text for this recipient's email"
+                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs placeholder-slate-400"
+                              />
                             </div>
                           </div>
                         </div>

@@ -664,32 +664,22 @@ const EsignSignPage: React.FC = () => {
               className="w-full h-[70vh] border-0"
             />
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-4">
-            <label className="block text-sm font-medium text-slate-700 mb-2">Comment (optional for Approve; required for Deny)</label>
-            <textarea
-              value={reviewComment}
-              onChange={(e) => setReviewComment(e.target.value)}
-              placeholder="Add a comment..."
-              rows={3}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-            />
-          </div>
           {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
-          <div className="flex flex-wrap justify-center gap-3">
+          <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-4">
             <button
               type="button"
               onClick={() => handleReviewAction('approve')}
               disabled={markingReviewed}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-emerald-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
               {markingReviewed ? (
                 <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
                   Submitting…
                 </>
               ) : (
                 <>
-                  <Check className="h-5 w-5" />
+                  <Check className="h-5 w-5 shrink-0" />
                   Approve
                 </>
               )}
@@ -698,20 +688,33 @@ const EsignSignPage: React.FC = () => {
               type="button"
               onClick={() => handleReviewAction('deny')}
               disabled={markingReviewed}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-red-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
               {markingReviewed ? (
                 <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
                   Submitting…
                 </>
               ) : (
                 <>
-                  <XCircle className="h-5 w-5" />
+                  <XCircle className="h-5 w-5 shrink-0" />
                   Deny
                 </>
               )}
             </button>
+            <div className="flex flex-col gap-1 w-64 min-w-[16rem] flex-shrink-0">
+              <label htmlFor="review-comment" className="text-xs font-medium text-slate-600 leading-tight">
+                Comment (optional for Approve; required for Deny)
+              </label>
+              <input
+                id="review-comment"
+                type="text"
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Add a comment…"
+                className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -775,44 +778,47 @@ const EsignSignPage: React.FC = () => {
                 </div>
               </div>
               <p className="text-slate-600">Do you approve this document and wish to sign, or decline to sign?</p>
-              <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
-                <label className="block text-sm font-medium text-slate-700 mb-2">Comment (optional for Approve; required for Deny)</label>
-                <textarea
-                  value={signerComment}
-                  onChange={(e) => setSignerComment(e.target.value)}
-                  placeholder="Add a comment..."
-                  rows={3}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
               {error && <p className="text-red-600 text-sm">{error}</p>}
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-slate-50 rounded-xl border border-slate-200 p-4 sm:p-5">
                 <button
                   type="button"
                   onClick={() => setSignerChoice('approve')}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700"
+                  className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 whitespace-nowrap"
                 >
-                  <Check className="h-5 w-5" />
+                  <Check className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
                   Approve (proceed to sign)
                 </button>
                 <button
                   type="button"
                   onClick={handleDenySigning}
                   disabled={denyingSign}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {denyingSign ? (
                     <>
-                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin shrink-0" />
                       Submitting…
                     </>
                   ) : (
                     <>
-                      <XCircle className="h-5 w-5" />
+                      <XCircle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
                       Deny (decline to sign)
                     </>
                   )}
                 </button>
+                <div className="flex flex-col gap-1 w-64 min-w-[16rem] flex-shrink-0">
+                  <label htmlFor="signer-comment" className="text-xs font-medium text-slate-600 leading-tight">
+                    Comment (optional for Approve; required for Deny)
+                  </label>
+                  <input
+                    id="signer-comment"
+                    type="text"
+                    value={signerComment}
+                    onChange={(e) => setSignerComment(e.target.value)}
+                    placeholder="Add a comment…"
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -961,14 +967,23 @@ const EsignSignPage: React.FC = () => {
 
             {/* Signature modal - opens when user clicks a "Sign Here" field */}
             {selectedSignatureFieldIndex !== null && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { setSelectedSignatureFieldIndex(null); clearSignature(); }}>
-                <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <div className="px-6 py-4 border-b border-slate-200">
+              <div
+                className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:p-4 sm:items-center bg-black/50"
+                onClick={() => { setSelectedSignatureFieldIndex(null); clearSignature(); }}
+              >
+                <div
+                  className="bg-white shadow-xl border border-slate-200 w-full max-w-full sm:max-w-[min(480px,calc(100vw-2rem))] flex flex-col max-h-[90vh] min-h-0 overflow-hidden rounded-t-2xl sm:rounded-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header - fixed */}
+                  <div className="flex-shrink-0 px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200">
                     <h3 className="text-lg font-semibold text-slate-900">Add your signature</h3>
                     <p className="text-sm text-slate-500 mt-0.5">Draw, type, or upload — then click Apply to place it in the field.</p>
                   </div>
-                  <div className="p-6 space-y-4">
-                    <div className="flex gap-2">
+
+                  {/* Content - scrollable area only for signature styles list */}
+                  <div className="flex-1 min-h-0 flex flex-col p-4 sm:p-6 overflow-hidden">
+                    <div className="flex-shrink-0 flex flex-wrap gap-2 mb-4">
                       {(['draw', 'type', 'upload'] as const).map((tab) => (
                         <button
                           key={tab}
@@ -1000,7 +1015,7 @@ const EsignSignPage: React.FC = () => {
                     </div>
 
                     {activeTab === 'draw' && (
-                      <div className="space-y-2">
+                      <div className="flex-shrink-0 space-y-2">
                         <div className="rounded-lg border-2 border-slate-200 overflow-hidden bg-white">
                           <SignatureCanvas
                             ref={sigCanvasRef}
@@ -1026,48 +1041,52 @@ const EsignSignPage: React.FC = () => {
                     )}
 
                     {activeTab === 'type' && (
-                      <div className="space-y-4">
+                      <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
                         <input
                           type="text"
                           value={typedSignature}
                           onChange={(e) => setTypedSignature(e.target.value)}
                           placeholder="Type your full name as signature"
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg"
+                          className="flex-shrink-0 w-full rounded-lg border border-slate-300 px-3 py-2 text-lg"
                           style={{ fontFamily: SIGNATURE_FONTS[typedSignatureFontIndex]?.family || 'cursive' }}
                         />
-                        <div>
-                          <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Choose signature style</p>
-                          <p className="text-xs text-slate-500 mb-2">
+                        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                          <p className="flex-shrink-0 text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Choose signature style</p>
+                          <p className="flex-shrink-0 text-xs text-slate-500 mb-2">
                             {typedSignature.trim() ? 'Preview of your signature in each style:' : 'Type your name above to see it in each style.'}
                           </p>
-                          <div className="space-y-2">
-                            {SIGNATURE_FONTS.map((font, idx) => (
-                              <button
-                                key={font.id}
-                                type="button"
-                                onClick={() => setTypedSignatureFontIndex(idx)}
-                                className={`w-full text-left rounded-lg border-2 px-3 py-2.5 transition-all ${
-                                  typedSignatureFontIndex === idx
-                                    ? 'border-indigo-500 bg-indigo-50'
-                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                                }`}
-                              >
-                                <span
-                                  className={`block text-lg truncate ${typedSignature.trim() ? 'text-slate-800' : 'text-slate-400 italic'}`}
-                                  style={{ fontFamily: font.family }}
+                          <div
+                            className="flex-1 min-h-0 max-h-[min(12rem,38svh)] sm:max-h-52 overflow-y-auto overflow-x-hidden rounded-lg pr-1 scroll-smooth [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:hover:bg-slate-400"
+                          >
+                            <div className="space-y-2 pb-1">
+                              {SIGNATURE_FONTS.map((font, idx) => (
+                                <button
+                                  key={font.id}
+                                  type="button"
+                                  onClick={() => setTypedSignatureFontIndex(idx)}
+                                  className={`w-full text-left rounded-lg border-2 px-3 py-2.5 transition-all duration-200 ${
+                                    typedSignatureFontIndex === idx
+                                      ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200'
+                                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                                  }`}
                                 >
-                                  {typedSignature.trim() || 'Your name'}
-                                </span>
-                                <span className="text-[11px] text-slate-500 mt-0.5 block">{font.name}</span>
-                              </button>
-                            ))}
+                                  <span
+                                    className={`block text-lg truncate ${typedSignature.trim() ? 'text-slate-800' : 'text-slate-400 italic'}`}
+                                    style={{ fontFamily: font.family }}
+                                  >
+                                    {typedSignature.trim() || 'Your name'}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 mt-0.5 block">{font.name}</span>
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
                     )}
 
                     {activeTab === 'upload' && (
-                      <div>
+                      <div className="flex-shrink-0">
                         {signatureImage ? (
                           <div className="relative inline-block">
                             <img src={signatureImage} alt="Signature" className="max-h-24 border rounded-lg" />
@@ -1092,7 +1111,9 @@ const EsignSignPage: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+
+                  {/* Footer - sticky, always visible */}
+                  <div className="flex-shrink-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:px-6 sm:py-4 border-t border-slate-200 bg-white flex justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => { setSelectedSignatureFieldIndex(null); clearSignature(); }}

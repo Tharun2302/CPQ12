@@ -5643,6 +5643,7 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         status: r.status || 'pending',
         order: r.order,
         comment: r.comment || null,
+        email_message: r.email_message || null,
         signing_token: r.signing_token || null,
       })),
     });
@@ -5663,6 +5664,7 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
     const { recipients: list } = req.body || {};
     if (!Array.isArray(list)) return res.status(400).json({ success: false, error: 'recipients array required' });
     await db.collection('esign_recipients').deleteMany({ document_id: docId });
+    const MAX_EMAIL_MESSAGE_LENGTH = 1000;
     const toInsert = list.filter((r) => r && (r.email || r.name)).map((r, idx) => {
       const doc = {
         document_id: docId,
@@ -5673,6 +5675,10 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
         order: idx,
       };
       if (r.action === 'signer' || r.action === 'reviewer') doc.action = r.action;
+      if (r.email_message != null && typeof r.email_message === 'string') {
+        const trimmed = r.email_message.trim().slice(0, MAX_EMAIL_MESSAGE_LENGTH);
+        if (trimmed) doc.email_message = trimmed;
+      }
       // Only set signing_token when present; omit it otherwise so the unique sparse index allows multiple recipients
       if (r.signing_token != null && r.signing_token !== '') doc.signing_token = r.signing_token;
       return doc;
@@ -5688,6 +5694,7 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
         role: r.role || 'signer',
         action: r.action || null,
         status: r.status || 'pending',
+        email_message: r.email_message || null,
       })),
     });
   } catch (error) {
@@ -5726,12 +5733,24 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     recipients = recipients.slice(0, 1);
   }
   const fileName = doc.file_name || 'Document';
+  const escapeEmailMessage = (s) => {
+    if (!s || typeof s !== 'string') return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\n/g, '<br />');
+  };
   const getEsignEmailByRole = (rec, fName, signingUrl, inboxUrl) => {
     const roleLower = (rec.role || 'signer').toString().toLowerCase();
     const nameLower = (rec.name || '').toString().toLowerCase().trim();
     const hasExplicitAction = rec.action === 'signer' || rec.action === 'reviewer';
     const isReviewer = hasExplicitAction ? (rec.action === 'reviewer') : (roleLower === 'reviewer' || rec.role === 'Technical Team' || rec.role === 'Legal Team');
     const ctaText = isReviewer ? 'Review Document' : 'Sign Document';
+    const customMessageBlock = (rec.email_message && rec.email_message.trim())
+      ? `<p style="margin:1em 0;">${escapeEmailMessage(rec.email_message.trim())}</p>`
+      : '';
     // Only show dashboard when Role is explicitly set to a dashboard role (not by name). Role "None" = no dashboard.
     const roleStr = (rec.role || '').toString().trim();
     const isTechnical = roleStr === 'Technical Team';
@@ -5748,7 +5767,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       return {
         subject: 'Please review the document',
         html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
-        <p>You have been requested to <strong>review</strong> a document.</p>
+        ${customMessageBlock}<p>You have been requested to <strong>review</strong> a document.</p>
         <p><strong>Document:</strong> ${fName}</p>
         ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
         <p>Or copy: ${signingUrl}</p>
@@ -5762,7 +5781,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     return {
       subject: 'Please sign the document',
       html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
-        <p>You have been requested to sign a document.</p>
+        ${customMessageBlock}<p>You have been requested to sign a document.</p>
         <p><strong>Document:</strong> ${fName}</p>
         ${signDashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
         <p>Or copy: ${signingUrl}</p>
