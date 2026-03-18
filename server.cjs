@@ -5653,7 +5653,7 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
   }
 });
 
-// POST /api/esign/documents/:id/recipients - Set recipients (replace all)
+// POST /api/esign/documents/:id/recipients - Sync recipients (upsert by email so _id stays stable for signature_fields.recipient_id)
 app.post('/api/esign/documents/:id/recipients', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
@@ -5663,28 +5663,82 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     const { recipients: list } = req.body || {};
     if (!Array.isArray(list)) return res.status(400).json({ success: false, error: 'recipients array required' });
-    await db.collection('esign_recipients').deleteMany({ document_id: docId });
     const MAX_EMAIL_MESSAGE_LENGTH = 1000;
-    const toInsert = list.filter((r) => r && (r.email || r.name)).map((r, idx) => {
-      const doc = {
+    const listFiltered = list.filter((r) => r && (r.email || r.name));
+    const existingAll = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
+    const incomingEmails = new Set();
+
+    if (!listFiltered.length) {
+      if (existingAll.length) {
+        await db.collection('signature_fields').updateMany(
+          { document_id: docId, recipient_id: { $in: existingAll.map((x) => x._id) } },
+          { $unset: { recipient_id: '' } }
+        );
+        await db.collection('esign_recipients').deleteMany({ document_id: docId });
+      }
+      return res.json({ success: true, recipients: [] });
+    }
+
+    for (let idx = 0; idx < listFiltered.length; idx++) {
+      const r = listFiltered[idx];
+      const email = (r.email || '').trim().toLowerCase();
+      if (!email) continue;
+      incomingEmails.add(email);
+      const name = (r.name || r.email || `Recipient ${idx + 1}`).trim();
+      const prev = await db.collection('esign_recipients').findOne({ document_id: docId, email });
+
+      const $set = {
         document_id: docId,
-        name: (r.name || r.email || `Recipient ${idx + 1}`).trim(),
-        email: (r.email || '').trim().toLowerCase(),
+        name,
+        email,
         role: r.role || 'signer',
-        status: 'pending',
         order: idx,
       };
-      if (r.action === 'signer' || r.action === 'reviewer') doc.action = r.action;
+      if (r.action === 'signer' || r.action === 'reviewer') {
+        $set.action = r.action;
+      }
       if (r.email_message != null && typeof r.email_message === 'string') {
         const trimmed = r.email_message.trim().slice(0, MAX_EMAIL_MESSAGE_LENGTH);
-        if (trimmed) doc.email_message = trimmed;
+        if (trimmed) $set.email_message = trimmed;
+        else $set.email_message = '';
       }
-      // Only set signing_token when present; omit it otherwise so the unique sparse index allows multiple recipients
-      if (r.signing_token != null && r.signing_token !== '') doc.signing_token = r.signing_token;
-      return doc;
-    });
-    if (toInsert.length) await db.collection('esign_recipients').insertMany(toInsert);
-    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ _id: 1 }).toArray();
+      const updatePayload = { $set };
+      if (r.action !== 'signer' && r.action !== 'reviewer') {
+        updatePayload.$unset = { action: '' };
+      }
+
+      if (prev) {
+        await db.collection('esign_recipients').updateOne({ _id: prev._id }, updatePayload);
+      } else {
+        const newDoc = {
+          document_id: docId,
+          name,
+          email,
+          role: r.role || 'signer',
+          status: 'pending',
+          order: idx,
+        };
+        if (r.action === 'signer' || r.action === 'reviewer') newDoc.action = r.action;
+        if (r.email_message != null && typeof r.email_message === 'string') {
+          const trimmed = r.email_message.trim().slice(0, MAX_EMAIL_MESSAGE_LENGTH);
+          if (trimmed) newDoc.email_message = trimmed;
+        }
+        if (r.signing_token != null && r.signing_token !== '') newDoc.signing_token = r.signing_token;
+        await db.collection('esign_recipients').insertOne(newDoc);
+      }
+    }
+
+    const removed = existingAll.filter((ex) => !incomingEmails.has((ex.email || '').toLowerCase()));
+    if (removed.length) {
+      const removedIds = removed.map((x) => x._id);
+      await db.collection('signature_fields').updateMany(
+        { document_id: docId, recipient_id: { $in: removedIds } },
+        { $unset: { recipient_id: '' } }
+      );
+      await db.collection('esign_recipients').deleteMany({ _id: { $in: removedIds } });
+    }
+
+    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
     res.json({
       success: true,
       recipients: recipients.map((r) => ({
@@ -6020,11 +6074,30 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
       return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     }
     const recipientIdStr = recipient._id.toString();
-    const allFields = await db.collection('signature_fields').find({ document_id: docId }).toArray();
-    const hasAnyRecipientAssignment = allFields.some((f) => f.recipient_id);
+    const docRecipients = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
+    const validRecipientIds = new Set(docRecipients.map((r) => r._id.toString()));
+    const allFields = await db.collection('signature_fields').find({ document_id: docId }).sort({ _id: 1 }).toArray();
+    // Stale recipient_id (old Mongo id after recipients were delete/re-insert) → treat as unassigned so signer still sees fields
+    const allFieldsNorm = allFields.map((f) => {
+      if (!f.recipient_id) return f;
+      try {
+        if (validRecipientIds.has(f.recipient_id.toString())) return f;
+      } catch { /* ignore */ }
+      const copy = { ...f };
+      delete copy.recipient_id;
+      return copy;
+    });
+    const hasAnyRecipientAssignment = allFieldsNorm.some((f) => f.recipient_id);
     const fields = hasAnyRecipientAssignment
-      ? allFields.filter((f) => f.recipient_id && f.recipient_id.toString() === recipientIdStr)
-      : allFields;
+      ? allFieldsNorm.filter((f) => {
+          if (f.recipient_id == null || f.recipient_id === '') return true;
+          try {
+            return f.recipient_id.toString() === recipientIdStr;
+          } catch {
+            return false;
+          }
+        })
+      : allFieldsNorm;
     res.json({
       success: true,
       recipient: {
@@ -6381,8 +6454,28 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       const recipient = await db.collection('esign_recipients').findOne({ signing_token });
       if (recipient) {
         const recipientIdStr = recipient._id.toString();
+        const docRecipients = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
+        const validRecipientIds = new Set(docRecipients.map((r) => r._id.toString()));
+        fields = fields.map((f) => {
+          if (!f.recipient_id) return f;
+          try {
+            if (validRecipientIds.has(f.recipient_id.toString())) return f;
+          } catch { /* ignore */ }
+          const copy = { ...f };
+          delete copy.recipient_id;
+          return copy;
+        });
         const hasAnyRecipientAssignment = fields.some((f) => f.recipient_id);
-        fields = hasAnyRecipientAssignment ? fields.filter((f) => f.recipient_id && f.recipient_id.toString() === recipientIdStr) : fields;
+        if (hasAnyRecipientAssignment) {
+          fields = fields.filter((f) => {
+            if (f.recipient_id == null || f.recipient_id === '') return true;
+            try {
+              return f.recipient_id.toString() === recipientIdStr;
+            } catch {
+              return false;
+            }
+          });
+        }
       }
     }
 

@@ -125,7 +125,12 @@ const EsignSignPage: React.FC = () => {
             }
             return { ...f, page, type, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
           });
-          setFields(normalized.length ? normalized : [DEFAULT_FIELD]);
+          if (normalized.length) {
+            setFields(normalized);
+          } else {
+            setFields([]);
+            setError('No signature fields are assigned to you for this document. Ask the sender to assign fields to your name in Place Fields, then resend.');
+          }
         } else {
           setDocumentId(documentIdOrToken);
           const [docRes, fieldsRes] = await Promise.all([
@@ -223,6 +228,10 @@ const EsignSignPage: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!documentId) return;
+    if (!fields.length) {
+      setError('No signature fields are assigned to you. Contact the sender.');
+      return;
+    }
 
     const values: Record<string, string> = {};
     const sigFieldIndices = fields.map((f, i) => (f.type === 'signature' ? i : -1)).filter((i) => i >= 0);
@@ -837,6 +846,11 @@ const EsignSignPage: React.FC = () => {
           </div>
 
           <div className="p-6 space-y-6">
+            {fields.length === 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {error || 'No signature fields are assigned to you for this document. Ask the sender to assign fields to your recipient in Place Fields, then resend the link.'}
+              </div>
+            )}
             {/* PDF with all pages in one scrollable view - same logic as Place Fields */}
             <div>
               <div
@@ -1161,7 +1175,7 @@ const EsignSignPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting}
+                disabled={submitting || fields.length === 0}
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (
