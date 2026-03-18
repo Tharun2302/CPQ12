@@ -27,7 +27,9 @@ export interface EsignPdfPageViewProps {
   className?: string;
   children?: React.ReactNode;
   onPdfInfo?: (info: { numPages: number }) => void;
-  onDrop?: (coords: FieldCoords & { fieldType: string }) => void;
+  /** Page size in PDF points (same space as field x/y). Used to persist normalized coords. */
+  onPageDimensions?: (info: { pageNumber: number; widthPt: number; heightPt: number }) => void;
+  onDrop?: (coords: FieldCoords & { fieldType: string; pageWidthPt: number; pageHeightPt: number }) => void;
 }
 
 /**
@@ -45,6 +47,7 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
   className = '',
   children,
   onPdfInfo,
+  onPageDimensions,
   onDrop,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -87,6 +90,11 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         setDimensions({ width: viewport.width, height: viewport.height });
+        onPageDimensions?.({
+          pageNumber,
+          widthPt: viewport.width / scale,
+          heightPt: viewport.height / scale,
+        });
 
         await page.render({
           canvasContext: context,
@@ -133,8 +141,8 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
       )}
       <canvas
         ref={canvasRef}
-        className="block"
-        style={{ display: loading ? 'none' : 'block' }}
+        className="block max-w-none"
+        style={{ display: loading ? 'none' : 'block', maxWidth: 'none' }}
       />
       {/* Field layer: same size as canvas. Fields use position:absolute relative to this page. z-index so drop target is above canvas. */}
       <div
@@ -158,7 +166,18 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
           const pxY = e.clientY - rect.top;
           const x = Math.max(0, Math.min(dimensions.width / scale - DEFAULT_FIELD_WIDTH_PT, pxX / scale - DEFAULT_FIELD_WIDTH_PT / 2));
           const y = Math.max(0, Math.min(dimensions.height / scale - DEFAULT_FIELD_HEIGHT_PT, pxY / scale - DEFAULT_FIELD_HEIGHT_PT / 2));
-          onDrop({ page: pageNumber, x, y, width: DEFAULT_FIELD_WIDTH_PT, height: DEFAULT_FIELD_HEIGHT_PT, fieldType });
+          const pageWidthPt = dimensions.width / scale;
+          const pageHeightPt = dimensions.height / scale;
+          onDrop({
+            page: pageNumber,
+            x,
+            y,
+            width: DEFAULT_FIELD_WIDTH_PT,
+            height: DEFAULT_FIELD_HEIGHT_PT,
+            fieldType,
+            pageWidthPt,
+            pageHeightPt,
+          });
         } : undefined}
       >
         {children}

@@ -120,6 +120,11 @@ interface PlacedField {
   y?: number;
   width?: number;
   height?: number;
+  /** 0–1 relative to page width/height — keeps sign view aligned with pdf-lib */
+  xNorm?: number;
+  yNorm?: number;
+  widthNorm?: number;
+  heightNorm?: number;
   xPct?: number;
   yPct?: number;
   widthPct?: number;
@@ -179,6 +184,8 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [recipientError, setRecipientError] = useState<string | null>(null);
   const [addingRecipient, setAddingRecipient] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageMetricsRef = useRef<Record<number, { wPt: number; hPt: number }>>({});
+  const [pageDimsTick, setPageDimsTick] = useState(0);
   const [pendingApproval, setPendingApproval] = useState<QuotePendingApproval | null>(null);
   const [sendingApproval, setSendingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
@@ -264,6 +271,14 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 y: Number(f.y),
                 width: Number(f.width) || 120,
                 height: Number(f.height) || 40,
+                ...(f.xNorm != null && f.yNorm != null && f.widthNorm != null && f.heightNorm != null
+                  ? {
+                      xNorm: Number(f.xNorm),
+                      yNorm: Number(f.yNorm),
+                      widthNorm: Number(f.widthNorm),
+                      heightNorm: Number(f.heightNorm),
+                    }
+                  : {}),
               };
             }
             return {
@@ -281,6 +296,37 @@ const EsignPlaceFieldsPage: React.FC = () => {
       }
     })();
   }, [documentId]);
+
+  const handlePageDimensions = useCallback((info: { pageNumber: number; widthPt: number; heightPt: number }) => {
+    pageMetricsRef.current[info.pageNumber] = { wPt: info.widthPt, hPt: info.heightPt };
+    setPageDimsTick((t) => t + 1);
+  }, []);
+
+
+  const fieldsToApiPayload = useCallback((list: PlacedField[]) => {
+    return list.map((f) => {
+      const base = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
+      if (f.x == null || f.y == null) {
+        return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
+      }
+      const w = Math.max(MIN_FIELD_WIDTH_PX / PDF_SCALE, f.width ?? 120);
+      const h = Math.max(MIN_FIELD_HEIGHT_PX / PDF_SCALE, f.height ?? 40);
+      const pm = pageMetricsRef.current[f.page];
+      const row: Record<string, unknown> = { ...base, x: f.x, y: f.y, width: w, height: h };
+      if (pm) {
+        row.xNorm = f.x / pm.wPt;
+        row.yNorm = f.y / pm.hPt;
+        row.widthNorm = w / pm.wPt;
+        row.heightNorm = h / pm.hPt;
+      } else if (f.xNorm != null && f.yNorm != null && f.widthNorm != null && f.heightNorm != null) {
+        row.xNorm = f.xNorm;
+        row.yNorm = f.yNorm;
+        row.widthNorm = f.widthNorm;
+        row.heightNorm = f.heightNorm;
+      }
+      return row;
+    });
+  }, []);
 
   const saveRecipientsAndSet = useCallback(async (list: EsignRecipient[], selectLast?: boolean) => {
     if (!documentId) return { success: false };
@@ -550,29 +596,54 @@ const EsignPlaceFieldsPage: React.FC = () => {
   };
 
   /** Persist fields to backend (pass updated list after drag/resize so size and position are saved). */
-  const saveFieldsToBackend = useCallback(async (fieldsToSave: PlacedField[]) => {
-    if (!documentId || !fieldsToSave.length) return;
-    const payload = fieldsToSave.map((f) => {
-      const base = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
-      if (f.x != null && f.y != null) {
-        return { ...base, x: f.x, y: f.y, width: Math.max(MIN_FIELD_WIDTH_PX / PDF_SCALE, f.width ?? 120), height: Math.max(MIN_FIELD_HEIGHT_PX / PDF_SCALE, f.height ?? 40) };
+  const saveFieldsToBackend = useCallback(
+    async (fieldsToSave: PlacedField[]) => {
+      if (!documentId || !fieldsToSave.length) return;
+      const payload = fieldsToApiPayload(fieldsToSave);
+      try {
+        await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document_id: documentId, fields: payload }),
+        });
+      } catch (err) {
+        console.warn('Failed to auto-save field positions:', err);
       }
-      return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
+    },
+    [documentId, fieldsToApiPayload]
+  );
+
+  /** After every page that has fields has reported dimensions, add xNorm/yNorm to legacy rows and save once. */
+  useEffect(() => {
+    if (!documentId || !signatureFields.length) return;
+    const pointFields = signatureFields.filter((f) => f.x != null && f.y != null);
+    if (!pointFields.some((f) => f.xNorm == null)) return;
+    const pages = [...new Set(pointFields.map((f) => f.page))];
+    const m = pageMetricsRef.current;
+    if (!pages.every((p) => m[p])) return;
+    const next = signatureFields.map((f) => {
+      if (f.x == null || f.y == null || f.xNorm != null) return f;
+      const pm = m[f.page];
+      if (!pm) return f;
+      const w = Math.max(MIN_FIELD_WIDTH_PX / PDF_SCALE, f.width ?? 120);
+      const h = Math.max(MIN_FIELD_HEIGHT_PX / PDF_SCALE, f.height ?? 40);
+      return {
+        ...f,
+        xNorm: f.x / pm.wPt,
+        yNorm: f.y / pm.hPt,
+        widthNorm: w / pm.wPt,
+        heightNorm: h / pm.hPt,
+      };
     });
-    try {
-      await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_id: documentId, fields: payload }),
-      });
-    } catch (err) {
-      console.warn('Failed to auto-save field positions:', err);
-    }
-  }, [documentId]);
+    setSignatureFields(next);
+    saveFieldsToBackend(next);
+  }, [pageDimsTick, documentId, signatureFields, saveFieldsToBackend]);
 
   const handleFieldDrop = useCallback(
-    (coords: FieldCoords & { fieldType: string }) => {
+    (coords: FieldCoords & { fieldType: string; pageWidthPt: number; pageHeightPt: number }) => {
       setDragSource(null);
+      const pw = coords.pageWidthPt;
+      const ph = coords.pageHeightPt;
       const newField: PlacedField = {
         id: uuidv4(),
         type: coords.fieldType as FieldType,
@@ -582,6 +653,10 @@ const EsignPlaceFieldsPage: React.FC = () => {
         y: coords.y,
         width: coords.width,
         height: coords.height,
+        xNorm: coords.x / pw,
+        yNorm: coords.y / ph,
+        widthNorm: coords.width / pw,
+        heightNorm: coords.height / ph,
       };
       setSignatureFields((prev) => {
         const next = [...prev, newField];
@@ -615,13 +690,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
 
     setSaving(true);
     try {
-      const fields = signatureFields.map((f) => {
-        const base = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
-        if (f.x != null && f.y != null) {
-          return { ...base, x: f.x, y: f.y, width: f.width ?? 120, height: f.height ?? 40 };
-        }
-        return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
-      });
+      const fields = fieldsToApiPayload(signatureFields);
       const fieldsRes = await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -670,13 +739,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
     setApprovalError(null);
     try {
       // Persist current signature fields before creating workflow so approvers/signers see them
-      const fieldsPayload = signatureFields.map((f) => {
-        const base = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
-        if (f.x != null && f.y != null) {
-          return { ...base, x: f.x, y: f.y, width: f.width ?? 120, height: f.height ?? 40 };
-        }
-        return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
-      });
+      const fieldsPayload = fieldsToApiPayload(signatureFields);
       if (fieldsPayload.length) {
         await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
           method: 'POST',
@@ -842,6 +905,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                       pageNumber={pageNum}
                       scale={PDF_SCALE}
                       onPdfInfo={pageNum === 1 ? (info) => setTotalPages(info.numPages) : undefined}
+                      onPageDimensions={handlePageDimensions}
                       onDrop={handleFieldDrop}
                       className=""
                     >
@@ -866,8 +930,27 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 onDragStop={(_e, d) => {
                                   const xPt = d.x / PDF_SCALE;
                                   const yPt = d.y / PDF_SCALE;
+                                  const pm = pageMetricsRef.current[f.page];
+                                  const fw = f.width ?? 120;
+                                  const fh = f.height ?? 40;
                                   const next = signatureFields.map((field) =>
-                                    field.id === f.id ? { ...field, x: xPt, y: yPt, width: field.width ?? 120, height: field.height ?? 40 } : field
+                                    field.id === f.id
+                                      ? {
+                                          ...field,
+                                          x: xPt,
+                                          y: yPt,
+                                          width: fw,
+                                          height: fh,
+                                          ...(pm
+                                            ? {
+                                                xNorm: xPt / pm.wPt,
+                                                yNorm: yPt / pm.hPt,
+                                                widthNorm: fw / pm.wPt,
+                                                heightNorm: fh / pm.hPt,
+                                              }
+                                            : {}),
+                                        }
+                                      : field
                                   );
                                   setSignatureFields(next);
                                   saveFieldsToBackend(next);
@@ -877,8 +960,25 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                   const yPt = position.y / PDF_SCALE;
                                   const wPt = Math.max(minWidthPt, ref.offsetWidth / PDF_SCALE);
                                   const hPt = Math.max(minHeightPt, ref.offsetHeight / PDF_SCALE);
+                                  const pm = pageMetricsRef.current[f.page];
                                   const next = signatureFields.map((field) =>
-                                    field.id === f.id ? { ...field, x: xPt, y: yPt, width: wPt, height: hPt } : field
+                                    field.id === f.id
+                                      ? {
+                                          ...field,
+                                          x: xPt,
+                                          y: yPt,
+                                          width: wPt,
+                                          height: hPt,
+                                          ...(pm
+                                            ? {
+                                                xNorm: xPt / pm.wPt,
+                                                yNorm: yPt / pm.hPt,
+                                                widthNorm: wPt / pm.wPt,
+                                                heightNorm: hPt / pm.hPt,
+                                              }
+                                            : {}),
+                                        }
+                                      : field
                                   );
                                   setSignatureFields(next);
                                   saveFieldsToBackend(next);

@@ -21,6 +21,10 @@ interface SignatureField {
   y?: number;
   width?: number;
   height?: number;
+  xNorm?: number;
+  yNorm?: number;
+  widthNorm?: number;
+  heightNorm?: number;
 }
 
 const DEFAULT_FIELD = { page: 1, type: 'signature' as FieldType, xPct: 10, yPct: 80, widthPct: 20, heightPct: 4 };
@@ -120,6 +124,26 @@ const EsignSignPage: React.FC = () => {
           const normalized = raw.map((f: any) => {
             const page = Number(f.page) || 1;
             const type = (f.type || 'signature') as FieldType;
+            const hasNorm =
+              f.xNorm != null &&
+              f.yNorm != null &&
+              f.widthNorm != null &&
+              f.heightNorm != null;
+            if (hasNorm) {
+              return {
+                ...f,
+                page,
+                type,
+                xNorm: Number(f.xNorm),
+                yNorm: Number(f.yNorm),
+                widthNorm: Number(f.widthNorm),
+                heightNorm: Number(f.heightNorm),
+                x: Number(f.x),
+                y: Number(f.y),
+                width: Number(f.width) || 120,
+                height: Number(f.height) || 40,
+              };
+            }
             if (f.x != null && f.y != null) {
               return { ...f, page, type, x: Number(f.x), y: Number(f.y), width: Number(f.width) || 120, height: Number(f.height) || 40 };
             }
@@ -151,6 +175,26 @@ const EsignSignPage: React.FC = () => {
             const normalized = fieldsData.fields.map((f: any) => {
               const page = Number(f.page) || 1;
               const type = (f.type || 'signature') as FieldType;
+              const hasNorm =
+                f.xNorm != null &&
+                f.yNorm != null &&
+                f.widthNorm != null &&
+                f.heightNorm != null;
+              if (hasNorm) {
+                return {
+                  ...f,
+                  page,
+                  type,
+                  xNorm: Number(f.xNorm),
+                  yNorm: Number(f.yNorm),
+                  widthNorm: Number(f.widthNorm),
+                  heightNorm: Number(f.heightNorm),
+                  x: Number(f.x),
+                  y: Number(f.y),
+                  width: Number(f.width) || 120,
+                  height: Number(f.height) || 40,
+                };
+              }
               if (f.x != null && f.y != null) {
                 return { ...f, page, type, x: Number(f.x), y: Number(f.y), width: Number(f.width) || 120, height: Number(f.height) || 40 };
               }
@@ -381,6 +425,19 @@ const EsignSignPage: React.FC = () => {
   };
 
   const getFieldStyle = (f: SignatureField) => {
+    if (
+      f.xNorm != null &&
+      f.yNorm != null &&
+      f.widthNorm != null &&
+      f.heightNorm != null
+    ) {
+      return {
+        left: `${Number(f.xNorm) * 100}%`,
+        top: `${Number(f.yNorm) * 100}%`,
+        width: `${Number(f.widthNorm) * 100}%`,
+        height: `${Number(f.heightNorm) * 100}%`,
+      };
+    }
     if (f.x != null && f.y != null) {
       return {
         left: (f.x ?? 0) * PDF_SCALE,
@@ -838,7 +895,7 @@ const EsignSignPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-6 py-4">
             <h1 className="text-xl font-bold text-white">Sign Document</h1>

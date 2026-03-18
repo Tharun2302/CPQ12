@@ -6147,6 +6147,10 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
         y: f.y,
         width: f.width,
         height: f.height,
+        xNorm: f.xNorm,
+        yNorm: f.yNorm,
+        widthNorm: f.widthNorm,
+        heightNorm: f.heightNorm,
         xPct: f.xPct,
         yPct: f.yPct,
         widthPct: f.widthPct,
@@ -6398,7 +6402,20 @@ app.post('/api/esign/signature-fields', async (req, res) => {
       if (f.xPct != null) {
         return { ...base, xPct: Number(f.xPct), yPct: Number(f.yPct), widthPct: Number(f.widthPct) || 20, heightPct: Number(f.heightPct) || 4 };
       }
-      return { ...base, x: Number(f.x) || 0, y: Number(f.y) || 0, width: Number(f.width) || 100, height: Number(f.height) || 40 };
+      const row = {
+        ...base,
+        x: Number(f.x) || 0,
+        y: Number(f.y) || 0,
+        width: Number(f.width) || 100,
+        height: Number(f.height) || 40,
+      };
+      if (f.xNorm != null && f.yNorm != null && f.widthNorm != null && f.heightNorm != null) {
+        row.xNorm = Number(f.xNorm);
+        row.yNorm = Number(f.yNorm);
+        row.widthNorm = Number(f.widthNorm);
+        row.heightNorm = Number(f.heightNorm);
+      }
+      return row;
     });
     if (toInsert.length) await db.collection('signature_fields').insertMany(toInsert);
     res.json({ success: true, message: 'Signature fields saved' });
@@ -6510,7 +6527,20 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       const w = page.getWidth();
       const h = page.getHeight();
       let x, y, width, height;
-      if (f.xPct != null || f.yPct != null) {
+      if (
+        f.xNorm != null &&
+        f.yNorm != null &&
+        f.widthNorm != null &&
+        f.heightNorm != null &&
+        !Number.isNaN(Number(f.xNorm)) &&
+        !Number.isNaN(Number(f.yNorm))
+      ) {
+        width = Number(f.widthNorm) * w;
+        height = Number(f.heightNorm) * h;
+        x = Number(f.xNorm) * w;
+        const yFromTop = Number(f.yNorm) * h;
+        y = h - yFromTop - height;
+      } else if (f.xPct != null || f.yPct != null) {
         const xPct = (Number(f.xPct) ?? 10) / 100;
         const yPct = (Number(f.yPct) ?? 80) / 100;
         const wPct = (Number(f.widthPct) ?? 20) / 100;
