@@ -38,6 +38,20 @@ const app = express();
 // Node can treat it as a named pipe instead of a TCP port. Always coerce to number.
 const PORT = Number.parseInt(process.env.PORT, 10) || 3001;
 
+/** Match signature_fields by document_id whether stored as ObjectId or string (avoids empty fields on some DBs). */
+function signatureFieldsDocumentFilter(docId) {
+  const { ObjectId } = require('mongodb');
+  const oid = docId instanceof ObjectId ? docId : new ObjectId(String(docId));
+  return { $or: [{ document_id: oid }, { document_id: oid.toString() }] };
+}
+
+/** Same for esign_recipients — must match sequential-flow queries or validRecipientIds breaks. */
+function esignRecipientsDocumentFilter(docId) {
+  const { ObjectId } = require('mongodb');
+  const oid = docId instanceof ObjectId ? docId : new ObjectId(String(docId));
+  return { $or: [{ document_id: oid }, { document_id: oid.toString() }] };
+}
+
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({
   origin: [
@@ -5340,6 +5354,38 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
 const { ObjectId } = require('mongodb');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
+/**
+ * Exact field list + order for a signer. MUST match between GET sign-by-token and POST generate-signed
+ * (frontend sends field_values keyed by index in this array).
+ */
+async function getEsignFieldsForRecipient(db, docId, recipientIdStr) {
+  const oid = docId instanceof ObjectId ? docId : new ObjectId(String(docId));
+  const docRecipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(oid)).toArray();
+  const validRecipientIds = new Set(docRecipients.map((r) => r._id.toString()));
+  const allFields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(oid)).sort({ _id: 1 }).toArray();
+  const allFieldsNorm = allFields.map((f) => {
+    if (!f.recipient_id) return f;
+    try {
+      if (validRecipientIds.has(f.recipient_id.toString())) return f;
+    } catch { /* ignore */ }
+    const copy = { ...f };
+    delete copy.recipient_id;
+    return copy;
+  });
+  const hasAnyRecipientAssignment = allFieldsNorm.some((f) => f.recipient_id);
+  if (hasAnyRecipientAssignment) {
+    return allFieldsNorm.filter((f) => {
+      if (f.recipient_id == null || f.recipient_id === '') return true;
+      try {
+        return f.recipient_id.toString() === recipientIdStr;
+      } catch {
+        return false;
+      }
+    });
+  }
+  return allFieldsNorm;
+}
+
 // Helper: log audit action
 async function logAudit(documentId, action, userEmail, ipAddress) {
   if (!db) return;
@@ -5570,7 +5616,7 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
-    await db.collection('signature_fields').deleteMany({ document_id: docId });
+    await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
     await db.collection('esign_recipients').deleteMany({ document_id: docId });
     await db.collection('audit_logs').deleteMany({ document_id: docId });
     await db.collection('esign_documents').deleteOne({ _id: docId });
@@ -5665,16 +5711,16 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
     if (!Array.isArray(list)) return res.status(400).json({ success: false, error: 'recipients array required' });
     const MAX_EMAIL_MESSAGE_LENGTH = 1000;
     const listFiltered = list.filter((r) => r && (r.email || r.name));
-    const existingAll = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
+    const existingAll = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).toArray();
     const incomingEmails = new Set();
 
     if (!listFiltered.length) {
       if (existingAll.length) {
         await db.collection('signature_fields').updateMany(
-          { document_id: docId, recipient_id: { $in: existingAll.map((x) => x._id) } },
+          { $and: [signatureFieldsDocumentFilter(docId), { recipient_id: { $in: existingAll.map((x) => x._id) } }] },
           { $unset: { recipient_id: '' } }
         );
-        await db.collection('esign_recipients').deleteMany({ document_id: docId });
+        await db.collection('esign_recipients').deleteMany(esignRecipientsDocumentFilter(docId));
       }
       return res.json({ success: true, recipients: [] });
     }
@@ -5685,7 +5731,9 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
       if (!email) continue;
       incomingEmails.add(email);
       const name = (r.name || r.email || `Recipient ${idx + 1}`).trim();
-      const prev = await db.collection('esign_recipients').findOne({ document_id: docId, email });
+      const prev = await db.collection('esign_recipients').findOne({
+        $and: [esignRecipientsDocumentFilter(docId), { email }],
+      });
 
       const $set = {
         document_id: docId,
@@ -5732,13 +5780,13 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
     if (removed.length) {
       const removedIds = removed.map((x) => x._id);
       await db.collection('signature_fields').updateMany(
-        { document_id: docId, recipient_id: { $in: removedIds } },
+        { $and: [signatureFieldsDocumentFilter(docId), { recipient_id: { $in: removedIds } }] },
         { $unset: { recipient_id: '' } }
       );
       await db.collection('esign_recipients').deleteMany({ _id: { $in: removedIds } });
     }
 
-    const recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+    const recipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).sort({ order: 1, _id: 1 }).toArray();
     res.json({
       success: true,
       recipients: recipients.map((r) => ({
@@ -5781,7 +5829,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     baseUrlForDashboard = FRONTEND_DEV;
   }
   if (baseUrlForDashboard.includes('localhost:3001')) baseUrlForDashboard = FRONTEND_DEV;
-  let recipients = await db.collection('esign_recipients').find({ document_id: docId }).sort({ order: 1, _id: 1 }).toArray();
+  let recipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).sort({ order: 1, _id: 1 }).toArray();
   if (!recipients.length) return { success: false, error: 'Add at least one recipient before sending' };
   if (sequential) {
     recipients = recipients.slice(0, 1);
@@ -6074,30 +6122,7 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
       return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     }
     const recipientIdStr = recipient._id.toString();
-    const docRecipients = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
-    const validRecipientIds = new Set(docRecipients.map((r) => r._id.toString()));
-    const allFields = await db.collection('signature_fields').find({ document_id: docId }).sort({ _id: 1 }).toArray();
-    // Stale recipient_id (old Mongo id after recipients were delete/re-insert) → treat as unassigned so signer still sees fields
-    const allFieldsNorm = allFields.map((f) => {
-      if (!f.recipient_id) return f;
-      try {
-        if (validRecipientIds.has(f.recipient_id.toString())) return f;
-      } catch { /* ignore */ }
-      const copy = { ...f };
-      delete copy.recipient_id;
-      return copy;
-    });
-    const hasAnyRecipientAssignment = allFieldsNorm.some((f) => f.recipient_id);
-    const fields = hasAnyRecipientAssignment
-      ? allFieldsNorm.filter((f) => {
-          if (f.recipient_id == null || f.recipient_id === '') return true;
-          try {
-            return f.recipient_id.toString() === recipientIdStr;
-          } catch {
-            return false;
-          }
-        })
-      : allFieldsNorm;
+    const fields = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
     res.json({
       success: true,
       recipient: {
@@ -6363,7 +6388,7 @@ app.post('/api/esign/signature-fields', async (req, res) => {
     const existing = await db.collection('esign_documents').findOne({ _id: docId });
     if (!existing) return res.status(404).json({ success: false, error: 'Document not found' });
 
-    await db.collection('signature_fields').deleteMany({ document_id: docId });
+    await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
     const toInsert = fields.map((f) => {
       let recipientId = null;
       if (f.recipient_id) {
@@ -6389,7 +6414,7 @@ app.get('/api/esign/signature-fields/:documentId', async (req, res) => {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     let docId;
     try { docId = new ObjectId(req.params.documentId); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
-    const fields = await db.collection('signature_fields').find({ document_id: docId }).toArray();
+    const fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).toArray();
     res.json({ success: true, fields });
   } catch (error) {
     console.error('❌ E-sign get signature fields error:', error);
@@ -6446,37 +6471,26 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     const pages = pdfDoc.getPages();
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-    let fields = field_coords && field_coords.length
-      ? field_coords
-      : await db.collection('signature_fields').find({ document_id: docId }).sort({ _id: 1 }).toArray();
-
-    if (signing_token) {
+    let fields;
+    if (field_coords && field_coords.length) {
+      fields = field_coords;
+    } else if (signing_token) {
       const recipient = await db.collection('esign_recipients').findOne({ signing_token });
-      if (recipient) {
-        const recipientIdStr = recipient._id.toString();
-        const docRecipients = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
-        const validRecipientIds = new Set(docRecipients.map((r) => r._id.toString()));
-        fields = fields.map((f) => {
-          if (!f.recipient_id) return f;
-          try {
-            if (validRecipientIds.has(f.recipient_id.toString())) return f;
-          } catch { /* ignore */ }
-          const copy = { ...f };
-          delete copy.recipient_id;
-          return copy;
-        });
-        const hasAnyRecipientAssignment = fields.some((f) => f.recipient_id);
-        if (hasAnyRecipientAssignment) {
-          fields = fields.filter((f) => {
-            if (f.recipient_id == null || f.recipient_id === '') return true;
-            try {
-              return f.recipient_id.toString() === recipientIdStr;
-            } catch {
-              return false;
-            }
-          });
-        }
+      if (!recipient) {
+        return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
       }
+      let rDocId;
+      try {
+        rDocId = recipient.document_id instanceof ObjectId ? recipient.document_id : new ObjectId(String(recipient.document_id));
+      } catch {
+        return res.status(400).json({ success: false, error: 'Invalid document' });
+      }
+      if (rDocId.toString() !== docId.toString()) {
+        return res.status(400).json({ success: false, error: 'Document does not match signing link' });
+      }
+      fields = await getEsignFieldsForRecipient(db, docId, recipient._id.toString());
+    } else {
+      fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
     }
 
     const values = field_values || {};
