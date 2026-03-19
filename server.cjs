@@ -6429,43 +6429,11 @@ app.get('/api/approval-workflows', async (req, res) => {
     // Re-evaluate workflows that might be incorrectly marked as 'in_progress'
     // when all approval steps (Team, Tech, Legal) are actually complete
     const workflowsToUpdate = [];
-    const workflowsToFixDealDesk = [];
-    
     for (const workflow of workflows) {
       if (workflow.status === 'in_progress' || workflow.status === 'pending') {
         if (areAllApprovalStepsComplete(workflow.workflowSteps)) {
           workflowsToUpdate.push(workflow.id);
         }
-      }
-      
-      // Check if Legal Team is approved but Deal Desk is still pending
-      const legalStep = workflow.workflowSteps?.find(s => s.role === 'Legal Team');
-      const dealDeskStep = workflow.workflowSteps?.find(s => s.role === 'Deal Desk');
-      
-      if (legalStep?.status === 'approved' && dealDeskStep && 
-          (dealDeskStep.status === 'pending' || !dealDeskStep.status || dealDeskStep.status !== 'notified')) {
-        workflowsToFixDealDesk.push(workflow.id);
-      }
-    }
-    
-    // Fix Deal Desk steps that should be marked as "notified"
-    if (workflowsToFixDealDesk.length > 0) {
-      console.log(`🔄 Fixing ${workflowsToFixDealDesk.length} workflows: marking Deal Desk as "notified" (Legal Team already approved)`);
-      for (const workflowId of workflowsToFixDealDesk) {
-        await db.collection('approval_workflows').updateOne(
-          { id: workflowId },
-          {
-            $set: {
-              'workflowSteps.$[elem].status': 'notified',
-              'workflowSteps.$[elem].comments': 'Notified',
-              'workflowSteps.$[elem].timestamp': new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }
-          },
-          {
-            arrayFilters: [{ 'elem.role': 'Deal Desk' }]
-          }
-        );
       }
     }
     
@@ -6481,10 +6449,8 @@ app.get('/api/approval-workflows', async (req, res) => {
           }
         }
       );
-    }
-    
-    // Refresh the workflows after updates
-    if (workflowsToUpdate.length > 0 || workflowsToFixDealDesk.length > 0) {
+      
+      // Refresh the workflows after update
       const updatedWorkflows = await db.collection('approval_workflows')
         .find({})
         .sort({ createdAt: -1 })
@@ -6628,24 +6594,6 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
         ? { ...step, ...stepUpdates, timestamp: new Date().toISOString() }
         : step
     );
-    
-    // If Legal Team just approved, automatically mark Deal Desk as "notified"
-    if (stepUpdates.status === 'approved') {
-      const approvedStep = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber));
-      if (approvedStep && approvedStep.role === 'Legal Team') {
-        // Find Deal Desk step and mark it as notified
-        const dealDeskStepIndex = updatedSteps.findIndex(s => s.role === 'Deal Desk');
-        if (dealDeskStepIndex !== -1) {
-          updatedSteps[dealDeskStepIndex] = {
-            ...updatedSteps[dealDeskStepIndex],
-            status: 'notified',
-            comments: 'Notified',
-            timestamp: new Date().toISOString()
-          };
-          console.log('✅ Deal Desk automatically marked as "notified" after Legal Team approval');
-        }
-      }
-    }
     
     // Update current step and status based on step updates
     let newCurrentStep = workflow.currentStep;
