@@ -16,9 +16,6 @@ import {
   Send,
   AlertCircle,
   Palette,
-  PenTool,
-  ThumbsUp,
-  ThumbsDown,
   FileDown
 } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -264,8 +261,6 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     subject: '',
     message: ''
   });
-  const [signatureData, setSignatureData] = useState<{[key: string]: any}>({});
-  const [loadingSignatures, setLoadingSignatures] = useState<{[key: string]: boolean}>({});
   const [templatePreviewHTML, setTemplatePreviewHTML] = useState<string>('');
   const [isLoadingTemplatePreview, setIsLoadingTemplatePreview] = useState<boolean>(false);
   const [mergingQuote, setMergingQuote] = useState<string | null>(null);
@@ -312,41 +307,6 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
         return <Clock className="w-4 h-4" />;
     }
   };
-
-  const fetchSignatureData = async (quoteId: string) => {
-    if (signatureData[quoteId] || loadingSignatures[quoteId]) return;
-    
-    setLoadingSignatures(prev => ({ ...prev, [quoteId]: true }));
-    
-    try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/signature/forms-by-quote/${quoteId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSignatureData(prev => ({ ...prev, [quoteId]: data.forms }));
-      } else {
-        setSignatureData(prev => ({ ...prev, [quoteId]: [] }));
-      }
-    } catch (error) {
-      console.error('Error fetching signature data:', error);
-      setSignatureData(prev => ({ ...prev, [quoteId]: [] }));
-    } finally {
-      setLoadingSignatures(prev => ({ ...prev, [quoteId]: false }));
-    }
-  };
-
-  const getSignatureStatus = (quoteId: string) => {
-    const forms = signatureData[quoteId] || [];
-    if (forms.length === 0) return { signed: false, approved: false, status: 'No signature form' };
-    
-    const latestForm = forms[forms.length - 1];
-    return {
-      signed: !!latestForm.signature_data,
-      approved: latestForm.approval_status === 'approved',
-      status: latestForm.approval_status || 'pending',
-      formId: latestForm.form_id
-    };
-  };
-
 
 
 
@@ -1028,37 +988,9 @@ ZENOP Pro Solutions Team`
     setSendingEmail(quote.id);
     
     try {
-      // Step 1: Create Digital Signature Form
-      console.log('📝 Creating digital signature form...');
       const quoteNumber = `CPQ-${quote.id.split('-')[1]}`;
-      
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const formResponse = await fetch(`${backendUrl}/api/signature/create-form`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quoteId: quote.id,
-          clientEmail: emailForm.to,
-          clientName: quote.clientName,
-          quoteData: {
-            totalCost: quote.calculation.totalCost,
-            plan: quote.selectedTier.name,
-            clientName: quote.clientName,
-            company: quote.company,
-            quoteNumber: quoteNumber
-          }
-        })
-      });
 
-      if (!formResponse.ok) {
-        throw new Error('Failed to create signature form');
-      }
-
-      const formResult = await formResponse.json();
-      const formId = formResult.formId;
-      console.log('✅ Signature form created:', formId);
-
-      // Step 2: Generate merged template PDF
       console.log('📧 Generating merged template PDF...');
       let pdfBlob: Blob;
       
@@ -1233,26 +1165,15 @@ ZENOP Pro Solutions Team`
         console.log('📧 PDF generated successfully, size:', pdfBlob.size);
       }
       
-      // Step 3: Create FormData for email with PDF and signature form link
       const formData = new FormData();
       formData.append('to', emailForm.to);
       formData.append('subject', emailForm.subject);
-      
-      // Enhanced email message with signature form link
-              const signatureFormLink = `${window.location.origin}/client-signature-form.html?formId=${formId}`;
+
+      const esignOrigin = window.location.origin.replace(/\/$/, '');
       const enhancedMessage = `${emailForm.message}
 
-📝 DIGITAL SIGNATURE REQUIRED
-To approve this quote, please click the link below to access our secure digital signature form:
-${signatureFormLink}
-
-The signature form will allow you to:
-• Review the complete quote details
-• Provide your digital signature
-• Approve or reject the quote
-• Add any comments or feedback
-
-This form will expire in 7 days for security purposes.
+—
+Formal digital signing: use CPQ e-sign at ${esignOrigin}/esign when you need signatures on the agreement PDF.
 
 Best regards,
 ZENOP Pro Solutions Team`;
@@ -1290,14 +1211,9 @@ ZENOP Pro Solutions Team`;
         setShowEmailModal(null);
         setEmailForm({ to: '', subject: '', message: '' });
         
-        // Show success message with signature form info
-        alert(`✅ Email sent successfully with PDF attachment and digital signature form!
+        alert(`✅ Email sent successfully with PDF attachment.
 
-📧 Message ID: ${result.messageId}
-📝 Signature Form ID: ${formId}
-🔗 Form Link: ${signatureFormLink}
-
-The client will receive an email with the PDF quote and a link to complete the digital signature process.`);
+📧 Message ID: ${result.messageId}`);
         
     } else {
         throw new Error(result.message || 'Failed to send email');
@@ -1652,77 +1568,6 @@ The client will receive an email with the PDF quote and a link to complete the d
                   {/* Template debug info removed for cleaner UI */}
                 </div>
 
-                {/* Signature and Approval Status */}
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <PenTool className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm text-gray-600">Client Status:</span>
-                    </div>
-                    <button
-                      onClick={() => fetchSignatureData(quote.id)}
-                      className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      {loadingSignatures[quote.id] ? 'Loading...' : 'Check Status'}
-                    </button>
-                  </div>
-                  
-                  {(() => {
-                    const signatureStatus = getSignatureStatus(quote.id);
-                    return (
-                      <div className="mt-2 flex items-center gap-3">
-                        {/* Signature Status */}
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-gray-500">Signed:</span>
-                          {signatureStatus.signed ? (
-                            <div className="flex items-center gap-1 text-green-600">
-                              <CheckCircle className="w-3 h-3" />
-                              <span className="text-xs font-medium">Yes</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-gray-400">
-                              <Clock className="w-3 h-3" />
-                              <span className="text-xs">No</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Approval Status */}
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-gray-500">Approved:</span>
-                          {signatureStatus.approved ? (
-                            <div className="flex items-center gap-1 text-green-600">
-                              <ThumbsUp className="w-3 h-3" />
-                              <span className="text-xs font-medium">Yes</span>
-                            </div>
-                          ) : signatureStatus.status === 'rejected' ? (
-                            <div className="flex items-center gap-1 text-red-600">
-                              <ThumbsDown className="w-3 h-3" />
-                              <span className="text-xs font-medium">No</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-yellow-600">
-                              <Clock className="w-3 h-3" />
-                              <span className="text-xs font-medium capitalize">{signatureStatus.status}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Form Link */}
-                        {signatureStatus.formId && (
-                          <a
-                            href={`/client-signature-form.html?formId=${signatureStatus.formId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-blue-600 hover:text-blue-800 transition-colors underline"
-                          >
-                            View Form
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
               </div>
 
               {/* Quote Actions */}

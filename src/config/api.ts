@@ -56,14 +56,6 @@ export const API_ENDPOINTS = {
   ESIGN_DOCUMENT_FILE: (id: string) => `/api/esign/documents/${id}/file`,
   ESIGN_SIGNATURE_FIELDS: (id: string) => `/api/esign/signature-fields/${id}`,
   ESIGN_GENERATE_SIGNED: '/api/esign/documents/generate-signed',
-
-  // Signature (legacy)
-  SIGNATURE_CREATE_FORM: '/api/signature/create-form',
-  SIGNATURE_FORM: (id: string) => `/api/signature/form/${id}`,
-  SIGNATURE_SUBMIT: '/api/signature/submit',
-  SIGNATURE_FORMS_BY_QUOTE: (quoteId: string) => `/api/signature/forms-by-quote/${quoteId}`,
-  SIGNATURE_ANALYTICS: '/api/signature/analytics',
-  SIGNATURE_TRACK_INTERACTION: '/api/signature/track-interaction',
   
   // HubSpot
   HUBSPOT_CONTACTS: '/api/hubspot/contacts',

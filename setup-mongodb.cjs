@@ -25,16 +25,6 @@ async function setupMongoDB() {
     // Create collections with proper structure
     const collections = [
       {
-        name: 'signature_forms',
-        indexes: [
-          { key: { form_id: 1 }, unique: true },
-          { key: { quote_id: 1 } },
-          { key: { client_email: 1 } },
-          { key: { status: 1 } },
-          { key: { created_at: -1 } }
-        ]
-      },
-      {
         name: 'quotes',
         indexes: [
           { key: { id: 1 }, unique: true },

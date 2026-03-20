@@ -1660,31 +1660,6 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         throw new Error('Please select a Date before sending.');
       }
 
-      // Upload user signature image if available
-      let userSignatureImage = null;
-      if (signatureForm.signatureImage) {
-        try {
-          const formData = new FormData();
-          formData.append('signatureImage', signatureForm.signatureImage);
-          formData.append('formId', template.id);
-          formData.append('signatureType', 'user');
-          
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-          const uploadResponse = await fetch(`${backendUrl}/api/signature/upload-image`, {
-            method: 'POST',
-            body: formData
-          });
-          
-          const uploadResult = await uploadResponse.json();
-          if (uploadResult.success) {
-            userSignatureImage = signatureForm.signatureImage;
-            console.log('✅ User signature image uploaded successfully');
-          }
-        } catch (uploadError) {
-          console.warn('⚠️ Failed to upload user signature image:', uploadError);
-        }
-      }
-
       // Process template with signature data
       console.log('🔄 Processing template with signature data...');
       
@@ -1720,88 +1695,25 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         [template.id]: processedTemplate
       }));
 
-      // Step 1: Create Digital Signature Form
-      console.log('📝 Creating digital signature form for template...');
-      const templateId = template.id;
-      
-      // Use client name from form or extract from email
-      let clientName = emailForm.clientName || emailForm.to.split('@')[0] || 'Client';
-      
-      // If no client name provided, format the email username
-      if (!emailForm.clientName) {
-        clientName = clientName
-          .replace(/[._]/g, ' ')
-          .split(' ')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(' ');
-        
-        // If the name is too short or generic, use a more descriptive name
-        if (clientName.length < 2 || clientName.toLowerCase() === 'client') {
-          clientName = 'Client User';
-        }
-      }
-      
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const formResponse = await fetch(`${backendUrl}/api/signature/create-form`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quoteId: templateId, // Use template ID as quote ID for tracking
-          clientEmail: emailForm.to,
-          clientName: clientName, // Use actual client name
-          quoteData: {
-            totalCost: 'Template Cost',
-            plan: template.name,
-            clientName: clientName,
-            company: 'Client Company',
-            quoteNumber: `TEMPLATE-${templateId.slice(-6)}`
-          }
-        })
-      });
+      const esignOrigin = window.location.origin.replace(/\/$/, '');
+      console.log('📧 Sending template via email...');
 
-      if (!formResponse.ok) {
-        throw new Error('Failed to create signature form');
-      }
-
-      const formResult = await formResponse.json();
-      const formId = formResult.formId;
-      console.log('✅ Signature form created for template:', formId);
-
-      // Step 2: Send email with processed template and signature form link
-      console.log('📧 Sending template via email with signature form...');
-      
-      // Create FormData for email with processed template
       const formData = new FormData();
       formData.append('to', emailForm.to);
       formData.append('subject', emailForm.subject);
-      
-      // Enhanced email message with signature form link
-      const signatureFormLink = `${window.location.origin}/client-signature-form.html?formId=${formId}`;
+
       const enhancedMessage = `${emailForm.message}
 
-📝 DIGITAL SIGNATURE REQUIRED
-To approve this template, please click the link below to access our secure digital signature form:
-${signatureFormLink}
-
-The signature form will allow you to:
-• Review the complete template details
-• Provide your digital signature
-• Approve or reject the template
-• Add any comments or feedback
-
-This form will expire in 7 days for security purposes.
+—
+Formal digital signing: use CPQ e-sign at ${esignOrigin}/esign when you need signatures on the agreement PDF.
 
 Best regards,
 CloudFuze Team`;
-      
+
       formData.append('message', enhancedMessage);
-      
-      // Add the processed template as attachment
       formData.append('attachment', processedTemplate);
-      
-      console.log('📧 Sending email with processed template and signature form link...');
-      
-      // Send email with processed template and signature form link
+
       const response = await fetch(`${backendUrl}/api/email/send`, {
         method: 'POST',
         body: formData
@@ -1829,19 +1741,14 @@ CloudFuze Team`;
         });
         setSelectedFontStyle(0); // Reset to first font style
         
-        // Show success message with signature form info
-        alert(`✅ Template sent successfully with digital signature form!
+        alert(`✅ Template sent successfully.
 
 📧 Message ID: ${result.messageId}
 📄 Template: ${template.name}
 📎 Attachment: ${processedTemplate.name}
 ✍️ Signed by: ${signatureForm.name} (${signatureForm.title})
 📝 Signature Style: ${signatureFonts[selectedFontStyle].name}
-📅 Signed on: ${signatureForm.date}
-📝 Signature Form ID: ${formId}
-🔗 Form Link: ${signatureFormLink}
-
-The client will receive an email with the processed template and a link to complete the digital signature process.`);
+📅 Signed on: ${signatureForm.date}`);
         
       } else {
         throw new Error(result.message || 'Failed to send email');
