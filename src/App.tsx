@@ -18,7 +18,6 @@ const LegalTeamApprovalDashboard = lazy(() => import('./components/LegalTeamAppr
 const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashboard'));
 const ApprovalPortalGate = lazy(() => import('./components/ApprovalPortalGate'));
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
-const MigrationManagerDashboard = lazy(() => import('./components/MigrationManagerDashboard'));
 const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
 const EsignLayout = lazy(() => import('./components/EsignLayout'));
 const EsignDocumentsPage = lazy(() => import('./pages/EsignDocumentsPage'));
@@ -2031,13 +2030,6 @@ function App() {
               } />
               <Route path="/client-notification" element={
                 <ClientNotification />
-              } />
-              <Route path="/migration-manager" element={
-                <ProtectedRoute>
-                  <MigrationManagerDashboard 
-                    managerEmail="migration.manager@cloudfuze.com"
-                  />
-                </ProtectedRoute>
               } />
               <Route path="/infrateam" element={
                 <ProtectedRoute>
