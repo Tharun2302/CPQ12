@@ -422,12 +422,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
     await saveRecipientsAndSet(updated);
   };
 
-  const updateRecipientEmailMessage = async (recipientId: string, email_message: string) => {
-    const updated = recipients.map((r) => (r.id === recipientId ? { ...r, email_message: email_message || undefined } : r));
-    setRecipients(updated);
-    await saveRecipientsAndSet(updated);
-  };
-
   const removeRecipient = async (id: string) => {
     const newList = recipients.filter((r) => r.id !== id);
     setSignatureFields((prev) => prev.map((f) => (f.recipient_id === id ? { ...f, recipient_id: null } : f)));
@@ -702,7 +696,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         return;
       }
       setSaving(false);
-      // Save current recipients (including any message-in-email) so the sent email includes them
+      // Save current recipients before send
       const recipientsSaved = await saveRecipientsAndSet(recipients);
       if (!recipientsSaved?.success) {
         setSendForSignatureResult('Could not save recipients. Please try again.');
@@ -1166,20 +1160,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 <option value="signer">Sign</option>
                                 <option value="reviewer">Review</option>
                               </select>
-                            </div>
-                            <div className="mt-1.5">
-                              <label className="text-[9px] text-slate-500 block mb-0.5">Message in email (optional)</label>
-                              <input
-                                type="text"
-                                value={r.email_message ?? ''}
-                                onChange={(e) => setRecipients((prev) => prev.map((x) => (x.id === r.id ? { ...x, email_message: e.target.value } : x)))}
-                                onBlur={(e) => {
-                                  const val = e.target.value.trim();
-                                  if (val !== (r.email_message ?? '').trim()) updateRecipientEmailMessage(r.id, val);
-                                }}
-                                placeholder="Custom text for this recipient's email"
-                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs placeholder-slate-400"
-                              />
                             </div>
                           </div>
                         </div>

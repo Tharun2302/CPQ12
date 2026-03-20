@@ -5872,7 +5872,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
         ${customMessageBlock}<p>You have been requested to <strong>review</strong> a document.</p>
         <p><strong>Document:</strong> ${fName}</p>
         ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-        <p>Or copy: ${signingUrl}</p>
         <p>Thank you.</p>`
       };
     }
@@ -5886,7 +5885,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
         ${customMessageBlock}<p>You have been requested to sign a document.</p>
         <p><strong>Document:</strong> ${fName}</p>
         ${signDashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-        <p>Or copy: ${signingUrl}</p>
         <p>Thank you.</p>`
     };
   };
@@ -6282,13 +6280,11 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
           <p>You have been requested to <strong>review</strong> a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
           ${nextReviewBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`
           : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to sign a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
           ${nextSignBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`;
         if (process.env.SENDGRID_API_KEY) {
           try {
@@ -6651,13 +6647,11 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           <p>You have been requested to <strong>review</strong> a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
           ${nextReviewBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`
             : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to sign a document.</p>
           <p><strong>Document:</strong> ${fileName}</p>
           ${nextSignBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Or copy: ${signingUrl}</p>
           <p>Thank you.</p>`;
           if (process.env.SENDGRID_API_KEY) {
             try {
