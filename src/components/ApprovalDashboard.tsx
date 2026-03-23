@@ -318,7 +318,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     revokeObjectUrlIfAny();
   };
 
-  // Use same e-sign flow as /esign: create esign doc from approval doc, then go to Place Fields → Send
   const handleStartEsign = async (workflow: any) => {
     const docId = workflow?.documentId;
     if (!docId) {
@@ -600,7 +599,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             {esignError && (
               <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-2 text-rose-800 text-sm flex items-center justify-between gap-2">
                 <span>{esignError}</span>
-                <button type="button" onClick={() => setEsignError(null)} className="text-rose-600 hover:text-rose-800" aria-label="Dismiss">×</button>
+                <button type="button" onClick={() => setEsignError(null)} className="text-rose-600 hover:text-rose-800" aria-label="Dismiss">
+                  ×
+                </button>
               </div>
             )}
 
@@ -661,8 +662,9 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                       </div>
 
                       <div className="shrink-0 flex flex-col sm:flex-row gap-2 self-stretch">
-                        {workflow?.documentId && legalStep?.status === 'approved' && (
-                          workflow.esignDocumentId ? (
+                        {workflow?.documentId &&
+                          legalStep?.status === 'approved' &&
+                          (workflow.esignDocumentId ? (
                             <button
                               type="button"
                               onClick={() => navigate(`/esign/${workflow.esignDocumentId}/status`)}
@@ -679,7 +681,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                               disabled={esignCreatingId === workflow.id}
                               title="Send for e-signature after Legal — Recipient 1 & 2"
                               aria-label="Send for e-signature"
-                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2563EB] border border-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-[#1D4ED8] hover:border-[#1D4ED8] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
                             >
                               {esignCreatingId === workflow.id ? (
                                 <Loader2 className="h-4 w-4 text-white animate-spin" />
@@ -688,8 +690,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                               )}
                               <span className="hidden sm:inline">Send for signature</span>
                             </button>
-                          )
-                        )}
+                          ))}
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
