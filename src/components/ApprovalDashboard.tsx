@@ -34,17 +34,17 @@ const isSameDay = (a: Date, b: Date) =>
 const badgeClass = (status: string) => {
   switch (status) {
     case 'approved':
-      // Vibrant approved (emerald)
-      return 'bg-emerald-600 text-white ring-1 ring-emerald-600';
+      // Soft Mint Green with dark green text
+      return 'bg-[#DCFCE7] text-[#166534] ring-1 ring-[#86EFAC]';
     case 'denied':
-      // Ruby rejected
-      return 'bg-[#E11D48] text-white ring-1 ring-[#E11D48]';
+      // Soft Coral Red
+      return 'bg-[#FCA5A5] text-[#991B1B] ring-1 ring-[#FCA5A5]';
     case 'in_progress':
-      return 'bg-sky-500 text-white ring-1 ring-sky-500';
+      return 'bg-[#2563EB] text-white ring-1 ring-[#2563EB]';
     case 'pending':
     default:
-      // High-contrast pending state (Amber #F59E0B) for readability on white backgrounds
-      return 'bg-[#F59E0B] text-gray-900 ring-1 ring-black/10';
+      // Warm Amber with dark brown text
+      return 'bg-[#FEF3C7] text-[#78350F] ring-1 ring-[#FDE68A]';
   }
 };
 
@@ -83,17 +83,17 @@ const stepStatusLabel = (status?: string) => {
 
 const stepperDotClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
-  if (s === 'denied') return 'bg-[#E11D48]';
-  if (s === 'approved') return 'bg-emerald-500';
-  if (idx < currentIdx) return 'bg-emerald-500';
-  if (idx === currentIdx) return 'bg-[#F59E0B]';
+  if (s === 'denied') return 'bg-[#FCA5A5]';
+  if (s === 'approved') return 'bg-[#86EFAC]';
+  if (idx < currentIdx) return 'bg-[#86EFAC]';
+  if (idx === currentIdx) return 'bg-[#FCD34D]';
   return 'bg-gray-300';
 };
 
 const stepperLabelClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
-  if (s === 'denied') return 'text-red-600';
-  if (s === 'approved') return 'text-emerald-700';
+  if (s === 'denied') return 'text-[#991B1B]';
+  if (s === 'approved') return 'text-[#166534]';
   if (idx === currentIdx) return 'text-gray-900 font-semibold';
   return 'text-gray-600';
 };
@@ -387,7 +387,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   ];
 
   return (
-    <div className="w-full min-h-screen overflow-hidden bg-white">
+    <div className="w-full min-h-screen overflow-hidden bg-white" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif" }}>
       {/* Back to home */}
       <button
         type="button"
@@ -415,17 +415,17 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                   onClick={() => setActiveView(item.key)}
                   className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
                     active
-                      ? 'bg-indigo-50 text-indigo-900 shadow-sm ring-1 ring-indigo-100'
+                      ? 'bg-blue-50 text-[#1E40AF] shadow-sm ring-1 ring-blue-100'
                       : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <span className="flex items-center gap-3">
-                    <Icon className={`h-4 w-4 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
+                    <Icon className={`h-4 w-4 ${active ? 'text-[#2563EB]' : 'text-gray-400'}`} />
                     <span className="text-sm font-semibold">{item.label}</span>
                   </span>
                   <span
                     className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                      active ? 'bg-indigo-100 text-indigo-800 ring-1 ring-indigo-200' : 'bg-gray-100 text-gray-700 ring-1 ring-gray-200'
+                      active ? 'bg-blue-100 text-[#1E40AF] ring-1 ring-blue-200' : 'bg-gray-100 text-gray-700 ring-1 ring-gray-200'
                     }`}
                   >
                     {counts[item.key]}
@@ -441,7 +441,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
               type="button"
               onClick={onStartManualApprovalWorkflow}
               disabled={!onStartManualApprovalWorkflow}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#10B981] text-white px-4 py-2.5 text-sm font-semibold shadow-sm hover:bg-[#059669] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#2563EB] text-white px-4 py-2.5 text-sm font-semibold shadow-md hover:bg-[#1D4ED8] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               title={onStartManualApprovalWorkflow ? 'Start Manual Approval Workflow' : 'Not available'}
             >
               <FileCheck className="h-4 w-4 text-white" />
@@ -460,7 +460,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <>
               {/* Metric cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                <div className="rounded-xl bg-[#EFF6FF] border border-blue-100 p-3 shadow-sm">
+                <div className="rounded-xl bg-[#EFF6FF] border border-blue-100 p-3 shadow-md">
                   <div className="flex items-center justify-between">
                     <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Pending Approvals</div>
                   </div>
@@ -474,30 +474,30 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                   </div>
                 </div>
 
-                <div className="rounded-xl bg-[#ECFDF5] border border-emerald-100 p-3 shadow-sm">
+                <div className="rounded-xl bg-[#DCFCE7] border border-[#86EFAC] p-3 shadow-md">
                   <div className="flex items-center justify-between">
-                    <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Approved Today</div>
+                    <div className="text-[#166534] text-xs font-semibold uppercase tracking-wide">Approved Today</div>
                   </div>
                   <div className="mt-2 flex items-end justify-between gap-3">
-                    <div className="text-2xl font-extrabold text-gray-900">{approvedToday}</div>
-                    <Sparkline data={sparkApproved} stroke="#10B981" />
+                    <div className="text-2xl font-extrabold text-[#166534]">{approvedToday}</div>
+                    <Sparkline data={sparkApproved} stroke="#166534" />
                   </div>
-                  <div className="mt-1.5 text-gray-700 text-sm flex items-center gap-2">
-                    <ThumbsUp className="h-4 w-4 text-emerald-600" />
+                  <div className="mt-1.5 text-[#166534] text-sm flex items-center gap-2">
+                    <ThumbsUp className="h-4 w-4 text-[#166534]" />
                     Completed approvals
                   </div>
                 </div>
 
-                <div className="rounded-xl bg-[#FEF2F2] border border-red-100 p-3 shadow-sm">
+                <div className="rounded-xl bg-[#FEF2F2] border border-[#FCA5A5] p-3 shadow-md">
                   <div className="flex items-center justify-between">
-                    <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Rejected</div>
+                    <div className="text-[#991B1B] text-xs font-semibold uppercase tracking-wide">Rejected</div>
                   </div>
                   <div className="mt-2 flex items-end justify-between gap-3">
-                    <div className="text-2xl font-extrabold text-red-500">{rejected.length}</div>
-                    <Sparkline data={sparkRejected} stroke="#EF4444" />
+                    <div className="text-2xl font-extrabold text-[#991B1B]">{rejected.length}</div>
+                    <Sparkline data={sparkRejected} stroke="#FCA5A5" />
                   </div>
-                  <div className="mt-1.5 text-red-500 text-sm flex items-center gap-2">
-                    <XCircle className="h-4 w-4 text-red-500" />
+                  <div className="mt-1.5 text-[#991B1B] text-sm flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-[#991B1B]" />
                     Denied workflows
                   </div>
                 </div>
@@ -551,13 +551,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                 return (
                   <div
                     key={workflow.id}
-                    className="group rounded-xl bg-white border border-gray-200 p-4 shadow-[0_2px_8px_rgba(15,23,42,0.06)] hover:shadow-[0_6px_18px_rgba(15,23,42,0.10)] hover:border-gray-300 transition-all"
+                    className="group rounded-xl bg-white border border-gray-200 p-5 shadow-[0_2px_12px_rgba(15,23,42,0.08)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.12)] hover:border-gray-300 transition-all"
                   >
                     <div className="flex items-stretch justify-between gap-3">
                       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_220px] gap-2">
                         <div className="min-w-0 lg:col-span-1">
                           <div className="flex items-center gap-2 min-w-0">
-                            <div className="text-[#4F46E5] font-extrabold text-base truncate min-w-0">
+                            <div className="text-[#2563EB] font-extrabold text-base truncate min-w-0">
                               {workflow.documentId || 'Untitled Quote / SOW'}
                             </div>
                             <span
@@ -599,7 +599,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                               type="button"
                               onClick={() => navigate(`/esign/${workflow.esignDocumentId}/status`)}
                               title="View e-sign status (Recipient 1 & 2)"
-                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0D9488] border border-[#0D9488] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0F766E] hover:border-[#0F766E] transition-all whitespace-nowrap"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2563EB] border border-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-[#1D4ED8] hover:border-[#1D4ED8] transition-all whitespace-nowrap"
                             >
                               <ListChecks className="h-4 w-4 text-white" />
                               <span className="hidden sm:inline">View e-sign status</span>
@@ -611,7 +611,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                               disabled={esignCreatingId === workflow.id}
                               title="Send for e-signature after Legal — Recipient 1 & 2"
                               aria-label="Send for e-signature"
-                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2563EB] border border-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-[#1D4ED8] hover:border-[#1D4ED8] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
                             >
                               {esignCreatingId === workflow.id ? (
                                 <Loader2 className="h-4 w-4 text-white animate-spin" />
@@ -627,7 +627,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-transparent border border-[#64748B] px-4 py-2 text-sm font-semibold text-[#64748B] shadow-sm hover:bg-[#64748B] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
                         >
                           <FileText className="h-4 w-4 text-white" />
                           <span className="sm:hidden">Preview</span>
@@ -710,8 +710,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                 return (
                                   <div key={item.label} className="flex-1 min-w-0 flex flex-col items-center" title={title}>
                                     {completed ? (
-                                      <div className="h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-white flex items-center justify-center">
-                                        <Check className="h-3 w-3 text-white" />
+                                      <div className="h-4 w-4 rounded-full bg-[#86EFAC] ring-2 ring-white flex items-center justify-center">
+                                        <Check className="h-3 w-3 text-[#166534]" />
                                       </div>
                                     ) : (
                                       <div className={`h-4 w-4 rounded-full ring-2 ring-white ${stepperDotClass(idx, resolvedCurrentIdx, dotStatus)}`} />
@@ -733,12 +733,12 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     {(status === 'approved' || status === 'denied') && (
                       <div className="mt-4">
                         {status === 'approved' && (
-                          <span className="inline-flex items-center gap-2 text-emerald-700 text-sm font-semibold">
+                          <span className="inline-flex items-center gap-2 text-[#166534] text-sm font-semibold">
                             <CheckCircle className="h-4 w-4" /> Approved
                           </span>
                         )}
                         {status === 'denied' && (
-                          <span className="inline-flex items-center gap-2 text-rose-700 text-sm font-semibold">
+                          <span className="inline-flex items-center gap-2 text-[#991B1B] text-sm font-semibold">
                             <XCircle className="h-4 w-4" /> Rejected
                           </span>
                         )}
@@ -765,7 +765,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-indigo-600" />
+                  <FileText className="h-5 w-5 text-[#2563EB]" />
                   <h3 className="text-lg font-extrabold text-gray-900 truncate">
                     Document Preview
                   </h3>
@@ -787,7 +787,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <div className="p-6">
               {isPreviewLoading && (
                 <div className="h-[70vh] flex flex-col items-center justify-center text-gray-600">
-                  <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                  <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
                   <div className="mt-3 text-sm font-semibold">Loading agreement…</div>
                 </div>
               )}
