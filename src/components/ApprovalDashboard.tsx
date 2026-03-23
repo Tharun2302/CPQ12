@@ -22,6 +22,9 @@ import { BACKEND_URL } from '../config/api';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
+/** When on dashboard, optionally narrow the list (e.g. "approved today" from the green metric card). */
+type DashboardListFilter = 'all' | 'approved_today';
+
 interface ApprovalDashboardProps {
   onStartManualApprovalWorkflow?: () => void;
 }
@@ -109,6 +112,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const navigate = useNavigate();
   const { user } = useAuth();
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
+  const [dashboardListFilter, setDashboardListFilter] = useState<DashboardListFilter>('all');
   const [query, setQuery] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -177,6 +181,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     approved,
     rejected,
     approvedToday,
+    approvedTodayList,
     sparkPending,
     sparkApproved,
     sparkRejected,
@@ -219,6 +224,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       .filter(matchesQuery)
       .sort(sortByCreatedAt);
 
+    const approvedTodayList = safe
+      .filter(isApproved)
+      .filter((w: any) => {
+        const d = new Date(w.updatedAt || w.createdAt);
+        return isSameDay(d, now);
+      })
+      .filter(matchesQuery)
+      .sort(sortByCreatedAt);
+
     const approvedTodayCount = safe.filter(isApproved).filter((w: any) => {
       const d = new Date(w.updatedAt || w.createdAt);
       return isSameDay(d, now);
@@ -256,6 +270,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       approved: approvedAll,
       rejected: rejectedAll,
       approvedToday: approvedTodayCount,
+      approvedTodayList,
       sparkPending: sparkP,
       sparkApproved: sparkA,
       sparkRejected: sparkR,
@@ -278,10 +293,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       case 'rejected':
         return rejected;
       default:
-        // dashboard shows all (pending + approved + rejected)
+        // dashboard: all items, or narrowed by metric card (e.g. approved today)
+        if (dashboardListFilter === 'approved_today') {
+          return approvedTodayList;
+        }
         return all;
     }
-  }, [activeView, all, pending, approved, rejected]);
+  }, [activeView, dashboardListFilter, all, approvedTodayList, pending, approved, rejected]);
 
   // Use the existing "View Details" behavior by navigating to the modal in other dashboards.
   const revokeObjectUrlIfAny = () => {
@@ -412,7 +430,10 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => setActiveView(item.key)}
+                  onClick={() => {
+                    setActiveView(item.key);
+                    setDashboardListFilter('all');
+                  }}
                   className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
                     active
                       ? 'bg-blue-50 text-[#1E40AF] shadow-sm ring-1 ring-blue-100'
@@ -460,7 +481,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <>
               {/* Metric cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                <div className="rounded-xl bg-[#EFF6FF] border border-blue-100 p-3 shadow-md">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('pending');
+                    setDashboardListFilter('all');
+                  }}
+                  className="rounded-xl bg-[#EFF6FF] border border-blue-100 p-3 shadow-md text-left w-full transition-all hover:shadow-lg hover:border-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  aria-label={`Pending approvals: ${pending.length} in queue. Click to view the pending list.`}
+                >
                   <div className="flex items-center justify-between">
                     <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Pending Approvals</div>
                   </div>
@@ -472,9 +501,23 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     <Clock className="h-4 w-4 text-amber-600" />
                     Queue needing action
                   </div>
-                </div>
+                  <div className="mt-2 text-[11px] text-blue-700 font-medium">Click to open pending list</div>
+                </button>
 
-                <div className="rounded-xl bg-[#DCFCE7] border border-[#86EFAC] p-3 shadow-md">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('dashboard');
+                    setDashboardListFilter('approved_today');
+                  }}
+                  className={`rounded-xl border p-3 shadow-md text-left w-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#15803d] focus-visible:ring-offset-2 ${
+                    dashboardListFilter === 'approved_today'
+                      ? 'bg-[#BBF7D0] border-[#15803d] ring-2 ring-[#15803d]/40 shadow-lg'
+                      : 'bg-[#DCFCE7] border-[#86EFAC] hover:shadow-lg hover:border-[#4ADE80]'
+                  }`}
+                  aria-pressed={dashboardListFilter === 'approved_today'}
+                  aria-label={`Approved today: ${approvedToday} deals. Click to list deals approved today.`}
+                >
                   <div className="flex items-center justify-between">
                     <div className="text-[#166534] text-xs font-semibold uppercase tracking-wide">Approved Today</div>
                   </div>
@@ -486,9 +529,18 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     <ThumbsUp className="h-4 w-4 text-[#166534]" />
                     Completed approvals
                   </div>
-                </div>
+                  <div className="mt-2 text-[11px] text-[#14532d] font-semibold">Click to show these deals below</div>
+                </button>
 
-                <div className="rounded-xl bg-[#FEF2F2] border border-[#FCA5A5] p-3 shadow-md">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('rejected');
+                    setDashboardListFilter('all');
+                  }}
+                  className="rounded-xl bg-[#FEF2F2] border border-[#FCA5A5] p-3 shadow-md text-left w-full transition-all hover:shadow-lg hover:border-rose-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                  aria-label="Show rejected workflows"
+                >
                   <div className="flex items-center justify-between">
                     <div className="text-[#991B1B] text-xs font-semibold uppercase tracking-wide">Rejected</div>
                   </div>
@@ -500,7 +552,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     <XCircle className="h-4 w-4 text-[#991B1B]" />
                     Denied workflows
                   </div>
-                </div>
+                  <div className="mt-2 text-[11px] text-rose-800 font-medium">Click to open Rejected list</div>
+                </button>
               </div>
             </>
           )}
@@ -508,8 +561,23 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
           {/* List */}
           <div className="mt-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3">
-              <div className="text-gray-900 font-bold">
-                {activeView === 'dashboard' ? 'All Approvals' : sidebarItems.find((s) => s.key === activeView)?.label}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-gray-900 font-bold">
+                  {activeView === 'dashboard'
+                    ? dashboardListFilter === 'approved_today'
+                      ? 'Approved today'
+                      : 'All Approvals'
+                    : sidebarItems.find((s) => s.key === activeView)?.label}
+                </div>
+                {activeView === 'dashboard' && dashboardListFilter === 'approved_today' && (
+                  <button
+                    type="button"
+                    onClick={() => setDashboardListFilter('all')}
+                    className="text-sm font-semibold text-[#2563EB] hover:text-[#1D4ED8] underline underline-offset-2"
+                  >
+                    View all approvals
+                  </button>
+                )}
               </div>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
                 <div className="w-full md:w-[420px]">
