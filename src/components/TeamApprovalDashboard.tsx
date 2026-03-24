@@ -43,6 +43,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
     if (t === 'name') return 'Name';
     if (t === 'title') return 'Title';
     if (t === 'date') return 'Date';
+    if (t === 'text') return 'Text';
     return 'Signature';
   };
   const getRecipientIdFromField = (f: any): string | null => {

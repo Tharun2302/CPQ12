@@ -39,6 +39,8 @@ export interface EsignPdfPageViewProps {
  */
 const DEFAULT_FIELD_WIDTH_PT = 120;
 const DEFAULT_FIELD_HEIGHT_PT = 40;
+const DEFAULT_TEXT_FIELD_WIDTH_PT = 220;
+const DEFAULT_TEXT_FIELD_HEIGHT_PT = 72;
 
 const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
   pdfUrl,
@@ -159,21 +161,23 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
         onDrop={onDrop ? (e) => {
           e.preventDefault();
           const fieldType = (e.dataTransfer.getData('text/plain') || 'signature') as string;
-          if (!['signature', 'name', 'title', 'date'].includes(fieldType)) return;
+          if (!['signature', 'name', 'title', 'date', 'text'].includes(fieldType)) return;
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect || !dimensions) return;
           const pxX = e.clientX - rect.left;
           const pxY = e.clientY - rect.top;
-          const x = Math.max(0, Math.min(dimensions.width / scale - DEFAULT_FIELD_WIDTH_PT, pxX / scale - DEFAULT_FIELD_WIDTH_PT / 2));
-          const y = Math.max(0, Math.min(dimensions.height / scale - DEFAULT_FIELD_HEIGHT_PT, pxY / scale - DEFAULT_FIELD_HEIGHT_PT / 2));
+          const fw = fieldType === 'text' ? DEFAULT_TEXT_FIELD_WIDTH_PT : DEFAULT_FIELD_WIDTH_PT;
+          const fh = fieldType === 'text' ? DEFAULT_TEXT_FIELD_HEIGHT_PT : DEFAULT_FIELD_HEIGHT_PT;
+          const x = Math.max(0, Math.min(dimensions.width / scale - fw, pxX / scale - fw / 2));
+          const y = Math.max(0, Math.min(dimensions.height / scale - fh, pxY / scale - fh / 2));
           const pageWidthPt = dimensions.width / scale;
           const pageHeightPt = dimensions.height / scale;
           onDrop({
             page: pageNumber,
             x,
             y,
-            width: DEFAULT_FIELD_WIDTH_PT,
-            height: DEFAULT_FIELD_HEIGHT_PT,
+            width: fw,
+            height: fh,
             fieldType,
             pageWidthPt,
             pageHeightPt,

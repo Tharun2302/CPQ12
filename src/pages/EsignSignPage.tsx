@@ -4,15 +4,20 @@ import SignatureCanvas from 'react-signature-canvas';
 import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
+import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
 
 const PDF_SCALE = 1.5;
 
-type FieldType = 'signature' | 'name' | 'title' | 'date';
+type FieldType = 'signature' | 'name' | 'title' | 'date' | 'text';
 
 interface SignatureField {
   _id?: string;
   page: number;
   type: FieldType;
+  /** Creator-entered default for text fields (signers may edit). */
+  prefill?: string | null;
+  text_color?: string | null;
+  text_font?: string | null;
   xPct?: number;
   yPct?: number;
   widthPct?: number;
@@ -40,6 +45,18 @@ const SIGNATURE_FONTS = [
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isSigningToken(param: string): boolean {
   return param.length === 36 && UUID_REGEX.test(param);
+}
+
+function getInitialFieldValues(fieldList: SignatureField[]): Record<number, string> {
+  const out: Record<number, string> = {};
+  fieldList.forEach((f, i) => {
+    if (f.type === 'text') {
+      out[i] = f.prefill != null ? String(f.prefill) : '';
+    } else if (f.type === 'date') {
+      out[i] = new Date().toISOString().slice(0, 10);
+    }
+  });
+  return out;
 }
 
 const EsignSignPage: React.FC = () => {
@@ -151,6 +168,7 @@ const EsignSignPage: React.FC = () => {
           });
           if (normalized.length) {
             setFields(normalized);
+            setFieldValues(getInitialFieldValues(normalized));
           } else {
             setFields([]);
             setError('No signature fields are assigned to you for this document. Ask the sender to assign fields to your name in Place Fields, then resend.');
@@ -201,8 +219,10 @@ const EsignSignPage: React.FC = () => {
               return { ...f, page, type, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
             });
             setFields(normalized);
+            setFieldValues(getInitialFieldValues(normalized));
           } else {
             setFields([DEFAULT_FIELD]);
+            setFieldValues(getInitialFieldValues([DEFAULT_FIELD as SignatureField]));
           }
         }
       } catch {
@@ -989,6 +1009,23 @@ const EsignSignPage: React.FC = () => {
                                       Sign Here
                                     </button>
                                   )
+                                ) : f.type === 'text' ? (
+                                  <textarea
+                                    value={fieldValues[globalIdx] ?? ''}
+                                    onChange={(e) =>
+                                      setFieldValues((prev) => ({
+                                        ...prev,
+                                        [globalIdx]: e.target.value.slice(0, 4000),
+                                      }))
+                                    }
+                                    placeholder="Type notes or extra text for this document"
+                                    rows={3}
+                                    className="w-full min-h-[4.5rem] max-h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95 resize-none overflow-y-auto leading-snug placeholder:opacity-45"
+                                    style={{
+                                      color: normalizeEsignTextColor(f.text_color ?? undefined),
+                                      fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
+                                    }}
+                                  />
                                 ) : (
                                   <input
                                     type={f.type === 'date' ? 'date' : 'text'}
@@ -1265,7 +1302,7 @@ const EsignSignPage: React.FC = () => {
                       /* non-fatal */
                     }
                   }
-                  setFieldValues({});
+                  setFieldValues(getInitialFieldValues(fields));
                   clearSignature();
                   setSelectedSignatureFieldIndex(null);
                 }}

@@ -6091,11 +6091,24 @@ app.post('/api/esign/signature-fields', async (req, res) => {
         try { recipientId = new ObjectId(f.recipient_id); } catch { recipientId = f.recipient_id; }
       }
       const base = { document_id: docId, page: Number(f.page) || 1, type: f.type || 'signature', recipient_id: recipientId };
+      const typeLower = (f.type || 'signature').toString().toLowerCase();
+      let textFieldExtras = {};
+      if (typeLower === 'text') {
+        const tc = typeof f.text_color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(f.text_color.trim()) ? f.text_color.trim() : '#dc2626';
+        const tfRaw = (f.text_font || 'helvetica').toString().toLowerCase();
+        const tf = tfRaw === 'times' || tfRaw === 'courier' ? tfRaw : 'helvetica';
+        textFieldExtras = {
+          ...(typeof f.prefill === 'string' ? { prefill: f.prefill.slice(0, 8000) } : {}),
+          text_color: tc,
+          text_font: tf,
+        };
+      }
       if (f.xPct != null) {
-        return { ...base, xPct: Number(f.xPct), yPct: Number(f.yPct), widthPct: Number(f.widthPct) || 20, heightPct: Number(f.heightPct) || 4 };
+        return { ...base, ...textFieldExtras, xPct: Number(f.xPct), yPct: Number(f.yPct), widthPct: Number(f.widthPct) || 20, heightPct: Number(f.heightPct) || 4 };
       }
       const row = {
         ...base,
+        ...textFieldExtras,
         x: Number(f.x) || 0,
         y: Number(f.y) || 0,
         width: Number(f.width) || 100,
@@ -6241,7 +6254,47 @@ app.post('/api/esign/signatures/save', async (req, res) => {
   }
 });
 
-// POST /api/esign/documents/generate-signed - Merge field values (signature/name/title/date) into PDF
+/** Parse #RRGGBB for pdf-lib rgb(); invalid → default red. */
+function esignHexToPdfRgb(hex) {
+  const s = String(hex || '').trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(s);
+  if (!m) return rgb(220 / 255, 38 / 255, 38 / 255);
+  const n = parseInt(m[1], 16);
+  return rgb((n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
+
+function esignPdfFontForTextField(fontId, helvetica, timesRoman, courier) {
+  const id = (fontId || 'helvetica').toString().toLowerCase();
+  if (id === 'times') return timesRoman;
+  if (id === 'courier') return courier;
+  return helvetica;
+}
+
+/** Word-wrap plain text for pdf-lib StandardFonts (used for multiline "text" fields). */
+function wrapTextForPdf(font, text, fontSize, maxWidth) {
+  const s = String(text || '').replace(/\r/g, '').slice(0, 8000);
+  const lines = [];
+  for (const para of s.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      lines.push('');
+      continue;
+    }
+    let line = '';
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (font.widthOfTextAtSize(test, fontSize) <= maxWidth) line = test;
+      else {
+        if (line) lines.push(line);
+        line = word;
+      }
+    }
+    if (line) lines.push(line);
+  }
+  return lines;
+}
+
+// POST /api/esign/documents/generate-signed - Merge field values (signature/name/title/date/text) into PDF
 app.post('/api/esign/documents/generate-signed', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
@@ -6259,6 +6312,8 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     const pdfDoc = await PDFDocument.load(pdfBytes);
     const pages = pdfDoc.getPages();
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
 
     let recipient = null;
     let fields;
@@ -6333,7 +6388,11 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     for (let i = 0; i < fields.length; i++) {
       const f = fields[i];
       const fType = (f.type || 'signature').toLowerCase();
-      const val = values[String(i)] ?? values[f._id?.toString()];
+      let val = values[String(i)] ?? values[f._id?.toString()];
+      if (fType === 'text' && (val == null || val === '')) {
+        const p = f.prefill;
+        if (typeof p === 'string' && p.length) val = p;
+      }
       if (!val) continue;
 
       const pageNum = (f.page || 1) - 1;
@@ -6376,6 +6435,29 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         const imgBytes = Buffer.from(val.replace(/^data:image\/\w+;base64,/, ''), 'base64');
         const pngImage = await pdfDoc.embedPng(imgBytes);
         page.drawImage(pngImage, { x, y, width, height });
+      } else if (fType === 'text') {
+        const raw = typeof val === 'string' ? val : String(val);
+        const fontSize = Math.min(11, Math.max(7, height * 0.11));
+        const lineHeight = fontSize * 1.2;
+        const innerW = Math.max(8, width - 4);
+        const pdfFont = esignPdfFontForTextField(f.text_font, helvetica, timesRoman, courier);
+        const textRgb = esignHexToPdfRgb(f.text_color);
+        const lines = wrapTextForPdf(pdfFont, raw, fontSize, innerW);
+        let cursorY = y + height - fontSize;
+        for (const line of lines) {
+          if (cursorY < y) break;
+          if (line) {
+            page.drawText(line, {
+              x: x + 2,
+              y: cursorY,
+              size: fontSize,
+              font: pdfFont,
+              color: textRgb,
+              maxWidth: innerW,
+            });
+          }
+          cursorY -= lineHeight;
+        }
       } else {
         const text = typeof val === 'string' ? val : String(val);
         const fontSize = Math.min(12, height * 0.8);
