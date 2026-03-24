@@ -5536,7 +5536,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   if (sequential) {
     recipients = recipients.slice(0, 1);
   }
-  const fileName = doc.file_name || 'Document';
   const escapeEmailMessage = (s) => {
     if (!s || typeof s !== 'string') return '';
     return String(s)
@@ -5546,7 +5545,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       .replace(/"/g, '&quot;')
       .replace(/\n/g, '<br />');
   };
-  const getEsignEmailByRole = (rec, fName, signingUrl, inboxUrl) => {
+  const getEsignEmailByRole = (rec, signingUrl, inboxUrl) => {
     const roleLower = (rec.role || 'signer').toString().toLowerCase();
     const nameLower = (rec.name || '').toString().toLowerCase().trim();
     const hasExplicitAction = rec.action === 'signer' || rec.action === 'reviewer';
@@ -5572,7 +5571,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
         subject: 'Please review the document',
         html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
         ${customMessageBlock}<p>You have been requested to <strong>review</strong> a document.</p>
-        <p><strong>Document:</strong> ${fName}</p>
         ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
         <p>Thank you.</p>`
       };
@@ -5585,7 +5583,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       subject: 'Please sign the document',
       html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
         ${customMessageBlock}<p>You have been requested to sign a document.</p>
-        <p><strong>Document:</strong> ${fName}</p>
         ${signDashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
         <p>Thank you.</p>`
     };
@@ -5604,7 +5601,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
         console.log('📧 E-sign email URLs:', { signing: signingUrl.substring(0, 60) + '...', dashboard: inboxUrl.substring(0, 60) + '...' });
         console.log('📧 Sender (EMAIL_FROM):', process.env.EMAIL_FROM || 'noreply@yourdomain.com', '— must be verified in SendGrid');
       }
-      const { subject, html } = getEsignEmailByRole(rec, fileName, signingUrl, inboxUrl);
+      const { subject, html } = getEsignEmailByRole(rec, signingUrl, inboxUrl);
       try {
         const result = await sendEmail(rec.email, subject, html);
         if (result.success) {
@@ -5963,7 +5960,6 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         const showNextDashboard = isTechnical || isLegal || isTeamLead;
         const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
         const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
-        const fileName = doc.file_name || 'Document';
         const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
         const nextHasAction = nextRec.action === 'signer' || nextRec.action === 'reviewer';
         const isNextReviewer = nextHasAction ? (nextRec.action === 'reviewer') : (roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team');
@@ -5980,12 +5976,10 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         const html = isNextReviewer
           ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to <strong>review</strong> a document.</p>
-          <p><strong>Document:</strong> ${fileName}</p>
           ${nextReviewBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Thank you.</p>`
           : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to sign a document.</p>
-          <p><strong>Document:</strong> ${fileName}</p>
           ${nextSignBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Thank you.</p>`;
         if (process.env.SENDGRID_API_KEY) {
@@ -6453,7 +6447,6 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           const showNextDashboard = isTechnical || isLegal || isTeamLead;
           const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
           const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
-          const fileName = doc.file_name || 'Document';
           const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
           const nextHasAction = nextRec.action === 'signer' || nextRec.action === 'reviewer';
           const isNextReviewer = nextHasAction ? (nextRec.action === 'reviewer') : (roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team');
@@ -6470,12 +6463,10 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           const html = isNextReviewer
             ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to <strong>review</strong> a document.</p>
-          <p><strong>Document:</strong> ${fileName}</p>
           ${nextReviewBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Thank you.</p>`
             : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
           <p>You have been requested to sign a document.</p>
-          <p><strong>Document:</strong> ${fileName}</p>
           ${nextSignBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
           <p>Thank you.</p>`;
           if (process.env.SENDGRID_API_KEY) {

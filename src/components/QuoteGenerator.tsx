@@ -630,6 +630,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isGeneratingAgreement, setIsGeneratingAgreement] = useState(false);
   const [showInlinePreview, setShowInlinePreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  /** PDF from background conversion — used for fast download / e-sign; do not swap preview to iframe (breaks scrolling). */
+  const [cachedPdfAgreement, setCachedPdfAgreement] = useState<Blob | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -2610,13 +2612,15 @@ Total Price: {{total price}}`;
         return;
       }
 
-      // If we already have a PDF (new flow), reuse it directly instead of converting again.
+      // If we already have a PDF, reuse it. If DOCX, prefer cached background PDF to avoid reconverting.
       let pdfBlob: Blob;
       if (processedAgreement.type === 'application/pdf') {
         console.log('📄 Using existing PDF blob for download (no extra conversion).');
         pdfBlob = processedAgreement;
+      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
+        console.log('📄 Using cached PDF from background conversion (no extra conversion).');
+        pdfBlob = cachedPdfAgreement;
       } else {
-        // Fallback: Prefer server-side high-fidelity conversion from DOCX.
         const { templateService } = await import('../utils/templateService');
         pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
       }
@@ -2828,7 +2832,14 @@ Total Price: {{total price}}`;
 
       // First, save the PDF to MongoDB if not already saved
       const { templateService } = await import('../utils/templateService');
-      const pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      let pdfBlob: Blob;
+      if (processedAgreement.type === 'application/pdf') {
+        pdfBlob = processedAgreement;
+      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
+        pdfBlob = cachedPdfAgreement;
+      } else {
+        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      }
       
       const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
       const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
@@ -3025,6 +3036,8 @@ Total Price: {{total price}}`;
       let pdfBlob: Blob;
       if (processedAgreement.type === 'application/pdf') {
         pdfBlob = processedAgreement;
+      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
+        pdfBlob = cachedPdfAgreement;
       } else {
         setAddEsignFieldsProgress('Converting…');
         const { templateService } = await import('../utils/templateService');
@@ -3708,6 +3721,7 @@ Total Price: {{total price}}`;
     }
 
     setIsGeneratingAgreement(true);
+    setCachedPdfAgreement(null);
     try {
       console.log('🔄 Generating Agreement... [TIMESTAMP:', new Date().toISOString(), ']');
       console.log('🔍 calculation prop:', calculation);
@@ -7682,13 +7696,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 const { templateService } = await import('../utils/templateService');
                 const pdfBlob = await templateService.convertDocxToPdf(processedDocumentBlob);
                 if (pdfBlob && pdfBlob.size > 0) {
-                  setProcessedAgreement(pdfBlob);
-                  const url = URL.createObjectURL(pdfBlob);
-                  setPreviewUrl(url);
-                  setShowInlinePreview(true);
+                  // Keep docx-preview as the visible preview (scrollable). Iframe PDF swap broke scrolling after ~few seconds.
+                  setCachedPdfAgreement(pdfBlob);
                 }
               } catch (_e) {
-                // Keep DOCX preview; PDF only on Download
+                // Keep DOCX preview; PDF on Download / reruns conversion
               }
             })();
             return;
@@ -9324,6 +9336,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     onClick={() => {
                       setShowAgreementPreview(false);
                       setProcessedAgreement(null);
+                      setCachedPdfAgreement(null);
                       setIsFullscreen(false);
                       // Reset inline preview when closing agreement modal
                       setShowInlinePreview(false);
@@ -9367,19 +9380,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       )}
                     </div>
                   </div>
-                  <div className="flex-1 bg-white overflow-hidden min-h-0">
+                  <div className="flex-1 bg-white min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain">
                     {showInlinePreview ? (
                       previewUrl ? (
-                        <div className="w-full h-full relative">
+                        <div className="w-full min-h-full relative">
                           <iframe
                             src={previewUrl}
-                            className="w-full h-full border-0"
+                            className="w-full min-h-[70vh] h-[calc(100vh-12rem)] border-0"
                             title="Agreement Document Preview"
-                            style={{ 
-                              minHeight: '700px',
-                              height: '100%',
-                              width: '100%'
-                            }}
                           />
                          
                           {/* Fullscreen floating action buttons */}
@@ -9412,7 +9420,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                           )}
                         </div>
                       ) : (
-                        <div ref={previewContainerRef} className="document-preview-content w-full h-full overflow-auto p-6 bg-white" style={{ minHeight: '700px' }} />
+                        <div
+                          ref={previewContainerRef}
+                          className="document-preview-content w-full h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 bg-white touch-pan-y overscroll-y-contain"
+                          style={{ minHeight: 'min(700px, 85vh)' }}
+                        />
                       )
                     ) : (
                       <div className="h-full flex items-center justify-center min-h-[400px]">
@@ -9543,6 +9555,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       onClick={() => {
                         setShowAgreementPreview(false);
                         setProcessedAgreement(null);
+                        setCachedPdfAgreement(null);
                         setShowInlinePreview(false);
                         setIsFullscreen(false);
                         if (previewUrl) {
