@@ -3,6 +3,8 @@
  * Saves PDFs to MongoDB via API endpoints
  */
 
+export type DealDocumentsApprovalFilter = 'all' | 'in_workflow' | 'no_workflow';
+
 export interface SavedDocument {
   id: string;
   fileName: string;
@@ -76,21 +78,29 @@ class DocumentServiceMongoDB {
   }
 
   /**
-   * Get all saved documents from MongoDB
+   * Get saved documents from MongoDB (metadata only). Requests the full list (`all=1`) for the Deal Documents UI.
    */
-  async getAllDocuments(): Promise<SavedDocument[]> {
+  async getAllDocuments(
+    approvalFilter: DealDocumentsApprovalFilter = 'all'
+  ): Promise<{ documents: SavedDocument[]; totalCount: number; approvalFilter: DealDocumentsApprovalFilter }> {
     try {
       console.log('📥 Fetching documents from MongoDB...');
 
-      // Add a safety timeout so the UI is not stuck for minutes
       const controller = new AbortController();
-      const timeoutMs = 15000; // 15 seconds
+      const timeoutMs = 120000; // large libraries: long JSON payload
       const timeoutId = setTimeout(() => {
         console.warn(`⚠️ /api/documents request exceeded ${timeoutMs}ms, aborting`);
         controller.abort();
       }, timeoutMs);
-      
-      const response = await fetch(this.apiUrl, { signal: controller.signal });
+
+      const params = new URLSearchParams();
+      params.set('all', '1'); // ensure full list (server defaults to unlimited for this route; belt-and-suspenders)
+      if (approvalFilter && approvalFilter !== 'all') {
+        params.set('approvalFilter', approvalFilter);
+      }
+      const url = `${this.apiUrl}?${params.toString()}`;
+
+      const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
 
       if (!response.ok) {
@@ -105,8 +115,16 @@ class DocumentServiceMongoDB {
         throw new Error(data.error || 'Failed to fetch documents');
       }
 
-      console.log('✅ Retrieved documents from MongoDB:', data.documents.length);
-      return data.documents;
+      const totalCount =
+        typeof data.totalCount === 'number' ? data.totalCount : (data.documents?.length ?? 0);
+
+      const resolvedFilter: DealDocumentsApprovalFilter =
+        data.approvalFilter === 'in_workflow' || data.approvalFilter === 'no_workflow'
+          ? data.approvalFilter
+          : approvalFilter;
+
+      console.log('✅ Retrieved documents from MongoDB:', data.documents.length, '/', totalCount, 'total');
+      return { documents: data.documents, totalCount, approvalFilter: resolvedFilter };
     } catch (error) {
       console.error('❌ Error fetching documents from MongoDB:', error);
       throw error;

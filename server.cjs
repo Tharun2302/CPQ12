@@ -6948,22 +6948,62 @@ app.get('/api/documents', async (req, res) => {
 
     console.log('📄 Fetching PDF documents from database...');
     
-    // Get query parameters for pagination (optional)
-    const limit = parseInt(req.query.limit) || 100; // Default to 100 documents max
-    const skip = parseInt(req.query.skip) || 0;
+    // Pagination: by default return ALL matches (metadata only; binary fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
+    const skip = Math.max(0, parseInt(String(req.query.skip || 0), 10) || 0);
+    const limitRaw = req.query.limit;
+    const limitSingle = Array.isArray(limitRaw) ? limitRaw[0] : limitRaw;
+    const allFlag = String(req.query.all ?? req.query.full ?? '').toLowerCase();
+    const forceAll = allFlag === '1' || allFlag === 'true';
+
+    let listLimit = 100;
+    let listUnlimited = true;
+    if (!forceAll && limitSingle !== undefined && String(limitSingle).trim() !== '') {
+      const parsed = parseInt(String(limitSingle), 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        listUnlimited = false;
+        listLimit = parsed;
+      }
+    }
+
+
+    // Filter by whether a saved agreement is linked to any approval workflow (approval_workflows.documentId)
+    const approvalFilterRaw = (req.query.approvalFilter || 'all').toString().toLowerCase();
+    const approvalFilter =
+      approvalFilterRaw === 'in_workflow' || approvalFilterRaw === 'no_workflow'
+        ? approvalFilterRaw
+        : 'all';
+
+    let workflowDocumentIds = [];
+    if (approvalFilter !== 'all') {
+      const distinctIds = await db
+        .collection('approval_workflows')
+        .distinct('documentId');
+      workflowDocumentIds = distinctIds.filter((id) => id != null && String(id).trim() !== '');
+    }
+
+    const approvalMatch =
+      approvalFilter === 'in_workflow'
+        ? { id: { $in: workflowDocumentIds } }
+        : approvalFilter === 'no_workflow'
+          ? workflowDocumentIds.length > 0
+            ? { id: { $nin: workflowDocumentIds } }
+            : {}
+          : {};
+
+    const totalCount = await db.collection('documents').countDocuments(approvalMatch);
+
+    const pipeline = [
+      { $project: { fileData: 0, docxFileData: 0 } },
+      ...(Object.keys(approvalMatch).length ? [{ $match: approvalMatch }] : []),
+      { $sort: { createdAt: -1, generatedDate: -1 } },
+      { $skip: skip },
+      ...(listUnlimited ? [] : [{ $limit: listLimit }]),
+    ];
 
     // Use aggregation with allowDiskUse so large sorts don't hit MongoDB's 32MB memory limit
     const documents = await db
       .collection('documents')
-      .aggregate(
-        [
-          { $project: { fileData: 0, docxFileData: 0 } },
-          { $sort: { createdAt: -1, generatedDate: -1 } },
-          { $skip: skip },
-          { $limit: limit }
-        ],
-        { allowDiskUse: true }
-      )
+      .aggregate(pipeline, { allowDiskUse: true })
       .toArray();
 
     // Serialize dates to strings for frontend compatibility
@@ -6973,12 +7013,19 @@ app.get('/api/documents', async (req, res) => {
       createdAt: doc.createdAt ? (doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt) : new Date().toISOString(),
     }));
 
-    console.log(`✅ Found ${serializedDocuments.length} documents in database (limit: ${limit}, skip: ${skip})`);
+    console.log(
+      `✅ Found ${serializedDocuments.length} documents (total for filter "${approvalFilter}": ${totalCount}, limit: ${
+        listUnlimited ? 'none' : listLimit
+      }, skip: ${skip})`
+    );
 
     res.json({
       success: true,
       documents: serializedDocuments,
-      count: serializedDocuments.length
+      count: serializedDocuments.length,
+      totalCount,
+      approvalFilter,
+      limited: !listUnlimited && serializedDocuments.length >= listLimit && totalCount > serializedDocuments.length,
     });
   } catch (error) {
     console.error('❌ Error fetching documents:', error);

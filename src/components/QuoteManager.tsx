@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Quote } from '../types/pricing';
 import { formatCurrency } from '../utils/pricing';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
@@ -26,7 +26,11 @@ import html2canvas from 'html2canvas';
 import { mergeQuoteIntoTemplate, mergeQuoteWithSowTemplate, downloadMergedPDF, createTemplatePreviewHTML } from '../utils/pdfMerger';
 import { createTemplateFromPdf } from '../utils/pdfToTemplate';
 import { sanitizeEmailInput } from '../utils/emojiSanitizer';
-import { documentServiceMongoDB, SavedDocument } from '../services/documentServiceMongoDB';
+import {
+  documentServiceMongoDB,
+  SavedDocument,
+  type DealDocumentsApprovalFilter,
+} from '../services/documentServiceMongoDB';
 import { convertPdfToWord, downloadWordFile } from '../utils/pdfToWordConverter';
 
 
@@ -66,6 +70,50 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
   templates = [],
   onEditInTemplateBuilder
 }) => {
+  const [documentsLoadError, setDocumentsLoadError] = useState<string | null>(null);
+  const [dealDocumentsApprovalFilter, setDealDocumentsApprovalFilter] =
+    useState<DealDocumentsApprovalFilter>('all');
+  const [savedDocuments, setSavedDocuments] = useState<SavedDocument[]>([]);
+  const [savedDocumentsTotalCount, setSavedDocumentsTotalCount] = useState(0);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [templatesLastUpdated, setTemplatesLastUpdated] = useState<Date>(new Date());
+  const [showTemplateSyncNotification, setShowTemplateSyncNotification] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState<string | null>(null);
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [emailForm, setEmailForm] = useState({
+    to: '',
+    subject: '',
+    message: ''
+  });
+  const [signatureData, setSignatureData] = useState<{[key: string]: any}>({});
+  const [loadingSignatures, setLoadingSignatures] = useState<{[key: string]: boolean}>({});
+  const [templatePreviewHTML, setTemplatePreviewHTML] = useState<string>('');
+  const [isLoadingTemplatePreview, setIsLoadingTemplatePreview] = useState<boolean>(false);
+  const [mergingQuote, setMergingQuote] = useState<string | null>(null);
+  const [showMergePreviewModal, setShowMergePreviewModal] = useState<string | null>(null);
+  const [mergePreviewPdfBlob, setMergePreviewPdfBlob] = useState<Blob | null>(null);
+  const [mergePreviewFileName, setMergePreviewFileName] = useState<string>('');
+  const [showPdfViewer, setShowPdfViewer] = useState<boolean>(false);
+
+  const loadSavedDocuments = useCallback(async () => {
+    setLoadingDocuments(true);
+    setDocumentsLoadError(null);
+    try {
+      const { documents: docs, totalCount } =
+        await documentServiceMongoDB.getAllDocuments(dealDocumentsApprovalFilter);
+      setSavedDocuments(docs);
+      setSavedDocumentsTotalCount(totalCount);
+      console.log('✅ Loaded saved documents from MongoDB:', docs.length, '/', totalCount, 'total');
+    } catch (error) {
+      console.error('❌ Error loading documents from MongoDB:', error);
+      setDocumentsLoadError('Unable to load documents. Check that the server is running and MongoDB is connected.');
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }, [dealDocumentsApprovalFilter]);
+
   // Debug template data on component mount and handle template updates
   useEffect(() => {
     console.log('🔍 QuoteManager mounted with templates:', {
@@ -81,27 +129,11 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     // Show sync notification briefly
     setShowTemplateSyncNotification(true);
     setTimeout(() => setShowTemplateSyncNotification(false), 3000);
-    
-    // Load saved documents
-    loadSavedDocuments();
   }, [templates, quotes]);
-  
-  // Load saved documents from MongoDB
-  const [documentsLoadError, setDocumentsLoadError] = useState<string | null>(null);
-  const loadSavedDocuments = async () => {
-    setLoadingDocuments(true);
-    setDocumentsLoadError(null);
-    try {
-      const docs = await documentServiceMongoDB.getAllDocuments();
-      setSavedDocuments(docs);
-      console.log('✅ Loaded saved documents from MongoDB:', docs.length);
-    } catch (error) {
-      console.error('❌ Error loading documents from MongoDB:', error);
-      setDocumentsLoadError('Unable to load documents. Check that the server is running and MongoDB is connected.');
-    } finally {
-      setLoadingDocuments(false);
-    }
-  };
+
+  useEffect(() => {
+    loadSavedDocuments();
+  }, [templates, quotes, loadSavedDocuments]);
   
   // View a saved document
   const handleViewDocument = async (doc: SavedDocument) => {
@@ -239,45 +271,6 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
       alert('Error downloading Word document. Please try again.');
     }
   };
-  
-  // Delete a saved document from MongoDB
-  const handleDeleteDocument = async (docId: string) => {
-    if (confirm('Are you sure you want to delete this document?')) {
-      try {
-        await documentServiceMongoDB.deleteDocument(docId);
-        await loadSavedDocuments();
-        alert('Document deleted successfully from MongoDB');
-      } catch (error) {
-        console.error('❌ Error deleting document from MongoDB:', error);
-        alert('Error deleting document');
-      }
-    }
-  };
-  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [templatesLastUpdated, setTemplatesLastUpdated] = useState<Date>(new Date());
-  const [showTemplateSyncNotification, setShowTemplateSyncNotification] = useState(false);
-  const [showEmailModal, setShowEmailModal] = useState<string | null>(null);
-  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
-  const [emailForm, setEmailForm] = useState({
-    to: '',
-    subject: '',
-    message: ''
-  });
-  const [signatureData, setSignatureData] = useState<{[key: string]: any}>({});
-  const [loadingSignatures, setLoadingSignatures] = useState<{[key: string]: boolean}>({});
-  const [templatePreviewHTML, setTemplatePreviewHTML] = useState<string>('');
-  const [isLoadingTemplatePreview, setIsLoadingTemplatePreview] = useState<boolean>(false);
-  const [mergingQuote, setMergingQuote] = useState<string | null>(null);
-
-  const [showMergePreviewModal, setShowMergePreviewModal] = useState<string | null>(null);
-  const [mergePreviewPdfBlob, setMergePreviewPdfBlob] = useState<Blob | null>(null);
-  const [mergePreviewFileName, setMergePreviewFileName] = useState<string>('');
-  const [showPdfViewer, setShowPdfViewer] = useState<boolean>(false);
-  
-  // Saved documents state
-  const [savedDocuments, setSavedDocuments] = useState<SavedDocument[]>([]);
-  const [loadingDocuments, setLoadingDocuments] = useState(false);
 
   const getStatusColor = (status: Quote['status']) => {
     switch (status) {
@@ -1435,10 +1428,44 @@ The client will receive an email with the PDF quote and a link to complete the d
 
       {/* Saved Documents Section */}
       <div className="mb-12">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-          <FileText className="w-7 h-7 text-blue-600" />
-          Saved Documents ({savedDocuments.length})
-        </h2>
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+              <FileText className="w-7 h-7 text-blue-600" />
+              Saved Documents ({savedDocumentsTotalCount})
+            </h2>
+            <p className="text-sm text-gray-500 mt-2 ml-10 max-w-xl">
+              {dealDocumentsApprovalFilter === 'all' &&
+                'All saved agreements (PDF/Word) in MongoDB.'}
+              {dealDocumentsApprovalFilter === 'in_workflow' &&
+                'Agreements linked to at least one team approval workflow (any status).'}
+              {dealDocumentsApprovalFilter === 'no_workflow' &&
+                'Saved agreements with no approval workflow started for that document.'}
+            </p>
+            {savedDocuments.length > 0 && savedDocumentsTotalCount > savedDocuments.length && (
+              <p className="text-sm text-amber-700 mt-2 ml-10">
+                Showing {savedDocuments.length} of {savedDocumentsTotalCount} for this filter (partial load).
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1 sm:items-end">
+            <label htmlFor="deal-doc-approval-filter" className="text-xs font-medium text-gray-600">
+              Approval workflow
+            </label>
+            <select
+              id="deal-doc-approval-filter"
+              value={dealDocumentsApprovalFilter}
+              onChange={(e) =>
+                setDealDocumentsApprovalFilter(e.target.value as DealDocumentsApprovalFilter)
+              }
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[220px]"
+            >
+              <option value="all">All documents</option>
+              <option value="in_workflow">In approval workflow</option>
+              <option value="no_workflow">No approval workflow</option>
+            </select>
+          </div>
+        </div>
         
           {loadingDocuments ? (
           <div className="text-center py-8">
@@ -1458,13 +1485,21 @@ The client will receive an email with the PDF quote and a link to complete the d
           <div className="bg-gray-50 rounded-xl p-8 text-center">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-600">
-              You don&apos;t have any saved deal documents yet. Generate an agreement from the Quote flow and it will appear here.
+              {dealDocumentsApprovalFilter === 'all' &&
+                "You don't have any saved deal documents yet. Generate an agreement from the Quote flow and it will appear here."}
+              {dealDocumentsApprovalFilter === 'in_workflow' &&
+                'No saved documents are linked to an approval workflow. Start approval from the Quote agreement actions to see them here.'}
+              {dealDocumentsApprovalFilter === 'no_workflow' &&
+                'No saved agreements without a linked approval workflow (or there are no documents in the library yet).'}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {savedDocuments.map((doc) => (
-              <div key={doc.id} className="bg-white rounded-xl shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow">
+              <div
+                key={doc.id}
+                className="bg-white rounded-xl shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow"
+              >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
@@ -1472,11 +1507,13 @@ The client will receive an email with the PDF quote and a link to complete the d
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 text-sm">{doc.company}</h3>
-                      <p className="text-xs text-gray-500">{new Date(doc.generatedDate).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(doc.generatedDate).toLocaleDateString()}
+                      </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="space-y-2 mb-4">
                   <div className="flex items-center gap-2 text-sm">
                     <User className="w-4 h-4 text-gray-400" />
