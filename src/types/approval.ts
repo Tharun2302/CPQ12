@@ -10,6 +10,8 @@ export interface ApprovalWorkflow {
   creatorName?: string;
   // Optional flag to indicate special handling (e.g. overage agreement workflows)
   isOverage?: boolean;
+  // E-sign document id when agreement was sent via "Add e-sign fields first" flow
+  esignDocumentId?: string;
   status: 'pending' | 'approved' | 'denied' | 'in_progress';
   currentStep: number;
   totalSteps: number;

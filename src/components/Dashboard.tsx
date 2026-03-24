@@ -9,7 +9,6 @@ import QuoteManager from './QuoteManager';
 import TemplateManager from './TemplateManager';
 import DealDetails from './DealDetails';
 import Settings from './Settings';
-import DigitalSignatureForm from './DigitalSignatureForm';
 import ApprovalWorkflow from './ApprovalWorkflow';
 import ExhibitManager from './ExhibitManager';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -47,10 +46,6 @@ interface DashboardProps {
   setCurrentClientInfo: React.Dispatch<React.SetStateAction<any>>;
   configureContactInfo: any;
   setConfigureContactInfo: React.Dispatch<React.SetStateAction<any>>;
-  signatureFormData: any;
-  setSignatureFormData: React.Dispatch<React.SetStateAction<any>>;
-  isSignatureForm: boolean;
-  setIsSignatureForm: React.Dispatch<React.SetStateAction<boolean>>;
   // Handler functions
   handleConfigurationChange: (config: ConfigurationData) => void;
   handleSubmitConfiguration: () => void;
@@ -68,7 +63,6 @@ interface DashboardProps {
   handleClientInfoChange: (clientInfo: any) => void;
   refreshDealData: () => void;
   handleUseDealData: (dealData: any) => void;
-  handleSignatureFormComplete: (signatureData: any, approvalStatus: string, comments: string) => void;
   getCurrentQuoteData: () => any;
   selectedExhibits: string[];
   onExhibitsChange: (exhibitIds: string[]) => void;
@@ -103,10 +97,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   setCurrentClientInfo,
   configureContactInfo,
   setConfigureContactInfo,
-  signatureFormData,
-  setSignatureFormData,
-  isSignatureForm,
-  setIsSignatureForm,
   handleConfigurationChange,
   handleSubmitConfiguration,
   handleSelectTier,
@@ -123,7 +113,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   handleClientInfoChange,
   refreshDealData,
   handleUseDealData: originalHandleUseDealData,
-  handleSignatureFormComplete,
   getCurrentQuoteData,
   selectedExhibits,
   onExhibitsChange
@@ -422,19 +411,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  // Handle signature form display
-  if (isSignatureForm && signatureFormData) {
-    return (
-      <DigitalSignatureForm
-        formId={signatureFormData.form_id}
-        quoteData={signatureFormData.quote_data}
-        clientName={signatureFormData.client_name}
-        clientEmail={signatureFormData.client_email}
-        onComplete={handleSignatureFormComplete}
-      />
-    );
-  }
-
   const renderTabContent = () => {
     switch (currentTab) {
       case 'deal':
@@ -641,10 +617,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
       {/* Navigation Sidebar - Hidden on approval tab (use back arrow instead) */}
-      {!isSignatureForm && currentTab !== 'approval' && <Navigation currentTab={currentTab} />}
+      {currentTab !== 'approval' && <Navigation currentTab={currentTab} />}
 
       {/* Back to home - Only show on approval tab (replaces slow sidebar toggle) */}
-      {!isSignatureForm && currentTab === 'approval' && (
+      {currentTab === 'approval' && (
         <button
           type="button"
           onClick={() => navigate('/deal')}
@@ -658,9 +634,9 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <main
         className={`${
-          isSignatureForm ? 'max-w-6xl' : currentTab === 'approval' ? 'max-w-full' : 'max-w-7xl'
+          currentTab === 'approval' ? 'max-w-full' : 'max-w-7xl'
         } mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-10 transition-all duration-300 ${
-          !isSignatureForm && currentTab !== 'approval' ? 'lg:ml-64' : ''
+          currentTab !== 'approval' ? 'lg:ml-64' : ''
         }`}
       >
         {renderTabContent()}

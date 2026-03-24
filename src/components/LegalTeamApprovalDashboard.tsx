@@ -3,6 +3,7 @@ import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp,
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { track } from '../analytics/clarity';
+import EsignPdfPageView from './EsignPdfPageView';
 
 function showSuccessToast(message: string, durationMs = 3000) {
   const el = document.createElement('div');
@@ -14,10 +15,12 @@ function showSuccessToast(message: string, durationMs = 3000) {
 
 interface LegalTeamApprovalDashboardProps {
   ceoEmail?: string;
+  initialWorkflowId?: string;
 }
 
-const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({ 
-  ceoEmail = 'ceo@company.com'
+const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
+  ceoEmail = 'ceo@company.com',
+  initialWorkflowId
 }) => {
   const [activeTab, setActiveTab] = useState('queue');
   const [showCommentModal, setShowCommentModal] = useState(false);
@@ -33,6 +36,10 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
   const [isApproving, setIsApproving] = useState(false);
   const [isDenying, setIsDenying] = useState(false);
   const [isSavingComment, setIsSavingComment] = useState(false);
+  const [esignFields, setEsignFields] = useState<any[]>([]);
+  const [approvalDocNumPages, setApprovalDocNumPages] = useState(1);
+  const PDF_SCALE = 1.5;
+  const getFieldLabel = (type: string) => { const t = (type || 'signature').toLowerCase(); if (t === 'name') return 'Name'; if (t === 'title') return 'Title'; if (t === 'date') return 'Date'; return 'Signature'; };
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
 
   const isManualWorkflow = (workflow: any) =>
@@ -45,11 +52,11 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
   console.log('📊 Available workflows:', workflows.length);
   console.log('📋 Workflows data:', workflows);
 
-  // Auto-open document preview when coming from Gmail link (only if workflow is still awaiting Legal approval)
+  // Auto-open document preview when coming from email link or approval portal gate
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const workflowId = urlParams.get('workflow');
-    
+    const workflowId = urlParams.get('workflow') || initialWorkflowId;
+
     if (workflowId) {
       // First try to find in loaded workflows
       const foundWorkflow = workflows.find(w => w.id === workflowId);
@@ -69,7 +76,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
         fetchSpecificWorkflow(workflowId);
       }
     }
-  }, [workflows]);
+  }, [workflows, initialWorkflowId]);
 
   const fetchSpecificWorkflow = async (workflowId: string) => {
     try {
@@ -417,66 +424,71 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
   const handleViewDocument = async (workflow: any) => {
     console.log('👁️ Legal Team Viewing document for workflow:', workflow);
     setSelectedWorkflow(workflow);
-    setModalOpenedFromTab('queue'); // Track that modal was opened from queue tab
+    setModalOpenedFromTab('queue');
     setShowDocumentModal(true);
-    
-    // Fetch document preview
-    if (workflow.documentId) {
-      setIsLoadingPreview(true);
-      setDocumentPreview(null);
-      
-      try {
-        console.log('🔄 Fetching document preview for:', workflow.documentId);
-        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
-        
-        console.log('📡 Response status:', response.status);
-        console.log('📡 Response ok:', response.ok);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+    setEsignFields([]);
+    setApprovalDocNumPages(1);
+
+    if (!workflow.documentId) {
+      console.log('⚠️ No documentId in workflow');
+      return;
+    }
+    setIsLoadingPreview(true);
+    setDocumentPreview(null);
+
+    const esignId = workflow.esignDocumentId;
+    try {
+      if (esignId) {
+        const [fileRes, fieldsRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/api/esign/documents/${esignId}/file`),
+          fetch(`${BACKEND_URL}/api/esign/signature-fields/${esignId}`),
+        ]);
+        if (fileRes.ok) {
+          const blob = await fileRes.blob();
+          setDocumentPreview(URL.createObjectURL(blob));
         }
-        
-        const result = await response.json();
-        console.log('📄 API Response:', result);
-        
-        if (result.success && result.dataUrl) {
-          setDocumentPreview(result.dataUrl);
-          console.log('✅ Document preview loaded successfully:', result.fileName);
-          console.log('📄 Data URL length:', result.dataUrl.length);
-        } else {
-          console.log('⚠️ Document not found or no file data');
-          console.log('📄 Result:', result);
-          
-          // Fallback: Try to load document directly
-          console.log('🔄 Trying fallback method...');
-          try {
-            const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
-            if (directResponse.ok) {
-              const blob = await directResponse.blob();
-              const url = URL.createObjectURL(blob);
-              setDocumentPreview(url);
-              console.log('✅ Document loaded via fallback method');
-            }
-          } catch (fallbackError) {
-            console.error('❌ Fallback method also failed:', fallbackError);
+        if (fieldsRes.ok) {
+          const fieldsData = await fieldsRes.json();
+          setEsignFields(Array.isArray(fieldsData?.fields) ? fieldsData.fields : []);
+        }
+        if (!fileRes.ok) {
+          const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+          if (response.ok) {
+            const result = await response.json();
+            if (result?.success && result?.dataUrl) setDocumentPreview(result.dataUrl);
           }
         }
-      } catch (error) {
-        console.error('❌ Error fetching document preview:', error);
-        console.error('❌ Error details:', (error as Error).message);
-      } finally {
-        setIsLoadingPreview(false);
+      } else {
+        const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const result = await response.json();
+        if (result.success && result.dataUrl) {
+          setDocumentPreview(result.dataUrl);
+        } else {
+          const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
+          if (directResponse.ok) {
+            const blob = await directResponse.blob();
+            setDocumentPreview(URL.createObjectURL(blob));
+          }
+        }
       }
-    } else {
-      console.log('⚠️ No documentId in workflow');
+    } catch (error) {
+      console.error('❌ Error fetching document preview:', error);
+    } finally {
+      setIsLoadingPreview(false);
     }
   };
 
   const closeDocumentModal = () => {
+    if (documentPreview && documentPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(documentPreview);
+    }
     setShowDocumentModal(false);
     setSelectedWorkflow(null);
     setDocumentPreview(null);
     setIsLoadingPreview(false);
+    setEsignFields([]);
+    setApprovalDocNumPages(1);
   };
 
   const getStatusColor = (status: string) => {
@@ -735,7 +747,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
               <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
                 <Crown className="w-6 h-6 text-purple-600" />
               </div>
-              <h1 className="text-4xl font-bold text-gray-900">Legal Team Approval Portal</h1>
+              <h1 className="text-4xl font-bold text-gray-900">Legal Approval Portal</h1>
             </div>
             <p className="text-xl text-gray-600">Legal review and approval of document workflows</p>
             <p className="text-sm text-gray-500 mt-1">Logged in as: {ceoEmail}</p>
@@ -827,26 +839,62 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                   </div>
                 ) : documentPreview ? (
                   <div className="space-y-4">
-                    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                      <iframe
-                        src={documentPreview}
-                        className="w-full h-[70vh] border-0"
-                        title="Document Preview"
-                      />
-                    </div>
-                    <div className="flex justify-center">
-                      <button
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = documentPreview;
-                          link.download = `${selectedWorkflow.documentId || 'document'}.pdf`;
-                          link.click();
-                        }}
-                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm"
-                      >
-                        Download PDF
-                      </button>
-                    </div>
+                    {documentPreview && esignFields.length > 0 && selectedWorkflow?.esignDocumentId ? (
+                      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                        <div className="overflow-y-auto max-h-[70vh] p-4 space-y-6">
+                          {Array.from({ length: approvalDocNumPages }, (_, i) => i + 1).map((pageNum) => (
+                            <div key={pageNum} className="flex flex-col items-center">
+                              <span className="text-xs text-slate-500 mb-2">Page {pageNum} of {approvalDocNumPages}</span>
+                              <EsignPdfPageView
+                                pdfUrl={documentPreview}
+                                pageNumber={pageNum}
+                                scale={PDF_SCALE}
+                                onPdfInfo={pageNum === 1 ? (info) => setApprovalDocNumPages(info.numPages) : undefined}
+                                className="rounded-lg overflow-hidden border border-slate-200"
+                              >
+                                {esignFields
+                                  .filter((f: any) => (f.page || 1) === pageNum)
+                                  .map((f: any, idx: number) => {
+                                    const isPointBased = f.x != null && f.y != null;
+                                    const label = getFieldLabel(f.type);
+                                    const boxClass = 'absolute flex items-center justify-center rounded font-medium text-sm bg-sky-100 border-2 border-sky-500 text-sky-800 pointer-events-none';
+                                    if (isPointBased) {
+                                      const w = Math.max(60, (f.width ?? 120) * PDF_SCALE);
+                                      const h = Math.max(24, (f.height ?? 40) * PDF_SCALE);
+                                      return (
+                                        <div key={`${pageNum}-${idx}`} className={boxClass} style={{ left: (f.x || 0) * PDF_SCALE, top: (f.y || 0) * PDF_SCALE, width: w, height: h }}>
+                                          {label}
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div key={`${pageNum}-${idx}`} className={boxClass} style={{ left: `${f.xPct ?? 10}%`, top: `${f.yPct ?? 80}%`, width: `${f.widthPct ?? 20}%`, height: `${f.heightPct ?? 4}%` }}>
+                                        {label}
+                                      </div>
+                                    );
+                                  })}
+                              </EsignPdfPageView>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-center p-3 border-t border-slate-200">
+                          <button type="button" onClick={() => { const link = document.createElement('a'); link.href = documentPreview; link.download = `${selectedWorkflow.documentId || 'document'}.pdf`; link.click(); }} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm">
+                            Download PDF
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                          <iframe src={documentPreview} className="w-full h-[70vh] border-0" title="Document Preview" />
+                        </div>
+                        <div className="flex justify-center">
+                          <button onClick={() => { const link = document.createElement('a'); link.href = documentPreview; link.download = `${selectedWorkflow.documentId || 'document'}.pdf`; link.click(); }} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm">
+                            Download PDF
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8">

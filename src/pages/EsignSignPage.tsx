@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
-import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download } from 'lucide-react';
+import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 
@@ -21,6 +21,10 @@ interface SignatureField {
   y?: number;
   width?: number;
   height?: number;
+  xNorm?: number;
+  yNorm?: number;
+  widthNorm?: number;
+  heightNorm?: number;
 }
 
 const DEFAULT_FIELD = { page: 1, type: 'signature' as FieldType, xPct: 10, yPct: 80, widthPct: 20, heightPct: 4 };
@@ -40,6 +44,7 @@ function isSigningToken(param: string): boolean {
 
 const EsignSignPage: React.FC = () => {
   const { documentId: documentIdOrToken } = useParams<{ documentId: string }>();
+  const navigate = useNavigate();
   const sigCanvasRef = useRef<SignatureCanvas | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -59,7 +64,19 @@ const EsignSignPage: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [alreadySigned, setAlreadySigned] = useState(false);
+  const [alreadyReviewed, setAlreadyReviewed] = useState(false);
+  const [reviewedSuccess, setReviewedSuccess] = useState(false);
+  const [alreadyDenied, setAlreadyDenied] = useState(false);
+  const [deniedSuccess, setDeniedSuccess] = useState(false);
+  const [reviewComment, setReviewComment] = useState('');
   const [documentFullySigned, setDocumentFullySigned] = useState(false);
+  const [recipientRole, setRecipientRole] = useState<'signer' | 'reviewer' | null>(null);
+  const [showDashboard, setShowDashboard] = useState(true);
+  const [markingReviewed, setMarkingReviewed] = useState(false);
+  const [signerChoice, setSignerChoice] = useState<'approve' | 'deny' | null>(null);
+  const [signerComment, setSignerComment] = useState('');
+  const [signDeniedSuccess, setSignDeniedSuccess] = useState(false);
+  const [denyingSign, setDenyingSign] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSignatureFieldIndex, setSelectedSignatureFieldIndex] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState(1);
@@ -71,7 +88,15 @@ const EsignSignPage: React.FC = () => {
       try {
         if (isSigningToken(documentIdOrToken)) {
           const res = await fetch(`${BACKEND_URL}/api/esign/sign-by-token/${documentIdOrToken}`);
-          const data = await res.json();
+          const text = await res.text();
+          let data: { success?: boolean; error?: string; document?: any; recipient?: any; fields?: any[] };
+          try {
+            data = text.startsWith('<') ? {} : JSON.parse(text);
+          } catch {
+            setError(res.ok ? 'Invalid response from server' : 'Unable to load document. Please check the link or try again later.');
+            setLoading(false);
+            return;
+          }
           if (!data.success) {
             setError(data.error || 'Invalid or expired signing link');
             setLoading(false);
@@ -81,19 +106,55 @@ const EsignSignPage: React.FC = () => {
           setSigningToken(documentIdOrToken);
           setRecipientName(data.recipient?.name || null);
           setDoc(data.document);
+          const role = (data.recipient?.role || 'signer').toString();
+          const action = data.recipient?.action;
+          const isReviewer = action === 'reviewer' || (action !== 'signer' && (role.toLowerCase() === 'reviewer' || role === 'Technical Team' || role === 'Legal Team'));
+          setRecipientRole(isReviewer ? 'reviewer' : 'signer');
+          setShowDashboard(data.recipient?.show_dashboard !== false);
           if (data.recipient?.status === 'signed') {
             setAlreadySigned(true);
+          }
+          if (data.recipient?.status === 'reviewed') {
+            setAlreadyReviewed(true);
+          }
+          if (data.recipient?.status === 'denied') {
+            setAlreadyDenied(true);
           }
           const raw = data.fields || [];
           const normalized = raw.map((f: any) => {
             const page = Number(f.page) || 1;
             const type = (f.type || 'signature') as FieldType;
+            const hasNorm =
+              f.xNorm != null &&
+              f.yNorm != null &&
+              f.widthNorm != null &&
+              f.heightNorm != null;
+            if (hasNorm) {
+              return {
+                ...f,
+                page,
+                type,
+                xNorm: Number(f.xNorm),
+                yNorm: Number(f.yNorm),
+                widthNorm: Number(f.widthNorm),
+                heightNorm: Number(f.heightNorm),
+                x: Number(f.x),
+                y: Number(f.y),
+                width: Number(f.width) || 120,
+                height: Number(f.height) || 40,
+              };
+            }
             if (f.x != null && f.y != null) {
               return { ...f, page, type, x: Number(f.x), y: Number(f.y), width: Number(f.width) || 120, height: Number(f.height) || 40 };
             }
             return { ...f, page, type, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
           });
-          setFields(normalized.length ? normalized : [DEFAULT_FIELD]);
+          if (normalized.length) {
+            setFields(normalized);
+          } else {
+            setFields([]);
+            setError('No signature fields are assigned to you for this document. Ask the sender to assign fields to your name in Place Fields, then resend.');
+          }
         } else {
           setDocumentId(documentIdOrToken);
           const [docRes, fieldsRes] = await Promise.all([
@@ -102,7 +163,9 @@ const EsignSignPage: React.FC = () => {
           ]);
           const docData = await docRes.json();
           const fieldsData = await fieldsRes.json();
-          if (docData.success) {
+          if (!docRes.ok && docData?.error) {
+            setError(docData.error);
+          } else if (docData.success) {
             setDoc(docData.document);
             if (docData.document?.status === 'completed') {
               setDocumentFullySigned(true);
@@ -112,6 +175,26 @@ const EsignSignPage: React.FC = () => {
             const normalized = fieldsData.fields.map((f: any) => {
               const page = Number(f.page) || 1;
               const type = (f.type || 'signature') as FieldType;
+              const hasNorm =
+                f.xNorm != null &&
+                f.yNorm != null &&
+                f.widthNorm != null &&
+                f.heightNorm != null;
+              if (hasNorm) {
+                return {
+                  ...f,
+                  page,
+                  type,
+                  xNorm: Number(f.xNorm),
+                  yNorm: Number(f.yNorm),
+                  widthNorm: Number(f.widthNorm),
+                  heightNorm: Number(f.heightNorm),
+                  x: Number(f.x),
+                  y: Number(f.y),
+                  width: Number(f.width) || 120,
+                  height: Number(f.height) || 40,
+                };
+              }
               if (f.x != null && f.y != null) {
                 return { ...f, page, type, x: Number(f.x), y: Number(f.y), width: Number(f.width) || 120, height: Number(f.height) || 40 };
               }
@@ -187,8 +270,21 @@ const EsignSignPage: React.FC = () => {
     return null;
   };
 
+  /** Canonical PNG data URL for storage + preview (typed plain text becomes canvas image). */
+  const normalizeSignatureImageDataUrl = (): string | null => {
+    const d = getSignatureData();
+    if (!d) return null;
+    if (typeof d === 'string' && d.startsWith('data:image')) return d;
+    const fromType = typedSignatureToDataUrl();
+    return fromType;
+  };
+
   const handleSubmit = async () => {
     if (!documentId) return;
+    if (!fields.length) {
+      setError('No signature fields are assigned to you. Contact the sender.');
+      return;
+    }
 
     const values: Record<string, string> = {};
     const sigFieldIndices = fields.map((f, i) => (f.type === 'signature' ? i : -1)).filter((i) => i >= 0);
@@ -196,6 +292,7 @@ const EsignSignPage: React.FC = () => {
     for (let i = 0; i < fields.length; i++) {
       const f = fields[i];
       if (f.type === 'signature') {
+        if (signingToken) continue;
         const v = fieldValues[i];
         if (v) values[String(i)] = v;
       } else {
@@ -261,7 +358,96 @@ const EsignSignPage: React.FC = () => {
     }
   };
 
+  const handleReviewAction = async (action: 'approve' | 'deny') => {
+    if (!signingToken) return;
+    if (action === 'deny' && !reviewComment.trim()) {
+      setError('Comment is required when denying');
+      return;
+    }
+    setMarkingReviewed(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/mark-reviewed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signing_token: signingToken,
+          action,
+          comment: reviewComment.trim() || undefined,
+        }),
+      });
+      const text = await res.text();
+      let data: { success?: boolean; error?: string; action?: string };
+      try {
+        data = text.startsWith('<') ? {} : JSON.parse(text);
+      } catch {
+        setError(res.ok ? 'Invalid response from server' : `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      if (data.success) {
+        if (data.action === 'deny') {
+          setDeniedSuccess(true);
+        } else {
+          setReviewedSuccess(true);
+        }
+      } else {
+        setError(data.error || 'Request failed');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Request failed');
+    } finally {
+      setMarkingReviewed(false);
+    }
+  };
+
+  const handleDenySigning = async () => {
+    if (!signingToken) return;
+    if (!signerComment.trim()) {
+      setError('Comment is required when declining to sign');
+      return;
+    }
+    setDenyingSign(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/deny-signing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signing_token: signingToken, comment: signerComment.trim() }),
+      });
+      const text = await res.text();
+      let data: { success?: boolean; error?: string };
+      try {
+        data = text.startsWith('<') ? {} : JSON.parse(text);
+      } catch {
+        setError(res.ok ? 'Invalid response from server' : `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      if (data.success) {
+        setSignDeniedSuccess(true);
+      } else {
+        setError(data.error || 'Request failed');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Request failed');
+    } finally {
+      setDenyingSign(false);
+    }
+  };
+
   const getFieldStyle = (f: SignatureField) => {
+    if (
+      f.xNorm != null &&
+      f.yNorm != null &&
+      f.widthNorm != null &&
+      f.heightNorm != null
+    ) {
+      return {
+        left: `${Number(f.xNorm) * 100}%`,
+        top: `${Number(f.yNorm) * 100}%`,
+        width: `${Number(f.widthNorm) * 100}%`,
+        height: `${Number(f.heightNorm) * 100}%`,
+      };
+    }
     if (f.x != null && f.y != null) {
       return {
         left: (f.x ?? 0) * PDF_SCALE,
@@ -327,6 +513,105 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
+  if (alreadyReviewed) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 mb-4">
+            <Check className="h-8 w-8 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have already reviewed this document</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">This link is no longer active. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (alreadyDenied) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+            <XCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have already denied this document</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">This link is no longer active. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (deniedSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+            <XCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have denied the review</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">You have completed your decision. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (documentFullySigned) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -361,6 +646,14 @@ const EsignSignPage: React.FC = () => {
   }
 
   if (success) {
+    if (signingToken && showDashboard) {
+      navigate(`/esign-inbox?token=${encodeURIComponent(signingToken)}`, { replace: true });
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
@@ -392,11 +685,227 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
+  if (reviewedSuccess) {
+    if (signingToken && showDashboard) {
+      navigate(`/esign-inbox?token=${encodeURIComponent(signingToken)}`, { replace: true });
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 mb-4">
+            <Check className="h-8 w-8 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Document marked as reviewed</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">You have completed your review. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (recipientRole === 'reviewer') {
+    const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+    return (
+      <div className="min-h-screen bg-slate-50 py-6 px-4">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-xl font-bold text-slate-900 mb-2">Review document</h1>
+          <p className="text-slate-600 text-sm mb-4">{doc.file_name}</p>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+            <iframe
+              src={fileUrl}
+              title="Document"
+              className="w-full h-[70vh] border-0"
+            />
+          </div>
+          {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+          <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-4">
+            <button
+              type="button"
+              onClick={() => handleReviewAction('approve')}
+              disabled={markingReviewed}
+              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-emerald-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {markingReviewed ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <Check className="h-5 w-5 shrink-0" />
+                  Approve
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleReviewAction('deny')}
+              disabled={markingReviewed}
+              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-red-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {markingReviewed ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-5 w-5 shrink-0" />
+                  Deny
+                </>
+              )}
+            </button>
+            <div className="flex flex-col gap-1 w-64 min-w-[16rem] flex-shrink-0">
+              <label htmlFor="review-comment" className="text-xs font-medium text-slate-600 leading-tight">
+                Comment (optional for Approve; required for Deny)
+              </label>
+              <input
+                id="review-comment"
+                type="text"
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Add a comment…"
+                className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+
+  if (signDeniedSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+            <XCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">You have declined to sign</h2>
+          <p className="text-slate-600 mb-6">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-6">You have completed your decision. You can download the document below if needed.</p>
+          <button
+            type="button"
+            onClick={() => handleDownload(doc.file_name)}
+            disabled={downloading}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5" />
+                Download document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (signerChoice === null && signingToken) {
+    const signerPreviewFileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+    return (
+      <div className="min-h-screen bg-slate-50 py-8 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div className="bg-indigo-600 px-6 py-4">
+              <h1 className="text-xl font-bold text-white">Sign Document</h1>
+              <p className="text-indigo-100 text-sm mt-0.5">{doc.file_name}</p>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <p className="text-sm font-medium text-slate-700 mb-2">Review the document below, then choose to approve or decline to sign.</p>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <iframe
+                    src={signerPreviewFileUrl}
+                    title="Document preview"
+                    className="w-full h-[60vh] border-0"
+                  />
+                </div>
+              </div>
+              <p className="text-slate-600">Do you approve this document and wish to sign, or decline to sign?</p>
+              {error && <p className="text-red-600 text-sm">{error}</p>}
+              <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-slate-50 rounded-xl border border-slate-200 p-4 sm:p-5">
+                <button
+                  type="button"
+                  onClick={() => setSignerChoice('approve')}
+                  className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 whitespace-nowrap"
+                >
+                  <Check className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
+                  Approve (proceed to sign)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDenySigning}
+                  disabled={denyingSign}
+                  className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {denyingSign ? (
+                    <>
+                      <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin shrink-0" />
+                      Submitting…
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
+                      Deny (decline to sign)
+                    </>
+                  )}
+                </button>
+                <div className="flex flex-col gap-1 w-64 min-w-[16rem] flex-shrink-0">
+                  <label htmlFor="signer-comment" className="text-xs font-medium text-slate-600 leading-tight">
+                    Comment (optional for Approve; required for Deny)
+                  </label>
+                  <input
+                    id="signer-comment"
+                    type="text"
+                    value={signerComment}
+                    onChange={(e) => setSignerComment(e.target.value)}
+                    placeholder="Add a comment…"
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-6 py-4">
             <h1 className="text-xl font-bold text-white">Sign Document</h1>
@@ -404,6 +913,11 @@ const EsignSignPage: React.FC = () => {
           </div>
 
           <div className="p-6 space-y-6">
+            {fields.length === 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {error || 'No signature fields are assigned to you for this document. Ask the sender to assign fields to your recipient in Place Fields, then resend the link.'}
+              </div>
+            )}
             {/* PDF with all pages in one scrollable view - same logic as Place Fields */}
             <div>
               <div
@@ -534,14 +1048,23 @@ const EsignSignPage: React.FC = () => {
 
             {/* Signature modal - opens when user clicks a "Sign Here" field */}
             {selectedSignatureFieldIndex !== null && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { setSelectedSignatureFieldIndex(null); clearSignature(); }}>
-                <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <div className="px-6 py-4 border-b border-slate-200">
+              <div
+                className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:p-4 sm:items-center bg-black/50"
+                onClick={() => { setSelectedSignatureFieldIndex(null); clearSignature(); }}
+              >
+                <div
+                  className="bg-white shadow-xl border border-slate-200 w-full max-w-full sm:max-w-[min(480px,calc(100vw-2rem))] flex flex-col max-h-[90vh] min-h-0 overflow-hidden rounded-t-2xl sm:rounded-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header - fixed */}
+                  <div className="flex-shrink-0 px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200">
                     <h3 className="text-lg font-semibold text-slate-900">Add your signature</h3>
                     <p className="text-sm text-slate-500 mt-0.5">Draw, type, or upload — then click Apply to place it in the field.</p>
                   </div>
-                  <div className="p-6 space-y-4">
-                    <div className="flex gap-2">
+
+                  {/* Content - scrollable area only for signature styles list */}
+                  <div className="flex-1 min-h-0 flex flex-col p-4 sm:p-6 overflow-hidden">
+                    <div className="flex-shrink-0 flex flex-wrap gap-2 mb-4">
                       {(['draw', 'type', 'upload'] as const).map((tab) => (
                         <button
                           key={tab}
@@ -573,7 +1096,7 @@ const EsignSignPage: React.FC = () => {
                     </div>
 
                     {activeTab === 'draw' && (
-                      <div className="space-y-2">
+                      <div className="flex-shrink-0 space-y-2">
                         <div className="rounded-lg border-2 border-slate-200 overflow-hidden bg-white">
                           <SignatureCanvas
                             ref={sigCanvasRef}
@@ -599,48 +1122,52 @@ const EsignSignPage: React.FC = () => {
                     )}
 
                     {activeTab === 'type' && (
-                      <div className="space-y-4">
+                      <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-hidden">
                         <input
                           type="text"
                           value={typedSignature}
                           onChange={(e) => setTypedSignature(e.target.value)}
                           placeholder="Type your full name as signature"
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg"
+                          className="flex-shrink-0 w-full rounded-lg border border-slate-300 px-3 py-2 text-lg"
                           style={{ fontFamily: SIGNATURE_FONTS[typedSignatureFontIndex]?.family || 'cursive' }}
                         />
-                        <div>
-                          <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Choose signature style</p>
-                          <p className="text-xs text-slate-500 mb-2">
+                        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                          <p className="flex-shrink-0 text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Choose signature style</p>
+                          <p className="flex-shrink-0 text-xs text-slate-500 mb-2">
                             {typedSignature.trim() ? 'Preview of your signature in each style:' : 'Type your name above to see it in each style.'}
                           </p>
-                          <div className="space-y-2">
-                            {SIGNATURE_FONTS.map((font, idx) => (
-                              <button
-                                key={font.id}
-                                type="button"
-                                onClick={() => setTypedSignatureFontIndex(idx)}
-                                className={`w-full text-left rounded-lg border-2 px-3 py-2.5 transition-all ${
-                                  typedSignatureFontIndex === idx
-                                    ? 'border-indigo-500 bg-indigo-50'
-                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                                }`}
-                              >
-                                <span
-                                  className={`block text-lg truncate ${typedSignature.trim() ? 'text-slate-800' : 'text-slate-400 italic'}`}
-                                  style={{ fontFamily: font.family }}
+                          <div
+                            className="flex-1 min-h-0 max-h-[min(12rem,38svh)] sm:max-h-52 overflow-y-auto overflow-x-hidden rounded-lg pr-1 scroll-smooth [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:hover:bg-slate-400"
+                          >
+                            <div className="space-y-2 pb-1">
+                              {SIGNATURE_FONTS.map((font, idx) => (
+                                <button
+                                  key={font.id}
+                                  type="button"
+                                  onClick={() => setTypedSignatureFontIndex(idx)}
+                                  className={`w-full text-left rounded-lg border-2 px-3 py-2.5 transition-all duration-200 ${
+                                    typedSignatureFontIndex === idx
+                                      ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200'
+                                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                                  }`}
                                 >
-                                  {typedSignature.trim() || 'Your name'}
-                                </span>
-                                <span className="text-[11px] text-slate-500 mt-0.5 block">{font.name}</span>
-                              </button>
-                            ))}
+                                  <span
+                                    className={`block text-lg truncate ${typedSignature.trim() ? 'text-slate-800' : 'text-slate-400 italic'}`}
+                                    style={{ fontFamily: font.family }}
+                                  >
+                                    {typedSignature.trim() || 'Your name'}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 mt-0.5 block">{font.name}</span>
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
                     )}
 
                     {activeTab === 'upload' && (
-                      <div>
+                      <div className="flex-shrink-0">
                         {signatureImage ? (
                           <div className="relative inline-block">
                             <img src={signatureImage} alt="Signature" className="max-h-24 border rounded-lg" />
@@ -665,7 +1192,9 @@ const EsignSignPage: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+
+                  {/* Footer - sticky, always visible */}
+                  <div className="flex-shrink-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:px-6 sm:py-4 border-t border-slate-200 bg-white flex justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => { setSelectedSignatureFieldIndex(null); clearSignature(); }}
@@ -675,16 +1204,41 @@ const EsignSignPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        const data = getSignatureData();
-                        if (data && selectedSignatureFieldIndex !== null) {
-                          setFieldValues((prev) => ({ ...prev, [selectedSignatureFieldIndex]: data }));
-                          setSelectedSignatureFieldIndex(null);
-                          clearSignature();
-                          setError(null);
+                      onClick={async () => {
+                        const dataUrl = normalizeSignatureImageDataUrl();
+                        if (!dataUrl || selectedSignatureFieldIndex === null) return;
+                        if (signingToken && documentId) {
+                          try {
+                            const res = await fetch(`${BACKEND_URL}/api/esign/signatures/store-encrypted`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                document_id: documentId,
+                                signing_token: signingToken,
+                                field_index: selectedSignatureFieldIndex,
+                                mode: activeTab,
+                                payload: { imagePngBase64: dataUrl },
+                              }),
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok || !data.success) {
+                              setError(
+                                data.error ||
+                                  'Could not save signature securely. Set ESIGN_SIGNATURE_ENCRYPTION_KEY (64 hex chars) on the server.'
+                              );
+                              return;
+                            }
+                          } catch {
+                            setError('Could not save signature. Try again.');
+                            return;
+                          }
                         }
+                        setFieldValues((prev) => ({ ...prev, [selectedSignatureFieldIndex]: dataUrl }));
+                        setSelectedSignatureFieldIndex(null);
+                        clearSignature();
+                        setError(null);
                       }}
-                      disabled={!getSignatureData()}
+                      disabled={!normalizeSignatureImageDataUrl()}
                       className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Apply
@@ -699,7 +1253,18 @@ const EsignSignPage: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  if (signingToken) {
+                    try {
+                      await fetch(`${BACKEND_URL}/api/esign/signatures/clear-stored`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ signing_token: signingToken }),
+                      });
+                    } catch {
+                      /* non-fatal */
+                    }
+                  }
                   setFieldValues({});
                   clearSignature();
                   setSelectedSignatureFieldIndex(null);
@@ -713,7 +1278,7 @@ const EsignSignPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting}
+                disabled={submitting || fields.length === 0}
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (

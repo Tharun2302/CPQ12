@@ -122,7 +122,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const objectUrlRef = useRef<string | null>(null);
   const [esignCreatingId, setEsignCreatingId] = useState<string | null>(null);
   const [esignError, setEsignError] = useState<string | null>(null);
-  const [esignRecipientsByDocId, setEsignRecipientsByDocId] = useState<Record<string, Array<{ name: string; email?: string; status: string; order?: number }>>>({});
 
   const {
     workflows,
@@ -137,36 +136,6 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, []);
-
-  // Fetch e-sign recipients for workflows that have esignDocumentId
-  useEffect(() => {
-    const docIds = (workflows || [])
-      .map((w: any) => w?.esignDocumentId)
-      .filter((id: string) => typeof id === 'string' && id.trim());
-    const uniqueIds = [...new Set(docIds)] as string[];
-    if (uniqueIds.length === 0) return;
-    let cancelled = false;
-    const fetchAll = async () => {
-      const next: Record<string, Array<{ name: string; email?: string; status: string; order?: number }>> = { ...esignRecipientsByDocId };
-      for (const id of uniqueIds) {
-        if (cancelled) return;
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/esign/documents/${id}/recipients`);
-          const data = await res.json();
-          if (cancelled) return;
-          if (data.success && Array.isArray(data.recipients)) {
-            const sorted = [...data.recipients].sort((a: any, b: any) => (a.order ?? 999) - (b.order ?? 999));
-            next[id] = sorted.map((r: any) => ({ name: r.name || r.email || 'Recipient', email: r.email, status: r.status || 'pending', order: r.order }));
-          }
-        } catch {
-          // ignore per-doc errors
-        }
-      }
-      if (!cancelled) setEsignRecipientsByDocId(next);
-    };
-    fetchAll();
-    return () => { cancelled = true; };
-  }, [(workflows || []).map((w: any) => w?.esignDocumentId).filter(Boolean).join(',')]);
 
   const now = new Date();
   const today0 = startOfDay(now);
@@ -456,7 +425,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
           </nav>
 
           {/* CTA below navigation */}
-          <div className="px-3 pb-6">
+          <div className="px-3 pb-6 space-y-2">
             <button
               type="button"
               onClick={onStartManualApprovalWorkflow}
@@ -717,20 +686,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
                         { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
                       ];
-                      const recipientSteps: Array<{ label: string; step: { status: string }; extra: string }> = [];
-                      const esignDocId = workflow.esignDocumentId;
-                      const recipients = esignDocId ? (esignRecipientsByDocId[esignDocId] || []) : [];
-                      if (recipients.length > 0) {
-                        recipients.forEach((rec, i) => {
-                          recipientSteps.push({
-                            label: `Recipient ${i + 1}`,
-                            step: { status: rec.status === 'signed' ? 'signed' : 'pending' },
-                            extra: rec.name || rec.email || '',
-                          });
-                        });
-                      }
                       const dealDeskStepItem = { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra };
-                      const steps = [...baseSteps, ...recipientSteps, dealDeskStepItem];
+                      const steps = [...baseSteps, dealDeskStepItem];
 
                       const currentIdx = steps.findIndex((item) => {
                         const raw = item.step?.status || 'pending';

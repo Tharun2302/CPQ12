@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import {
   PenLine,
   X,
@@ -58,8 +59,8 @@ const EsignPrepareModal: React.FC<EsignPrepareModalProps> = ({
 }) => {
   const [step, setStep] = useState<'prepare' | 'send'>('prepare');
   const [recipients, setRecipients] = useState<EsignRecipient[]>(() => [
-    { id: crypto.randomUUID(), email: '', name: '', block: 'cloudfuze' as const },
-    { id: crypto.randomUUID(), email: '', name: workflow?.clientName || '', block: 'client' as const },
+    { id: uuidv4(), email: '', name: '', block: 'cloudfuze' as const },
+    { id: uuidv4(), email: '', name: workflow?.clientName || '', block: 'client' as const },
   ]);
   const [signatureFields, setSignatureFields] = useState<SignatureField[]>([]);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
@@ -68,7 +69,7 @@ const EsignPrepareModal: React.FC<EsignPrepareModalProps> = ({
   const documentRef = useRef<HTMLDivElement>(null);
 
   const addRecipient = () => {
-    setRecipients(prev => [...prev, { id: crypto.randomUUID(), email: '', name: '', block: 'client' as const }]);
+    setRecipients(prev => [...prev, { id: uuidv4(), email: '', name: '', block: 'client' as const }]);
   };
 
   const removeRecipient = (id: string) => {
@@ -101,7 +102,7 @@ const EsignPrepareModal: React.FC<EsignPrepareModalProps> = ({
     const yPct = (y / rect.height) * 100;
 
     setSignatureFields(prev => [...prev, {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       type: 'signature',
       block: r.block,
       page: currentPage,

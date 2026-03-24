@@ -16,8 +16,8 @@ const ApprovalDashboard = lazy(() => import('./components/ApprovalDashboard'));
 const TechnicalTeamApprovalDashboard = lazy(() => import('./components/TechnicalTeamApprovalDashboard'));
 const LegalTeamApprovalDashboard = lazy(() => import('./components/LegalTeamApprovalDashboard'));
 const TeamApprovalDashboard = lazy(() => import('./components/TeamApprovalDashboard'));
+const ApprovalPortalGate = lazy(() => import('./components/ApprovalPortalGate'));
 const ClientNotification = lazy(() => import('./components/ClientNotification'));
-const MigrationManagerDashboard = lazy(() => import('./components/MigrationManagerDashboard'));
 const InfrateamDashboard = lazy(() => import('./components/InfrateamDashboard'));
 const EsignLayout = lazy(() => import('./components/EsignLayout'));
 const EsignDocumentsPage = lazy(() => import('./pages/EsignDocumentsPage'));
@@ -25,7 +25,11 @@ const EsignPlaceFieldsPage = lazy(() => import('./pages/EsignPlaceFieldsPage'));
 const EsignSendPage = lazy(() => import('./pages/EsignSendPage'));
 const EsignTrackingPage = lazy(() => import('./pages/EsignTrackingPage'));
 const EsignSignPage = lazy(() => import('./pages/EsignSignPage'));
-
+const EsignInboxByToken = lazy(() => import('./pages/EsignInboxByToken'));
+const EsignTeamLeadDashboard = lazy(() => import('./components/EsignTeamLeadDashboard'));
+const EsignTechnicalDashboard = lazy(() => import('./components/EsignTechnicalDashboard'));
+const EsignLegalDashboard = lazy(() => import('./components/EsignLegalDashboard'));
+const EsignAgreementStatusDashboard = lazy(() => import('./components/EsignAgreementStatusDashboard'));
 import { BACKEND_URL } from './config/api';
 import { initClarity, track, trackTierSelection, trackPricingCalculation } from './analytics/clarity';
 
@@ -510,7 +514,7 @@ function App() {
     if (dealData?.dealId) {
       try {
         console.log('🔄 Refreshing deal data for ID:', dealData.dealId);
-        const response = await fetch(`${BACKEND_URL}/api/hubspot/deal/${dealData.dealId}`);
+        const response = await fetch(`${BACKEND_URL}/api/hubspot/deals/${dealData.dealId}`);
         
         if (response.ok) {
           const result = await response.json();
@@ -742,10 +746,6 @@ function App() {
   // Quote state management
   const [quotes, setQuotes] = useState<Quote[]>([]);
 
-  // Signature form state management
-  const [signatureFormData, setSignatureFormData] = useState<any>(null);
-  const [isSignatureForm, setIsSignatureForm] = useState(false);
-
   // Load pricing tiers from localStorage on component mount
   useEffect(() => {
     // Clear old pricing cache and force use of new pricing tiers
@@ -849,43 +849,6 @@ function App() {
 
   // Save HubSpot state to localStorage whenever it changes
 
-  // Handle URL-based routing for signature forms
-  useEffect(() => {
-    const path = window.location.pathname;
-    if (path.startsWith('/signature-form/')) {
-      const formId = path.split('/signature-form/')[1];
-      if (formId) {
-        // Fetch signature form data
-        fetchSignatureFormData(formId);
-      }
-    } else {
-      setIsSignatureForm(false);
-      setSignatureFormData(null);
-    }
-  }, []);
-
-  const fetchSignatureFormData = async (formId: string) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/signature/form/${formId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSignatureFormData(data.form);
-        setIsSignatureForm(true);
-      } else {
-        console.error('Failed to fetch signature form data');
-        alert('Signature form not found or has expired.');
-      }
-    } catch (error) {
-      console.error('Error fetching signature form:', error);
-      alert('Error loading signature form. Please try again.');
-    }
-  };
-
-  const handleSignatureFormComplete = (_signatureData: any, approvalStatus: string, _comments: string) => {
-    alert(`Thank you! Your ${approvalStatus === 'approved' ? 'approval' : 'response'} has been submitted successfully.`);
-    // Redirect to a thank you page or close the form
-    window.location.href = '/';
-  };
   useEffect(() => {
     try {
       localStorage.setItem('hubspotState', JSON.stringify(hubspotState));
@@ -1980,6 +1943,10 @@ function App() {
         <Suspense fallback={<LoadingFallback />}>
           <HubSpotAuthHandler>
             <Routes>
+              {/* Public routes – no login required (must be matched first) */}
+              <Route path="/sign/:documentId" element={<EsignSignPage />} />
+              <Route path="/esign-inbox" element={<EsignInboxByToken />} />
+
               {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/signin" element={<SignInPage />} />
@@ -1994,14 +1961,19 @@ function App() {
                 <Route path=":documentId/send" element={<EsignSendPage />} />
                 <Route path=":documentId/status" element={<EsignTrackingPage />} />
               </Route>
-              <Route path="/sign/:documentId" element={<EsignSignPage />} />
-              
+              <Route path="/esign-team-lead" element={<EsignTeamLeadDashboard />} />
+              <Route path="/esign-technical" element={<EsignTechnicalDashboard />} />
+              <Route path="/esign-legal" element={<EsignLegalDashboard />} />
+              <Route path="/esign-tracking" element={<EsignAgreementStatusDashboard />} />
+
              {/* Protected Routes - Dashboard with URL-based tab navigation */}
              <Route path="/approval-tracking" element={
                 <ProtectedRoute>
                   <ApprovalDashboard />
                 </ProtectedRoute>
               } />
+              <Route path="/approval/:workflowId" element={<ApprovalPortalGate />} />
+              <Route path="/team-lead-approval" element={<TeamApprovalDashboard />} />
               <Route path="/technical-approval" element={
                 <TechnicalTeamApprovalDashboard 
                   managerEmail="manager@company.com"
@@ -2017,13 +1989,6 @@ function App() {
               } />
               <Route path="/client-notification" element={
                 <ClientNotification />
-              } />
-              <Route path="/migration-manager" element={
-                <ProtectedRoute>
-                  <MigrationManagerDashboard 
-                    managerEmail="migration.manager@cloudfuze.com"
-                  />
-                </ProtectedRoute>
               } />
               <Route path="/infrateam" element={
                 <ProtectedRoute>
@@ -2066,10 +2031,6 @@ function App() {
                      setCurrentClientInfo={setCurrentClientInfo}
                      configureContactInfo={configureContactInfo}
                      setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
                      handleConfigurationChange={handleConfigurationChange}
                      handleSubmitConfiguration={handleSubmitConfiguration}
                      handleSelectTier={handleSelectTier}
@@ -2086,7 +2047,6 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
                     getCurrentQuoteData={getCurrentQuoteData}
                     selectedExhibits={selectedExhibits}
                     onExhibitsChange={handleExhibitsChange}
@@ -2128,10 +2088,6 @@ function App() {
                      setCurrentClientInfo={setCurrentClientInfo}
                      configureContactInfo={configureContactInfo}
                      setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
                      handleConfigurationChange={handleConfigurationChange}
                      handleSubmitConfiguration={handleSubmitConfiguration}
                      handleSelectTier={handleSelectTier}
@@ -2148,7 +2104,6 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
                     getCurrentQuoteData={getCurrentQuoteData}
                     selectedExhibits={selectedExhibits}
                     onExhibitsChange={handleExhibitsChange}
@@ -2190,10 +2145,6 @@ function App() {
                      setCurrentClientInfo={setCurrentClientInfo}
                      configureContactInfo={configureContactInfo}
                      setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
                      handleConfigurationChange={handleConfigurationChange}
                      handleSubmitConfiguration={handleSubmitConfiguration}
                      handleSelectTier={handleSelectTier}
@@ -2210,7 +2161,6 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
                     getCurrentQuoteData={getCurrentQuoteData}
                     selectedExhibits={selectedExhibits}
                     onExhibitsChange={handleExhibitsChange}
@@ -2252,10 +2202,6 @@ function App() {
                      setCurrentClientInfo={setCurrentClientInfo}
                      configureContactInfo={configureContactInfo}
                      setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
                      handleConfigurationChange={handleConfigurationChange}
                      handleSubmitConfiguration={handleSubmitConfiguration}
                      handleSelectTier={handleSelectTier}
@@ -2272,7 +2218,6 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
                     getCurrentQuoteData={getCurrentQuoteData}
                     selectedExhibits={selectedExhibits}
                     onExhibitsChange={handleExhibitsChange}
@@ -2314,10 +2259,6 @@ function App() {
                      setCurrentClientInfo={setCurrentClientInfo}
                      configureContactInfo={configureContactInfo}
                      setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
                      handleConfigurationChange={handleConfigurationChange}
                      handleSubmitConfiguration={handleSubmitConfiguration}
                      handleSelectTier={handleSelectTier}
@@ -2334,7 +2275,6 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
                     getCurrentQuoteData={getCurrentQuoteData}
                     selectedExhibits={selectedExhibits}
                     onExhibitsChange={handleExhibitsChange}
@@ -2376,10 +2316,6 @@ function App() {
                      setCurrentClientInfo={setCurrentClientInfo}
                      configureContactInfo={configureContactInfo}
                      setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
                      handleConfigurationChange={handleConfigurationChange}
                      handleSubmitConfiguration={handleSubmitConfiguration}
                      handleSelectTier={handleSelectTier}
@@ -2396,7 +2332,6 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
                     getCurrentQuoteData={getCurrentQuoteData}
                     selectedExhibits={selectedExhibits}
                     onExhibitsChange={handleExhibitsChange}
@@ -2443,10 +2378,6 @@ function App() {
                      setCurrentClientInfo={setCurrentClientInfo}
                      configureContactInfo={configureContactInfo}
                      setConfigureContactInfo={setConfigureContactInfo}
-                     signatureFormData={signatureFormData}
-                     setSignatureFormData={setSignatureFormData}
-                     isSignatureForm={isSignatureForm}
-                     setIsSignatureForm={setIsSignatureForm}
                      handleConfigurationChange={handleConfigurationChange}
                      handleSubmitConfiguration={handleSubmitConfiguration}
                      handleSelectTier={handleSelectTier}
@@ -2463,7 +2394,6 @@ function App() {
                      handleClientInfoChange={handleClientInfoChange}
                      refreshDealData={refreshDealData}
                      handleUseDealData={handleUseDealData}
-                    handleSignatureFormComplete={handleSignatureFormComplete}
                     getCurrentQuoteData={getCurrentQuoteData}
                     selectedExhibits={selectedExhibits}
                     onExhibitsChange={handleExhibitsChange}

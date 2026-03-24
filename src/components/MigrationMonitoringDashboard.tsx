@@ -105,7 +105,7 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
   };
 
   const handleBack = () => {
-    navigate('/migration-manager'); // Navigate to Migration Manager Dashboard
+    navigate(-1);
   };
 
   // Load projects from localStorage on mount

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Loader2, Check, Clock, Download, Eye } from 'lucide-react';
+import { Loader2, Check, Clock, Download, Eye, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface EsignDocument {
@@ -15,8 +15,9 @@ interface Recipient {
   name: string;
   email: string;
   role?: string;
-  status: 'pending' | 'signed';
+  status: 'pending' | 'signed' | 'reviewed' | 'denied';
   order?: number;
+  comment?: string | null;
 }
 
 const POLL_INTERVAL_MS = 12000;
@@ -114,7 +115,7 @@ const EsignTrackingPage: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error}</p>
-          <Link to="/esign" className="text-indigo-600 hover:underline">Back to E-Signature Documents</Link>
+          <Link to="/esign" className="text-indigo-600 hover:underline">Back to e sign</Link>
         </div>
       </div>
     );
@@ -141,40 +142,67 @@ const EsignTrackingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
       <div className="max-w-xl mx-auto">
-        <Link to="/esign" className="text-sm text-slate-500 hover:text-slate-800 mb-2 inline-block">← Back to E-Signature Documents</Link>
+        <Link to="/esign" className="text-sm text-slate-500 hover:text-slate-800 mb-2 inline-block">← Back to e sign</Link>
 
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-6 py-4">
-            <h1 className="text-xl font-bold text-white">E-Signature Status</h1>
+            <h1 className="text-xl font-bold text-white">e sign status</h1>
             <p className="text-indigo-100 text-sm mt-0.5 truncate">{doc.file_name}</p>
-            {isSentOrCompleted && (
-              <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-white/20 text-white">
-                Sent for e-signature
+            {doc.status === 'denied' ? (
+              <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/90 text-white">
+                Denied
               </span>
-            )}
+            ) : isSentOrCompleted ? (
+              <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-white/20 text-white">
+                Sent for signature
+              </span>
+            ) : null}
           </div>
 
           <div className="p-6 space-y-6">
             <div>
               <h2 className="text-sm font-semibold text-slate-700 mb-3">Recipients</h2>
               <ul className="space-y-2">
-                {recipients.map((rec, idx) => (
-                  <li key={rec.id} className="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
-                    <span className="text-slate-800">
-                      Recipient {idx + 1}: {rec.name || rec.email || 'Signer'} —{' '}
-                      <span className={rec.status === 'signed' ? 'text-emerald-600 font-medium' : 'text-slate-500'}>
-                        {rec.status === 'signed' ? 'Signed' : 'Pending'}
-                      </span>
-                    </span>
-                    {rec.status === 'signed' ? (
-                      <Check className="h-5 w-5 text-emerald-600 shrink-0" />
-                    ) : (
-                      <Clock className="h-5 w-5 text-amber-500 shrink-0" />
-                    )}
-                  </li>
-                ))}
+                {recipients.map((rec, idx) => {
+                  const statusLabel = rec.status === 'signed' ? 'Signed' : rec.status === 'reviewed' ? 'Reviewed' : rec.status === 'denied' ? 'Denied' : 'Pending';
+                  const statusClass = rec.status === 'signed' ? 'text-emerald-600 font-medium' : rec.status === 'reviewed' ? 'text-amber-600 font-medium' : rec.status === 'denied' ? 'text-red-600 font-medium' : 'text-slate-500';
+                  return (
+                    <li key={rec.id} className="py-2 border-b border-slate-100 last:border-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-800">
+                          Recipient {idx + 1}: {rec.name || rec.email || 'Signer'}{' '}
+                          <span className="text-slate-400">({rec.role || 'signer'})</span>
+                          {' — '}
+                          <span className={statusClass}>{statusLabel}</span>
+                        </span>
+                        {rec.status === 'signed' ? (
+                          <Check className="h-5 w-5 text-emerald-600 shrink-0" />
+                        ) : rec.status === 'denied' ? (
+                          <XCircle className="h-5 w-5 text-red-500 shrink-0" />
+                        ) : rec.status === 'reviewed' ? (
+                          <Check className="h-5 w-5 text-amber-600 shrink-0" />
+                        ) : (
+                          <Clock className="h-5 w-5 text-amber-500 shrink-0" />
+                        )}
+                      </div>
+                      {rec.comment && (
+                        <div className="mt-1.5 pl-0 text-sm text-slate-600 bg-slate-50 rounded-md px-2.5 py-1.5 border border-slate-100">
+                          <span className="font-medium text-slate-500">Comment: </span>
+                          {rec.comment}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
+
+            {doc.status === 'denied' && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                <XCircle className="h-5 w-5 text-red-600 shrink-0" />
+                <span className="font-medium text-red-800">This document was denied by a recipient. See comments above.</span>
+              </div>
+            )}
 
             {allSigned && (
               <>
