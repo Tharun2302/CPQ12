@@ -21,7 +21,8 @@ import {
   PenLine,
   Plus,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Save
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -630,9 +631,12 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isGeneratingAgreement, setIsGeneratingAgreement] = useState(false);
   const [showInlinePreview, setShowInlinePreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  /** PDF from background conversion — used for fast download / e-sign; do not swap preview to iframe (breaks scrolling). */
+  /** True when iframe shows application/pdf (browser PDF viewer); false for docx-preview div or HTML blob. */
+  const [agreementPreviewIsPdf, setAgreementPreviewIsPdf] = useState(false);
+  /** PDF from DOCX conversion — reused for download / e-sign / View Document. */
   const [cachedPdfAgreement, setCachedPdfAgreement] = useState<Blob | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSavingAgreementToMongo, setIsSavingAgreementToMongo] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Approval workflow state
@@ -1082,6 +1086,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       
       // Ensure container exists in DOM
       setShowInlinePreview(true);
+      setAgreementPreviewIsPdf(false);
       await delayFrame();
       
       // Wait for container to be available
@@ -1123,6 +1128,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         const url = URL.createObjectURL(htmlBlob);
         setPreviewUrl(url);
         setShowInlinePreview(true);
+        setAgreementPreviewIsPdf(false);
         console.log('✅ DOCX converted to HTML with mammoth');
       } catch (fallbackErr) {
         console.error('❌ HTML fallback also failed:', fallbackErr);
@@ -2669,7 +2675,7 @@ Total Price: {{total price}}`;
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
           </svg>
-          <span>PDF saved to MongoDB!</span>
+          <span>PDF saved to document</span>
         `;
         document.body.appendChild(notification);
         setTimeout(() => {
@@ -3159,9 +3165,29 @@ Total Price: {{total price}}`;
       try {
         // Prefer exact docx renderer
         if (processedAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-          // Ensure modal content is visible
           setShowAgreementPreview(true);
           await delayFrame();
+          try {
+            const pdfSource =
+              cachedPdfAgreement && cachedPdfAgreement.size > 0
+                ? cachedPdfAgreement
+                : await (await import('../utils/templateService')).templateService.convertDocxToPdf(processedAgreement);
+            if (pdfSource && pdfSource.size > 0) {
+              if (!cachedPdfAgreement || cachedPdfAgreement.size === 0) {
+                setCachedPdfAgreement(pdfSource);
+              }
+              setPreviewUrl((prev) => {
+                if (prev) URL.revokeObjectURL(prev);
+                return URL.createObjectURL(pdfSource);
+              });
+              setShowInlinePreview(true);
+              setAgreementPreviewIsPdf(true);
+              return;
+            }
+          } catch (e) {
+            console.warn('View Document: DOCX→PDF failed, falling back to in-browser preview.', e);
+          }
+          setAgreementPreviewIsPdf(false);
           await renderDocxPreview(processedAgreement);
           return;
         }
@@ -3404,6 +3430,7 @@ Total Price: {{total price}}`;
         
         setPreviewUrl(actualPreviewUrl);
         setShowInlinePreview(true);
+        setAgreementPreviewIsPdf(false);
         
         console.log('✅ HTML preview URL created:', actualPreviewUrl);
         
@@ -3602,6 +3629,7 @@ Total Price: {{total price}}`;
         // Store the HTML URL for the iframe
         setPreviewUrl(htmlUrl);
         setShowInlinePreview(true);
+        setAgreementPreviewIsPdf(false);
         
       } catch (error) {
         console.error('Error creating inline preview:', error);
@@ -7694,34 +7722,40 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           setPreviewUrl(previewUrl);
           setShowInlinePreview(true);
           setShowAgreementPreview(true);
+          setAgreementPreviewIsPdf(true);
           console.log('🔗 Preview URL created for PDF:', previewUrl);
           return;
         }
 
-        // For DOCX: show preview immediately with DOCX (no blocking PDF conversion)
+        // For DOCX: convert to PDF first (no modal yet) so we never flash "Document Ready for Preview".
+        // Fallback (docx-preview) needs the modal mounted first for previewContainerRef.
         if (processedDocumentBlob.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-          setShowAgreementPreview(true);
-          await delayFrame();
+          let usedPdfIframePreview = false;
           try {
-            await renderDocxPreview(processedDocumentBlob);
-            // Optional: convert to PDF in background and update preview when ready (non-blocking)
-            (async () => {
-              try {
-                const { templateService } = await import('../utils/templateService');
-                const pdfBlob = await templateService.convertDocxToPdf(processedDocumentBlob);
-                if (pdfBlob && pdfBlob.size > 0) {
-                  // Keep docx-preview as the visible preview (scrollable). Iframe PDF swap broke scrolling after ~few seconds.
-                  setCachedPdfAgreement(pdfBlob);
-                }
-              } catch (_e) {
-                // Keep DOCX preview; PDF on Download / reruns conversion
-              }
-            })();
-            return;
-          } catch (err) {
-            console.warn('docx-preview render failed in initial flow, trying mammoth HTML fallback.', err);
+            const { templateService } = await import('../utils/templateService');
+            const pdfBlob = await templateService.convertDocxToPdf(processedDocumentBlob);
+            if (pdfBlob && pdfBlob.size > 0) {
+              setCachedPdfAgreement(pdfBlob);
+              setPreviewUrl((prev) => {
+                if (prev) URL.revokeObjectURL(prev);
+                return URL.createObjectURL(pdfBlob);
+              });
+              setShowInlinePreview(true);
+              setAgreementPreviewIsPdf(true);
+              usedPdfIframePreview = true;
+            }
+          } catch (_e) {
+            console.warn('DOCX→PDF preview conversion failed; using in-browser preview.', _e);
           }
-          try {
+          if (!usedPdfIframePreview) {
+            setAgreementPreviewIsPdf(false);
+            setShowAgreementPreview(true);
+            await delayFrame();
+            try {
+              await renderDocxPreview(processedDocumentBlob);
+            } catch (err) {
+              console.warn('docx-preview render failed in initial flow, trying mammoth HTML fallback.', err);
+              try {
             console.log('🔄 Converting DOCX to HTML for preview with exact formatting...');
             const mammoth = await import('mammoth');
             
@@ -7974,80 +8008,26 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             
             setPreviewUrl(previewUrl);
             setShowInlinePreview(true); // Show the HTML preview by default
+            setAgreementPreviewIsPdf(false);
             console.log('🔗 HTML preview URL created:', previewUrl);
             
-          } catch (error) {
+              } catch (error) {
             console.error('❌ Error converting DOCX to HTML:', error);
             // Fallback to direct document URL
             const previewUrl = URL.createObjectURL(processedDocumentBlob);
             setPreviewUrl(previewUrl);
             setShowInlinePreview(true);
+            setAgreementPreviewIsPdf(false);
           }
+            }
+          }
+          setShowAgreementPreview(true);
         } else {
           // For PDF files, use direct URL
           const previewUrl = URL.createObjectURL(processedDocumentBlob);
           setPreviewUrl(previewUrl);
           setShowInlinePreview(true);
-        }
-        
-        // Save PDF to MongoDB database
-        try {
-          console.log('💾 Saving PDF to MongoDB...');
-          const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
-          const base64Data = await documentServiceMongoDB.blobToBase64(processedDocumentBlob);
-          
-          // Define variables for the saved document
-          const finalCompanyName = clientInfo.company || 'Unknown Company';
-          const clientName = clientInfo.clientName || 'Unknown';
-          const clientEmail = clientInfo.clientEmail || '';
-          
-          const savedDoc: any = {
-            fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-            fileData: base64Data,
-            fileSize: processedDocumentBlob.size,
-            clientName: clientName,
-            clientEmail: clientEmail,
-            company: finalCompanyName,
-            templateName: selectedTemplate.name,
-            generatedDate: new Date().toISOString(),
-            quoteId: quoteId,
-            metadata: {
-              totalCost: finalCalculation.totalCost,
-              duration: finalConfiguration.duration,
-              migrationType: finalConfiguration.migrationType,
-              numberOfUsers: finalConfiguration.numberOfUsers
-            }
-          };
-          
-          // Also save DOCX if available (for Word downloads)
-          if (originalDocxAgreement) {
-            console.log('💾 Also saving DOCX to MongoDB...');
-            const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
-            const sanitizedClientName = (clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
-            const dateStr = new Date().toISOString().split('T')[0];
-            savedDoc.docxFileData = docxBase64;
-            savedDoc.docxFileName = `agreement-${sanitizedClientName}-${dateStr}.docx`;
-          }
-          
-          await documentServiceMongoDB.saveDocument(savedDoc);
-          console.log('✅ PDF saved to MongoDB successfully');
-          
-          // Show success notification
-          const notification = document.createElement('div');
-          notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
-          notification.innerHTML = `
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-            <span>Agreement saved to MongoDB!</span>
-          `;
-          document.body.appendChild(notification);
-          setTimeout(() => {
-            notification.remove();
-          }, 3000);
-        } catch (error) {
-          console.error('❌ Error saving PDF to MongoDB:', error);
-          // Still show the PDF even if saving fails
+          setAgreementPreviewIsPdf(true);
         }
         
         setShowAgreementPreview(true);
@@ -8062,6 +8042,72 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
       alert(`Error generating agreement: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`);
     } finally {
       setIsGeneratingAgreement(false);
+    }
+  };
+
+  const handleSaveAgreementToMongoDB = async () => {
+    if (!processedAgreement || processedAgreement.size === 0) {
+      alert('No agreement to save. Generate an agreement first.');
+      return;
+    }
+    if (!selectedTemplate?.name) {
+      alert('Template information is missing. Generate the agreement again, then save.');
+      return;
+    }
+    setIsSavingAgreementToMongo(true);
+    try {
+      const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
+      const base64Data = await documentServiceMongoDB.blobToBase64(processedAgreement);
+      const finalCompanyName = clientInfo.company || 'Unknown Company';
+      const clientName = clientInfo.clientName || 'Unknown';
+      const clientEmail = clientInfo.clientEmail || '';
+      const calc = calculation || safeCalculation;
+      const savedDoc: Record<string, unknown> = {
+        fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        fileData: base64Data,
+        fileSize: processedAgreement.size,
+        clientName,
+        clientEmail,
+        company: finalCompanyName,
+        templateName: selectedTemplate.name,
+        generatedDate: new Date().toISOString(),
+        quoteId,
+        metadata: {
+          totalCost: calc.totalCost,
+          duration: getEffectiveDurationMonths(configuration) || configuration?.duration,
+          migrationType: configuration?.migrationType,
+          numberOfUsers: configuration?.numberOfUsers,
+        },
+      };
+      if (originalDocxAgreement && originalDocxAgreement.size > 0) {
+        const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
+        const sanitizedClientName = (clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+        const dateStr = new Date().toISOString().split('T')[0];
+        savedDoc.docxFileData = docxBase64;
+        savedDoc.docxFileName = `agreement-${sanitizedClientName}-${dateStr}.docx`;
+      }
+      await documentServiceMongoDB.saveDocument(
+        savedDoc as Omit<import('../services/documentServiceMongoDB').SavedDocument, 'id'>,
+      );
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+      notification.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <span>Agreement saved to document</span>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 3000);
+    } catch (error) {
+      console.error('❌ Error saving agreement to MongoDB:', error);
+      alert(
+        error instanceof Error
+          ? `Could not save agreement: ${error.message}`
+          : 'Could not save agreement. Please try again.',
+      );
+    } finally {
+      setIsSavingAgreementToMongo(false);
     }
   };
 
@@ -9283,6 +9329,18 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   {showAgreementPreview && (
                     <>
                       <button
+                        type="button"
+                        onClick={handleSaveAgreementToMongoDB}
+                        disabled={!processedAgreement || isSavingAgreementToMongo}
+                        className={`text-white bg-white/15 border border-white/40 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-md hover:bg-white/25 transition-colors flex items-center gap-1 ${
+                          !processedAgreement || isSavingAgreementToMongo ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title="Save agreement to document"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {isSavingAgreementToMongo ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
                         onClick={handleDownloadAgreement}
                         disabled={!processedAgreement}
                         className={`text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold ${
@@ -9354,6 +9412,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       setIsFullscreen(false);
                       // Reset inline preview when closing agreement modal
                       setShowInlinePreview(false);
+                      setAgreementPreviewIsPdf(false);
                       if (previewUrl) {
                         URL.revokeObjectURL(previewUrl);
                         setPreviewUrl(null);
@@ -9369,19 +9428,19 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </div>
 
               {/* Content - Maximized for Preview */}
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Preview Area - Maximized */}
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                {/* Preview Area - Maximized (no bottom margin — avoids white strip under viewer) */}
                 <div className={`flex-1 bg-gray-50 border border-gray-300 overflow-hidden flex flex-col min-h-0 ${
                   isFullscreen 
                     ? 'mx-0 mb-0 rounded-none' 
-                    : 'mx-2 mb-2 rounded-xl'
+                    : 'mx-2 mb-0 rounded-xl'
                 }`}>
                   <div className="bg-white px-3 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                     <h3 className="text-sm font-bold text-gray-800">📄 Document Preview</h3>
                     <div className="flex items-center gap-2">
                       {showInlinePreview && (
                         <div className="text-xs text-gray-600 bg-green-50 px-2 py-1 rounded">
-                          📄 DOCX Content
+                          {agreementPreviewIsPdf ? '📄 PDF preview' : '📄 Document preview'}
                         </div>
                       )}
                       {!showInlinePreview && !showAgreementPreview && (
@@ -9394,13 +9453,17 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       )}
                     </div>
                   </div>
-                  <div className="flex-1 bg-white min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain">
+                  <div
+                    className={`flex-1 min-h-0 overflow-hidden flex flex-col overscroll-contain ${
+                      previewUrl ? 'bg-[#525659]' : 'bg-white overflow-y-auto overflow-x-hidden'
+                    }`}
+                  >
                     {showInlinePreview ? (
                       previewUrl ? (
-                        <div className="w-full min-h-full relative">
+                        <div className="flex-1 min-h-0 w-full relative min-w-0">
                           <iframe
                             src={previewUrl}
-                            className="w-full min-h-[70vh] h-[calc(100vh-12rem)] border-0"
+                            className="absolute inset-0 w-full h-full border-0 bg-[#525659]"
                             title="Agreement Document Preview"
                           />
                          
@@ -9541,6 +9604,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       <button
                         onClick={() => {
                           setShowInlinePreview(false);
+                          setAgreementPreviewIsPdf(false);
                           if (previewUrl) {
                             URL.revokeObjectURL(previewUrl);
                             setPreviewUrl(null);
@@ -9571,6 +9635,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         setProcessedAgreement(null);
                         setCachedPdfAgreement(null);
                         setShowInlinePreview(false);
+                        setAgreementPreviewIsPdf(false);
                         setIsFullscreen(false);
                         if (previewUrl) {
                           URL.revokeObjectURL(previewUrl);
