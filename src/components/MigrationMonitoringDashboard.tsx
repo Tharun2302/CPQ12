@@ -36,7 +36,10 @@ interface Project {
   projectName: string;
   migrationType: string;
   combinationName: string;
-  managerName: string;
+  managerName: string; // Migration Manager
+  seniorMigrationManagerName?: string;
+  engineeringManagerName?: string;
+  deliveryHeadDirectorName?: string;
   clientName: string;
   companyName: string;
   numberOfAdminAccounts: number;
@@ -68,6 +71,9 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
   const [migrationType, setMigrationType] = useState('');
   const [combinationName, setCombinationName] = useState('');
   const [managerName, setManagerName] = useState('');
+  const [seniorMigrationManagerName, setSeniorMigrationManagerName] = useState('');
+  const [engineeringManagerName, setEngineeringManagerName] = useState('');
+  const [deliveryHeadDirectorName, setDeliveryHeadDirectorName] = useState('');
   const [clientName, setClientName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [numberOfAdminAccounts, setNumberOfAdminAccounts] = useState<number>(1);
@@ -117,6 +123,9 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
         // Ensure all projects have batches and servers arrays
         const normalizedProjects = parsed.map((p: Project) => ({
           ...p,
+          seniorMigrationManagerName: p.seniorMigrationManagerName || '',
+          engineeringManagerName: p.engineeringManagerName || '',
+          deliveryHeadDirectorName: p.deliveryHeadDirectorName || '',
           batches: (p.batches || []).map((b: Batch) => ({
             ...b,
             status: b.status || 'not-started'
@@ -699,7 +708,8 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
 
   const handleAddProject = () => {
     if (!projectName.trim() || !migrationType.trim() || !combinationName.trim() || 
-        !managerName.trim() || !clientName.trim() || !companyName.trim()) {
+        !managerName.trim() || !seniorMigrationManagerName.trim() || !engineeringManagerName.trim() ||
+        !deliveryHeadDirectorName.trim() || !clientName.trim() || !companyName.trim()) {
       alert('Please fill in all fields');
       return;
     }
@@ -715,6 +725,9 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
       migrationType: migrationType.trim(),
       combinationName: combinationName.trim(),
       managerName: managerName.trim(),
+      seniorMigrationManagerName: seniorMigrationManagerName.trim(),
+      engineeringManagerName: engineeringManagerName.trim(),
+      deliveryHeadDirectorName: deliveryHeadDirectorName.trim(),
       clientName: clientName.trim(),
       companyName: companyName.trim(),
       numberOfAdminAccounts: numberOfAdminAccounts || 1,
@@ -733,6 +746,9 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
     setMigrationType('');
     setCombinationName('');
     setManagerName('');
+    setSeniorMigrationManagerName('');
+    setEngineeringManagerName('');
+    setDeliveryHeadDirectorName('');
     setClientName('');
     setCompanyName('');
     setSelectedStartDate(null);
@@ -810,7 +826,10 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                       <div className="space-y-1 text-sm text-gray-600">
                         <p><span className="font-semibold">Migration Type:</span> {project.migrationType}</p>
                         <p><span className="font-semibold">Combination:</span> {project.combinationName}</p>
-                        <p><span className="font-semibold">Manager:</span> {project.managerName}</p>
+                        <p><span className="font-semibold">Migration Manager:</span> {project.managerName}</p>
+                        <p><span className="font-semibold">Senior Migration Manager:</span> {project.seniorMigrationManagerName || '-'}</p>
+                        <p><span className="font-semibold">Engineering Manager:</span> {project.engineeringManagerName || '-'}</p>
+                        <p><span className="font-semibold">Delivery Head/Director:</span> {project.deliveryHeadDirectorName || '-'}</p>
                         <p><span className="font-semibold">Client:</span> {project.clientName}</p>
                         <p><span className="font-semibold">Company:</span> {project.companyName}</p>
                       </div>
@@ -961,6 +980,9 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                   setMigrationType('');
                   setCombinationName('');
                   setManagerName('');
+                  setSeniorMigrationManagerName('');
+                  setEngineeringManagerName('');
+                  setDeliveryHeadDirectorName('');
                   setClientName('');
                   setCompanyName('');
                   setSelectedStartDate(null);
@@ -1037,13 +1059,58 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
               {/* Manager Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Manager Name <span className="text-red-500">*</span>
+                  Migration Manager <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={managerName}
                   onChange={(e) => setManagerName(e.target.value)}
-                  placeholder="Enter manager name"
+                  placeholder="Enter migration manager name"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              {/* Senior Migration Manager */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Senior Migration Manager <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={seniorMigrationManagerName}
+                  onChange={(e) => setSeniorMigrationManagerName(e.target.value)}
+                  placeholder="Enter senior migration manager name"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              {/* Engineering Manager */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Engineering Manager <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={engineeringManagerName}
+                  onChange={(e) => setEngineeringManagerName(e.target.value)}
+                  placeholder="Enter engineering manager name"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              {/* Delivery Head / Director */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delivery Head / Director <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={deliveryHeadDirectorName}
+                  onChange={(e) => setDeliveryHeadDirectorName(e.target.value)}
+                  placeholder="Enter delivery head / director name"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   required
                 />
@@ -1088,6 +1155,9 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                   setMigrationType('');
                   setCombinationName('');
                   setManagerName('');
+                  setSeniorMigrationManagerName('');
+                  setEngineeringManagerName('');
+                  setDeliveryHeadDirectorName('');
                   setClientName('');
                   setCompanyName('');
                   setNumberOfAdminAccounts(1);
@@ -1152,6 +1222,10 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                       <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Client</span>
                       <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.clientName}</p>
                     </div>
+                    <div className="bg-white rounded-lg p-3 shadow-sm">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Company</span>
+                      <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.companyName}</p>
+                    </div>
                   </div>
                   
                   <div className="space-y-4">
@@ -1210,8 +1284,12 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                       )}
                     </div>
                     <div className="bg-white rounded-lg p-3 shadow-sm">
-                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Manager</span>
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Migration Manager</span>
                       <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.managerName}</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 shadow-sm">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Senior Migration Manager</span>
+                      <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.seniorMigrationManagerName || '-'}</p>
                     </div>
                   </div>
                   
@@ -1221,8 +1299,12 @@ const MigrationMonitoringDashboard: React.FC<MigrationMonitoringDashboardProps> 
                       <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.combinationName}</p>
                     </div>
                     <div className="bg-white rounded-lg p-3 shadow-sm">
-                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Company</span>
-                      <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.companyName}</p>
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Engineering Manager</span>
+                      <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.engineeringManagerName || '-'}</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 shadow-sm">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Delivery Head/Director</span>
+                      <p className="text-base font-semibold text-gray-900 mt-1">{selectedProject.deliveryHeadDirectorName || '-'}</p>
                     </div>
                   </div>
                 </div>

@@ -77,6 +77,28 @@ const getStep = (workflow: any, role: string) => {
   return steps.find((s: any) => s?.role === role);
 };
 
+const hasRole = (workflow: any, role: string) =>
+  Array.isArray(workflow?.workflowSteps) && workflow.workflowSteps.some((s: any) => s?.role === role);
+
+const labelFromRole = (role: string) => {
+  switch (role) {
+    case 'Team Approval':
+      return 'Team';
+    case 'Technical Team':
+      return 'Tech';
+    case 'Legal Team':
+      return 'Legal';
+    case 'Deal Desk':
+      return 'Deal Desk';
+    case 'Migration Manager':
+      return 'MM';
+    case 'Account Manager':
+      return 'AM';
+    default:
+      return role || 'Step';
+  }
+};
+
 const stepStatusLabel = (status?: string) => {
   if (!status) return 'pending';
   return status === 'denied' ? 'rejected' : status.replace('_', ' ');
@@ -548,6 +570,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                 const technicalStep = getStep(workflow, 'Technical Team');
                 const legalStep = getStep(workflow, 'Legal Team');
                 const dealDeskStep = getStep(workflow, 'Deal Desk');
+                const migrationManagerStep = getStep(workflow, 'Migration Manager');
+                const accountManagerStep = getStep(workflow, 'Account Manager');
 
                 return (
                   <div
@@ -644,13 +668,25 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         : dealDeskStep?.comments === 'Notification failed'
                           ? 'Email failed'
                           : (dealDeskStep?.comments || '');
-                      const baseSteps = [
-                        { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
-                        { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
-                        { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
-                      ];
-                      const dealDeskStepItem = { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra };
-                      const steps = [...baseSteps, dealDeskStepItem];
+                      const isStandard = hasRole(workflow, 'Team Approval');
+
+                      const steps = isStandard
+                        ? [
+                            { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
+                            { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
+                            { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
+                            { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra },
+                            { label: 'MM', step: migrationManagerStep, extra: migrationManagerStep?.comments || '' },
+                            { label: 'AM', step: accountManagerStep, extra: accountManagerStep?.comments || '' },
+                          ]
+                        : (workflow?.workflowSteps || [])
+                            .slice()
+                            .sort((a: any, b: any) => Number(a?.step || 0) - Number(b?.step || 0))
+                            .map((s: any) => ({
+                              label: labelFromRole(String(s?.role || 'Step')),
+                              step: s,
+                              extra: s?.comments || '',
+                            }));
 
                       const currentIdx = steps.findIndex((item) => {
                         const raw = item.step?.status || 'pending';
@@ -662,12 +698,18 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                         ? `${currentItem.label}: ${currentItem.extra}`
                         : `${currentItem?.label || 'Current'}: —`;
 
+                      const totalDisplayed = Math.max(
+                        Number(workflow.totalSteps || 0),
+                        Array.isArray(workflow.workflowSteps) ? workflow.workflowSteps.length : 0,
+                        steps.length
+                      );
+
                       return (
                         <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
                           <div className="flex items-center justify-between">
                             <div className="text-gray-700 text-xs font-bold uppercase tracking-wide">Approvals</div>
                             <div className="text-gray-500 text-xs">
-                              Step {resolvedCurrentIdx + 1} / {steps.length}
+                              Step {workflow.currentStep || resolvedCurrentIdx + 1} / {totalDisplayed || steps.length || 1}
                             </div>
                           </div>
 
