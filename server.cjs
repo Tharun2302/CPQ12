@@ -7103,43 +7103,11 @@ app.get('/api/approval-workflows', async (req, res) => {
     // Re-evaluate workflows that might be incorrectly marked as 'in_progress'
     // when all approval steps (Team, Tech, Legal) are actually complete
     const workflowsToUpdate = [];
-    const workflowsToFixDealDesk = [];
-    
     for (const workflow of workflows) {
       if (workflow.status === 'in_progress' || workflow.status === 'pending') {
         if (areAllApprovalStepsComplete(workflow.workflowSteps)) {
           workflowsToUpdate.push(workflow.id);
         }
-      }
-      
-      // Check if Legal Team is approved but Deal Desk is still pending
-      const legalStep = workflow.workflowSteps?.find(s => s.role === 'Legal Team');
-      const dealDeskStep = workflow.workflowSteps?.find(s => s.role === 'Deal Desk');
-      
-      if (legalStep?.status === 'approved' && dealDeskStep && 
-          (dealDeskStep.status === 'pending' || !dealDeskStep.status || dealDeskStep.status !== 'notified')) {
-        workflowsToFixDealDesk.push(workflow.id);
-      }
-    }
-    
-    // Fix Deal Desk steps that should be marked as "notified"
-    if (workflowsToFixDealDesk.length > 0) {
-      console.log(`🔄 Fixing ${workflowsToFixDealDesk.length} workflows: marking Deal Desk as "notified" (Legal Team already approved)`);
-      for (const workflowId of workflowsToFixDealDesk) {
-        await db.collection('approval_workflows').updateOne(
-          { id: workflowId },
-          {
-            $set: {
-              'workflowSteps.$[elem].status': 'notified',
-              'workflowSteps.$[elem].comments': 'Notified',
-              'workflowSteps.$[elem].timestamp': new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }
-          },
-          {
-            arrayFilters: [{ 'elem.role': 'Deal Desk' }]
-          }
-        );
       }
     }
     
@@ -7155,10 +7123,8 @@ app.get('/api/approval-workflows', async (req, res) => {
           }
         }
       );
-    }
-    
-    // Refresh the workflows after updates
-    if (workflowsToUpdate.length > 0 || workflowsToFixDealDesk.length > 0) {
+      
+      // Refresh the workflows after update
       const updatedWorkflows = await db.collection('approval_workflows')
         .find({})
         .sort({ createdAt: -1 })
@@ -7405,24 +7371,6 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
         : step
     );
     
-    // If Legal Team just approved, automatically mark Deal Desk as "notified"
-    if (stepUpdates.status === 'approved') {
-      const approvedStep = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber));
-      if (approvedStep && approvedStep.role === 'Legal Team') {
-        // Find Deal Desk step and mark it as notified
-        const dealDeskStepIndex = updatedSteps.findIndex(s => s.role === 'Deal Desk');
-        if (dealDeskStepIndex !== -1) {
-          updatedSteps[dealDeskStepIndex] = {
-            ...updatedSteps[dealDeskStepIndex],
-            status: 'notified',
-            comments: 'Notified',
-            timestamp: new Date().toISOString()
-          };
-          console.log('✅ Deal Desk automatically marked as "notified" after Legal Team approval');
-        }
-      }
-    }
-    
     // Update current step and status based on step updates
     let newCurrentStep = workflow.currentStep;
     let newStatus = workflow.status;
@@ -7596,22 +7544,62 @@ app.get('/api/documents', async (req, res) => {
 
     console.log('📄 Fetching PDF documents from database...');
     
-    // Get query parameters for pagination (optional)
-    const limit = parseInt(req.query.limit) || 100; // Default to 100 documents max
-    const skip = parseInt(req.query.skip) || 0;
+    // Pagination: by default return ALL matches (metadata only; binary fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
+    const skip = Math.max(0, parseInt(String(req.query.skip || 0), 10) || 0);
+    const limitRaw = req.query.limit;
+    const limitSingle = Array.isArray(limitRaw) ? limitRaw[0] : limitRaw;
+    const allFlag = String(req.query.all ?? req.query.full ?? '').toLowerCase();
+    const forceAll = allFlag === '1' || allFlag === 'true';
+
+    let listLimit = 100;
+    let listUnlimited = true;
+    if (!forceAll && limitSingle !== undefined && String(limitSingle).trim() !== '') {
+      const parsed = parseInt(String(limitSingle), 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        listUnlimited = false;
+        listLimit = parsed;
+      }
+    }
+
+
+    // Filter by whether a saved agreement is linked to any approval workflow (approval_workflows.documentId)
+    const approvalFilterRaw = (req.query.approvalFilter || 'all').toString().toLowerCase();
+    const approvalFilter =
+      approvalFilterRaw === 'in_workflow' || approvalFilterRaw === 'no_workflow'
+        ? approvalFilterRaw
+        : 'all';
+
+    let workflowDocumentIds = [];
+    if (approvalFilter !== 'all') {
+      const distinctIds = await db
+        .collection('approval_workflows')
+        .distinct('documentId');
+      workflowDocumentIds = distinctIds.filter((id) => id != null && String(id).trim() !== '');
+    }
+
+    const approvalMatch =
+      approvalFilter === 'in_workflow'
+        ? { id: { $in: workflowDocumentIds } }
+        : approvalFilter === 'no_workflow'
+          ? workflowDocumentIds.length > 0
+            ? { id: { $nin: workflowDocumentIds } }
+            : {}
+          : {};
+
+    const totalCount = await db.collection('documents').countDocuments(approvalMatch);
+
+    const pipeline = [
+      { $project: { fileData: 0, docxFileData: 0 } },
+      ...(Object.keys(approvalMatch).length ? [{ $match: approvalMatch }] : []),
+      { $sort: { createdAt: -1, generatedDate: -1 } },
+      { $skip: skip },
+      ...(listUnlimited ? [] : [{ $limit: listLimit }]),
+    ];
 
     // Use aggregation with allowDiskUse so large sorts don't hit MongoDB's 32MB memory limit
     const documents = await db
       .collection('documents')
-      .aggregate(
-        [
-          { $project: { fileData: 0, docxFileData: 0 } },
-          { $sort: { createdAt: -1, generatedDate: -1 } },
-          { $skip: skip },
-          { $limit: limit }
-        ],
-        { allowDiskUse: true }
-      )
+      .aggregate(pipeline, { allowDiskUse: true })
       .toArray();
 
     // Serialize dates to strings for frontend compatibility
@@ -7621,12 +7609,19 @@ app.get('/api/documents', async (req, res) => {
       createdAt: doc.createdAt ? (doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt) : new Date().toISOString(),
     }));
 
-    console.log(`✅ Found ${serializedDocuments.length} documents in database (limit: ${limit}, skip: ${skip})`);
+    console.log(
+      `✅ Found ${serializedDocuments.length} documents (total for filter "${approvalFilter}": ${totalCount}, limit: ${
+        listUnlimited ? 'none' : listLimit
+      }, skip: ${skip})`
+    );
 
     res.json({
       success: true,
       documents: serializedDocuments,
-      count: serializedDocuments.length
+      count: serializedDocuments.length,
+      totalCount,
+      approvalFilter,
+      limited: !listUnlimited && serializedDocuments.length >= listLimit && totalCount > serializedDocuments.length,
     });
   } catch (error) {
     console.error('❌ Error fetching documents:', error);

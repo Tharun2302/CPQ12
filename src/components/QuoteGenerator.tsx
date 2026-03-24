@@ -2817,17 +2817,23 @@ Total Price: {{total price}}`;
 
     setIsStartingWorkflow(true);
     try {
-      // Apply $2,500 minimum to match what's shown in the agreement PDF
+      // Apply $2,500 minimum to match what's shown in the agreement PDF (overage: use actual total)
+      const isOverageAgreementApproval =
+        (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+        (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
       const MINIMUM_TOTAL = 2500;
-      const baseApprovalAmount = Math.max(totalCost, MINIMUM_TOTAL);
+      const baseApprovalAmount = isOverageAgreementApproval
+        ? totalCost
+        : Math.max(totalCost, MINIMUM_TOTAL);
       
-      // Apply discount if applicable (but ensure it doesn't go below $2,500)
+      // Apply discount if applicable (but ensure it doesn't go below $2,500 for non-overage)
       let approvalAmount = baseApprovalAmount;
       if (shouldApplyDiscount) {
         const discountAmount = baseApprovalAmount * (discountPercent / 100);
         const amountAfterDiscount = baseApprovalAmount - discountAmount;
-        // Ensure minimum is maintained even after discount
-        approvalAmount = Math.max(amountAfterDiscount, MINIMUM_TOTAL);
+        approvalAmount = isOverageAgreementApproval
+          ? amountAfterDiscount
+          : Math.max(amountAfterDiscount, MINIMUM_TOTAL);
       }
 
       // First, save the PDF to MongoDB if not already saved
@@ -4054,10 +4060,15 @@ Total Price: {{total price}}`;
         const userCount = quoteData.configuration?.numberOfUsers || 1;
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
-        // Apply $2,500 minimum to total cost for agreement generation
+        // Apply $2,500 minimum to total cost for agreement generation (overage: use actual total)
         const calculatedTotalCost = quoteData.calculation?.totalCost || 0;
+        const isOverageAgreementQuote =
+          (quoteData.configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+          (quoteData.configuration?.migrationType || '').toLowerCase() === 'overage agreement';
         const MINIMUM_TOTAL = 2500;
-        const totalCost = calculatedTotalCost < MINIMUM_TOTAL ? MINIMUM_TOTAL : calculatedTotalCost;
+        const totalCost = isOverageAgreementQuote
+          ? calculatedTotalCost
+          : (calculatedTotalCost < MINIMUM_TOTAL ? MINIMUM_TOTAL : calculatedTotalCost);
         const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
@@ -6746,10 +6757,13 @@ Total Price: {{total price}}`;
             const usersCost = userCost + dataCost;
             let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
             
-            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze Migrate)
+            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze Migrate) — skip for overage
+            const isOverageAgreementTemplate =
+              (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+              (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
             const MINIMUM_TOTAL = 2500;
             let finalUsersCost = usersCost; // This will be what's displayed
-            if (calculatedDisplayedTotal < MINIMUM_TOTAL) {
+            if (!isOverageAgreementTemplate && calculatedDisplayedTotal < MINIMUM_TOTAL) {
               const deficit = MINIMUM_TOTAL - calculatedDisplayedTotal;
               finalUsersCost = usersCost + deficit; // Add deficit to usersCost for display
               calculatedDisplayedTotal = MINIMUM_TOTAL;

@@ -5,7 +5,9 @@ import {
   Clock,
   FileCheck,
   FileText,
+  ListChecks,
   Loader2,
+  PenLine,
   Search,
   ShieldCheck,
   ThumbsUp,
@@ -20,6 +22,9 @@ import { BACKEND_URL } from '../config/api';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
+/** When on dashboard, optionally narrow the list (e.g. "approved today" from the green metric card). */
+type DashboardListFilter = 'all' | 'approved_today';
+
 interface ApprovalDashboardProps {
   onStartManualApprovalWorkflow?: () => void;
 }
@@ -32,17 +37,17 @@ const isSameDay = (a: Date, b: Date) =>
 const badgeClass = (status: string) => {
   switch (status) {
     case 'approved':
-      // Vibrant approved (emerald)
-      return 'bg-emerald-600 text-white ring-1 ring-emerald-600';
+      // Soft Mint Green with dark green text
+      return 'bg-[#DCFCE7] text-[#166534] ring-1 ring-[#86EFAC]';
     case 'denied':
-      // Ruby rejected
-      return 'bg-[#E11D48] text-white ring-1 ring-[#E11D48]';
+      // Soft Coral Red
+      return 'bg-[#FCA5A5] text-[#991B1B] ring-1 ring-[#FCA5A5]';
     case 'in_progress':
-      return 'bg-sky-500 text-white ring-1 ring-sky-500';
+      return 'bg-[#2563EB] text-white ring-1 ring-[#2563EB]';
     case 'pending':
     default:
-      // High-contrast pending state (Amber #F59E0B) for readability on white backgrounds
-      return 'bg-[#F59E0B] text-gray-900 ring-1 ring-black/10';
+      // Warm Amber with dark brown text
+      return 'bg-[#FEF3C7] text-[#78350F] ring-1 ring-[#FDE68A]';
   }
 };
 
@@ -81,17 +86,17 @@ const stepStatusLabel = (status?: string) => {
 
 const stepperDotClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
-  if (s === 'denied') return 'bg-[#E11D48]';
-  if (s === 'approved' || s === 'notified') return 'bg-emerald-500'; // Treat "notified" same as "approved"
-  if (idx < currentIdx) return 'bg-emerald-500';
-  if (idx === currentIdx) return 'bg-[#F59E0B]';
+  if (s === 'denied') return 'bg-[#FCA5A5]';
+  if (s === 'approved') return 'bg-[#86EFAC]';
+  if (idx < currentIdx) return 'bg-[#86EFAC]';
+  if (idx === currentIdx) return 'bg-[#FCD34D]';
   return 'bg-gray-300';
 };
 
 const stepperLabelClass = (idx: number, currentIdx: number, rawStatus?: string) => {
   const s = rawStatus || 'pending';
-  if (s === 'denied') return 'text-red-600';
-  if (s === 'approved' || s === 'notified') return 'text-emerald-700'; // Treat "notified" same as "approved"
+  if (s === 'denied') return 'text-[#991B1B]';
+  if (s === 'approved') return 'text-[#166534]';
   if (idx === currentIdx) return 'text-gray-900 font-semibold';
   return 'text-gray-600';
 };
@@ -107,6 +112,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const navigate = useNavigate();
   const { user } = useAuth();
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
+  const [dashboardListFilter, setDashboardListFilter] = useState<DashboardListFilter>('all');
   const [query, setQuery] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -114,6 +120,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const [esignError, setEsignError] = useState<string | null>(null);
+  const [esignCreatingId, setEsignCreatingId] = useState<string | null>(null);
 
   const {
     workflows,
@@ -142,6 +150,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     approved,
     rejected,
     approvedToday,
+    approvedTodayList,
     sparkPending,
     sparkApproved,
     sparkRejected,
@@ -184,12 +193,16 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       .filter(matchesQuery)
       .sort(sortByCreatedAt);
 
-    const approvedTodayCount = safe.filter(isApproved).filter((w: any) => {
-      const d = new Date(w.updatedAt || w.createdAt);
-      return isSameDay(d, now);
-    }).length;
+    const approvedTodayList = safe
+      .filter(isApproved)
+      .filter((w: any) => {
+        const d = new Date(w.updatedAt || w.createdAt);
+        return isSameDay(d, now);
+      })
+      .filter(matchesQuery)
+      .sort(sortByCreatedAt);
 
-    const rejectedTodayCount = safe.filter(isRejected).filter((w: any) => {
+    const approvedTodayCount = safe.filter(isApproved).filter((w: any) => {
       const d = new Date(w.updatedAt || w.createdAt);
       return isSameDay(d, now);
     }).length;
@@ -226,6 +239,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       approved: approvedAll,
       rejected: rejectedAll,
       approvedToday: approvedTodayCount,
+      approvedTodayList,
       sparkPending: sparkP,
       sparkApproved: sparkA,
       sparkRejected: sparkR,
@@ -248,10 +262,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
       case 'rejected':
         return rejected;
       default:
-        // dashboard shows all (pending + approved + rejected)
+        // dashboard: all items, or narrowed by metric card (e.g. approved today)
+        if (dashboardListFilter === 'approved_today') {
+          return approvedTodayList;
+        }
         return all;
     }
-  }, [activeView, all, pending, approved, rejected]);
+  }, [activeView, dashboardListFilter, all, approvedTodayList, pending, approved, rejected]);
 
   // Use the existing "View Details" behavior by navigating to the modal in other dashboards.
   const revokeObjectUrlIfAny = () => {
@@ -268,6 +285,38 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
     setPreviewError(null);
     setDocumentPreviewUrl(null);
     revokeObjectUrlIfAny();
+  };
+
+  const handleStartEsign = async (workflow: any) => {
+    const docId = workflow?.documentId;
+    if (!docId) {
+      setEsignError('No document linked to this workflow.');
+      return;
+    }
+    setEsignCreatingId(workflow.id);
+    setEsignError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: docId,
+          uploaded_by: user?.email || 'approval-workflow',
+          workflowId: workflow.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Failed to create e-sign document');
+      if (data.success && data.document?.id) {
+        navigate(`/esign/${data.document.id}/place-fields`);
+        return;
+      }
+      throw new Error('Invalid response');
+    } catch (e) {
+      setEsignError(e instanceof Error ? e.message : 'Failed to start e-sign');
+    } finally {
+      setEsignCreatingId(null);
+    }
   };
 
   const openAgreementPreview = async (workflow: any) => {
@@ -324,7 +373,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
   ];
 
   return (
-    <div className="w-full min-h-screen overflow-hidden bg-white">
+    <div className="w-full min-h-screen overflow-hidden bg-white" style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif" }}>
       {/* Back to home */}
       <button
         type="button"
@@ -349,20 +398,23 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => setActiveView(item.key)}
+                  onClick={() => {
+                    setActiveView(item.key);
+                    setDashboardListFilter('all');
+                  }}
                   className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
                     active
-                      ? 'bg-indigo-50 text-indigo-900 shadow-sm ring-1 ring-indigo-100'
+                      ? 'bg-blue-50 text-[#1E40AF] shadow-sm ring-1 ring-blue-100'
                       : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <span className="flex items-center gap-3">
-                    <Icon className={`h-4 w-4 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
+                    <Icon className={`h-4 w-4 ${active ? 'text-[#2563EB]' : 'text-gray-400'}`} />
                     <span className="text-sm font-semibold">{item.label}</span>
                   </span>
                   <span
                     className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                      active ? 'bg-indigo-100 text-indigo-800 ring-1 ring-indigo-200' : 'bg-gray-100 text-gray-700 ring-1 ring-gray-200'
+                      active ? 'bg-blue-100 text-[#1E40AF] ring-1 ring-blue-200' : 'bg-gray-100 text-gray-700 ring-1 ring-gray-200'
                     }`}
                   >
                     {counts[item.key]}
@@ -378,7 +430,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
               type="button"
               onClick={onStartManualApprovalWorkflow}
               disabled={!onStartManualApprovalWorkflow}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#10B981] text-white px-4 py-2.5 text-sm font-semibold shadow-sm hover:bg-[#059669] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#2563EB] text-white px-4 py-2.5 text-sm font-semibold shadow-md hover:bg-[#1D4ED8] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               title={onStartManualApprovalWorkflow ? 'Start Manual Approval Workflow' : 'Not available'}
             >
               <FileCheck className="h-4 w-4 text-white" />
@@ -397,7 +449,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <>
               {/* Metric cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                <div className="rounded-xl bg-[#EFF6FF] border border-blue-100 p-3 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('pending');
+                    setDashboardListFilter('all');
+                  }}
+                  className="rounded-xl bg-[#EFF6FF] border border-blue-100 p-3 shadow-md text-left w-full transition-all hover:shadow-lg hover:border-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  aria-label={`Pending approvals: ${pending.length} in queue. Click to view the pending list.`}
+                >
                   <div className="flex items-center justify-between">
                     <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Pending Approvals</div>
                   </div>
@@ -409,35 +469,59 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     <Clock className="h-4 w-4 text-amber-600" />
                     Queue needing action
                   </div>
-                </div>
+                  <div className="mt-2 text-[11px] text-blue-700 font-medium">Click to open pending list</div>
+                </button>
 
-                <div className="rounded-xl bg-[#ECFDF5] border border-emerald-100 p-3 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('dashboard');
+                    setDashboardListFilter('approved_today');
+                  }}
+                  className={`rounded-xl border p-3 shadow-md text-left w-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#15803d] focus-visible:ring-offset-2 ${
+                    dashboardListFilter === 'approved_today'
+                      ? 'bg-[#BBF7D0] border-[#15803d] ring-2 ring-[#15803d]/40 shadow-lg'
+                      : 'bg-[#DCFCE7] border-[#86EFAC] hover:shadow-lg hover:border-[#4ADE80]'
+                  }`}
+                  aria-pressed={dashboardListFilter === 'approved_today'}
+                  aria-label={`Approved today: ${approvedToday} deals. Click to list deals approved today.`}
+                >
                   <div className="flex items-center justify-between">
-                    <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Approved Today</div>
+                    <div className="text-[#166534] text-xs font-semibold uppercase tracking-wide">Approved Today</div>
                   </div>
                   <div className="mt-2 flex items-end justify-between gap-3">
-                    <div className="text-2xl font-extrabold text-gray-900">{approvedToday}</div>
-                    <Sparkline data={sparkApproved} stroke="#10B981" />
+                    <div className="text-2xl font-extrabold text-[#166534]">{approvedToday}</div>
+                    <Sparkline data={sparkApproved} stroke="#166534" />
                   </div>
-                  <div className="mt-1.5 text-gray-700 text-sm flex items-center gap-2">
-                    <ThumbsUp className="h-4 w-4 text-emerald-600" />
+                  <div className="mt-1.5 text-[#166534] text-sm flex items-center gap-2">
+                    <ThumbsUp className="h-4 w-4 text-[#166534]" />
                     Completed approvals
                   </div>
-                </div>
+                  <div className="mt-2 text-[11px] text-[#14532d] font-semibold">Click to show these deals below</div>
+                </button>
 
-                <div className="rounded-xl bg-[#FEF2F2] border border-red-100 p-3 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('rejected');
+                    setDashboardListFilter('all');
+                  }}
+                  className="rounded-xl bg-[#FEF2F2] border border-[#FCA5A5] p-3 shadow-md text-left w-full transition-all hover:shadow-lg hover:border-rose-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                  aria-label="Show rejected workflows"
+                >
                   <div className="flex items-center justify-between">
-                    <div className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Rejected</div>
+                    <div className="text-[#991B1B] text-xs font-semibold uppercase tracking-wide">Rejected</div>
                   </div>
                   <div className="mt-2 flex items-end justify-between gap-3">
-                    <div className="text-2xl font-extrabold text-red-500">{rejected.length}</div>
-                    <Sparkline data={sparkRejected} stroke="#EF4444" />
+                    <div className="text-2xl font-extrabold text-[#991B1B]">{rejected.length}</div>
+                    <Sparkline data={sparkRejected} stroke="#FCA5A5" />
                   </div>
-                  <div className="mt-1.5 text-red-500 text-sm flex items-center gap-2">
-                    <XCircle className="h-4 w-4 text-red-500" />
+                  <div className="mt-1.5 text-[#991B1B] text-sm flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-[#991B1B]" />
                     Denied workflows
                   </div>
-                </div>
+                  <div className="mt-2 text-[11px] text-rose-800 font-medium">Click to open Rejected list</div>
+                </button>
               </div>
             </>
           )}
@@ -445,8 +529,23 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
           {/* List */}
           <div className="mt-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3">
-              <div className="text-gray-900 font-bold">
-                {activeView === 'dashboard' ? 'All Approvals' : sidebarItems.find((s) => s.key === activeView)?.label}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-gray-900 font-bold">
+                  {activeView === 'dashboard'
+                    ? dashboardListFilter === 'approved_today'
+                      ? 'Approved today'
+                      : 'All Approvals'
+                    : sidebarItems.find((s) => s.key === activeView)?.label}
+                </div>
+                {activeView === 'dashboard' && dashboardListFilter === 'approved_today' && (
+                  <button
+                    type="button"
+                    onClick={() => setDashboardListFilter('all')}
+                    className="text-sm font-semibold text-[#2563EB] hover:text-[#1D4ED8] underline underline-offset-2"
+                  >
+                    View all approvals
+                  </button>
+                )}
               </div>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
                 <div className="w-full md:w-[420px]">
@@ -466,6 +565,15 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
               </div>
             </div>
 
+            {esignError && (
+              <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-2 text-rose-800 text-sm flex items-center justify-between gap-2">
+                <span>{esignError}</span>
+                <button type="button" onClick={() => setEsignError(null)} className="text-rose-600 hover:text-rose-800" aria-label="Dismiss">
+                  ×
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-3">
               {list.map((workflow: any) => {
                 const status = workflow.status || 'pending';
@@ -481,13 +589,13 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                 return (
                   <div
                     key={workflow.id}
-                    className="group rounded-xl bg-white border border-gray-200 p-4 shadow-[0_2px_8px_rgba(15,23,42,0.06)] hover:shadow-[0_6px_18px_rgba(15,23,42,0.10)] hover:border-gray-300 transition-all"
+                    className="group rounded-xl bg-white border border-gray-200 p-5 shadow-[0_2px_12px_rgba(15,23,42,0.08)] hover:shadow-[0_8px_24px_rgba(15,23,42,0.12)] hover:border-gray-300 transition-all"
                   >
                     <div className="flex items-stretch justify-between gap-3">
                       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px_220px] gap-2">
                         <div className="min-w-0 lg:col-span-1">
                           <div className="flex items-center gap-2 min-w-0">
-                            <div className="text-[#4F46E5] font-extrabold text-base truncate min-w-0">
+                            <div className="text-[#2563EB] font-extrabold text-base truncate min-w-0">
                               {workflow.documentId || 'Untitled Quote / SOW'}
                             </div>
                             <span
@@ -523,12 +631,41 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                       </div>
 
                       <div className="shrink-0 flex flex-col sm:flex-row gap-2 self-stretch">
+                        {workflow?.documentId &&
+                          legalStep?.status === 'approved' &&
+                          (workflow.esignDocumentId ? (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/esign/${workflow.esignDocumentId}/status`)}
+                              title="View e-sign status (Recipient 1 & 2)"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2563EB] border border-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-[#1D4ED8] hover:border-[#1D4ED8] transition-all whitespace-nowrap"
+                            >
+                              <ListChecks className="h-4 w-4 text-white" />
+                              <span className="hidden sm:inline">View e-sign status</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEsign(workflow)}
+                              disabled={esignCreatingId === workflow.id}
+                              title="Send for e-signature after Legal — Recipient 1 & 2"
+                              aria-label="Send for e-signature"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {esignCreatingId === workflow.id ? (
+                                <Loader2 className="h-4 w-4 text-white animate-spin" />
+                              ) : (
+                                <PenLine className="h-4 w-4 text-white" />
+                              )}
+                              <span className="hidden sm:inline">Send for signature</span>
+                            </button>
+                          ))}
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#4F46E5] border border-[#4F46E5] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4338CA] hover:border-[#4338CA] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-transparent border border-[#64748B] px-4 py-2 text-sm font-semibold text-[#64748B] shadow-sm hover:bg-[#64748B] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/40 focus-visible:ring-offset-2 transition-all whitespace-nowrap"
                         >
                           <FileText className="h-4 w-4 text-white" />
                           <span className="sm:hidden">Preview</span>
@@ -599,8 +736,8 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                                 return (
                                   <div key={item.label} className="flex-1 min-w-0 flex flex-col items-center" title={title}>
                                     {completed ? (
-                                      <div className="h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-white flex items-center justify-center">
-                                        <Check className="h-3 w-3 text-white" />
+                                      <div className="h-4 w-4 rounded-full bg-[#86EFAC] ring-2 ring-white flex items-center justify-center">
+                                        <Check className="h-3 w-3 text-[#166534]" />
                                       </div>
                                     ) : (
                                       <div className={`h-4 w-4 rounded-full ring-2 ring-white ${stepperDotClass(idx, resolvedCurrentIdx, dotStatus)}`} />
@@ -622,12 +759,12 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
                     {(status === 'approved' || status === 'denied') && (
                       <div className="mt-4">
                         {status === 'approved' && (
-                          <span className="inline-flex items-center gap-2 text-emerald-700 text-sm font-semibold">
+                          <span className="inline-flex items-center gap-2 text-[#166534] text-sm font-semibold">
                             <CheckCircle className="h-4 w-4" /> Approved
                           </span>
                         )}
                         {status === 'denied' && (
-                          <span className="inline-flex items-center gap-2 text-rose-700 text-sm font-semibold">
+                          <span className="inline-flex items-center gap-2 text-[#991B1B] text-sm font-semibold">
                             <XCircle className="h-4 w-4" /> Rejected
                           </span>
                         )}
@@ -654,7 +791,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-indigo-600" />
+                  <FileText className="h-5 w-5 text-[#2563EB]" />
                   <h3 className="text-lg font-extrabold text-gray-900 truncate">
                     Document Preview
                   </h3>
@@ -676,7 +813,7 @@ const ApprovalDashboard: React.FC<ApprovalDashboardProps> = ({ onStartManualAppr
             <div className="p-6">
               {isPreviewLoading && (
                 <div className="h-[70vh] flex flex-col items-center justify-center text-gray-600">
-                  <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                  <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
                   <div className="mt-3 text-sm font-semibold">Loading agreement…</div>
                 </div>
               )}
