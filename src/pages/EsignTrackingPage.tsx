@@ -146,7 +146,7 @@ const EsignTrackingPage: React.FC = () => {
 
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-6 py-4">
-            <h1 className="text-xl font-bold text-white">Agreement Status</h1>
+            <h1 className="text-xl font-bold text-white">e sign status</h1>
             <p className="text-indigo-100 text-sm mt-0.5 truncate">{doc.file_name}</p>
             {doc.status === 'denied' ? (
               <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/90 text-white">

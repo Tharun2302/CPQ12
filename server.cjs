@@ -52,6 +52,18 @@ function esignRecipientsDocumentFilter(docId) {
   return { $or: [{ document_id: oid }, { document_id: oid.toString() }] };
 }
 
+function normalizeEsignEmail(e) {
+  if (!e || typeof e !== 'string') return '';
+  return e.trim().toLowerCase();
+}
+
+/** True when actor is the uploader (creator) of the e-sign document. */
+function esignActorIsDocumentCreator(doc, actorEmail) {
+  const uploader = normalizeEsignEmail(doc.uploaded_by);
+  const actor = normalizeEsignEmail(actorEmail);
+  return uploader !== '' && actor !== '' && uploader === actor;
+}
+
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({
   origin: [
@@ -937,7 +949,7 @@ async function sendEsignDeniedNotificationToCreator(doc, recipient, comment, den
     <p><strong>Document:</strong> ${fileName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
     <p><strong>Denied by:</strong> ${recipientLabel} (${deniedBy === 'review' ? 'reviewer' : 'signer'})</p>
     ${commentBlock}
-    <p>You can view the status and any comments in Agreement Status in the app.</p>
+    <p>You can view the status and any comments in e sign status in the app.</p>
   `;
   try {
     const result = await sendEmail(creatorEmail, subject, html);
@@ -5017,7 +5029,13 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
 app.post('/api/esign/documents/from-approval', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { documentId, uploaded_by: uploadedBy, workflowId } = req.body || {};
+    const {
+      documentId,
+      uploaded_by: uploadedBy,
+      workflowId,
+      requested_by_name: requestedByNameBody,
+      requested_by_email: requestedByEmailBody,
+    } = req.body || {};
     if (!documentId) return res.status(400).json({ success: false, error: 'documentId is required' });
 
     const document = await db.collection('documents').findOne({ id: documentId });
@@ -5040,11 +5058,24 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
     const filePath = path.join(documentsDir, diskFileName);
     fs.writeFileSync(filePath, fileBuffer);
 
+    const requestedByName =
+      typeof requestedByNameBody === 'string' && requestedByNameBody.trim()
+        ? requestedByNameBody.trim()
+        : null;
+    const requestedByEmail =
+      typeof requestedByEmailBody === 'string' && requestedByEmailBody.trim()
+        ? requestedByEmailBody.trim()
+        : uploadedBy && uploadedBy !== 'approval-workflow'
+          ? String(uploadedBy).trim()
+          : null;
+
     const doc = {
       file_name: fileName,
       file_path: filePath,
       uploaded_by: uploadedBy || 'approval-workflow',
       upload_source: 'approval',
+      requested_by_name: requestedByName,
+      requested_by_email: requestedByEmail,
       created_at: new Date(),
       status: 'draft'
     };
@@ -5185,6 +5216,10 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
       console.warn('E-sign DELETE: document not found', idParam);
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
+    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can delete this document' });
+    }
 
     await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
     await db.collection('esign_recipients').deleteMany({ document_id: docId });
@@ -5213,6 +5248,10 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
     }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can void this document' });
+    }
     if (doc.status !== 'sent') {
       return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be voided' });
     }
@@ -6290,6 +6329,16 @@ app.get('/api/esign/agreement-status', async (req, res) => {
       .toArray();
     const docIds = docs.map((d) => d._id);
     const docIdStrings = docIds.map((id) => id.toString());
+    const workflowsLinked = await db.collection('approval_workflows')
+      .find({ esignDocumentId: { $in: docIdStrings } })
+      .toArray();
+    const requestedByFromWorkflow = {};
+    workflowsLinked.forEach((w) => {
+      const eid = w.esignDocumentId != null ? String(w.esignDocumentId) : '';
+      if (!eid) return;
+      const label = (w.creatorName && String(w.creatorName).trim()) || (w.creatorEmail && String(w.creatorEmail).trim()) || '';
+      if (label && !requestedByFromWorkflow[eid]) requestedByFromWorkflow[eid] = label;
+    });
     // document_id can be stored as ObjectId or string depending on where it was set
     const recipientsByDoc = await db.collection('esign_recipients')
       .find({ $or: [{ document_id: { $in: docIdStrings } }, { document_id: { $in: docIds } }] })
@@ -6311,13 +6360,22 @@ app.get('/api/esign/agreement-status', async (req, res) => {
     });
     const agreements = docs.map((d) => {
       const recs = (byDocId[d._id.toString()] || []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      const idStr = d._id.toString();
+      const requestedByStored =
+        (d.requested_by_name && String(d.requested_by_name).trim()) ||
+        (d.requested_by_email && String(d.requested_by_email).trim()) ||
+        null;
+      const requestedBy = requestedByStored || requestedByFromWorkflow[idStr] || null;
       return {
-        id: d._id.toString(),
+        id: idStr,
         file_name: d.file_name,
         uploaded_by: d.uploaded_by,
         upload_source: d.upload_source || 'manual',
+        requested_by: requestedBy,
         created_at: d.created_at,
         sent_at: d.sent_at,
+        signed_at: d.signed_at,
+        voided_at: d.voided_at,
         status: d.status,
         recipients: recs
       };

@@ -1,15 +1,33 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, ListChecks, Check, Clock, XCircle, Eye, MoreVertical } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 
+interface RecipientRow {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+  status: string;
+  order?: number;
+  comment?: string | null;
+}
+
+/** Same row shape as e sign status / agreement-status API. */
 interface EsignDocument {
   id: string;
   file_name: string;
-  uploaded_by: string;
+  uploaded_by?: string;
+  upload_source?: string;
+  requested_by?: string | null;
   created_at: string;
-  status: 'draft' | 'sent' | 'signed' | 'completed' | 'voided';
+  sent_at?: string;
+  signed_at?: string;
+  voided_at?: string;
+  status: string;
+  recipients: RecipientRow[];
 }
 
 interface StatusModalRecipient {
@@ -28,6 +46,14 @@ interface StatusModalDoc {
   status: string;
 }
 
+function normalizeEmail(email: string | undefined | null): string {
+  return (email || '').trim().toLowerCase();
+}
+
+function isDocumentCreator(doc: EsignDocument, userEmail: string | undefined | null): boolean {
+  return normalizeEmail(userEmail) === normalizeEmail(doc.uploaded_by) && normalizeEmail(doc.uploaded_by) !== '';
+}
+
 const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -39,6 +65,7 @@ const EsignDocumentsPage: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [statusModalId, setStatusModalId] = useState<string | null>(null);
   const [statusModalDoc, setStatusModalDoc] = useState<StatusModalDoc | null>(null);
   const [statusModalRecipients, setStatusModalRecipients] = useState<StatusModalRecipient[]>([]);
@@ -49,12 +76,17 @@ const EsignDocumentsPage: React.FC = () => {
     loadDocuments();
   }, []);
 
+  const closeActionsMenu = useCallback(() => {
+    setOpenActionsId(null);
+    setDropdownPosition(null);
+  }, []);
+
   const loadDocuments = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents`);
+      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`);
       const data = await res.json();
-      if (data.success && data.documents) {
-        setDocuments(data.documents);
+      if (data.success && Array.isArray(data.agreements)) {
+        setDocuments(data.agreements);
       }
     } catch (err) {
       console.error('Failed to load documents:', err);
@@ -98,7 +130,11 @@ const EsignDocumentsPage: React.FC = () => {
     if (!window.confirm('Void this document? Signing links will stop working. The document will stay in the list as voided.')) return;
     setVoidingId(docId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email || '' }),
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         await loadDocuments();
@@ -117,7 +153,11 @@ const EsignDocumentsPage: React.FC = () => {
     if (!window.confirm('Delete this document? This cannot be undone.')) return;
     setDeletingId(docId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}`, { method: 'DELETE' });
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email || '' }),
+      });
       let data: { success?: boolean; error?: string } = {};
       const contentType = res.headers.get('Content-Type') || '';
       if (contentType.includes('application/json')) {
@@ -204,17 +244,71 @@ const EsignDocumentsPage: React.FC = () => {
     window.open(`${BACKEND_URL}/api/esign/documents/${statusModalId}/file?inline=1`, '_blank', 'noopener,noreferrer');
   };
 
-  const statusBadgeClass: Record<string, string> = {
-    draft: 'bg-amber-100 text-amber-800',
-    sent: 'bg-blue-100 text-blue-800',
-    signed: 'bg-emerald-100 text-emerald-800',
-    completed: 'bg-violet-100 text-violet-800',
-    voided: 'bg-slate-200 text-slate-700',
+  const formatDate = (dateStr: string | undefined) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: 'numeric' });
+    } catch {
+      return '';
+    }
+  };
+
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'Completed';
+      case 'sent':
+        return 'Sent';
+      case 'signed':
+        return 'Signed';
+      case 'denied':
+        return 'Denied';
+      case 'voided':
+        return 'Voided';
+      case 'draft':
+        return 'Draft';
+      default:
+        return status || 'Draft';
+    }
+  };
+
+  const stageBadgeClass = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'sent':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'signed':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'denied':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'voided':
+        return 'bg-slate-200 text-slate-700 border-slate-300';
+      default:
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  };
+
+  const STAGE_BY_ORDER = ['Team Lead', 'Technical', 'Legal', 'Deal Desk'];
+
+  const getSentStage = (recipients: RecipientRow[]): string => {
+    const sorted = [...recipients].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+    const pendingIndex = sorted.findIndex((r) => r.status !== 'signed' && r.status !== 'reviewed' && r.status !== 'denied');
+    if (pendingIndex < 0 || !recipients.length) return '';
+    const pending = sorted[pendingIndex];
+    const role = (pending.role || '').trim();
+    if (role === 'Team Approval') return 'Team Lead';
+    if (role === 'Technical Team') return 'Technical';
+    if (role === 'Legal Team') return 'Legal';
+    if (role === 'Deal Desk') return 'Deal Desk';
+    if (role && role.toLowerCase() !== 'reviewer' && role.toLowerCase() !== 'signer') return role;
+    return STAGE_BY_ORDER[pendingIndex] ?? STAGE_BY_ORDER[0];
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/80 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-slate-50/80 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <Link to="/deal" className="text-sm text-slate-500 hover:text-slate-800 mb-2 inline-block">
             ← Back to Deal
@@ -251,12 +345,12 @@ const EsignDocumentsPage: React.FC = () => {
           )}
         </div>
 
-        {/* Your Documents card */}
+        {/* Your Documents — same table layout as e sign status page */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <h2 className="text-lg font-semibold text-slate-900 px-6 pt-5 pb-4 border-b border-slate-200">Your Documents</h2>
           {loading ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+              <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
             </div>
           ) : documents.length === 0 ? (
             <div className="py-12 text-center text-slate-500">
@@ -264,113 +358,209 @@ const EsignDocumentsPage: React.FC = () => {
               <p>No documents yet. Upload a PDF to get started.</p>
             </div>
           ) : (
-            <ul className="divide-y divide-slate-200">
-              {documents.map((doc) => (
-                <li
-                  key={doc.id}
-                  className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-slate-50/50"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="shrink-0 flex items-center justify-center w-10 h-10 rounded-lg bg-violet-50 text-violet-600">
-                      <FileText className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-900 truncate">{doc.file_name}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap ${statusBadgeClass[doc.status] ?? 'bg-slate-100 text-slate-700'}`}
-                    >
-                      {doc.status}
-                    </span>
-                    {doc.status === 'draft' && (
-                      <button
-                        onClick={() => navigate(`/esign/${doc.id}/place-fields`)}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 hover:text-violet-700 hover:underline"
-                      >
-                        <PenLine className="h-4 w-4" />
-                        Place Fields
-                      </button>
-                    )}
-                    {(doc.status === 'sent' || doc.status === 'completed' || doc.status === 'voided') && (
-                      <button
-                        type="button"
-                        onClick={() => openStatusModal(doc.id)}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-violet-600 hover:underline"
-                      >
-                        <ListChecks className="h-4 w-4" />
-                        View status
-                      </button>
-                    )}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setOpenActionsId((id) => (id === doc.id ? null : doc.id))}
-                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400"
-                        title="Actions"
-                        aria-expanded={openActionsId === doc.id}
-                      >
-                        <MoreVertical className="h-5 w-5" />
-                      </button>
-                      {openActionsId === doc.id && (
-                        <>
-                          <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOpenActionsId(null)} />
-                          <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-                            {doc.status === 'sent' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => { handleVoid(doc.id); setOpenActionsId(null); }}
-                                  disabled={voidingId === doc.id}
-                                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                                >
-                                  {voidingId === doc.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : null}
-                                  Void
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => { navigate(`/esign/${doc.id}/send`); setOpenActionsId(null); }}
-                                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                >
-                                  <ExternalLink className="h-4 w-4 shrink-0" />
-                                  View Link
-                                </button>
-                              </>
-                            )}
-                            {(doc.status === 'signed' || doc.status === 'completed') && (
-                              <a
-                                href={`${BACKEND_URL}/api/esign/documents/${doc.id}/file?attachment=1`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                download
-                                onClick={() => setOpenActionsId(null)}
-                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                              >
-                                <Download className="h-4 w-4 shrink-0" />
-                                Download
-                              </a>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => { handleDelete(doc.id); setOpenActionsId(null); }}
-                              disabled={deletingId === doc.id}
-                              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
-                            >
-                              {deletingId === doc.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Trash2 className="h-4 w-4 shrink-0" />}
-                              Delete
-                            </button>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Document</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Stage</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-slate-200">
+                  {documents.map((doc) => {
+                    const isCreator = isDocumentCreator(doc, user?.email);
+                    return (
+                      <tr key={doc.id} className="hover:bg-slate-50/50">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
+                              <FileText className="h-4 w-4 text-indigo-600" />
+                            </div>
+                            <div>
+                              <span className="font-medium text-slate-900 truncate max-w-xs block" title={doc.file_name}>
+                                {doc.file_name}
+                              </span>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                {[
+                                  doc.uploaded_by,
+                                  doc.upload_source === 'manual' ? 'Manual upload' : null,
+                                  doc.requested_by ? `Requested by ${doc.requested_by}` : null,
+                                  formatDate(doc.created_at),
+                                ]
+                                  .filter(Boolean)
+                                  .join(' • ') || '—'}
+                              </p>
+                            </div>
                           </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-0.5">
+                            {doc.status === 'sent' && getSentStage(doc.recipients || []) ? (
+                              <>
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border w-fit ${stageBadgeClass(doc.status)}`}
+                                >
+                                  {getSentStage(doc.recipients || [])}
+                                </span>
+                                <span className="text-xs text-slate-500">Sent</span>
+                              </>
+                            ) : (
+                              <span
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border w-fit ${stageBadgeClass(doc.status)}`}
+                              >
+                                {statusLabel(doc.status)}
+                              </span>
+                            )}
+                            {(doc.status === 'denied' || doc.status === 'voided') &&
+                              (() => {
+                                const withComment = (doc.recipients || []).find((r) => r.comment);
+                                return withComment ? (
+                                  <p className="text-xs text-slate-600 mt-1.5 max-w-xs truncate" title={withComment.comment || undefined}>
+                                    Comment: {withComment.comment}
+                                  </p>
+                                ) : null;
+                              })()}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap items-center justify-end gap-3">
+                            {doc.status === 'draft' && (
+                              <Link
+                                to={`/esign/${doc.id}/place-fields`}
+                                className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                              >
+                                <PenLine className="h-4 w-4" />
+                                Place fields
+                              </Link>
+                            )}
+                            {(doc.status === 'sent' ||
+                              doc.status === 'completed' ||
+                              doc.status === 'voided' ||
+                              doc.status === 'denied' ||
+                              doc.status === 'signed') && (
+                              <button
+                                type="button"
+                                onClick={() => openStatusModal(doc.id)}
+                                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-slate-900"
+                              >
+                                <Eye className="h-4 w-4" />
+                                View status
+                              </button>
+                            )}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  if (openActionsId === doc.id) {
+                                    closeActionsMenu();
+                                  } else {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setDropdownPosition({ top: rect.bottom + 4, left: Math.max(8, rect.right - 180) });
+                                    setOpenActionsId(doc.id);
+                                  }
+                                }}
+                                className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400"
+                                title="Actions"
+                                aria-expanded={openActionsId === doc.id}
+                              >
+                                <MoreVertical className="h-5 w-5" />
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
+
+      {openActionsId &&
+        dropdownPosition &&
+        (() => {
+          const openDoc = documents.find((d) => d.id === openActionsId);
+          if (!openDoc) return null;
+          const isCreator = isDocumentCreator(openDoc, user?.email);
+          const st = (openDoc.status || '').toLowerCase();
+          const showVoid = st === 'sent' && isCreator;
+          const showViewLink = st === 'sent';
+          const showDownload = st === 'signed' || st === 'completed';
+          const showDelete = (st === 'voided' && isCreator) || (st === 'draft' && isCreator);
+          return createPortal(
+            <>
+              <div className="fixed inset-0 z-40" aria-hidden onClick={closeActionsMenu} />
+              <div
+                className="fixed z-50 min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {showVoid && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleVoid(openDoc.id);
+                      closeActionsMenu();
+                    }}
+                    disabled={voidingId === openDoc.id}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {voidingId === openDoc.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : null}
+                    Void
+                  </button>
+                )}
+                {showViewLink && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigate(`/esign/${openDoc.id}/send`);
+                      closeActionsMenu();
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <ExternalLink className="h-4 w-4 shrink-0" />
+                    View Link
+                  </button>
+                )}
+                {showDownload && (
+                  <a
+                    href={`${BACKEND_URL}/api/esign/documents/${openDoc.id}/file?attachment=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    onClick={closeActionsMenu}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Download className="h-4 w-4 shrink-0" />
+                    Download
+                  </a>
+                )}
+                {showDelete && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleDelete(openDoc.id);
+                      closeActionsMenu();
+                    }}
+                    disabled={deletingId === openDoc.id}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {deletingId === openDoc.id ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 shrink-0" />
+                    )}
+                    Delete
+                  </button>
+                )}
+              </div>
+            </>,
+            document.body
+          );
+        })()}
 
       {/* View status modal */}
       {statusModalId != null && (
@@ -380,7 +570,7 @@ const EsignDocumentsPage: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">Agreement Status</h2>
+              <h2 className="text-xl font-bold text-white">e sign status</h2>
               <button type="button" onClick={closeStatusModal} className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10" aria-label="Close">
                 <XCircle className="h-6 w-6" />
               </button>

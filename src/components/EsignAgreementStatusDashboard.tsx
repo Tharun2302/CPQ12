@@ -27,6 +27,8 @@ interface Agreement {
   file_name: string;
   uploaded_by?: string;
   upload_source?: string;
+  /** Display name/email of who requested the agreement (approval workflow or from-approval). */
+  requested_by?: string | null;
   created_at: string;
   sent_at?: string;
   signed_at?: string;
@@ -511,7 +513,14 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                             <div>
                               <span className="font-medium text-slate-900 truncate max-w-xs block" title={ag.file_name}>{ag.file_name}</span>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                {[ag.uploaded_by, ag.upload_source === 'manual' ? 'Manual upload' : null, formatDate(ag.created_at)].filter(Boolean).join(' • ') || '—'}
+                                {[
+                                  ag.uploaded_by,
+                                  ag.upload_source === 'manual' ? 'Manual upload' : null,
+                                  ag.requested_by ? `Requested by ${ag.requested_by}` : null,
+                                  formatDate(ag.created_at),
+                                ]
+                                  .filter(Boolean)
+                                  .join(' • ') || '—'}
                               </p>
                             </div>
                           </div>
@@ -640,7 +649,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">Agreement Status</h2>
+                <h2 className="text-xl font-bold text-white">e sign status</h2>
                 <button type="button" onClick={closeStatusModal} className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10" aria-label="Close">
                   <XCircle className="h-6 w-6" />
                 </button>
