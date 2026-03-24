@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Mail, Loader2, ListChecks } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { validateSignatureFieldsBeforeSend } from '../utils/esignSendValidation';
 
 const EsignSendPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -33,6 +34,22 @@ const EsignSendPage: React.FC = () => {
     setSending(true);
     setSendForSignatureResult(null);
     try {
+      const [fieldsRes, recipientsRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/esign/signature-fields/${documentId}`),
+        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
+      ]);
+      const fieldsData = await fieldsRes.json();
+      const recipientsData = await recipientsRes.json();
+      const apiFields = fieldsData.success && Array.isArray(fieldsData.fields) ? fieldsData.fields : [];
+      const apiRecipients =
+        recipientsData.success && Array.isArray(recipientsData.recipients) ? recipientsData.recipients : [];
+      const guardMsg = validateSignatureFieldsBeforeSend(apiRecipients, apiFields);
+      if (guardMsg) {
+        setSendForSignatureResult(guardMsg);
+        setSending(false);
+        return;
+      }
+
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -290,8 +290,6 @@ const EsignDocumentsPage: React.FC = () => {
     }
   };
 
-  const STAGE_BY_ORDER = ['Team Lead', 'Technical', 'Legal', 'Deal Desk'];
-
   const getSentStage = (recipients: RecipientRow[]): string => {
     const sorted = [...recipients].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
     const pendingIndex = sorted.findIndex((r) => r.status !== 'signed' && r.status !== 'reviewed' && r.status !== 'denied');
@@ -302,8 +300,9 @@ const EsignDocumentsPage: React.FC = () => {
     if (role === 'Technical Team') return 'Technical';
     if (role === 'Legal Team') return 'Legal';
     if (role === 'Deal Desk') return 'Deal Desk';
-    if (role && role.toLowerCase() !== 'reviewer' && role.toLowerCase() !== 'signer') return role;
-    return STAGE_BY_ORDER[pendingIndex] ?? STAGE_BY_ORDER[0];
+    const roleLower = role.toLowerCase();
+    if (role && roleLower !== 'signer' && roleLower !== 'reviewer') return role;
+    return (pending.name || '').trim() || (pending.email || '').trim() || 'Pending signer';
   };
 
   return (

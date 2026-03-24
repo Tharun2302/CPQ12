@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
+import { validateSignatureFieldsBeforeSend } from '../utils/esignSendValidation';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
@@ -680,6 +681,15 @@ const EsignPlaceFieldsPage: React.FC = () => {
         setSendForSignatureResult('Every recipient must have an email when using Sequential flow (Team Lead → Technical → Legal). Add emails in the recipient list.');
         return;
       }
+    }
+
+    const fieldCheck = validateSignatureFieldsBeforeSend(
+      recipients,
+      signatureFields.map((f) => ({ type: f.type, recipient_id: f.recipient_id ?? null }))
+    );
+    if (fieldCheck) {
+      setSendForSignatureResult(fieldCheck);
+      return;
     }
 
     setSaving(true);

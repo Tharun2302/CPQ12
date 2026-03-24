@@ -201,12 +201,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     return d ? inToday(d.getTime()) : false;
   }).length;
 
-  /** Stage names by position (Team Lead → Technical → Legal → Deal Desk) when role is generic. */
-  const STAGE_BY_ORDER = ['Team Lead', 'Technical', 'Legal', 'Deal Desk'];
-
   /**
-   * For "sent" status: which stage we're at (first pending recipient).
-   * Uses role name if it's a known stage; otherwise uses order (0=Team Lead, 1=Technical, 2=Legal, 3=Deal Desk).
+   * For "sent" status: label for the first pending recipient.
+   * Approval workflow roles keep short stage names; plain signers/reviewers show the person's name (not "Team Lead" by order).
    */
   const getSentStage = (recipients: RecipientStatus[]): string => {
     const sorted = [...recipients].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
@@ -218,8 +215,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     if (role === 'Technical Team') return 'Technical';
     if (role === 'Legal Team') return 'Legal';
     if (role === 'Deal Desk') return 'Deal Desk';
-    if (role && role.toLowerCase() !== 'reviewer' && role.toLowerCase() !== 'signer') return role;
-    return STAGE_BY_ORDER[pendingIndex] ?? STAGE_BY_ORDER[0];
+    const roleLower = role.toLowerCase();
+    if (role && roleLower !== 'signer' && roleLower !== 'reviewer') return role;
+    return (pending.name || '').trim() || (pending.email || '').trim() || 'Pending signer';
   };
 
   const formatDate = (dateStr: string | undefined) => {

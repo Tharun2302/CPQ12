@@ -270,6 +270,15 @@ const EsignSignPage: React.FC = () => {
     return null;
   };
 
+  /** Canonical PNG data URL for storage + preview (typed plain text becomes canvas image). */
+  const normalizeSignatureImageDataUrl = (): string | null => {
+    const d = getSignatureData();
+    if (!d) return null;
+    if (typeof d === 'string' && d.startsWith('data:image')) return d;
+    const fromType = typedSignatureToDataUrl();
+    return fromType;
+  };
+
   const handleSubmit = async () => {
     if (!documentId) return;
     if (!fields.length) {
@@ -283,6 +292,7 @@ const EsignSignPage: React.FC = () => {
     for (let i = 0; i < fields.length; i++) {
       const f = fields[i];
       if (f.type === 'signature') {
+        if (signingToken) continue;
         const v = fieldValues[i];
         if (v) values[String(i)] = v;
       } else {
@@ -1194,16 +1204,41 @@ const EsignSignPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        const data = getSignatureData();
-                        if (data && selectedSignatureFieldIndex !== null) {
-                          setFieldValues((prev) => ({ ...prev, [selectedSignatureFieldIndex]: data }));
-                          setSelectedSignatureFieldIndex(null);
-                          clearSignature();
-                          setError(null);
+                      onClick={async () => {
+                        const dataUrl = normalizeSignatureImageDataUrl();
+                        if (!dataUrl || selectedSignatureFieldIndex === null) return;
+                        if (signingToken && documentId) {
+                          try {
+                            const res = await fetch(`${BACKEND_URL}/api/esign/signatures/store-encrypted`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                document_id: documentId,
+                                signing_token: signingToken,
+                                field_index: selectedSignatureFieldIndex,
+                                mode: activeTab,
+                                payload: { imagePngBase64: dataUrl },
+                              }),
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok || !data.success) {
+                              setError(
+                                data.error ||
+                                  'Could not save signature securely. Set ESIGN_SIGNATURE_ENCRYPTION_KEY (64 hex chars) on the server.'
+                              );
+                              return;
+                            }
+                          } catch {
+                            setError('Could not save signature. Try again.');
+                            return;
+                          }
                         }
+                        setFieldValues((prev) => ({ ...prev, [selectedSignatureFieldIndex]: dataUrl }));
+                        setSelectedSignatureFieldIndex(null);
+                        clearSignature();
+                        setError(null);
                       }}
-                      disabled={!getSignatureData()}
+                      disabled={!normalizeSignatureImageDataUrl()}
                       className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Apply
@@ -1218,7 +1253,18 @@ const EsignSignPage: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  if (signingToken) {
+                    try {
+                      await fetch(`${BACKEND_URL}/api/esign/signatures/clear-stored`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ signing_token: signingToken }),
+                      });
+                    } catch {
+                      /* non-fatal */
+                    }
+                  }
                   setFieldValues({});
                   clearSignature();
                   setSelectedSignatureFieldIndex(null);

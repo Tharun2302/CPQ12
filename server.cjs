@@ -277,6 +277,11 @@ async function initializeDatabase() {
       { $unset: { signing_token: '' } }
     );
     await esignRecipientsCollection.createIndex({ signing_token: 1 }, { unique: true, sparse: true });
+    const esignSignatureSecretsCollection = db.collection('esign_signature_secrets');
+    await esignSignatureSecretsCollection.createIndex(
+      { document_id: 1, recipient_id: 1, field_index: 1 },
+      { unique: true }
+    );
     const auditLogsCollection = db.collection('audit_logs');
     await auditLogsCollection.createIndex({ document_id: 1 });
     await auditLogsCollection.createIndex({ timestamp: -1 });
@@ -4968,6 +4973,63 @@ async function getEsignFieldsForRecipient(db, docId, recipientIdStr) {
   return allFieldsNorm;
 }
 
+/** Same rules as EsignSignPage (signer vs reviewer). */
+function recipientIsEsignReviewer(rec) {
+  const action = rec.action;
+  const role = (rec.role || 'signer').toString();
+  return (
+    action === 'reviewer' ||
+    (action !== 'signer' &&
+      (role.toLowerCase() === 'reviewer' || role === 'Technical Team' || role === 'Legal Team'))
+  );
+}
+
+/** 32-byte AES-256 key from ESIGN_SIGNATURE_ENCRYPTION_KEY (64 hex chars or 32-byte base64). */
+function getEsignSignatureEncryptionKey() {
+  const raw = process.env.ESIGN_SIGNATURE_ENCRYPTION_KEY;
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return Buffer.from(trimmed, 'hex');
+  try {
+    const b64 = Buffer.from(trimmed, 'base64');
+    if (b64.length === 32) return b64;
+  } catch (_) { /* ignore */ }
+  return crypto.createHash('sha256').update(trimmed, 'utf8').digest();
+}
+
+function encryptEsignSignaturePlaintext(plaintextUtf8) {
+  const key = getEsignSignatureEncryptionKey();
+  if (!key || key.length !== 32) {
+    throw new Error('ESIGN_SIGNATURE_ENCRYPTION_KEY must be set (64 hex chars = 32 bytes)');
+  }
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintextUtf8, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return { ciphertext: encrypted, iv, authTag };
+}
+
+/** Decrypt only for PDF generation. Never log returned plaintext. */
+function decryptEsignSignatureStoredDoc(doc) {
+  const key = getEsignSignatureEncryptionKey();
+  if (!key || key.length !== 32) {
+    throw new Error('ESIGN_SIGNATURE_ENCRYPTION_KEY must be set');
+  }
+  const toBuf = (b) => {
+    if (Buffer.isBuffer(b)) return b;
+    if (b?.buffer) return Buffer.from(b.buffer, b.byteOffset, b.byteLength);
+    if (typeof b === 'string') return Buffer.from(b, 'base64');
+    return Buffer.alloc(0);
+  };
+  const iv = toBuf(doc.iv);
+  const authTag = toBuf(doc.auth_tag);
+  const ciphertext = toBuf(doc.ciphertext);
+  if (!iv.length || !authTag.length || !ciphertext.length) throw new Error('invalid blob');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+}
+
 // Helper: log audit action
 async function logAudit(documentId, action, userEmail, ipAddress) {
   if (!db) return;
@@ -5223,6 +5285,9 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
 
     await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
     await db.collection('esign_recipients').deleteMany({ document_id: docId });
+    await db.collection('esign_signature_secrets').deleteMany({
+      $or: [{ document_id: docId }, { document_id: docId.toString() }],
+    });
     await db.collection('audit_logs').deleteMany({ document_id: docId });
     await db.collection('esign_documents').deleteOne({ _id: docId });
 
@@ -5263,6 +5328,9 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
       { _id: docId },
       { $set: { status: 'voided', voided_at: new Date() } }
     );
+    await db.collection('esign_signature_secrets').deleteMany({
+      $or: [{ document_id: docId }, { document_id: docId.toString() }],
+    });
     try {
       await logAudit(docId.toString(), 'voided', req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress);
     } catch (auditErr) { /* non-fatal */ }
@@ -5440,6 +5508,31 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   if (baseUrlForDashboard.includes('localhost:3001')) baseUrlForDashboard = FRONTEND_DEV;
   let recipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).sort({ order: 1, _id: 1 }).toArray();
   if (!recipients.length) return { success: false, error: 'Add at least one recipient before sending' };
+
+  const envelopeHasSigner = recipients.some((r) => !recipientIsEsignReviewer(r));
+  if (envelopeHasSigner) {
+    const placementFields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).toArray();
+    if (!placementFields.length) {
+      return {
+        success: false,
+        error:
+          'Add at least one field on the document before sending. Signers need at least one signature field (place fields on the PDF first).',
+      };
+    }
+    for (const rec of recipients) {
+      if (recipientIsEsignReviewer(rec)) continue;
+      const recFields = await getEsignFieldsForRecipient(db, docId, rec._id.toString());
+      const hasSignatureField = recFields.some((f) => (f.type || 'signature') === 'signature');
+      if (!hasSignatureField) {
+        const label = rec.name || rec.email || 'Signer';
+        return {
+          success: false,
+          error: `Each signer needs at least one signature field. "${label}" has none visible for them. Assign a signature field to this signer, or use unassigned fields so all signers share the same placements.`,
+        };
+      }
+    }
+  }
+
   if (sequential) {
     recipients = recipients.slice(0, 1);
   }
@@ -6044,6 +6137,86 @@ app.get('/api/esign/signature-fields/:documentId', async (req, res) => {
   }
 });
 
+// POST /api/esign/signatures/store-encrypted — AES-256-GCM blob in MongoDB only; response never includes plaintext.
+app.post('/api/esign/signatures/store-encrypted', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, signing_token, field_index: fieldIndexRaw, mode, payload } = req.body || {};
+    if (document_id === undefined || document_id === null || !signing_token || fieldIndexRaw === undefined || fieldIndexRaw === null) {
+      return res.status(400).json({ success: false, error: 'document_id, signing_token, and field_index required' });
+    }
+    const field_index = Number(fieldIndexRaw);
+    if (!Number.isInteger(field_index) || field_index < 0) {
+      return res.status(400).json({ success: false, error: 'Invalid field_index' });
+    }
+    let docId;
+    try { docId = new ObjectId(String(document_id)); } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document_id' });
+    }
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: String(signing_token).trim() });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    let rDocId;
+    try {
+      rDocId = recipient.document_id instanceof ObjectId ? recipient.document_id : new ObjectId(String(recipient.document_id));
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    if (rDocId.toString() !== docId.toString()) {
+      return res.status(400).json({ success: false, error: 'Document does not match signing link' });
+    }
+    const img = payload && typeof payload.imagePngBase64 === 'string' ? payload.imagePngBase64.trim() : '';
+    if (!img || (!img.startsWith('data:image') && img.length < 80)) {
+      return res.status(400).json({ success: false, error: 'payload.imagePngBase64 required' });
+    }
+    const envelope = {
+      v: 1,
+      mode: ['draw', 'type', 'upload'].includes(mode) ? mode : 'draw',
+      imagePngBase64: img,
+    };
+    let enc;
+    try {
+      enc = encryptEsignSignaturePlaintext(JSON.stringify(envelope));
+    } catch (e) {
+      return res.status(503).json({ success: false, error: e.message || 'Encryption not configured' });
+    }
+
+    await db.collection('esign_signature_secrets').replaceOne(
+      { document_id: docId, recipient_id: recipient._id, field_index },
+      {
+        document_id: docId,
+        recipient_id: recipient._id,
+        field_index,
+        alg: 'aes-256-gcm',
+        iv: enc.iv,
+        auth_tag: enc.authTag,
+        ciphertext: enc.ciphertext,
+        created_at: new Date(),
+      },
+      { upsert: true }
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('❌ E-sign store-encrypted error:', error?.message || error);
+    return res.status(500).json({ success: false, error: 'Failed to store signature' });
+  }
+});
+
+// POST /api/esign/signatures/clear-stored — remove encrypted blobs for this signing link (e.g. user clicked Edit).
+app.post('/api/esign/signatures/clear-stored', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token } = req.body || {};
+    if (!signing_token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: String(signing_token).trim() });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    await db.collection('esign_signature_secrets').deleteMany({ recipient_id: recipient._id });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('❌ E-sign clear-stored error:', error?.message || error);
+    return res.status(500).json({ success: false, error: 'Failed to clear stored signatures' });
+  }
+});
+
 // POST /api/esign/signatures/save - Save signature image and link to document
 app.post('/api/esign/signatures/save', async (req, res) => {
   try {
@@ -6093,11 +6266,12 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     const pages = pdfDoc.getPages();
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
+    let recipient = null;
     let fields;
     if (field_coords && field_coords.length) {
       fields = field_coords;
     } else if (signing_token) {
-      const recipient = await db.collection('esign_recipients').findOne({ signing_token });
+      recipient = await db.collection('esign_recipients').findOne({ signing_token });
       if (!recipient) {
         return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
       }
@@ -6115,9 +6289,51 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
     }
 
-    const values = field_values || {};
+    const values = { ...(field_values && typeof field_values === 'object' && !Array.isArray(field_values) ? field_values : {}) };
     if (signature_data && !Object.keys(values).length && fields.length) {
       values['0'] = signature_data;
+    }
+
+    if (signing_token && recipient) {
+      const secrets = await db.collection('esign_signature_secrets').find({
+        document_id: docId,
+        recipient_id: recipient._id,
+      }).toArray();
+      const byIdx = new Map(secrets.map((s) => [s.field_index, s]));
+      for (let i = 0; i < fields.length; i++) {
+        const f = fields[i];
+        if ((f.type || 'signature').toLowerCase() !== 'signature') continue;
+        const sec = byIdx.get(i);
+        if (!sec) continue;
+        try {
+          const plain = decryptEsignSignatureStoredDoc(sec);
+          const p = JSON.parse(plain);
+          let img = typeof p.imagePngBase64 === 'string' ? p.imagePngBase64.trim() : '';
+          if (img && !img.startsWith('data:')) img = `data:image/png;base64,${img}`;
+          if (img) values[String(i)] = img;
+        } catch (_) {
+          return res.status(400).json({
+            success: false,
+            error: 'Could not load stored signature. Please apply your signature again.',
+          });
+        }
+      }
+    }
+
+    const sigIndices = fields
+      .map((f, i) => (((f.type || 'signature').toLowerCase() === 'signature') ? i : -1))
+      .filter((i) => i >= 0);
+    for (const i of sigIndices) {
+      const val = values[String(i)] ?? values[fields[i]._id?.toString()];
+      if (!val) {
+        return res.status(400).json({
+          success: false,
+          error:
+            signing_token && recipient
+              ? 'Missing stored signature for one or more fields. Open each signature box and click Apply.'
+              : 'Missing signature for one or more fields.',
+        });
+      }
     }
 
     for (let i = 0; i < fields.length; i++) {
