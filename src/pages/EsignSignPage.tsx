@@ -71,6 +71,17 @@ function isEsignTextPrefilled(f: SignatureField): boolean {
   return typeof p === 'string' && p.trim().length > 0;
 }
 
+/** Name/title stay one line; box grows horizontally while typing (sign + review UIs). */
+function isGrowNameTitleField(f: SignatureField): boolean {
+  return f.type === 'name' || f.type === 'title';
+}
+
+function nameTitleInputSizeChars(value: string, fieldType: FieldType): number {
+  const len = (value || '').length;
+  const min = fieldType === 'title' ? 16 : 14;
+  return Math.max(min, Math.min(96, len + 3));
+}
+
 /** Blocks submit/save/approve when any name, title, or date field is empty (creator-prefilled read-only fields are skipped). */
 function validateNameTitleDateFieldsComplete(
   fieldList: SignatureField[],
@@ -897,15 +908,23 @@ const EsignSignPage: React.FC = () => {
                       {fields
                         .map((f, globalIdx) => ({ f, globalIdx }))
                         .filter(({ f }) => f.type !== 'signature' && (f.page || 1) === pageNum)
-                        .map(({ f, globalIdx }) => (
+                        .map(({ f, globalIdx }) => {
+                          const growNt = isGrowNameTitleField(f);
+                          const baseSt = getFieldStyle(f);
+                          return (
                           <div
                             key={f._id?.toString() ?? `rev-field-${globalIdx}`}
-                            className="absolute flex items-center justify-center overflow-hidden"
+                            className={`absolute flex items-center pointer-events-auto ${growNt ? 'justify-start overflow-visible z-[2]' : 'justify-center overflow-hidden'}`}
                             style={{
-                              ...getFieldStyle(f),
-                              minWidth: 60,
+                              ...baseSt,
                               minHeight: 24,
-                              pointerEvents: 'auto',
+                              ...(growNt
+                                ? {
+                                    width: 'max-content',
+                                    minWidth: baseSt.width ?? 60,
+                                    maxWidth: '95%',
+                                  }
+                                : { minWidth: 60 }),
                             }}
                           >
                             {f.type === 'text' ? (
@@ -945,11 +964,17 @@ const EsignSignPage: React.FC = () => {
                                   setFieldValues((prev) => ({ ...prev, [globalIdx]: e.target.value }))
                                 }
                                 placeholder={`Enter ${f.type}`}
-                                className="w-full h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95"
+                                size={growNt ? nameTitleInputSizeChars(fieldValues[globalIdx] ?? '', f.type) : undefined}
+                                className={
+                                  growNt
+                                    ? 'box-border whitespace-nowrap text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95 max-h-8'
+                                    : 'w-full h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95'
+                                }
                               />
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                   </EsignPdfPageView>
                 </div>
               </div>
@@ -1206,6 +1231,8 @@ const EsignSignPage: React.FC = () => {
                           .filter(({ f }) => (f.page || 1) === pageNum)
                           .map(({ f, globalIdx }) => {
                             const isSignature = f.type === 'signature';
+                            const growNt = !isSignature && isGrowNameTitleField(f);
+                            const baseSt = getFieldStyle(f);
                             const fieldVal = fieldValues[globalIdx];
                             const hasValue = isSignature
                               ? !!fieldVal
@@ -1214,12 +1241,17 @@ const EsignSignPage: React.FC = () => {
                             return (
                               <div
                                 key={f._id?.toString() ?? `field-${globalIdx}`}
-                                className="absolute flex items-center justify-center overflow-hidden"
+                                className={`absolute flex items-center pointer-events-auto ${growNt ? 'justify-start overflow-visible z-[2]' : 'justify-center overflow-hidden'}`}
                                 style={{
-                                  ...getFieldStyle(f),
-                                  minWidth: 60,
+                                  ...baseSt,
                                   minHeight: 24,
-                                  pointerEvents: 'auto',
+                                  ...(growNt
+                                    ? {
+                                        width: 'max-content',
+                                        minWidth: baseSt.width ?? 60,
+                                        maxWidth: '95%',
+                                      }
+                                    : { minWidth: 60 }),
                                 }}
                               >
                                 {isSignature ? (
@@ -1289,7 +1321,12 @@ const EsignSignPage: React.FC = () => {
                                       setFieldValues((prev) => ({ ...prev, [globalIdx]: e.target.value }))
                                     }
                                     placeholder={`Enter ${f.type}`}
-                                    className="w-full h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95"
+                                    size={growNt ? nameTitleInputSizeChars(fieldValues[globalIdx] ?? '', f.type) : undefined}
+                                    className={
+                                      growNt
+                                        ? 'box-border whitespace-nowrap text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95 max-h-8'
+                                        : 'w-full h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95'
+                                    }
                                   />
                                 )}
                               </div>

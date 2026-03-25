@@ -6340,6 +6340,16 @@ function esignPdfFontForTextField(fontId, helvetica, timesRoman, courier) {
   return helvetica;
 }
 
+/** Widen effective maxWidth so name/title/date draw on one line (pdf-lib wraps when text exceeds maxWidth). */
+function esignPdfSingleLineMaxWidth(page, helvetica, text, fontSize, placedWidth, x) {
+  const t = String(text || '').trim();
+  if (!t) return Math.max(8, placedWidth);
+  const tw = helvetica.widthOfTextAtSize(t, fontSize);
+  const pad = 8;
+  const edge = Math.max(placedWidth, page.getWidth() - x - 6);
+  return Math.min(Math.max(placedWidth, tw + pad), edge);
+}
+
 /** Word-wrap plain text for pdf-lib StandardFonts (used for multiline "text" fields). */
 function wrapTextForPdf(font, text, fontSize, maxWidth) {
   const s = String(text || '').replace(/\r/g, '').slice(0, 8000);
@@ -6461,14 +6471,16 @@ async function esignRegenerateReviewMergedPdf(db, docId) {
       }
     } else {
       const text = typeof val === 'string' ? val : String(val);
+      const safe = text.substring(0, fType === 'date' ? 32 : 500);
       const fontSize = Math.min(12, height * 0.8);
-      page.drawText(text.substring(0, 50), {
+      const lineMax = esignPdfSingleLineMaxWidth(page, helvetica, safe, fontSize, width, x);
+      page.drawText(safe, {
         x,
         y: y + (height - fontSize) / 2,
         size: fontSize,
         font: helvetica,
         color: rgb(0, 0, 0),
-        maxWidth: width,
+        maxWidth: lineMax,
       });
     }
   }
@@ -6652,14 +6664,16 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         }
       } else {
         const text = typeof val === 'string' ? val : String(val);
+        const safe = text.substring(0, fType === 'date' ? 32 : 500);
         const fontSize = Math.min(12, height * 0.8);
-        page.drawText(text.substring(0, 50), {
+        const lineMax = esignPdfSingleLineMaxWidth(page, helvetica, safe, fontSize, width, x);
+        page.drawText(safe, {
           x,
           y: y + (height - fontSize) / 2,
           size: fontSize,
           font: helvetica,
           color: rgb(0, 0, 0),
-          maxWidth: width,
+          maxWidth: lineMax,
         });
       }
     }
