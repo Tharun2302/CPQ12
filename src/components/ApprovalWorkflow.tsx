@@ -1,23 +1,40 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { FileText, Rocket, Users, FileCheck, BarChart3, Settings, X, Plus, Trash2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
 import { BACKEND_URL } from '../config/api';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '../utils/authUtils';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
   onStartWorkflow?: (workflowData: any) => void;
   onNavigateToDashboard?: () => void;
+  /** Wired from Dashboard so the nav “Start Manual Approval” opens the start tab. */
+  registerStartManualApproval?: (handler: (() => void) | null) => void;
 }
 
-const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({ 
-  quotes = []
+const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
+  quotes = [],
+  registerStartManualApproval,
 }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { createWorkflow } = useApprovalWorkflows();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  useLayoutEffect(() => {
+    registerStartManualApproval?.(() => setActiveTab('start'));
+    return () => registerStartManualApproval?.(null);
+  }, [registerStartManualApproval]);
+
+  // Sidebar "Start Manual Approval" from another tab: land on /approval with this flag.
+  useEffect(() => {
+    const st = location.state as { openManualApproval?: boolean } | null;
+    if (!st?.openManualApproval) return;
+    setActiveTab('start');
+    navigate('/approval', { replace: true, state: {} });
+  }, [location.state, navigate]);
   const [formData, setFormData] = useState({
     documentType: 'PDF Agreement',
     documentId: '',
@@ -1056,7 +1073,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         {/* Admin Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div className="w-full">
-            <ApprovalDashboard onStartManualApprovalWorkflow={() => setActiveTab('start')} />
+            <ApprovalDashboard />
           </div>
         )}
       </div>

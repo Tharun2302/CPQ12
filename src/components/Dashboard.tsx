@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, Navigate, useNavigate } from 'react-router-dom';
 import Navigation from './Navigation';
 import ConfigurationForm from './ConfigurationForm';
@@ -14,7 +14,7 @@ import ExhibitManager from './ExhibitManager';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
-import { FileText, ArrowLeft } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 interface DashboardProps {
   // All the props that were previously in App component
@@ -155,6 +155,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const currentTab = getCurrentTab();
+
+  const startManualApprovalHandlerRef = useRef<(() => void) | null>(null);
+  const registerStartManualApproval = useCallback((handler: (() => void) | null) => {
+    startManualApprovalHandlerRef.current = handler;
+  }, []);
+  const triggerStartManualApproval = useCallback(() => {
+    if (currentTab === 'approval') {
+      startManualApprovalHandlerRef.current?.();
+    } else {
+      navigate('/approval', { state: { openManualApproval: true } });
+    }
+  }, [currentTab, navigate]);
 
   // Handle browser back button navigation
   useEffect(() => {
@@ -588,6 +600,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         return (
           <ApprovalWorkflow
             quotes={quotes}
+            registerStartManualApproval={registerStartManualApproval}
             onStartWorkflow={(workflowData) => {
               console.log('Starting approval workflow:', workflowData);
               // Here you can add logic to handle the workflow start
@@ -615,30 +628,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
-      {/* Navigation Sidebar - Hidden on approval tab (use back arrow instead) */}
-      {currentTab !== 'approval' && <Navigation currentTab={currentTab} />}
+    <div className="min-h-screen w-full max-w-[100%] bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
+      <Navigation currentTab={currentTab} onStartManualApproval={triggerStartManualApproval} />
 
-      {/* Back to home - Only show on approval tab (replaces slow sidebar toggle) */}
-      {currentTab === 'approval' && (
-        <button
-          type="button"
-          onClick={() => navigate('/deal')}
-          className="fixed top-4 left-4 z-50 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-lg transition-colors"
-          title="Back to home"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">Back to home</span>
-        </button>
-      )}
-
-      <main
-        className={`${
-          currentTab === 'approval' ? 'max-w-full' : 'max-w-7xl'
-        } mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-10 transition-all duration-300 ${
-          currentTab !== 'approval' ? 'lg:ml-64' : ''
-        }`}
-      >
+      <main className="min-w-0 w-full max-w-full box-border px-2 sm:px-3 py-4 sm:py-6 lg:py-6 transition-all duration-300 lg:ml-64 lg:w-[calc(100%-16rem)] lg:max-w-[calc(100%-16rem)] lg:pl-3 lg:pr-4">
         {renderTabContent()}
       </main>
     </div>

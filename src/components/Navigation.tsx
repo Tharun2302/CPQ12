@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3 } from 'lucide-react';
+import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3, FileCheck } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
 interface NavigationProps {
   currentTab: string;
+  /** Shows “Start Manual Approval” below Exhibits on every tab; opens manual flow (navigates to /approval if needed). */
+  onStartManualApproval?: () => void;
 }
 
-const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
+const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApproval }) => {
   const { isAuthenticated } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -50,7 +52,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
             to="/deal"
             className="flex items-center gap-3 px-6 py-6 cursor-pointer hover:opacity-80 transition-opacity duration-200 border-b border-blue-100/50"
           >
-            <h1 className="text-xl font-bold text-blue-700">
+            <h1 className="text-xl font-bold text-emerald-600">
               Zenop.ai
             </h1>
           </Link>
@@ -60,21 +62,32 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = currentTab === tab.id;
+              const useActiveHighlight = isActive && tab.id !== 'approval';
               return (
                 <Link
                   key={tab.id}
                   to={tab.path}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                    isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
+                    useActiveHighlight
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg'
                       : 'text-gray-700 hover:text-gray-900 hover:bg-white/60 hover:shadow-md'
                   }`}
                 >
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-5 h-5 shrink-0 text-current" />
                   <span className="font-semibold text-sm">{tab.label}</span>
                 </Link>
               );
             })}
+            {onStartManualApproval && (
+              <button
+                type="button"
+                onClick={onStartManualApproval}
+                className="flex w-full shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold text-gray-700 transition-all duration-300 hover:bg-white/60 hover:text-gray-900 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              >
+                <FileCheck className="h-5 w-5 shrink-0" />
+                <span className="leading-tight">Start Manual Approval</span>
+              </button>
+            )}
           </div>
 
           {/* User Menu at Bottom */}
@@ -93,7 +106,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
               to="/deal"
               className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity duration-200"
             >
-              <h1 className="text-xl font-bold text-blue-700">
+              <h1 className="text-xl font-bold text-emerald-600">
                 Zenop.ai
               </h1>
             </Link>
@@ -123,22 +136,36 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab }) => {
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = currentTab === tab.id;
+                  const useActiveHighlight = isActive && tab.id !== 'approval';
                   return (
                     <Link
                       key={tab.id}
                       to={tab.path}
                       onClick={() => setIsMobileMenuOpen(false)}
                       className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                        isActive
-                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
+                        useActiveHighlight
+                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg'
                           : 'text-gray-700 hover:text-gray-900 hover:bg-white/60'
                       }`}
                     >
-                      <Icon className="w-5 h-5" />
+                      <Icon className="w-5 h-5 shrink-0 text-current" />
                       <span className="font-semibold">{tab.label}</span>
                     </Link>
                   );
                 })}
+                {onStartManualApproval && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onStartManualApproval();
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left font-semibold text-gray-700 transition-all duration-300 hover:bg-white/60 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  >
+                    <FileCheck className="h-5 w-5 shrink-0" />
+                    <span className="leading-tight">Start Manual Approval</span>
+                  </button>
+                )}
               </div>
             </div>
           )}
