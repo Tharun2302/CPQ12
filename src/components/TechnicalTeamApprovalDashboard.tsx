@@ -39,7 +39,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
   const [esignFields, setEsignFields] = useState<any[]>([]);
   const [approvalDocNumPages, setApprovalDocNumPages] = useState(1);
   const PDF_SCALE = 1.5;
-  const getFieldLabel = (type: string) => { const t = (type || 'signature').toLowerCase(); if (t === 'name') return 'Name'; if (t === 'title') return 'Title'; if (t === 'date') return 'Date'; return 'Signature'; };
+  const getFieldLabel = (type: string) => { const t = (type || 'signature').toLowerCase(); if (t === 'name') return 'Name'; if (t === 'title') return 'Title'; if (t === 'date') return 'Date'; if (t === 'text') return 'Text'; return 'Signature'; };
   const { workflows, updateWorkflowStep } = useApprovalWorkflows();
   
   console.log('TechnicalTeamApprovalDashboard rendered for:', managerEmail);

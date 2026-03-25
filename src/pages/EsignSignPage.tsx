@@ -4,15 +4,20 @@ import SignatureCanvas from 'react-signature-canvas';
 import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
+import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
 
 const PDF_SCALE = 1.5;
 
-type FieldType = 'signature' | 'name' | 'title' | 'date';
+type FieldType = 'signature' | 'name' | 'title' | 'date' | 'text';
 
 interface SignatureField {
   _id?: string;
   page: number;
   type: FieldType;
+  /** Creator-entered text shown on the document; non-empty = read-only for the signer. */
+  prefill?: string | null;
+  text_color?: string | null;
+  text_font?: string | null;
   xPct?: number;
   yPct?: number;
   widthPct?: number;
@@ -40,6 +45,30 @@ const SIGNATURE_FONTS = [
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isSigningToken(param: string): boolean {
   return param.length === 36 && UUID_REGEX.test(param);
+}
+
+function getInitialFieldValues(fieldList: SignatureField[]): Record<number, string> {
+  const out: Record<number, string> = {};
+  fieldList.forEach((f, i) => {
+    if (f.type === 'signature') return;
+    if (f.type === 'text') {
+      out[i] = f.prefill != null ? String(f.prefill) : '';
+    } else if (f.type === 'date') {
+      out[i] =
+        f.prefill != null && String(f.prefill).trim() !== ''
+          ? String(f.prefill).slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+    } else {
+      out[i] = f.prefill != null ? String(f.prefill) : '';
+    }
+  });
+  return out;
+}
+
+/** Creator typed text in Place Fields → show as static copy on the sign page (not an editable box). */
+function isEsignTextPrefilled(f: SignatureField): boolean {
+  const p = f.prefill;
+  return typeof p === 'string' && p.trim().length > 0;
 }
 
 const EsignSignPage: React.FC = () => {
@@ -73,6 +102,9 @@ const EsignSignPage: React.FC = () => {
   const [recipientRole, setRecipientRole] = useState<'signer' | 'reviewer' | null>(null);
   const [showDashboard, setShowDashboard] = useState(true);
   const [markingReviewed, setMarkingReviewed] = useState(false);
+  const [savingReviewerFields, setSavingReviewerFields] = useState(false);
+  /** Reviewer must save field entries to DB before Approve (unless there are no fields). */
+  const [reviewerEntriesSaved, setReviewerEntriesSaved] = useState(false);
   const [signerChoice, setSignerChoice] = useState<'approve' | 'deny' | null>(null);
   const [signerComment, setSignerComment] = useState('');
   const [signDeniedSuccess, setSignDeniedSuccess] = useState(false);
@@ -81,6 +113,20 @@ const EsignSignPage: React.FC = () => {
   const [selectedSignatureFieldIndex, setSelectedSignatureFieldIndex] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const reviewerFieldValuesJsonRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (recipientRole !== 'reviewer') return;
+    const s = JSON.stringify(fieldValues);
+    if (reviewerFieldValuesJsonRef.current === null) {
+      reviewerFieldValuesJsonRef.current = s;
+      return;
+    }
+    if (reviewerFieldValuesJsonRef.current !== s) {
+      setReviewerEntriesSaved(false);
+      reviewerFieldValuesJsonRef.current = s;
+    }
+  }, [fieldValues, recipientRole]);
 
   useEffect(() => {
     if (!documentIdOrToken) return;
@@ -110,6 +156,7 @@ const EsignSignPage: React.FC = () => {
           const action = data.recipient?.action;
           const isReviewer = action === 'reviewer' || (action !== 'signer' && (role.toLowerCase() === 'reviewer' || role === 'Technical Team' || role === 'Legal Team'));
           setRecipientRole(isReviewer ? 'reviewer' : 'signer');
+          reviewerFieldValuesJsonRef.current = null;
           setShowDashboard(data.recipient?.show_dashboard !== false);
           if (data.recipient?.status === 'signed') {
             setAlreadySigned(true);
@@ -151,9 +198,18 @@ const EsignSignPage: React.FC = () => {
           });
           if (normalized.length) {
             setFields(normalized);
+            setFieldValues(getInitialFieldValues(normalized));
+            if (isReviewer) {
+              setReviewerEntriesSaved(!!data.recipient?.reviewer_fields_saved);
+            }
           } else {
             setFields([]);
-            setError('No signature fields are assigned to you for this document. Ask the sender to assign fields to your name in Place Fields, then resend.');
+            if (isReviewer) {
+              setReviewerEntriesSaved(true);
+            }
+            if (!isReviewer) {
+              setError('No signature fields are assigned to you for this document. Ask the sender to assign fields to your name in Place Fields, then resend.');
+            }
           }
         } else {
           setDocumentId(documentIdOrToken);
@@ -201,8 +257,10 @@ const EsignSignPage: React.FC = () => {
               return { ...f, page, type, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
             });
             setFields(normalized);
+            setFieldValues(getInitialFieldValues(normalized));
           } else {
             setFields([DEFAULT_FIELD]);
+            setFieldValues(getInitialFieldValues([DEFAULT_FIELD as SignatureField]));
           }
         }
       } catch {
@@ -358,12 +416,64 @@ const EsignSignPage: React.FC = () => {
     }
   };
 
+  const buildReviewerFieldPayload = (): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      if (f.type === 'signature') continue;
+      const v =
+        fieldValues[i] ??
+        (f.type === 'date' ? new Date().toISOString().slice(0, 10) : '');
+      out[String(i)] = v;
+    }
+    return out;
+  };
+
+  const handleSaveReviewerFields = async () => {
+    if (!signingToken) return;
+    setSavingReviewerFields(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/reviewer-save-fields`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signing_token: signingToken,
+          field_values: buildReviewerFieldPayload(),
+        }),
+      });
+      const text = await res.text();
+      let data: { success?: boolean; error?: string };
+      try {
+        data = text.startsWith('<') ? {} : JSON.parse(text);
+      } catch {
+        setError(res.ok ? 'Invalid response from server' : `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      if (data.success) {
+        setReviewerEntriesSaved(true);
+        reviewerFieldValuesJsonRef.current = JSON.stringify(fieldValues);
+      } else {
+        setError(data.error || 'Could not save field entries');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Could not save field entries');
+    } finally {
+      setSavingReviewerFields(false);
+    }
+  };
+
   const handleReviewAction = async (action: 'approve' | 'deny') => {
     if (!signingToken) return;
     if (action === 'deny' && !reviewComment.trim()) {
       setError('Comment is required when denying');
       return;
     }
+    if (action === 'approve' && fields.length > 0 && !reviewerEntriesSaved) {
+      setError('Save field entries first, then Approve.');
+      return;
+    }
+    const reviewFieldPayload = action === 'approve' ? buildReviewerFieldPayload() : {};
     setMarkingReviewed(true);
     setError(null);
     try {
@@ -374,6 +484,7 @@ const EsignSignPage: React.FC = () => {
           signing_token: signingToken,
           action,
           comment: reviewComment.trim() || undefined,
+          ...(action === 'approve' && fields.length > 0 ? { field_values: reviewFieldPayload } : {}),
         }),
       });
       const text = await res.text();
@@ -730,23 +841,150 @@ const EsignSignPage: React.FC = () => {
     const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
     return (
       <div className="min-h-screen bg-slate-50 py-6 px-4">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <h1 className="text-xl font-bold text-slate-900 mb-2">Review document</h1>
           <p className="text-slate-600 text-sm mb-4">{doc.file_name}</p>
+          <p className="text-slate-600 text-sm mb-4">
+            Signature fields are not shown here. Fill name, title, date, and text fields, then <strong>Save field entries</strong> — that updates the downloadable PDF (and database). Then click <strong>Approve</strong>. Use the Download button on this flow so the file comes from e-sign; other downloads (e.g. agreement from Quotes) are separate files.
+          </p>
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-            <iframe
-              src={fileUrl}
-              title="Document"
-              className="w-full h-[70vh] border-0"
-            />
+            <div
+              ref={scrollContainerRef}
+              className="rounded-xl border-2 border-slate-200 overflow-y-auto overflow-x-hidden bg-slate-100 min-h-[400px] max-h-[70vh]"
+            >
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <div
+                  key={pageNum}
+                  data-page={pageNum}
+                  className="flex flex-col items-center py-4 first:pt-4 last:pb-4"
+                >
+                  <span className="text-xs font-medium text-slate-500 mb-2">Page {pageNum} of {totalPages}</span>
+                  <div className="rounded-lg overflow-hidden shadow-sm">
+                    <EsignPdfPageView
+                      pdfUrl={fileUrl}
+                      pageNumber={pageNum}
+                      scale={PDF_SCALE}
+                      onPdfInfo={pageNum === 1 ? (info) => setTotalPages(info.numPages) : undefined}
+                    >
+                      {fields
+                        .map((f, globalIdx) => ({ f, globalIdx }))
+                        .filter(({ f }) => f.type !== 'signature' && (f.page || 1) === pageNum)
+                        .map(({ f, globalIdx }) => (
+                          <div
+                            key={f._id?.toString() ?? `rev-field-${globalIdx}`}
+                            className="absolute flex items-center justify-center overflow-hidden"
+                            style={{
+                              ...getFieldStyle(f),
+                              minWidth: 60,
+                              minHeight: 24,
+                              pointerEvents: 'auto',
+                            }}
+                          >
+                            {f.type === 'text' ? (
+                              isEsignTextPrefilled(f) ? (
+                                <div
+                                  className="w-full h-full min-h-0 flex items-start justify-start overflow-y-auto text-xs leading-snug whitespace-pre-wrap select-none"
+                                  style={{
+                                    color: normalizeEsignTextColor(f.text_color ?? undefined),
+                                    fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
+                                  }}
+                                >
+                                  {fieldValues[globalIdx] ?? f.prefill ?? ''}
+                                </div>
+                              ) : (
+                                <textarea
+                                  value={fieldValues[globalIdx] ?? ''}
+                                  onChange={(e) =>
+                                    setFieldValues((prev) => ({
+                                      ...prev,
+                                      [globalIdx]: e.target.value.slice(0, 4000),
+                                    }))
+                                  }
+                                  placeholder="Type notes or extra text for this document"
+                                  rows={3}
+                                  className="w-full min-h-[4.5rem] max-h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95 resize-none overflow-y-auto leading-snug placeholder:opacity-45"
+                                  style={{
+                                    color: normalizeEsignTextColor(f.text_color ?? undefined),
+                                    fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
+                                  }}
+                                />
+                              )
+                            ) : (
+                              <input
+                                type={f.type === 'date' ? 'date' : 'text'}
+                                value={
+                                  fieldValues[globalIdx] ??
+                                  (f.type === 'date' ? new Date().toISOString().slice(0, 10) : '')
+                                }
+                                onChange={(e) =>
+                                  setFieldValues((prev) => ({ ...prev, [globalIdx]: e.target.value }))
+                                }
+                                placeholder={`Enter ${f.type}`}
+                                className="w-full h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95"
+                              />
+                            )}
+                          </div>
+                        ))}
+                  </EsignPdfPageView>
+                </div>
+              </div>
+            ))}
+            </div>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2 mt-2 mb-6">
+              <label htmlFor="review-goto-page" className="text-sm text-slate-600">Go to page</label>
+              <input
+                id="review-goto-page"
+                type="number"
+                min={1}
+                max={totalPages}
+                defaultValue={1}
+                className="w-14 rounded border border-slate-300 px-2 py-1 text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const n = Math.max(1, Math.min(totalPages, parseInt((e.target as HTMLInputElement).value, 10) || 1));
+                    scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const input = document.getElementById('review-goto-page') as HTMLInputElement;
+                  const n = input ? Math.max(1, Math.min(totalPages, parseInt(input.value, 10) || 1)) : 1;
+                  scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-50"
+              >
+                Go
+              </button>
+              <span className="text-sm text-slate-500">1–{totalPages}</span>
+            </div>
+          )}
           {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
           <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 mb-4">
             <button
               type="button"
+              onClick={() => handleSaveReviewerFields()}
+              disabled={savingReviewerFields || markingReviewed || fields.length === 0}
+              className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-indigo-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {savingReviewerFields ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+                  Saving…
+                </>
+              ) : (
+                <>Save field entries</>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => handleReviewAction('approve')}
-              disabled={markingReviewed}
+              disabled={markingReviewed || savingReviewerFields || (fields.length > 0 && !reviewerEntriesSaved)}
               className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-emerald-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              title={fields.length > 0 && !reviewerEntriesSaved ? 'Save field entries first' : undefined}
             >
               {markingReviewed ? (
                 <>
@@ -988,6 +1226,35 @@ const EsignSignPage: React.FC = () => {
                                     >
                                       Sign Here
                                     </button>
+                                  )
+                                ) : f.type === 'text' ? (
+                                  isEsignTextPrefilled(f) ? (
+                                    <div
+                                      className="w-full h-full min-h-0 flex items-start justify-start overflow-y-auto text-xs leading-snug whitespace-pre-wrap select-none"
+                                      style={{
+                                        color: normalizeEsignTextColor(f.text_color ?? undefined),
+                                        fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
+                                      }}
+                                    >
+                                      {fieldValues[globalIdx] ?? f.prefill ?? ''}
+                                    </div>
+                                  ) : (
+                                    <textarea
+                                      value={fieldValues[globalIdx] ?? ''}
+                                      onChange={(e) =>
+                                        setFieldValues((prev) => ({
+                                          ...prev,
+                                          [globalIdx]: e.target.value.slice(0, 4000),
+                                        }))
+                                      }
+                                      placeholder="Type notes or extra text for this document"
+                                      rows={3}
+                                      className="w-full min-h-[4.5rem] max-h-full text-xs border border-slate-300 rounded px-1 py-0.5 bg-white/95 resize-none overflow-y-auto leading-snug placeholder:opacity-45"
+                                      style={{
+                                        color: normalizeEsignTextColor(f.text_color ?? undefined),
+                                        fontFamily: cssStackForEsignTextFont(f.text_font ?? undefined),
+                                      }}
+                                    />
                                   )
                                 ) : (
                                   <input
@@ -1265,7 +1532,7 @@ const EsignSignPage: React.FC = () => {
                       /* non-fatal */
                     }
                   }
-                  setFieldValues({});
+                  setFieldValues(getInitialFieldValues(fields));
                   clearSignature();
                   setSelectedSignatureFieldIndex(null);
                 }}

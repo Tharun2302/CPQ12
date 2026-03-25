@@ -27,6 +27,8 @@ interface Agreement {
   file_name: string;
   uploaded_by?: string;
   upload_source?: string;
+  creator_name?: string | null;
+  creator_email?: string | null;
   /** Display name/email of who requested the agreement (approval workflow or from-approval). */
   requested_by?: string | null;
   created_at: string;
@@ -38,6 +40,28 @@ interface Agreement {
 }
 
 type StatusFilterTab = 'all' | 'completed' | 'pending' | 'rejected';
+
+function formatEsignCreatedByLine(ag: Agreement): string {
+  const parts = [ag.creator_name, ag.creator_email].filter((x) => x && String(x).trim());
+  return parts.length ? `Created by ${parts.join(' · ')}` : 'Created by —';
+}
+
+function formatEsignDateTime(iso: string | undefined): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+function formatEsignCreatedAtLine(ag: Agreement): string | null {
+  const when = formatEsignDateTime(ag.created_at);
+  return when ? `Created ${when}` : null;
+}
 
 const EsignAgreementStatusDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -501,7 +525,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-200">
-                    {filteredAgreements.map((ag) => (
+                    {filteredAgreements.map((ag) => {
+                      const createdAtLine = formatEsignCreatedAtLine(ag);
+                      return (
                       <tr key={ag.id} className="hover:bg-slate-50/50">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
@@ -511,15 +537,11 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                             <div>
                               <span className="font-medium text-slate-900 truncate max-w-xs block" title={ag.file_name}>{ag.file_name}</span>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                {[
-                                  ag.uploaded_by,
-                                  ag.upload_source === 'manual' ? 'Manual upload' : null,
-                                  ag.requested_by ? `Requested by ${ag.requested_by}` : null,
-                                  formatDate(ag.created_at),
-                                ]
-                                  .filter(Boolean)
-                                  .join(' • ') || '—'}
+                                {formatEsignCreatedByLine(ag)}
                               </p>
+                              {createdAtLine ? (
+                                <p className="text-xs text-slate-500 mt-0.5">{createdAtLine}</p>
+                              ) : null}
                             </div>
                           </div>
                         </td>
@@ -590,7 +612,8 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

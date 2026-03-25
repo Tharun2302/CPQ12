@@ -11,7 +11,6 @@ const EsignSendPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
-  const [sequential, setSequential] = useState(false);
 
   useEffect(() => {
     if (!documentId) return;
@@ -53,7 +52,7 @@ const EsignSendPage: React.FC = () => {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sequential }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (data.success) setSendForSignatureResult(data.message || 'Sent.');
@@ -88,16 +87,6 @@ const EsignSendPage: React.FC = () => {
             <p className="text-sm text-slate-600">
               Send the document to recipients by email (each gets a unique signing link).
             </p>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sequential}
-                onChange={(e) => setSequential(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600"
-              />
-              <span className="text-sm text-slate-700">Sequential: send only to first recipient; after they sign, the next receives the email (with signed document).</span>
-            </label>
 
             {sendForSignatureResult && (
               <p className={`text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>

@@ -2,10 +2,18 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
-import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star, FileText } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 import { validateSignatureFieldsBeforeSend } from '../utils/esignSendValidation';
+import {
+  ESIGN_DEFAULT_TEXT_COLOR,
+  ESIGN_TEXT_FONT_OPTIONS,
+  type EsignTextFontId,
+  cssStackForEsignTextFont,
+  normalizeEsignTextColor,
+  normalizeEsignTextFont,
+} from '../utils/esignTextFieldStyle';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
@@ -100,7 +108,7 @@ const PDF_SCALE = 1.5;
 const MIN_FIELD_WIDTH_PX = 120;
 const MIN_FIELD_HEIGHT_PX = 40;
 
-export type FieldType = 'signature' | 'name' | 'title' | 'date';
+export type FieldType = 'signature' | 'name' | 'title' | 'date' | 'text';
 
 export interface EsignRecipient {
   id: string;
@@ -117,6 +125,12 @@ interface PlacedField {
   type: FieldType;
   page: number;
   recipient_id?: string | null;
+  /** Creator-filled default copy for `text` fields (signers see it and may edit). */
+  prefill?: string;
+  /** Hex e.g. #1e3a8a — shown on place-fields, sign page, and final PDF. */
+  text_color?: string;
+  /** pdf-lib StandardFont mapping: helvetica | times | courier */
+  text_font?: EsignTextFontId;
   x?: number;
   y?: number;
   width?: number;
@@ -137,6 +151,7 @@ const FIELD_DEFS: { type: FieldType; label: string; Icon: React.ComponentType<{ 
   { type: 'name', label: 'Name', Icon: Type },
   { type: 'title', label: 'Title', Icon: Briefcase },
   { type: 'date', label: 'Date', Icon: Calendar },
+  { type: 'text', label: 'Text', Icon: FileText },
 ];
 
 /** Per-recipient colors for field overlays and recipient list. Use full class names so Tailwind includes them. */
@@ -192,7 +207,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [sequential, setSequential] = useState(false);
   const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => getSavedRecipients());
   const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => getSavedGroups());
   const [defaultGroupId, setDefaultGroupIdState] = useState<string | null>(() => getDefaultGroupId());
@@ -252,7 +266,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
       if (recipientsData.success && recipientsData.recipients?.length) {
         setRecipients(recipientsData.recipients);
         setSelectedRecipientId(recipientsData.recipients[0]?.id || null);
-        if (recipientsData.recipients.length >= 2) setSequential(true);
       }
       // Default group is no longer auto-added when document has no recipients.
       // Add recipients via "Add to document" on a saved group.
@@ -263,11 +276,19 @@ const EsignPlaceFieldsPage: React.FC = () => {
             const id = f._id?.toString() || uuidv4();
             const recipient_id = f.recipient_id?.toString() || null;
             if (f.x != null && f.y != null) {
+              const t = (f.type || 'signature') as FieldType;
               return {
                 id,
-                type: (f.type || 'signature') as FieldType,
+                type: t,
                 page,
                 recipient_id,
+                ...(typeof f.prefill === 'string' ? { prefill: f.prefill } : {}),
+                ...(t === 'text'
+                  ? {
+                      text_color: normalizeEsignTextColor(f.text_color),
+                      text_font: normalizeEsignTextFont(f.text_font),
+                    }
+                  : {}),
                 x: Number(f.x),
                 y: Number(f.y),
                 width: Number(f.width) || 120,
@@ -282,11 +303,19 @@ const EsignPlaceFieldsPage: React.FC = () => {
                   : {}),
               };
             }
+            const t2 = (f.type || 'signature') as FieldType;
             return {
               id,
-              type: (f.type || 'signature') as FieldType,
+              type: t2,
               page,
               recipient_id,
+              ...(typeof f.prefill === 'string' ? { prefill: f.prefill } : {}),
+              ...(t2 === 'text'
+                ? {
+                    text_color: normalizeEsignTextColor(f.text_color),
+                    text_font: normalizeEsignTextFont(f.text_font),
+                  }
+                : {}),
               xPct: f.xPct ?? 10,
               yPct: f.yPct ?? 80,
               widthPct: f.widthPct ?? 20,
@@ -306,7 +335,13 @@ const EsignPlaceFieldsPage: React.FC = () => {
 
   const fieldsToApiPayload = useCallback((list: PlacedField[]) => {
     return list.map((f) => {
-      const base = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
+      const base: Record<string, unknown> = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
+      if (f.type === 'text') {
+        const p = (f.prefill ?? '').slice(0, 8000);
+        base.prefill = p;
+        base.text_color = normalizeEsignTextColor(f.text_color);
+        base.text_font = normalizeEsignTextFont(f.text_font);
+      }
       if (f.x == null || f.y == null) {
         return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
       }
@@ -608,6 +643,47 @@ const EsignPlaceFieldsPage: React.FC = () => {
     [documentId, fieldsToApiPayload]
   );
 
+  const prefillSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefillLatestRef = useRef<PlacedField[] | null>(null);
+  const queuePrefillSave = useCallback(
+    (list: PlacedField[]) => {
+      prefillLatestRef.current = list;
+      if (prefillSaveTimerRef.current) clearTimeout(prefillSaveTimerRef.current);
+      prefillSaveTimerRef.current = setTimeout(() => {
+        prefillSaveTimerRef.current = null;
+        const latest = prefillLatestRef.current;
+        if (latest) void saveFieldsToBackend(latest);
+      }, 450);
+    },
+    [saveFieldsToBackend]
+  );
+
+  const flushPrefillSave = useCallback(() => {
+    if (prefillSaveTimerRef.current) {
+      clearTimeout(prefillSaveTimerRef.current);
+      prefillSaveTimerRef.current = null;
+    }
+    const latest = prefillLatestRef.current;
+    if (latest) void saveFieldsToBackend(latest);
+  }, [saveFieldsToBackend]);
+
+  useEffect(() => {
+    return () => {
+      if (prefillSaveTimerRef.current) clearTimeout(prefillSaveTimerRef.current);
+    };
+  }, []);
+
+  const updateTextFieldProps = useCallback(
+    (fieldId: string, patch: Partial<Pick<PlacedField, 'prefill' | 'text_color' | 'text_font'>>) => {
+      setSignatureFields((prev) => {
+        const next = prev.map((field) => (field.id === fieldId ? { ...field, ...patch } : field));
+        queuePrefillSave(next);
+        return next;
+      });
+    },
+    [queuePrefillSave]
+  );
+
   /** After every page that has fields has reported dimensions, add xNorm/yNorm to legacy rows and save once. */
   useEffect(() => {
     if (!documentId || !signatureFields.length) return;
@@ -639,11 +715,15 @@ const EsignPlaceFieldsPage: React.FC = () => {
       setDragSource(null);
       const pw = coords.pageWidthPt;
       const ph = coords.pageHeightPt;
+      const ft = coords.fieldType as FieldType;
       const newField: PlacedField = {
         id: uuidv4(),
-        type: coords.fieldType as FieldType,
+        type: ft,
         page: coords.page,
         recipient_id: selectedRecipientId || undefined,
+        ...(ft === 'text'
+          ? { prefill: '', text_color: ESIGN_DEFAULT_TEXT_COLOR, text_font: 'helvetica' as EsignTextFontId }
+          : {}),
         x: coords.x,
         y: coords.y,
         width: coords.width,
@@ -674,14 +754,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const handleSendForSignature = async () => {
     if (!documentId) return;
     setSendForSignatureResult(null);
-
-    if (sequential && recipients.length > 0) {
-      const missing = recipients.filter((r) => !(r.email || '').trim());
-      if (missing.length > 0) {
-        setSendForSignatureResult('Every recipient must have an email when using Sequential flow (Team Lead → Technical → Legal). Add emails in the recipient list.');
-        return;
-      }
-    }
 
     const fieldCheck = validateSignatureFieldsBeforeSend(
       recipients,
@@ -717,7 +789,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         const sendRes = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sequential }),
+          body: JSON.stringify({}),
         });
         const sendData = await sendRes.json();
         if (sendData.success) {
@@ -883,7 +955,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Place Fields</h1>
-          <p className="text-slate-600 mt-1 text-sm">Drag signature, name, title, and date fields onto the document.</p>
+          <p className="text-slate-600 mt-1 text-sm">Drag signature, name, title, date, and text fields onto the document.</p>
         </div>
 
         <div className="flex gap-6 flex-col lg:flex-row">
@@ -924,13 +996,15 @@ const EsignPlaceFieldsPage: React.FC = () => {
                           const minHeightPt = MIN_FIELD_HEIGHT_PX / PDF_SCALE;
 
                           if (isPointBased) {
+                            const isTextField = f.type === 'text';
                             return (
                               <Rnd
                                 key={f.id}
                                 position={{ x: (f.x ?? 0) * PDF_SCALE, y: (f.y ?? 0) * PDF_SCALE }}
                                 size={{ width: Math.max(MIN_FIELD_WIDTH_PX, widthPt * PDF_SCALE), height: Math.max(MIN_FIELD_HEIGHT_PX, heightPt * PDF_SCALE) }}
                                 minWidth={MIN_FIELD_WIDTH_PX}
-                                minHeight={MIN_FIELD_HEIGHT_PX}
+                                minHeight={isTextField ? Math.max(MIN_FIELD_HEIGHT_PX, 56) : MIN_FIELD_HEIGHT_PX}
+                                {...(isTextField ? { cancel: '.esign-text-prefill, .esign-text-toolbar, .esign-text-style-input' } : {})}
                                 onDragStop={(_e, d) => {
                                   const xPt = d.x / PDF_SCALE;
                                   const yPt = d.y / PDF_SCALE;
@@ -987,31 +1061,117 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                   setSignatureFields(next);
                                   saveFieldsToBackend(next);
                                 }}
-                                enableResizing={{ bottom: true, right: true, bottomRight: true }}
+                                enableResizing={
+                                  isTextField
+                                    ? {
+                                        top: true,
+                                        right: true,
+                                        bottom: true,
+                                        left: true,
+                                        topRight: true,
+                                        bottomRight: true,
+                                        bottomLeft: true,
+                                        topLeft: true,
+                                      }
+                                    : { bottom: true, right: true, bottomRight: true }
+                                }
                                 dragGrid={[1, 1]}
                                 resizeGrid={[1, 1]}
-                                className={`flex items-center justify-center rounded font-medium text-sm cursor-move group ${color.box}`}
+                                className={
+                                  isTextField
+                                    ? 'flex items-stretch justify-stretch font-medium text-sm cursor-move group p-0 rounded'
+                                    : `flex items-center justify-center rounded font-medium text-sm cursor-move group ${color.box}`
+                                }
                                 onClick={(e: React.MouseEvent) => {
                                   e.stopPropagation();
-                                  if (e.detail === 2) removeField(f.id);
+                                  if (!isTextField && e.detail === 2) removeField(f.id);
                                 }}
-                                title={`${getFieldLabel(f.type)}${f.recipient_id ? ` • ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}` : ''} (double-click to remove)`}
+                                title={
+                                  isTextField
+                                    ? `Text — type in the box. Drag border area to move; use handles to resize. Hover for × to remove.${f.recipient_id ? ` Assignee: ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}.` : ''}`
+                                    : `${getFieldLabel(f.type)}${f.recipient_id ? ` • ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}` : ''} (double-click to remove)`
+                                }
                               >
-                                {getFieldLabel(f.type)}
-                                <span
-                                  className="ml-1 text-xs opacity-0 group-hover:opacity-100"
-                                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeField(f.id); }}
-                                >
-                                  ×
-                                </span>
+                                {isTextField ? (
+                                  <div className="w-full h-full min-h-0 flex flex-col rounded border-2 border-dashed border-slate-900 bg-white/[0.97] shadow-sm">
+                                    <div className="esign-text-toolbar flex flex-wrap items-center gap-2 px-1.5 pt-1 pb-1 border-b border-dashed border-slate-300/90">
+                                      <label className="flex items-center gap-1 text-[10px] text-slate-700 font-medium">
+                                        <span className="hidden min-[380px]:inline">Color</span>
+                                        <input
+                                          type="color"
+                                          className="esign-text-style-input h-7 w-9 min-w-0 cursor-pointer rounded border border-slate-400 bg-white p-0"
+                                          value={normalizeEsignTextColor(f.text_color)}
+                                          onChange={(e) => updateTextFieldProps(f.id, { text_color: e.target.value })}
+                                          title="Text color"
+                                        />
+                                      </label>
+                                      <label className="flex items-center gap-1 text-[10px] text-slate-700 font-medium min-w-0 flex-1">
+                                        <span className="shrink-0 hidden sm:inline">Font</span>
+                                        <select
+                                          className="esign-text-style-input min-w-0 flex-1 max-w-[11rem] rounded border border-slate-400 bg-white py-0.5 px-1 text-[10px]"
+                                          value={normalizeEsignTextFont(f.text_font)}
+                                          onChange={(e) =>
+                                            updateTextFieldProps(f.id, { text_font: normalizeEsignTextFont(e.target.value) })
+                                          }
+                                        >
+                                          {ESIGN_TEXT_FONT_OPTIONS.map((opt) => (
+                                            <option key={opt.id} value={opt.id}>
+                                              {opt.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                    </div>
+                                    <textarea
+                                      className="esign-text-prefill flex-1 min-h-[2.25rem] w-full resize-none border-0 bg-transparent text-sm leading-snug focus:outline-none focus:ring-0 px-1.5 py-1 cursor-text placeholder:opacity-45"
+                                      style={{
+                                        color: normalizeEsignTextColor(f.text_color),
+                                        fontFamily: cssStackForEsignTextFont(f.text_font),
+                                      }}
+                                      value={f.prefill ?? ''}
+                                      placeholder="Type here…"
+                                      onChange={(e) => {
+                                        const v = e.target.value.slice(0, 8000);
+                                        updateTextFieldProps(f.id, { prefill: v });
+                                      }}
+                                      onBlur={flushPrefillSave}
+                                      spellCheck
+                                    />
+                                    <button
+                                      type="button"
+                                      className="self-end mr-0.5 mb-0.5 text-xs leading-none text-slate-500 opacity-0 group-hover:opacity-100 hover:text-red-600 px-1 py-0.5"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeField(f.id);
+                                      }}
+                                      title="Remove field"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {getFieldLabel(f.type)}
+                                    <span
+                                      className="ml-1 text-xs opacity-0 group-hover:opacity-100"
+                                      onClick={(e: React.MouseEvent) => {
+                                        e.stopPropagation();
+                                        removeField(f.id);
+                                      }}
+                                    >
+                                      ×
+                                    </span>
+                                  </>
+                                )}
                               </Rnd>
                             );
                           }
 
+                          const pctText = f.type === 'text';
                           return (
                             <div
                               key={f.id}
-                              className={`absolute flex items-center justify-center rounded font-medium text-sm cursor-pointer group ${color.box}`}
+                              className={`absolute flex rounded font-medium text-sm group ${pctText ? 'items-stretch p-0' : `items-center justify-center cursor-pointer ${color.box}`}`}
                               style={{
                                 left: `${f.xPct ?? 10}%`,
                                 top: `${f.yPct ?? 80}%`,
@@ -1020,17 +1180,71 @@ const EsignPlaceFieldsPage: React.FC = () => {
                               }}
                               onClick={(e: React.MouseEvent) => {
                                 e.stopPropagation();
-                                if (e.detail === 2) removeField(f.id);
+                                if (!pctText && e.detail === 2) removeField(f.id);
                               }}
-                              title={`${getFieldLabel(f.type)}${f.recipient_id ? ` • ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}` : ''} (double-click to remove)`}
+                              title={
+                                pctText
+                                  ? 'Text — type in the box. Use place-fields with point positions for drag/resize.'
+                                  : `${getFieldLabel(f.type)}${f.recipient_id ? ` • ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}` : ''} (double-click to remove)`
+                              }
                             >
-                              {getFieldLabel(f.type)}
-                              <span
-                                className="ml-1 text-xs opacity-0 group-hover:opacity-100"
-                                onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeField(f.id); }}
-                              >
-                                ×
-                              </span>
+                              {pctText ? (
+                                <div className="w-full h-full min-h-0 flex flex-col rounded border-2 border-dashed border-slate-900 bg-white/[0.97]">
+                                  <div className="esign-text-toolbar flex flex-wrap items-center gap-1.5 px-1 pt-0.5 pb-0.5 border-b border-dashed border-slate-300/90">
+                                    <input
+                                      type="color"
+                                      className="esign-text-style-input h-6 w-8 cursor-pointer rounded border border-slate-400 bg-white p-0"
+                                      value={normalizeEsignTextColor(f.text_color)}
+                                      onChange={(e) => updateTextFieldProps(f.id, { text_color: e.target.value })}
+                                      title="Color"
+                                    />
+                                    <select
+                                      className="esign-text-style-input flex-1 min-w-0 rounded border border-slate-400 bg-white py-0 px-0.5 text-[9px]"
+                                      value={normalizeEsignTextFont(f.text_font)}
+                                      onChange={(e) =>
+                                        updateTextFieldProps(f.id, { text_font: normalizeEsignTextFont(e.target.value) })
+                                      }
+                                    >
+                                      {ESIGN_TEXT_FONT_OPTIONS.map((opt) => (
+                                        <option key={opt.id} value={opt.id}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <textarea
+                                    className="esign-text-prefill flex-1 w-full resize-none border-0 bg-transparent text-sm focus:outline-none px-1 py-0.5 cursor-text placeholder:opacity-45"
+                                    style={{
+                                      color: normalizeEsignTextColor(f.text_color),
+                                      fontFamily: cssStackForEsignTextFont(f.text_font),
+                                    }}
+                                    value={f.prefill ?? ''}
+                                    placeholder="Type here…"
+                                    onChange={(e) => {
+                                      const v = e.target.value.slice(0, 8000);
+                                      updateTextFieldProps(f.id, { prefill: v });
+                                    }}
+                                    onBlur={flushPrefillSave}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="self-end text-xs text-slate-500 opacity-0 group-hover:opacity-100 px-1"
+                                    onClick={(e) => { e.stopPropagation(); removeField(f.id); }}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  {getFieldLabel(f.type)}
+                                  <span
+                                    className="ml-1 text-xs opacity-0 group-hover:opacity-100"
+                                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeField(f.id); }}
+                                  >
+                                    ×
+                                  </span>
+                                </>
+                              )}
                             </div>
                           );
                         })}
@@ -1053,22 +1267,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 </p>
               </div>
             )}
-            <label className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sequential}
-                onChange={(e) => setSequential(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span className="text-sm text-slate-700">
-                Sequential: send only to first recipient; after they sign or review, the next receives the email.
-                {recipients.length >= 2 && (
-                  <span className="block mt-0.5 text-amber-700 font-medium">
-                    Recommended for Team Lead → Technical → Legal flow.
-                  </span>
-                )}
-              </span>
-            </label>
             <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Go to page</span>
@@ -1333,6 +1531,9 @@ const EsignPlaceFieldsPage: React.FC = () => {
                   </div>
                 ))}
               </div>
+              <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+                <strong className="font-medium text-slate-600">Text fields:</strong> drag <strong>Text</strong> onto the PDF. Use the color swatch and font list in the box, type your wording, then resize/move. The same look is used when signing and on the final PDF.
+              </p>
               <p className="text-xs text-slate-500 mt-3">
                 Scroll to the page you want, then drag fields onto the document.
               </p>

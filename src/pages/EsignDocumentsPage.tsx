@@ -22,6 +22,8 @@ interface EsignDocument {
   uploaded_by?: string;
   upload_source?: string;
   requested_by?: string | null;
+  creator_name?: string | null;
+  creator_email?: string | null;
   created_at: string;
   sent_at?: string;
   signed_at?: string;
@@ -52,6 +54,28 @@ function normalizeEmail(email: string | undefined | null): string {
 
 function isDocumentCreator(doc: EsignDocument, userEmail: string | undefined | null): boolean {
   return normalizeEmail(userEmail) === normalizeEmail(doc.uploaded_by) && normalizeEmail(doc.uploaded_by) !== '';
+}
+
+function formatEsignCreatedByLine(doc: EsignDocument): string {
+  const parts = [doc.creator_name, doc.creator_email].filter((x) => x && String(x).trim());
+  return parts.length ? `Created by ${parts.join(' · ')}` : 'Created by —';
+}
+
+function formatEsignDateTime(iso: string | undefined): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+function formatEsignCreatedAtLine(doc: EsignDocument): string | null {
+  const when = formatEsignDateTime(doc.created_at);
+  return when ? `Created ${when}` : null;
 }
 
 const EsignDocumentsPage: React.FC = () => {
@@ -244,16 +268,6 @@ const EsignDocumentsPage: React.FC = () => {
     window.open(`${BACKEND_URL}/api/esign/documents/${statusModalId}/file?inline=1`, '_blank', 'noopener,noreferrer');
   };
 
-  const formatDate = (dateStr: string | undefined) => {
-    if (!dateStr) return '';
-    try {
-      const d = new Date(dateStr);
-      return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: 'numeric' });
-    } catch {
-      return '';
-    }
-  };
-
   const statusLabel = (status: string) => {
     switch (status) {
       case 'completed':
@@ -369,6 +383,7 @@ const EsignDocumentsPage: React.FC = () => {
                 <tbody className="bg-white divide-y divide-slate-200">
                   {documents.map((doc) => {
                     const isCreator = isDocumentCreator(doc, user?.email);
+                    const createdAtLine = formatEsignCreatedAtLine(doc);
                     return (
                       <tr key={doc.id} className="hover:bg-slate-50/50">
                         <td className="px-6 py-4">
@@ -381,15 +396,11 @@ const EsignDocumentsPage: React.FC = () => {
                                 {doc.file_name}
                               </span>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                {[
-                                  doc.uploaded_by,
-                                  doc.upload_source === 'manual' ? 'Manual upload' : null,
-                                  doc.requested_by ? `Requested by ${doc.requested_by}` : null,
-                                  formatDate(doc.created_at),
-                                ]
-                                  .filter(Boolean)
-                                  .join(' • ') || '—'}
+                                {formatEsignCreatedByLine(doc)}
                               </p>
+                              {createdAtLine ? (
+                                <p className="text-xs text-slate-500 mt-0.5">{createdAtLine}</p>
+                              ) : null}
                             </div>
                           </div>
                         </td>
