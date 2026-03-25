@@ -9828,23 +9828,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   Cancel
                 </button>
                 <button
-                  onClick={handleAddEsignFields}
-                  disabled={isAddingEsignFields || isStartingWorkflow}
-                  className="flex-1 min-w-[120px] px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-indigo-400 disabled:to-indigo-500 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-2 font-semibold shadow-lg shadow-indigo-500/30"
-                >
-                  {isAddingEsignFields ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      {addEsignFieldsProgress || 'Opening…'}
-                    </>
-                  ) : (
-                    <>
-                      <PenLine className="w-4 h-4" />
-                      Add signature fields
-                    </>
-                  )}
-                </button>
-                <button
                   onClick={handleStartApprovalWorkflow}
                   disabled={isStartingWorkflow || isAddingEsignFields}
                   className="flex-1 min-w-[120px] px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-2 font-semibold shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 ring-2 ring-green-400/50 hover:ring-green-300/60"

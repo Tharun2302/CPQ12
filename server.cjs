@@ -5010,10 +5010,21 @@ function esignEffectivePrefillForField(doc, fieldDoc) {
   return undefined;
 }
 
-/** Persist reviewer field_values (indices = non-signature fields, sorted _id) onto esign_documents.reviewer_field_values. */
-async function esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody) {
-  const allPlacement = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
-  const reviewerFieldOrder = allPlacement.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+/**
+ * Persist reviewer field_values onto esign_documents.reviewer_field_values.
+ * Indices in fieldValuesBody match the client's field list: non-signature fields only, in the same order as
+ * GET sign-by-token returns for that recipient (see getEsignFieldsForRecipient + reviewer filter).
+ * @param {string|null} recipientIdStr — when set, index order matches that recipient's visible fields only.
+ */
+async function esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody, recipientIdStr) {
+  let reviewerFieldOrder;
+  if (recipientIdStr) {
+    const forRec = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
+    reviewerFieldOrder = forRec.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+  } else {
+    const allPlacement = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+    reviewerFieldOrder = allPlacement.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+  }
   const reviewerPatchByFieldId = {};
   if (fieldValuesBody && typeof fieldValuesBody === 'object' && !Array.isArray(fieldValuesBody)) {
     for (const [key, val] of Object.entries(fieldValuesBody)) {
@@ -5899,10 +5910,9 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     }
     const recipientIdStr = recipient._id.toString();
     let fields = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
-    /** Reviewers see all prepared name/title/date/text fields on the document, not only those tagged to their recipient (and never signature boxes). */
+    /** Reviewers: same recipient-scoped fields as signers for name/title/date/text (no signature boxes). */
     if (recipientIsEsignReviewer(recipient)) {
-      const all = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
-      fields = all.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+      fields = fields.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
     }
     const prefillPayload = (f) => {
       const p = esignEffectivePrefillForField(doc, f);
@@ -5983,7 +5993,7 @@ app.post('/api/esign/reviewer-save-fields', async (req, res) => {
     if (recipient.status === 'reviewed') {
       return res.status(400).json({ success: false, error: 'Review already completed' });
     }
-    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody);
+    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody, recipient._id.toString());
     return res.json({ success: true, message: 'Field entries saved' });
   } catch (error) {
     console.error('❌ E-sign reviewer-save-fields error:', error);
@@ -6044,7 +6054,7 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
       });
     }
     // approve (default) — merge latest field_values from client (should match last Save; same merge as reviewer-save-fields)
-    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody);
+    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody, recipient._id.toString());
 
     await db.collection('esign_recipients').updateOne(
       { signing_token: token },

@@ -57,7 +57,7 @@ function getInitialFieldValues(fieldList: SignatureField[]): Record<number, stri
       out[i] =
         f.prefill != null && String(f.prefill).trim() !== ''
           ? String(f.prefill).slice(0, 10)
-          : new Date().toISOString().slice(0, 10);
+          : '';
     } else {
       out[i] = f.prefill != null ? String(f.prefill) : '';
     }
@@ -69,6 +69,24 @@ function getInitialFieldValues(fieldList: SignatureField[]): Record<number, stri
 function isEsignTextPrefilled(f: SignatureField): boolean {
   const p = f.prefill;
   return typeof p === 'string' && p.trim().length > 0;
+}
+
+/** Blocks submit/save/approve when any name, title, or date field is empty (creator-prefilled read-only fields are skipped). */
+function validateNameTitleDateFieldsComplete(
+  fieldList: SignatureField[],
+  values: Record<number, string>
+): string | null {
+  const pretty: Record<string, string> = { name: 'Name', title: 'Title', date: 'Date' };
+  for (let i = 0; i < fieldList.length; i++) {
+    const f = fieldList[i];
+    if (f.type !== 'name' && f.type !== 'title' && f.type !== 'date') continue;
+    if (isEsignTextPrefilled(f)) continue;
+    const v = String(values[i] ?? '').trim();
+    if (!v) {
+      return `Please fill in the ${pretty[f.type] ?? f.type} field before continuing.`;
+    }
+  }
+  return null;
 }
 
 const EsignSignPage: React.FC = () => {
@@ -354,7 +372,7 @@ const EsignSignPage: React.FC = () => {
         const v = fieldValues[i];
         if (v) values[String(i)] = v;
       } else {
-        const v = fieldValues[i] ?? (f.type === 'date' ? new Date().toISOString().slice(0, 10) : '');
+        const v = String(fieldValues[i] ?? '').trim();
         if (v) values[String(i)] = v;
       }
     }
@@ -362,6 +380,12 @@ const EsignSignPage: React.FC = () => {
     const missingSig = sigFieldIndices.filter((i) => !fieldValues[i]);
     if (missingSig.length > 0) {
       setError('Please sign all signature fields (click each "Sign Here" box to add your signature).');
+      return;
+    }
+
+    const requiredFieldsErr = validateNameTitleDateFieldsComplete(fields, fieldValues);
+    if (requiredFieldsErr) {
+      setError(requiredFieldsErr);
       return;
     }
 
@@ -421,16 +445,20 @@ const EsignSignPage: React.FC = () => {
     for (let i = 0; i < fields.length; i++) {
       const f = fields[i];
       if (f.type === 'signature') continue;
-      const v =
-        fieldValues[i] ??
-        (f.type === 'date' ? new Date().toISOString().slice(0, 10) : '');
-      out[String(i)] = v;
+      out[String(i)] = String(fieldValues[i] ?? '');
     }
     return out;
   };
 
   const handleSaveReviewerFields = async () => {
     if (!signingToken) return;
+    if (fields.length > 0) {
+      const requiredFieldsErr = validateNameTitleDateFieldsComplete(fields, fieldValues);
+      if (requiredFieldsErr) {
+        setError(requiredFieldsErr);
+        return;
+      }
+    }
     setSavingReviewerFields(true);
     setError(null);
     try {
@@ -912,10 +940,7 @@ const EsignSignPage: React.FC = () => {
                             ) : (
                               <input
                                 type={f.type === 'date' ? 'date' : 'text'}
-                                value={
-                                  fieldValues[globalIdx] ??
-                                  (f.type === 'date' ? new Date().toISOString().slice(0, 10) : '')
-                                }
+                                value={fieldValues[globalIdx] ?? ''}
                                 onChange={(e) =>
                                   setFieldValues((prev) => ({ ...prev, [globalIdx]: e.target.value }))
                                 }
@@ -1184,7 +1209,7 @@ const EsignSignPage: React.FC = () => {
                             const fieldVal = fieldValues[globalIdx];
                             const hasValue = isSignature
                               ? !!fieldVal
-                              : !!(fieldVal ?? (f.type === 'date' ? new Date().toISOString().slice(0, 10) : ''));
+                              : String(fieldVal ?? '').trim().length > 0;
                             const isImageDataUrl = typeof fieldVal === 'string' && fieldVal.startsWith('data:image');
                             return (
                               <div
@@ -1259,10 +1284,7 @@ const EsignSignPage: React.FC = () => {
                                 ) : (
                                   <input
                                     type={f.type === 'date' ? 'date' : 'text'}
-                                    value={
-                                      fieldValues[globalIdx] ??
-                                      (f.type === 'date' ? new Date().toISOString().slice(0, 10) : '')
-                                    }
+                                    value={fieldValues[globalIdx] ?? ''}
                                     onChange={(e) =>
                                       setFieldValues((prev) => ({ ...prev, [globalIdx]: e.target.value }))
                                     }

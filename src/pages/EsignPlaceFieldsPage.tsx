@@ -120,6 +120,29 @@ export interface EsignRecipient {
   email_message?: string | null;
 }
 
+/** Matches recipient-row logic: Technical/Legal team default to review, or explicit reviewer role/action. */
+function getRecipientEffectiveAction(r: EsignRecipient): 'signer' | 'reviewer' {
+  return (
+    r.action ??
+    (r.role === 'Technical Team' || r.role === 'Legal Team'
+      ? 'reviewer'
+      : r.role?.toLowerCase() === 'reviewer'
+        ? 'reviewer'
+        : 'signer')
+  );
+}
+
+/** "Place fields for" uses Sign vs Review from action, not the generic role string left over from add-recipient. */
+function getPlaceFieldsDropdownLabel(r: EsignRecipient): string {
+  const eff = getRecipientEffectiveAction(r);
+  const actionWord = eff === 'reviewer' ? 'Reviewer' : 'Signer';
+  const rw = (r.role || '').trim();
+  if (rw === 'Team Lead' || rw === 'Team Approval') return `Team Lead · ${actionWord}`;
+  if (rw === 'Technical Team') return `Technical Team · ${actionWord}`;
+  if (rw === 'Legal Team') return `Legal Team · ${actionWord}`;
+  return actionWord;
+}
+
 interface PlacedField {
   id: string;
   type: FieldType;
@@ -716,6 +739,10 @@ const EsignPlaceFieldsPage: React.FC = () => {
       const pw = coords.pageWidthPt;
       const ph = coords.pageHeightPt;
       const ft = coords.fieldType as FieldType;
+      const sel = selectedRecipientId ? recipients.find((r) => r.id === selectedRecipientId) : null;
+      if (ft === 'signature' && sel && getRecipientEffectiveAction(sel) === 'reviewer') {
+        return;
+      }
       const newField: PlacedField = {
         id: uuidv4(),
         type: ft,
@@ -739,7 +766,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         return next;
       });
     },
-    [selectedRecipientId, saveFieldsToBackend]
+    [selectedRecipientId, recipients, saveFieldsToBackend]
   );
 
   const removeField = (id: string) => {
@@ -886,6 +913,11 @@ const EsignPlaceFieldsPage: React.FC = () => {
   };
 
   const getFieldLabel = (type: FieldType) => FIELD_DEFS.find((d) => d.type === type)?.label ?? type;
+
+  const selectedRecipientForPlacement = selectedRecipientId ? recipients.find((r) => r.id === selectedRecipientId) : null;
+  const placingFieldsForReviewer = selectedRecipientForPlacement
+    ? getRecipientEffectiveAction(selectedRecipientForPlacement) === 'reviewer'
+    : false;
 
   if (loading || !doc) {
     return (
@@ -1313,7 +1345,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
               <div className="p-4 space-y-5">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</h2>
-                  <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers get fields; Reviewers mark as Reviewed.</p>
+                  <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers need a Signature field; Reviewers use Name, Title, Date, or Text only, then mark as Reviewed.</p>
               <div className="space-y-2 max-h-40 overflow-y-auto">
                 {recipients.map((r, index) => {
                   const isSelected = selectedRecipientId === r.id;
@@ -1501,35 +1533,51 @@ const EsignPlaceFieldsPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-3">Place fields for:</p>
               <select value={selectedRecipientId || ''} onChange={(e) => setSelectedRecipientId(e.target.value || null)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
                 <option value="">— None —</option>
-                {recipients.map((r) => (<option key={r.id} value={r.id}>{r.name || r.email} ({getRoleDisplayLabel(r.role)})</option>))}
+                {recipients.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name || r.email} ({getPlaceFieldsDropdownLabel(r)})
+                  </option>
+                ))}
               </select>
-              {selectedRecipientId && recipients.find((r) => r.id === selectedRecipientId)?.role?.toLowerCase() === 'reviewer' && (
-                <p className="text-xs text-amber-700 mt-1">Reviewers don&apos;t need fields; they will mark as Reviewed from their link.</p>
+              {selectedRecipientId && placingFieldsForReviewer && (
+                <p className="text-xs text-slate-600 mt-1">
+                  For reviewers, <strong className="font-medium text-slate-800">Signature</strong> is not used. Drag <strong className="font-medium text-slate-800">Name</strong>, <strong className="font-medium text-slate-800">Title</strong>, <strong className="font-medium text-slate-800">Date</strong>, or <strong className="font-medium text-slate-800">Text</strong> onto the PDF. They complete those fields and mark as Reviewed from their link.
+                </p>
               )}
             </div>
             <div>
               <p className="text-xs text-slate-500 mb-2">Drag onto the document to place</p>
               <div className="space-y-2">
-                {FIELD_DEFS.map(({ type, label, Icon }) => (
+                {FIELD_DEFS.map(({ type, label, Icon }) => {
+                  const signatureBlockedForReviewer = placingFieldsForReviewer && type === 'signature';
+                  return (
                   <div
                     key={type}
-                    draggable
+                    draggable={!signatureBlockedForReviewer}
                     onDragStart={(e) => {
+                      if (signatureBlockedForReviewer) {
+                        e.preventDefault();
+                        return;
+                      }
                       setDragSource(type);
                       e.dataTransfer.setData('text/plain', type);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     onDragEnd={() => setDragSource(null)}
-                    className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-grab active:cursor-grabbing transition-colors ${
-                      dragSource === type
-                        ? 'border-indigo-400 bg-indigo-50'
-                        : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50'
+                    title={signatureBlockedForReviewer ? 'Reviewers cannot be assigned signature fields' : undefined}
+                    className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 transition-colors ${
+                      signatureBlockedForReviewer
+                        ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
+                        : dragSource === type
+                          ? 'border-indigo-400 bg-indigo-50 cursor-grab active:cursor-grabbing'
+                          : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50 cursor-grab active:cursor-grabbing'
                     }`}
                   >
-                    <Icon className="h-5 w-5 text-indigo-600 shrink-0" />
-                    <span className="font-medium text-slate-800 text-sm">{label}</span>
+                    <Icon className={`h-5 w-5 shrink-0 ${signatureBlockedForReviewer ? 'text-slate-400' : 'text-indigo-600'}`} />
+                    <span className={`font-medium text-sm ${signatureBlockedForReviewer ? 'text-slate-500' : 'text-slate-800'}`}>{label}</span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
                 <strong className="font-medium text-slate-600">Text fields:</strong> drag <strong>Text</strong> onto the PDF. Use the color swatch and font list in the box, type your wording, then resize/move. The same look is used when signing and on the final PDF.

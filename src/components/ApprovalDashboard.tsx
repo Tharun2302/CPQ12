@@ -381,17 +381,17 @@ const ApprovalDashboard: React.FC = () => {
         <button
           type="button"
           onClick={() => navigate('/deal')}
-          className="fixed top-4 left-4 z-50 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-lg transition-colors"
+          className="fixed top-[4.5rem] left-2 z-50 inline-flex items-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:top-4 sm:left-4 sm:px-3 rounded-lg bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-lg transition-colors max-w-[calc(100vw-1rem)]"
           title="Back to home"
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">Back to home</span>
+          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+          <span className="text-xs sm:text-sm font-medium truncate">Back to home</span>
         </button>
       )}
 
-      <main className="w-full max-w-full min-w-0 box-border py-2 px-0 sm:px-0.5 sm:py-3">
+      <main className="w-full max-w-full min-w-0 box-border py-2 px-0 sm:px-1 sm:py-3">
           {/* Summary cards: white panels with colored top accent (reference layout) */}
-          <div className="grid min-w-0 w-full grid-cols-1 min-[520px]:grid-cols-2 2xl:grid-cols-4 gap-2 sm:gap-3">
+          <div className="grid min-w-0 w-full grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setActiveView('dashboard')}
@@ -466,8 +466,8 @@ const ApprovalDashboard: React.FC = () => {
           {/* List */}
           <div className="mt-3 min-w-0 max-w-full">
             <div
-              className={`flex min-w-0 max-w-full flex-col gap-3 mb-3 md:flex-row md:items-center md:gap-3 ${
-                activeView === 'dashboard' ? '' : 'md:justify-between'
+              className={`flex min-w-0 max-w-full flex-col gap-3 mb-3 lg:flex-row lg:items-center lg:gap-3 ${
+                activeView === 'dashboard' ? '' : 'lg:justify-between'
               }`}
             >
               {activeView !== 'dashboard' && (
@@ -483,33 +483,35 @@ const ApprovalDashboard: React.FC = () => {
                 </div>
               )}
               <div
-                className={`grid min-w-0 w-full max-w-full grid-cols-1 gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-stretch md:gap-4 ${
-                  activeView === 'dashboard' ? '' : 'md:flex-1 md:min-w-0'
+                className={`grid min-w-0 w-full max-w-full grid-cols-1 gap-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-stretch lg:gap-4 ${
+                  activeView === 'dashboard' ? '' : 'lg:flex-1 lg:min-w-0'
                 }`}
               >
                 <div
-                  className="flex h-full min-h-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-white border border-gray-200 px-4 py-2.5 w-full md:w-max md:max-w-none"
+                  className="flex h-full min-h-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-white border border-gray-200 px-3 py-2.5 sm:px-4 w-full lg:w-max lg:max-w-none"
                   title="Approved: completion time. Pending: created. Rejected: last update."
                 >
                   <Calendar className="h-5 w-5 text-gray-400 shrink-0" aria-hidden />
                   <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Date</span>
-                  <label className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-xs text-gray-500 whitespace-nowrap">From</span>
+                  <label className="flex flex-1 min-w-0 items-center gap-1.5 sm:flex-initial">
+                    <span className="text-xs text-gray-500 whitespace-nowrap shrink-0">From</span>
                     <input
                       type="date"
                       value={filterDateFrom}
                       onChange={(e) => setFilterDateFrom(e.target.value)}
-                      className="text-sm text-gray-900 border border-gray-200 rounded-md px-2.5 py-2 w-44 sm:w-48 bg-white shrink-0"
+                      className="min-w-0 flex-1 text-sm text-gray-900 border border-gray-200 rounded-md px-2.5 py-2 w-full sm:w-44 md:w-48 bg-white"
                     />
                   </label>
-                  <span className="text-gray-400 text-sm px-0.5">–</span>
-                  <label className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-xs text-gray-500 whitespace-nowrap">To</span>
+                  <span className="text-gray-400 text-sm px-0.5 hidden sm:inline" aria-hidden>
+                    –
+                  </span>
+                  <label className="flex flex-1 min-w-0 items-center gap-1.5 sm:flex-initial w-full sm:w-auto">
+                    <span className="text-xs text-gray-500 whitespace-nowrap shrink-0">To</span>
                     <input
                       type="date"
                       value={filterDateTo}
                       onChange={(e) => setFilterDateTo(e.target.value)}
-                      className="text-sm text-gray-900 border border-gray-200 rounded-md px-2.5 py-2 w-44 sm:w-48 bg-white shrink-0"
+                      className="min-w-0 flex-1 text-sm text-gray-900 border border-gray-200 rounded-md px-2.5 py-2 w-full sm:w-44 md:w-48 bg-white"
                     />
                   </label>
                   {dateFilterActive && (
@@ -525,8 +527,8 @@ const ApprovalDashboard: React.FC = () => {
                     </button>
                   )}
                 </div>
-                <div className="flex min-h-[2.5rem] min-w-0 w-full md:min-h-0">
-                  <div className="flex h-full min-h-[2.5rem] min-w-0 w-full items-center gap-2.5 rounded-lg bg-white border border-gray-200 px-4 py-2.5 md:min-h-0">
+                <div className="flex min-h-[2.5rem] min-w-0 w-full lg:min-h-0">
+                  <div className="flex h-full min-h-[2.5rem] min-w-0 w-full items-center gap-2.5 rounded-lg bg-white border border-gray-200 px-3 py-2.5 sm:px-4 lg:min-h-0">
                     <Search className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
                     <input
                       value={query}
@@ -536,7 +538,7 @@ const ApprovalDashboard: React.FC = () => {
                     />
                   </div>
                 </div>
-                <div className="flex h-full min-h-0 shrink-0 items-center text-base text-gray-600 whitespace-nowrap md:justify-self-end">
+                <div className="flex h-full min-h-0 shrink-0 items-center justify-center text-sm text-gray-600 sm:text-base whitespace-nowrap lg:justify-self-end">
                   Showing <span className="text-gray-900 font-semibold tabular-nums mx-0.5">{filteredList.length}</span>
                   {dateFilterActive && list.length !== filteredList.length && (
                     <span className="text-gray-500"> of {list.length}</span>
@@ -604,7 +606,7 @@ const ApprovalDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="flex shrink-0 flex-col gap-2 self-start sm:flex-row lg:self-stretch">
+                      <div className="flex w-full shrink-0 flex-col gap-2 self-stretch sm:w-auto sm:flex-row sm:self-start lg:self-stretch">
                         {workflow?.documentId &&
                           legalStep?.status === 'approved' &&
                           workflow.esignDocumentId && (
@@ -612,7 +614,7 @@ const ApprovalDashboard: React.FC = () => {
                               type="button"
                               onClick={() => navigate(`/esign/${workflow.esignDocumentId}/status`)}
                               title="View e-sign status (Recipient 1 & 2)"
-                              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#2563EB] border border-[#2563EB] px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1D4ED8] hover:border-[#1D4ED8] transition-all whitespace-nowrap"
+                              className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-[#2563EB] border border-[#2563EB] px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1D4ED8] hover:border-[#1D4ED8] transition-all whitespace-nowrap"
                             >
                               <ListChecks className="h-4 w-4 shrink-0 text-white" />
                               <span className="hidden sm:inline">View e-sign status</span>
@@ -623,7 +625,7 @@ const ApprovalDashboard: React.FC = () => {
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-0 transition-all whitespace-nowrap"
+                          className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-white border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-0 transition-all whitespace-nowrap"
                         >
                           <FileText className="h-4 w-4 text-gray-500" />
                           <span className="sm:hidden">Preview</span>
@@ -665,7 +667,7 @@ const ApprovalDashboard: React.FC = () => {
                               extra: s?.comments || '',
                             }));
 
-                      const currentIdx = steps.findIndex((item) => {
+                      const currentIdx = steps.findIndex((item: (typeof steps)[number]) => {
                         const raw = item.step?.status || 'pending';
                         return raw !== 'approved' && raw !== 'notified' && raw !== 'signed';
                       });
@@ -692,8 +694,8 @@ const ApprovalDashboard: React.FC = () => {
 
                           <div className="mt-1 relative">
                             <div className="absolute left-0 right-0 top-[7px] h-px bg-gray-200" />
-                            <div className="relative z-10 flex min-w-0 items-start justify-between gap-0.5 sm:gap-1">
-                              {steps.map((item, idx) => {
+                            <div className="relative z-10 flex min-w-[520px] sm:min-w-0 items-start justify-between gap-0.5 sm:gap-1">
+                              {steps.map((item: (typeof steps)[number], idx: number) => {
                                 const raw = item.step?.status || 'pending';
                                 const who = item.step?.email ? `Email: ${item.step.email}` : null;
                                 const grp = item.step?.group ? `Group: ${item.step.group}` : null;
@@ -731,8 +733,8 @@ const ApprovalDashboard: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className="mt-1.5 text-sm text-gray-600 truncate" title={currentExtra}>
-                            Current: <span className="font-semibold text-gray-900">{currentExtra}</span>
+                          <div className="mt-1.5 text-sm text-gray-600 sm:truncate" title={currentExtra}>
+                            Current: <span className="font-semibold text-gray-900 break-words sm:break-normal">{currentExtra}</span>
                           </div>
                         </div>
                       );
@@ -777,9 +779,9 @@ const ApprovalDashboard: React.FC = () => {
 
       {/* Agreement Preview Modal */}
       {showPreviewModal && selectedWorkflow && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full max-w-6xl max-h-[100dvh] sm:max-h-[95vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-gray-50 shrink-0">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-teal-600" />
@@ -787,7 +789,7 @@ const ApprovalDashboard: React.FC = () => {
                     Document Preview
                   </h3>
                 </div>
-                <div className="mt-1 truncate text-sm text-gray-600">
+                <div className="mt-1 line-clamp-2 sm:truncate text-sm text-gray-600">
                   {selectedWorkflow.documentId} • {selectedWorkflow.clientName || 'Unknown Client'}
                 </div>
               </div>
@@ -801,16 +803,16 @@ const ApprovalDashboard: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-6">
+            <div className="p-3 sm:p-6 min-h-0 flex-1 overflow-y-auto">
               {isPreviewLoading && (
-                <div className="h-[70vh] flex flex-col items-center justify-center text-gray-600">
+                <div className="h-[45vh] sm:h-[60vh] md:h-[70vh] flex flex-col items-center justify-center text-gray-600">
                   <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
                   <div className="mt-3 text-sm font-semibold">Loading agreement…</div>
                 </div>
               )}
 
               {!isPreviewLoading && previewError && (
-                <div className="h-[70vh] flex items-center justify-center">
+                <div className="h-[45vh] sm:h-[60vh] md:h-[70vh] flex items-center justify-center">
                   <div className="max-w-lg w-full rounded-xl border border-rose-200 bg-rose-50 p-5">
                     <div className="text-rose-800 font-extrabold">Unable to load agreement</div>
                     <div className="text-rose-700 text-sm mt-2">{previewError}</div>
@@ -819,11 +821,11 @@ const ApprovalDashboard: React.FC = () => {
               )}
 
               {!isPreviewLoading && !previewError && documentPreviewUrl && (
-                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                <div className="rounded-xl border border-gray-200 overflow-hidden min-h-[45vh] sm:min-h-[60vh]">
                   <iframe
                     src={documentPreviewUrl}
                     title="Agreement Preview"
-                    className="w-full h-[70vh] border-0"
+                    className="w-full h-[45vh] sm:h-[60vh] md:h-[70vh] border-0"
                   />
                 </div>
               )}

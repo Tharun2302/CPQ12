@@ -52,7 +52,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
             to="/deal"
             className="flex items-center gap-3 px-6 py-6 cursor-pointer hover:opacity-80 transition-opacity duration-200 border-b border-blue-100/50"
           >
-            <h1 className="text-xl font-bold text-emerald-600">
+            <h1 className="text-xl font-bold text-blue-600">
               Zenop.ai
             </h1>
           </Link>
@@ -62,15 +62,12 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = currentTab === tab.id;
-              const useActiveHighlight = isActive && tab.id !== 'approval';
               return (
                 <Link
                   key={tab.id}
                   to={tab.path}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                    useActiveHighlight
-                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg'
-                      : 'text-gray-700 hover:text-gray-900 hover:bg-white/60 hover:shadow-md'
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-gray-700 hover:text-gray-900 hover:bg-white/60 hover:shadow-md ${
+                    isActive ? 'bg-white/70 text-gray-900 shadow-sm' : ''
                   }`}
                 >
                   <Icon className="w-5 h-5 shrink-0 text-current" />
@@ -106,7 +103,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
               to="/deal"
               className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity duration-200"
             >
-              <h1 className="text-xl font-bold text-emerald-600">
+              <h1 className="text-xl font-bold text-blue-600">
                 Zenop.ai
               </h1>
             </Link>
@@ -136,16 +133,13 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = currentTab === tab.id;
-                  const useActiveHighlight = isActive && tab.id !== 'approval';
                   return (
                     <Link
                       key={tab.id}
                       to={tab.path}
                       onClick={() => setIsMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                        useActiveHighlight
-                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg'
-                          : 'text-gray-700 hover:text-gray-900 hover:bg-white/60'
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-gray-700 hover:text-gray-900 hover:bg-white/60 ${
+                        isActive ? 'bg-white/70 text-gray-900 shadow-sm' : ''
                       }`}
                     >
                       <Icon className="w-5 h-5 shrink-0 text-current" />
