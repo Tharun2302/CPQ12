@@ -45,7 +45,7 @@ function signatureFieldsDocumentFilter(docId) {
   return { $or: [{ document_id: oid }, { document_id: oid.toString() }] };
 }
 
-/** Same for esign_recipients — must match sequential-flow queries or validRecipientIds breaks. */
+/** Same for esign_recipients — mirrors signature_fields document_id matching. */
 function esignRecipientsDocumentFilter(docId) {
   const { ObjectId } = require('mongodb');
   const oid = docId instanceof ObjectId ? docId : new ObjectId(String(docId));
@@ -4984,6 +4984,90 @@ function recipientIsEsignReviewer(rec) {
   );
 }
 
+/** Values keyed by signature_fields _id (string); set when a reviewer approves. */
+function esignDocReviewerFieldMap(doc) {
+  const m = doc?.reviewer_field_values;
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : null;
+}
+
+function sanitizeReviewerSubmittedValue(fieldDoc, raw) {
+  if (raw == null) return '';
+  const s = String(raw);
+  const t = (fieldDoc.type || '').toString().toLowerCase();
+  if (t === 'text') return s.slice(0, 8000);
+  return s.slice(0, 500);
+}
+
+/** Prefill sent to clients / PDF fallback: reviewer map overrides DB prefill on text fields. */
+function esignEffectivePrefillForField(doc, fieldDoc) {
+  const rid = fieldDoc?._id?.toString();
+  const rmap = esignDocReviewerFieldMap(doc);
+  if (rid && rmap && Object.prototype.hasOwnProperty.call(rmap, rid)) {
+    const v = rmap[rid];
+    return v == null ? '' : String(v);
+  }
+  if (typeof fieldDoc.prefill === 'string') return fieldDoc.prefill;
+  return undefined;
+}
+
+/** Persist reviewer field_values (indices = non-signature fields, sorted _id) onto esign_documents.reviewer_field_values. */
+async function esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody) {
+  const allPlacement = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+  const reviewerFieldOrder = allPlacement.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+  const reviewerPatchByFieldId = {};
+  if (fieldValuesBody && typeof fieldValuesBody === 'object' && !Array.isArray(fieldValuesBody)) {
+    for (const [key, val] of Object.entries(fieldValuesBody)) {
+      const idx = parseInt(String(key), 10);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= reviewerFieldOrder.length) continue;
+      const fd = reviewerFieldOrder[idx];
+      reviewerPatchByFieldId[fd._id.toString()] = sanitizeReviewerSubmittedValue(fd, val);
+    }
+  }
+  const priorMap = esignDocReviewerFieldMap(doc) ? { ...doc.reviewer_field_values } : {};
+  const mergedReviewerValues = { ...priorMap, ...reviewerPatchByFieldId };
+  await db.collection('esign_documents').updateOne(
+    { _id: docId },
+    { $set: { reviewer_field_values: mergedReviewerValues, reviewer_field_values_at: new Date() } }
+  );
+  try {
+    await esignRegenerateReviewMergedPdf(db, docId);
+  } catch (e) {
+    console.warn('esignRegenerateReviewMergedPdf:', e?.message || e);
+  }
+  return mergedReviewerValues;
+}
+
+/** Copy reviewer_field_values into field_values map (by index and by field _id) so PDF merge always sees them. */
+function esignApplyReviewerMapToFieldValues(doc, fields, values) {
+  const m = esignDocReviewerFieldMap(doc);
+  if (!m || !fields?.length) return;
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const t = (f.type || 'signature').toLowerCase();
+    if (t === 'signature') continue;
+    const idx = String(i);
+    const cur = values[idx];
+    if (cur != null && String(cur).trim() !== '') continue;
+    const fid = f._id?.toString();
+    if (!fid) continue;
+    let rv = m[fid];
+    if (rv === undefined) {
+      for (const k of Object.keys(m)) {
+        if (k === fid) {
+          rv = m[k];
+          break;
+        }
+      }
+    }
+    if (rv == null) continue;
+    const s = String(rv);
+    if (s.length > 0) {
+      values[idx] = s;
+      values[fid] = s;
+    }
+  }
+}
+
 /** 32-byte AES-256 key from ESIGN_SIGNATURE_ENCRYPTION_KEY (64 hex chars or 32-byte base64). */
 function getEsignSignatureEncryptionKey() {
   const raw = process.env.ESIGN_SIGNATURE_ENCRYPTION_KEY;
@@ -5219,7 +5303,7 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
-    const filePath = doc.signed_file_path || doc.file_path;
+    const filePath = doc.signed_file_path || doc.review_merged_file_path || doc.file_path;
     if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
     const attachment = req.query.attachment === '1' || req.query.download === '1';
     const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
@@ -5291,7 +5375,7 @@ app.delete('/api/esign/documents/:id', async (req, res) => {
     await db.collection('audit_logs').deleteMany({ document_id: docId });
     await db.collection('esign_documents').deleteOne({ _id: docId });
 
-    [doc.file_path, doc.signed_file_path].filter(Boolean).forEach((filePath) => {
+    [doc.file_path, doc.signed_file_path, doc.review_merged_file_path].filter(Boolean).forEach((filePath) => {
       try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn('Could not delete file:', filePath, e.message); }
     });
 
@@ -5484,7 +5568,7 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
 
 // Shared helper: send e-sign document to signers (used by POST route and by approval-completion auto-send)
 async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}) {
-  const { sequential = false, uploadedBy = 'system' } = options;
+  const { uploadedBy = 'system' } = options;
   if (!db) return { success: false, error: 'Database not available' };
   let docId;
   try {
@@ -5533,9 +5617,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     }
   }
 
-  if (sequential) {
-    recipients = recipients.slice(0, 1);
-  }
   const escapeEmailMessage = (s) => {
     if (!s || typeof s !== 'string') return '';
     return String(s)
@@ -5622,7 +5703,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   }
   await db.collection('esign_documents').updateOne(
     { _id: docId },
-    { $set: { status: 'sent', sent_at: new Date(), ...(sequential ? { sequential } : {}) } }
+    { $set: { status: 'sent', sent_at: new Date() }, $unset: { sequential: '' } }
   );
   await logAudit(docId, 'sent', uploadedBy, null);
   return { success: true, emails_sent: emailsSent };
@@ -5633,7 +5714,6 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     const result = await sendDocumentForSignatureInternal(req.params.id, {
-      sequential: !!(req.body && req.body.sequential),
       uploadedBy: req.body.uploaded_by || 'system',
     });
     if (!result.success) {
@@ -5643,7 +5723,6 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
       success: true,
       message: result.emails_sent > 0 ? `Signing links sent to ${result.emails_sent} recipient(s).` : 'Document marked as sent.',
       emails_sent: result.emails_sent,
-      sequential: req.body?.sequential || undefined,
     });
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
@@ -5819,7 +5898,16 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
       return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
     }
     const recipientIdStr = recipient._id.toString();
-    const fields = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
+    let fields = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
+    /** Reviewers see all prepared name/title/date/text fields on the document, not only those tagged to their recipient (and never signature boxes). */
+    if (recipientIsEsignReviewer(recipient)) {
+      const all = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+      fields = all.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+    }
+    const prefillPayload = (f) => {
+      const p = esignEffectivePrefillForField(doc, f);
+      return p !== undefined ? { prefill: p } : {};
+    };
     res.json({
       success: true,
       recipient: {
@@ -5830,6 +5918,12 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
         action: recipient.action || null,
         status: recipient.status,
         show_dashboard: recipient.role === 'Team Lead' || recipient.role === 'Team Approval' || recipient.role === 'Technical Team' || recipient.role === 'Legal Team',
+        ...(recipientIsEsignReviewer(recipient)
+          ? {
+              reviewer_fields_saved:
+                !!(esignDocReviewerFieldMap(doc) && Object.keys(esignDocReviewerFieldMap(doc)).length > 0),
+            }
+          : {}),
       },
       document: {
         id: doc._id.toString(),
@@ -5853,6 +5947,9 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
         widthPct: f.widthPct,
         heightPct: f.heightPct,
         recipient_id: f.recipient_id?.toString(),
+        ...prefillPayload(f),
+        ...(f.text_color ? { text_color: f.text_color } : {}),
+        ...(f.text_font ? { text_font: f.text_font } : {}),
       })),
     });
   } catch (error) {
@@ -5861,11 +5958,44 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
   }
 });
 
+// POST /api/esign/reviewer-save-fields - Reviewer saves name/title/date/text before Approve (persists to document for signers + PDF)
+app.post('/api/esign/reviewer-save-fields', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token, field_values: fieldValuesBody } = req.body || {};
+    const token = (signing_token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    if (!recipientIsEsignReviewer(recipient)) {
+      return res.status(403).json({ success: false, error: 'Only reviewers can save field entries' });
+    }
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    if (recipient.status === 'reviewed') {
+      return res.status(400).json({ success: false, error: 'Review already completed' });
+    }
+    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody);
+    return res.json({ success: true, message: 'Field entries saved' });
+  } catch (error) {
+    console.error('❌ E-sign reviewer-save-fields error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // POST /api/esign/mark-reviewed - Reviewer approves or denies (option: comment; deny requires comment)
 app.post('/api/esign/mark-reviewed', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { signing_token, action, comment } = req.body || {};
+    const { signing_token, action, comment, field_values: fieldValuesBody } = req.body || {};
     const token = (signing_token || '').trim();
     if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
     const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
@@ -5913,7 +6043,9 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         document_id: docId.toString(),
       });
     }
-    // approve (default)
+    // approve (default) — merge latest field_values from client (should match last Save; same merge as reviewer-save-fields)
+    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody);
+
     await db.collection('esign_recipients').updateOne(
       { signing_token: token },
       { $set: { status: 'reviewed', review_decision: 'approved', ...(comment != null && String(comment).trim() ? { comment: String(comment).trim() } : {}) } }
@@ -5928,78 +6060,6 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         { _id: docId },
         { $set: { status: 'completed', signed_at: doc.signed_at || new Date() } }
       );
-    }
-    // Sequential mode: send signing link to the next recipient after this one marks as reviewed
-    const isSequential = !!doc.sequential;
-    if (isSequential) {
-      const docIdStr = docId.toString();
-      const allRecipients = await db.collection('esign_recipients').find({ $or: [{ document_id: docId }, { document_id: docIdStr }] }).sort({ order: 1, _id: 1 }).toArray();
-      const recipientIdStr = (recipient._id && recipient._id.toString ? recipient._id.toString() : String(recipient._id));
-      const currentIdx = allRecipients.findIndex((r) => (r._id && r._id.toString ? r._id.toString() : String(r._id)) === recipientIdStr);
-      const nextRec = currentIdx >= 0 && currentIdx < allRecipients.length - 1 ? allRecipients[currentIdx + 1] : null;
-      console.log('📧 E-sign sequential (mark-reviewed): doc.sequential=', isSequential, 'currentIdx=', currentIdx, 'total=', allRecipients.length, 'nextRec=', nextRec ? { role: nextRec.role, email: nextRec.email ? '(set)' : '(empty)' } : 'none');
-      if (!nextRec) {
-        console.log('📧 E-sign sequential (mark-reviewed): no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
-      } else if (!nextRec.email || !nextRec.email.trim()) {
-        console.warn('📧 E-sign sequential (mark-reviewed): next recipient has no email — add email for', nextRec.name || nextRec.role || 'recipient', 'in Place Fields so they can receive the link.');
-      } else {
-        const nextToken = crypto.randomUUID();
-        await db.collection('esign_recipients').updateOne(
-          { _id: nextRec._id },
-          { $set: { signing_token: nextToken, status: 'pending' } }
-        );
-        let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
-        let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
-        if (baseUrl.includes('localhost:3001')) { baseUrl = 'http://localhost:5173'; baseUrlForDashboard = 'http://localhost:5173'; }
-        const signingUrl = `${baseUrl}/sign/${nextToken}`;
-        const inboxUrl = `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(nextToken)}`;
-        const nextNameLower = (nextRec.name || '').toString().toLowerCase().trim();
-        const isTechnical = nextRec.role === 'Technical Team' || nextNameLower === 'technical';
-        const isLegal = nextRec.role === 'Legal Team' || nextNameLower === 'legal';
-        const isTeamLead = nextRec.role === 'Team Lead' || nextRec.role === 'Team Approval';
-        const showNextDashboard = isTechnical || isLegal || isTeamLead;
-        const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
-        const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
-        const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
-        const nextHasAction = nextRec.action === 'signer' || nextRec.action === 'reviewer';
-        const isNextReviewer = nextHasAction ? (nextRec.action === 'reviewer') : (roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team');
-        const ctaText = isNextReviewer ? 'Review Document' : 'Sign Document';
-        const subject = isNextReviewer ? 'Please review the document' : 'Please sign the document';
-        const nextReviewBlock = showNextDashboard
-          ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
-          <p><strong>Option 2 – Direct link:</strong> `
-          : '<p><strong>Signing link:</strong> ';
-        const nextSignBlock = showNextDashboard
-          ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
-          <p><strong>Option 2 – Sign directly:</strong> `
-          : '<p><strong>Signing link:</strong> ';
-        const html = isNextReviewer
-          ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
-          <p>You have been requested to <strong>review</strong> a document.</p>
-          ${nextReviewBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Thank you.</p>`
-          : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
-          <p>You have been requested to sign a document.</p>
-          ${nextSignBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Thank you.</p>`;
-        if (process.env.SENDGRID_API_KEY) {
-          try {
-            console.log('📧 E-sign sequential (mark-reviewed): sending email to next recipient', nextRec.role, nextRec.email);
-            const result = await sendEmail(nextRec.email, subject, html);
-            if (result.success) console.log('📧 E-sign sequential (mark-reviewed): sent signing link to next recipient', nextRec.email);
-            else console.warn('📧 E-sign sequential (mark-reviewed): sendEmail returned success=false for', nextRec.email, result);
-          } catch (err) {
-            console.warn('E-sign sequential send to next (mark-reviewed) failed for', nextRec.email, err?.message || err);
-          }
-        } else {
-          console.warn('📧 E-sign sequential (mark-reviewed): SENDGRID_API_KEY not set — next recipient', nextRec.role, nextRec.email, 'did not receive email. Set SENDGRID_API_KEY in .env and restart server.');
-        }
-      }
-    } else {
-      const recipientCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
-      if (recipientCount > 1) {
-        console.log('📧 E-sign (mark-reviewed): document has', recipientCount, 'recipients but sequential is false — enable "Sequential" when sending to get Team Lead → Technical → Legal emails.');
-      }
     }
     try {
       await logAudit(docId.toString(), 'reviewed', recipient.email || null, req.ip || req.connection?.remoteAddress);
@@ -6294,6 +6354,125 @@ function wrapTextForPdf(font, text, fontSize, maxWidth) {
   return lines;
 }
 
+/**
+ * Burn reviewer/template text (name/title/date/text) onto a copy of the original upload so downloads include data
+ * before anyone runs generate-signed. Signatures are never drawn here.
+ */
+async function esignRegenerateReviewMergedPdf(db, docId) {
+  const doc = await db.collection('esign_documents').findOne({ _id: docId });
+  if (!doc || !doc.file_path || !fs.existsSync(doc.file_path)) return;
+  const prevReview = doc.review_merged_file_path;
+  const fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+  const values = {};
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    if ((f.type || 'signature').toLowerCase() === 'signature') continue;
+    const ev = esignEffectivePrefillForField(doc, f);
+    if (ev !== undefined && String(ev).trim() !== '') values[String(i)] = String(ev);
+  }
+  if (!Object.keys(values).length) {
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $unset: { review_merged_file_path: '', review_merged_at: '' } }
+    );
+    if (prevReview && fs.existsSync(prevReview)) {
+      try { fs.unlinkSync(prevReview); } catch (_) { /* ignore */ }
+    }
+    return;
+  }
+  const pdfBytes = fs.readFileSync(doc.file_path);
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const pages = pdfDoc.getPages();
+  const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const fType = (f.type || 'signature').toLowerCase();
+    if (fType === 'signature') continue;
+    const val = values[String(i)];
+    if (!val) continue;
+    const pageNum = (f.page || 1) - 1;
+    if (pageNum < 0 || pageNum >= pages.length) continue;
+    const page = pages[pageNum];
+    const w = page.getWidth();
+    const h = page.getHeight();
+    let x; let y; let width; let height;
+    if (
+      f.xNorm != null &&
+      f.yNorm != null &&
+      f.widthNorm != null &&
+      f.heightNorm != null &&
+      !Number.isNaN(Number(f.xNorm)) &&
+      !Number.isNaN(Number(f.yNorm))
+    ) {
+      width = Number(f.widthNorm) * w;
+      height = Number(f.heightNorm) * h;
+      x = Number(f.xNorm) * w;
+      const yFromTop = Number(f.yNorm) * h;
+      y = h - yFromTop - height;
+    } else if (f.xPct != null || f.yPct != null) {
+      const xPct = (Number(f.xPct) ?? 10) / 100;
+      const yPct = (Number(f.yPct) ?? 80) / 100;
+      const wPct = (Number(f.widthPct) ?? 20) / 100;
+      const hPct = (Number(f.heightPct) ?? 4) / 100;
+      x = w * xPct;
+      y = h - (h * yPct) - (h * hPct);
+      width = w * wPct;
+      height = h * hPct;
+    } else {
+      x = Number(f.x) ?? (w * 0.1);
+      y = h - Number(f.y) - (Number(f.height) || 40);
+      width = Number(f.width) || 100;
+      height = Number(f.height) || 40;
+    }
+    if (fType === 'text') {
+      const raw = typeof val === 'string' ? val : String(val);
+      const fontSize = Math.min(11, Math.max(7, height * 0.11));
+      const lineHeight = fontSize * 1.2;
+      const innerW = Math.max(8, width - 4);
+      const pdfFont = esignPdfFontForTextField(f.text_font, helvetica, timesRoman, courier);
+      const textRgb = esignHexToPdfRgb(f.text_color);
+      const lines = wrapTextForPdf(pdfFont, raw, fontSize, innerW);
+      let cursorY = y + height - fontSize;
+      for (const line of lines) {
+        if (cursorY < y) break;
+        if (line) {
+          page.drawText(line, {
+            x: x + 2,
+            y: cursorY,
+            size: fontSize,
+            font: pdfFont,
+            color: textRgb,
+            maxWidth: innerW,
+          });
+        }
+        cursorY -= lineHeight;
+      }
+    } else {
+      const text = typeof val === 'string' ? val : String(val);
+      const fontSize = Math.min(12, height * 0.8);
+      page.drawText(text.substring(0, 50), {
+        x,
+        y: y + (height - fontSize) / 2,
+        size: fontSize,
+        font: helvetica,
+        color: rgb(0, 0, 0),
+        maxWidth: width,
+      });
+    }
+  }
+  const outPath = path.join(signedDir, `review-${docId.toString()}-${Date.now()}.pdf`);
+  fs.writeFileSync(outPath, await pdfDoc.save());
+  await db.collection('esign_documents').updateOne(
+    { _id: docId },
+    { $set: { review_merged_file_path: outPath, review_merged_at: new Date() } }
+  );
+  if (prevReview && prevReview !== outPath && fs.existsSync(prevReview)) {
+    try { fs.unlinkSync(prevReview); } catch (_) { /* ignore */ }
+  }
+}
+
 // POST /api/esign/documents/generate-signed - Merge field values (signature/name/title/date/text) into PDF
 app.post('/api/esign/documents/generate-signed', async (req, res) => {
   try {
@@ -6368,6 +6547,9 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         }
       }
     }
+
+    const docForReviewerMerge = await db.collection('esign_documents').findOne({ _id: docId });
+    esignApplyReviewerMapToFieldValues(docForReviewerMerge || doc, fields, values);
 
     const sigIndices = fields
       .map((f, i) => (((f.type || 'signature').toLowerCase() === 'signature') ? i : -1))
@@ -6496,73 +6678,6 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           { _id: docId },
           { $set: { signed_file_path: outPath, signed_at: new Date(), signer_email: signer_email || null } }
         );
-      }
-      // Sequential mode: send signing email to the next recipient in order
-      const isSequential = !!doc.sequential;
-      if (!isSequential) {
-        console.log('📧 E-sign: document not in sequential mode (sequential=false), so not sending to next recipient. Use "Sequential" on Send page to enable.');
-      }
-      if (isSequential) {
-        const docIdStr = docId.toString();
-        const allRecipients = await db.collection('esign_recipients').find({ $or: [{ document_id: docId }, { document_id: docIdStr }] }).sort({ order: 1, _id: 1 }).toArray();
-        const currentIdx = allRecipients.findIndex((r) => r.signing_token === signing_token);
-        const nextRec = currentIdx >= 0 && currentIdx < allRecipients.length - 1 ? allRecipients[currentIdx + 1] : null;
-        if (!nextRec) {
-          console.log('📧 E-sign sequential (after sign): no next recipient (currentIdx=', currentIdx, 'total=', allRecipients.length, ')');
-        } else if (!nextRec.email || !nextRec.email.trim()) {
-          console.log('📧 E-sign sequential (after sign): next recipient has no email, skip');
-        } else {
-          const nextToken = crypto.randomUUID();
-          await db.collection('esign_recipients').updateOne(
-            { _id: nextRec._id },
-            { $set: { signing_token: nextToken, status: 'pending' } }
-          );
-          let baseUrl = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
-          let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || 'http://localhost:5173';
-          if (baseUrl.includes('localhost:3001')) { baseUrl = 'http://localhost:5173'; baseUrlForDashboard = 'http://localhost:5173'; }
-          const signingUrl = `${baseUrl}/sign/${nextToken}`;
-          const inboxUrl = `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(nextToken)}`;
-          const nextNameLower = (nextRec.name || '').toString().toLowerCase().trim();
-          const isTechnical = nextRec.role === 'Technical Team' || nextNameLower === 'technical';
-          const isLegal = nextRec.role === 'Legal Team' || nextNameLower === 'legal';
-          const isTeamLead = nextRec.role === 'Team Lead' || nextRec.role === 'Team Approval';
-          const showNextDashboard = isTechnical || isLegal || isTeamLead;
-          const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
-          const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
-          const roleLower = (nextRec.role || 'signer').toString().toLowerCase();
-          const nextHasAction = nextRec.action === 'signer' || nextRec.action === 'reviewer';
-          const isNextReviewer = nextHasAction ? (nextRec.action === 'reviewer') : (roleLower === 'reviewer' || nextRec.role === 'Technical Team' || nextRec.role === 'Legal Team');
-          const ctaText = isNextReviewer ? 'Review Document' : 'Sign Document';
-          const subject = isNextReviewer ? 'Please review the document' : 'Please sign the document';
-          const nextReviewBlock2 = showNextDashboard
-            ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
-          <p><strong>Option 2 – Direct link:</strong> `
-            : '<p><strong>Signing link:</strong> ';
-          const nextSignBlock2 = showNextDashboard
-            ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
-          <p><strong>Option 2 – Sign directly:</strong> `
-            : '<p><strong>Signing link:</strong> ';
-          const html = isNextReviewer
-            ? `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
-          <p>You have been requested to <strong>review</strong> a document.</p>
-          ${nextReviewBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Thank you.</p>`
-            : `<p>Hello${nextRec.name ? ` ${nextRec.name}` : ''},</p>
-          <p>You have been requested to sign a document.</p>
-          ${nextSignBlock2}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-          <p>Thank you.</p>`;
-          if (process.env.SENDGRID_API_KEY) {
-            try {
-              console.log('📧 E-sign sequential (after sign): sending email to next recipient', nextRec.role, nextRec.email);
-              const result = await sendEmail(nextRec.email, subject, html);
-              if (result.success) console.log('📧 E-sign sequential: sent signing link to next recipient', nextRec.email);
-            } catch (err) {
-              console.warn('E-sign sequential send to next failed for', nextRec.email, err?.message || err);
-            }
-          } else {
-            console.warn('📧 E-sign sequential (after sign): SENDGRID_API_KEY not set — next recipient', nextRec.role, nextRec.email, 'did not receive email.');
-          }
-        }
       }
     } else {
       await db.collection('esign_documents').updateOne(

@@ -207,7 +207,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [sequential, setSequential] = useState(false);
   const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => getSavedRecipients());
   const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => getSavedGroups());
   const [defaultGroupId, setDefaultGroupIdState] = useState<string | null>(() => getDefaultGroupId());
@@ -267,7 +266,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
       if (recipientsData.success && recipientsData.recipients?.length) {
         setRecipients(recipientsData.recipients);
         setSelectedRecipientId(recipientsData.recipients[0]?.id || null);
-        if (recipientsData.recipients.length >= 2) setSequential(true);
       }
       // Default group is no longer auto-added when document has no recipients.
       // Add recipients via "Add to document" on a saved group.
@@ -757,14 +755,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
     if (!documentId) return;
     setSendForSignatureResult(null);
 
-    if (sequential && recipients.length > 0) {
-      const missing = recipients.filter((r) => !(r.email || '').trim());
-      if (missing.length > 0) {
-        setSendForSignatureResult('Every recipient must have an email when using Sequential flow (Team Lead → Technical → Legal). Add emails in the recipient list.');
-        return;
-      }
-    }
-
     const fieldCheck = validateSignatureFieldsBeforeSend(
       recipients,
       signatureFields.map((f) => ({ type: f.type, recipient_id: f.recipient_id ?? null }))
@@ -799,7 +789,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         const sendRes = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sequential }),
+          body: JSON.stringify({}),
         });
         const sendData = await sendRes.json();
         if (sendData.success) {
@@ -1277,22 +1267,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 </p>
               </div>
             )}
-            <label className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sequential}
-                onChange={(e) => setSequential(e.target.checked)}
-                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span className="text-sm text-slate-700">
-                Sequential: send only to first recipient; after they sign or review, the next receives the email.
-                {recipients.length >= 2 && (
-                  <span className="block mt-0.5 text-amber-700 font-medium">
-                    Recommended for Team Lead → Technical → Legal flow.
-                  </span>
-                )}
-              </span>
-            </label>
             <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Go to page</span>
