@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-<<<<<<< HEAD
 import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3, FileCheck } from 'lucide-react';
-=======
-import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3 } from 'lucide-react';
->>>>>>> e8263ea5092ac3fd8517326dfcbc2b2e599c8d5e
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 
@@ -36,10 +32,6 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
     // Pricing tab hidden per requirement
     // { id: 'pricing-config', label: 'Pricing', icon: DollarSign, path: '/dashboard/pricing-config' },
     { id: 'quote',     label: 'Quote',     icon: FileText, path: '/quote' },
-<<<<<<< HEAD
-    { id: 'documents', label: 'Documents', icon: FileText, path: '/documents' },
-=======
->>>>>>> e8263ea5092ac3fd8517326dfcbc2b2e599c8d5e
     { id: 'approval',  label: 'Approval',  icon: CheckCircle, path: '/approval' },
     { id: 'esign',     label: 'e sign',   icon: PenLine, path: '/esign' },
     { id: 'esign-tracking', label: 'e sign status', icon: BarChart3, path: '/esign-tracking' },

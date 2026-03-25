@@ -5,7 +5,6 @@ import {
   FileText,
   ListChecks,
   Loader2,
-  PenLine,
   Search,
   X,
   XCircle,
@@ -170,13 +169,8 @@ const ApprovalDashboard: React.FC = () => {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
-<<<<<<< HEAD
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
-=======
-  const [esignError, setEsignError] = useState<string | null>(null);
-  const [esignCreatingId, setEsignCreatingId] = useState<string | null>(null);
->>>>>>> e8263ea5092ac3fd8517326dfcbc2b2e599c8d5e
 
   const {
     workflows,
@@ -323,41 +317,6 @@ const ApprovalDashboard: React.FC = () => {
     revokeObjectUrlIfAny();
   };
 
-<<<<<<< HEAD
-=======
-  const handleStartEsign = async (workflow: any) => {
-    const docId = workflow?.documentId;
-    if (!docId) {
-      setEsignError('No document linked to this workflow.');
-      return;
-    }
-    setEsignCreatingId(workflow.id);
-    setEsignError(null);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          documentId: docId,
-          uploaded_by: user?.email || 'approval-workflow',
-          workflowId: workflow.id,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || 'Failed to create e-sign document');
-      if (data.success && data.document?.id) {
-        navigate(`/esign/${data.document.id}/place-fields`);
-        return;
-      }
-      throw new Error('Invalid response');
-    } catch (e) {
-      setEsignError(e instanceof Error ? e.message : 'Failed to start e-sign');
-    } finally {
-      setEsignCreatingId(null);
-    }
-  };
-
->>>>>>> e8263ea5092ac3fd8517326dfcbc2b2e599c8d5e
   const openAgreementPreview = async (workflow: any) => {
     setSelectedWorkflow(workflow);
     setShowPreviewModal(true);
@@ -587,22 +546,8 @@ const ApprovalDashboard: React.FC = () => {
               </div>
             </div>
 
-<<<<<<< HEAD
             <div className="grid min-w-0 max-w-full grid-cols-1 gap-2.5">
               {filteredList.map((workflow: any) => {
-=======
-            {esignError && (
-              <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-4 py-2 text-rose-800 text-sm flex items-center justify-between gap-2">
-                <span>{esignError}</span>
-                <button type="button" onClick={() => setEsignError(null)} className="text-rose-600 hover:text-rose-800" aria-label="Dismiss">
-                  ×
-                </button>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-3">
-              {list.map((workflow: any) => {
->>>>>>> e8263ea5092ac3fd8517326dfcbc2b2e599c8d5e
                 const status = workflow.status || 'pending';
                 const statusLabel = String(status).replace('_', ' ');
                 const requestedBy = workflow.creatorName || workflow.creatorEmail || '—';
@@ -659,11 +604,7 @@ const ApprovalDashboard: React.FC = () => {
                         </div>
                       </div>
 
-<<<<<<< HEAD
                       <div className="flex shrink-0 flex-col gap-2 self-start sm:flex-row lg:self-stretch">
-=======
-                      <div className="shrink-0 flex flex-col sm:flex-row gap-2 self-stretch">
->>>>>>> e8263ea5092ac3fd8517326dfcbc2b2e599c8d5e
                         {workflow?.documentId &&
                           legalStep?.status === 'approved' &&
                           workflow.esignDocumentId && (
@@ -676,27 +617,7 @@ const ApprovalDashboard: React.FC = () => {
                               <ListChecks className="h-4 w-4 shrink-0 text-white" />
                               <span className="hidden sm:inline">View e-sign status</span>
                             </button>
-<<<<<<< HEAD
                           )}
-=======
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleStartEsign(workflow)}
-                              disabled={esignCreatingId === workflow.id}
-                              title="Send for e-signature after Legal — Recipient 1 & 2"
-                              aria-label="Send for e-signature"
-                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#10B981] border border-[#10B981] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#059669] hover:border-[#059669] transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
-                            >
-                              {esignCreatingId === workflow.id ? (
-                                <Loader2 className="h-4 w-4 text-white animate-spin" />
-                              ) : (
-                                <PenLine className="h-4 w-4 text-white" />
-                              )}
-                              <span className="hidden sm:inline">Send for signature</span>
-                            </button>
-                          ))}
->>>>>>> e8263ea5092ac3fd8517326dfcbc2b2e599c8d5e
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
