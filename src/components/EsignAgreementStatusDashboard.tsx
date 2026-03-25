@@ -46,6 +46,23 @@ function formatEsignCreatedByLine(ag: Agreement): string {
   return parts.length ? `Created by ${parts.join(' · ')}` : 'Created by —';
 }
 
+function formatEsignDateTime(iso: string | undefined): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+function formatEsignCreatedAtLine(ag: Agreement): string | null {
+  const when = formatEsignDateTime(ag.created_at);
+  return when ? `Created ${when}` : null;
+}
+
 const EsignAgreementStatusDashboard: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<StatusFilterTab>('all');
@@ -508,7 +525,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-200">
-                    {filteredAgreements.map((ag) => (
+                    {filteredAgreements.map((ag) => {
+                      const createdAtLine = formatEsignCreatedAtLine(ag);
+                      return (
                       <tr key={ag.id} className="hover:bg-slate-50/50">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
@@ -520,6 +539,9 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                               <p className="text-xs text-slate-500 mt-0.5">
                                 {formatEsignCreatedByLine(ag)}
                               </p>
+                              {createdAtLine ? (
+                                <p className="text-xs text-slate-500 mt-0.5">{createdAtLine}</p>
+                              ) : null}
                             </div>
                           </div>
                         </td>
@@ -590,7 +612,8 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

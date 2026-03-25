@@ -61,6 +61,23 @@ function formatEsignCreatedByLine(doc: EsignDocument): string {
   return parts.length ? `Created by ${parts.join(' · ')}` : 'Created by —';
 }
 
+function formatEsignDateTime(iso: string | undefined): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+function formatEsignCreatedAtLine(doc: EsignDocument): string | null {
+  const when = formatEsignDateTime(doc.created_at);
+  return when ? `Created ${when}` : null;
+}
+
 const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -366,6 +383,7 @@ const EsignDocumentsPage: React.FC = () => {
                 <tbody className="bg-white divide-y divide-slate-200">
                   {documents.map((doc) => {
                     const isCreator = isDocumentCreator(doc, user?.email);
+                    const createdAtLine = formatEsignCreatedAtLine(doc);
                     return (
                       <tr key={doc.id} className="hover:bg-slate-50/50">
                         <td className="px-6 py-4">
@@ -380,6 +398,9 @@ const EsignDocumentsPage: React.FC = () => {
                               <p className="text-xs text-slate-500 mt-0.5">
                                 {formatEsignCreatedByLine(doc)}
                               </p>
+                              {createdAtLine ? (
+                                <p className="text-xs text-slate-500 mt-0.5">{createdAtLine}</p>
+                              ) : null}
                             </div>
                           </div>
                         </td>
