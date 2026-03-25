@@ -27,6 +27,8 @@ interface Agreement {
   file_name: string;
   uploaded_by?: string;
   upload_source?: string;
+  creator_name?: string | null;
+  creator_email?: string | null;
   /** Display name/email of who requested the agreement (approval workflow or from-approval). */
   requested_by?: string | null;
   created_at: string;
@@ -38,6 +40,11 @@ interface Agreement {
 }
 
 type StatusFilterTab = 'all' | 'completed' | 'pending' | 'rejected';
+
+function formatEsignCreatedByLine(ag: Agreement): string {
+  const parts = [ag.creator_name, ag.creator_email].filter((x) => x && String(x).trim());
+  return parts.length ? `Created by ${parts.join(' · ')}` : 'Created by —';
+}
 
 const EsignAgreementStatusDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -511,14 +518,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                             <div>
                               <span className="font-medium text-slate-900 truncate max-w-xs block" title={ag.file_name}>{ag.file_name}</span>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                {[
-                                  ag.uploaded_by,
-                                  ag.upload_source === 'manual' ? 'Manual upload' : null,
-                                  ag.requested_by ? `Requested by ${ag.requested_by}` : null,
-                                  formatDate(ag.created_at),
-                                ]
-                                  .filter(Boolean)
-                                  .join(' • ') || '—'}
+                                {formatEsignCreatedByLine(ag)}
                               </p>
                             </div>
                           </div>

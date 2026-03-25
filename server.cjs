@@ -6770,12 +6770,26 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         (d.requested_by_email && String(d.requested_by_email).trim()) ||
         null;
       const requestedBy = requestedByStored || requestedByFromWorkflow[idStr] || null;
+      const uploader = (d.uploaded_by && String(d.uploaded_by).trim()) || '';
+      let creator_name = null;
+      let creator_email = null;
+      if (uploader.includes('@')) {
+        creator_email = uploader;
+      } else {
+        creator_name = (d.requested_by_name && String(d.requested_by_name).trim()) || null;
+        creator_email = (d.requested_by_email && String(d.requested_by_email).trim()) || null;
+      }
+      if (!creator_email && !creator_name && uploader) {
+        creator_name = uploader;
+      }
       return {
         id: idStr,
         file_name: d.file_name,
         uploaded_by: d.uploaded_by,
         upload_source: d.upload_source || 'manual',
         requested_by: requestedBy,
+        creator_name,
+        creator_email,
         created_at: d.created_at,
         sent_at: d.sent_at,
         signed_at: d.signed_at,
