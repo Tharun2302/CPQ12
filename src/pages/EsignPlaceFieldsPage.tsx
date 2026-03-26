@@ -928,7 +928,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/80 py-6 px-4">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden w-full">
       {editingGroup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setEditingGroup(null)}>
           <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -984,18 +984,28 @@ const EsignPlaceFieldsPage: React.FC = () => {
           </div>
         </div>
       )}
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Place Fields</h1>
-          <p className="text-slate-600 mt-1 text-sm">Drag signature, name, title, date, and text fields onto the document.</p>
+      <div className="flex flex-col flex-1 min-h-0 w-full max-w-7xl mx-auto">
+        <div className="mb-2 sm:mb-3 shrink-0 flex flex-row flex-wrap items-start justify-between gap-3 gap-y-2">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Place Fields</h1>
+            <p className="text-slate-600 mt-0.5 sm:mt-1 text-xs sm:text-sm leading-snug">Drag signature, name, title, date, and text fields onto the document.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSendForSignature}
+            disabled={saving || sending}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 shadow-md hover:shadow-lg transition-shadow"
+          >
+            {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Send for Signature</>}
+          </button>
         </div>
 
-        <div className="flex gap-6 flex-col lg:flex-row">
+        <div className="flex gap-4 lg:gap-6 flex-col lg:flex-row flex-1 min-h-0 lg:items-stretch">
           {/* Document area first (left / full width on mobile) */}
-          <div className="flex-1 flex flex-col min-w-0 order-2 lg:order-1">
+          <div className="flex flex-1 flex-col min-w-0 order-2 lg:order-1 min-h-[280px] lg:min-h-0">
             <div
               ref={scrollContainerRef}
-              className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-y-auto overflow-x-hidden min-h-[500px] max-h-[76vh]"
+              className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-y-auto overflow-x-hidden flex-1 min-h-0"
               onDragOver={(e) => e.preventDefault()}
             >
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
@@ -1287,19 +1297,19 @@ const EsignPlaceFieldsPage: React.FC = () => {
             </div>
 
             {approvalError && (
-              <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center justify-between gap-2">
+              <div className="mt-2 shrink-0 p-2.5 sm:p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm flex items-center justify-between gap-2">
                 <span>{approvalError}</span>
                 <button type="button" onClick={() => setApprovalError(null)} className="text-red-600 hover:text-red-800 font-medium">×</button>
               </div>
             )}
             {sendForSignatureResult && (
-              <div className="mt-4">
-                <p className={`text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>
+              <div className="mt-2 shrink-0">
+                <p className={`text-xs sm:text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>
                   {sendForSignatureResult}
                 </p>
               </div>
             )}
-            <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-4 border-t border-slate-200">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2 pt-2 sm:mt-3 sm:pt-3 shrink-0 border-t border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Go to page</span>
                 <input
@@ -1329,20 +1339,13 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 </button>
                 <span className="text-sm text-slate-500">1–{totalPages}</span>
               </div>
-              <button
-                onClick={handleSendForSignature}
-                disabled={saving || sending}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 shadow-md hover:shadow-lg transition-shadow"
-              >
-                {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Send for Signature</>}
-              </button>
             </div>
           </div>
 
           {/* Right panel: recipients & fields */}
-          <div className="w-full lg:w-80 shrink-0 order-1 lg:order-2">
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden sticky top-24 max-h-[85vh] overflow-y-auto">
-              <div className="p-4 space-y-5">
+          <div className="w-full lg:w-80 shrink-0 order-1 lg:order-2 flex flex-col min-h-0 max-h-[min(52vh,420px)] lg:max-h-none lg:h-full">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-3 sm:p-4 space-y-4 sm:space-y-5 overflow-y-auto flex-1 min-h-0">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</h2>
                   <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers need a Signature field; Reviewers use Name, Title, Date, or Text only, then mark as Reviewed.</p>

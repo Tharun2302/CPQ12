@@ -6340,6 +6340,63 @@ function esignPdfFontForTextField(fontId, helvetica, timesRoman, courier) {
   return helvetica;
 }
 
+/** Lazy-load sharp (WebP/GIF/SVG/etc. → PNG for pdf-lib). */
+let esignSharpModule;
+function getEsignSharp() {
+  if (esignSharpModule === undefined) {
+    try {
+      esignSharpModule = require('sharp');
+    } catch {
+      esignSharpModule = null;
+    }
+  }
+  return esignSharpModule;
+}
+
+/**
+ * Signatures may be PNG, JPEG, WebP, GIF, etc. pdf-lib only embeds PNG/JPEG; other formats → 500 without conversion.
+ */
+async function embedEsignSignatureImage(pdfDoc, imgBytes, dataUrlHint) {
+  const hint = typeof dataUrlHint === 'string' ? dataUrlHint : '';
+  const sharp = getEsignSharp();
+  const trySharpToPng = async () => {
+    if (!sharp || !imgBytes || imgBytes.length === 0) return null;
+    try {
+      const pngBuf = await sharp(Buffer.from(imgBytes)).png().toBuffer();
+      return await pdfDoc.embedPng(pngBuf);
+    } catch {
+      return null;
+    }
+  };
+
+  const looksJpegFromUrl = /^data:image\/jpe?g/i.test(hint);
+  const looksJpegFromMagic = imgBytes.length >= 2 && imgBytes[0] === 0xff && imgBytes[1] === 0xd8;
+  if (looksJpegFromUrl || looksJpegFromMagic) {
+    try {
+      return await pdfDoc.embedJpg(imgBytes);
+    } catch (e) {
+      const fromSharp = await trySharpToPng();
+      if (fromSharp) return fromSharp;
+      try {
+        return await pdfDoc.embedPng(imgBytes);
+      } catch {
+        throw e;
+      }
+    }
+  }
+  try {
+    return await pdfDoc.embedPng(imgBytes);
+  } catch (e) {
+    const fromSharp = await trySharpToPng();
+    if (fromSharp) return fromSharp;
+    try {
+      return await pdfDoc.embedJpg(imgBytes);
+    } catch {
+      throw e;
+    }
+  }
+}
+
 /** Widen effective maxWidth so name/title/date draw on one line (pdf-lib wraps when text exceeds maxWidth). */
 function esignPdfSingleLineMaxWidth(page, helvetica, text, fontSize, placedWidth, x) {
   const t = String(text || '').trim();
@@ -6502,7 +6559,12 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     const { document_id, signature_data, field_coords, field_values, signer_email, signing_token } = req.body;
     if (!document_id) return res.status(400).json({ success: false, error: 'document_id required' });
 
-    const docId = new ObjectId(document_id);
+    let docId;
+    try {
+      docId = new ObjectId(String(document_id).trim());
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document_id' });
+    }
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
@@ -6510,7 +6572,16 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     if (!fs.existsSync(sourcePath)) return res.status(404).json({ success: false, error: 'Source file not found' });
 
     const pdfBytes = fs.readFileSync(sourcePath);
-    const pdfDoc = await PDFDocument.load(pdfBytes);
+    let pdfDoc;
+    try {
+      pdfDoc = await PDFDocument.load(pdfBytes);
+    } catch (loadErr) {
+      console.error('❌ E-sign generate-signed: PDFDocument.load failed:', loadErr?.message || loadErr);
+      return res.status(400).json({
+        success: false,
+        error: 'Could not read the document PDF. The file may be corrupted, encrypted, or not a valid PDF.',
+      });
+    }
     const pages = pdfDoc.getPages();
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
@@ -6634,11 +6705,30 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         height = Number(f.height) || 40;
       }
 
-      const isBase64Image = typeof val === 'string' && /^data:image\/\w+;base64,/.test(val);
+      const isBase64Image = typeof val === 'string' && /^data:image\/[^;]+;base64,/i.test(val);
       if ((fType === 'signature' && isBase64Image)) {
-        const imgBytes = Buffer.from(val.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-        const pngImage = await pdfDoc.embedPng(imgBytes);
-        page.drawImage(pngImage, { x, y, width, height });
+        const b64 = val.replace(/^data:image\/[^;]+;base64,/i, '').replace(/\s/g, '');
+        let imgBytes;
+        try {
+          imgBytes = Buffer.from(b64, 'base64');
+        } catch {
+          return res.status(400).json({ success: false, error: 'Invalid signature image encoding.' });
+        }
+        if (!imgBytes || imgBytes.length === 0) {
+          return res.status(400).json({ success: false, error: 'Invalid signature image data.' });
+        }
+        let embedded;
+        try {
+          embedded = await embedEsignSignatureImage(pdfDoc, imgBytes, val);
+        } catch (imgErr) {
+          console.error('❌ E-sign signature embed failed:', imgErr?.message || imgErr);
+          return res.status(400).json({
+            success: false,
+            error:
+              'Could not place the signature image on the PDF. Try uploading a PNG or JPG, or draw/type your signature again.',
+          });
+        }
+        page.drawImage(embedded, { x, y, width, height });
       } else if (fType === 'text') {
         const raw = typeof val === 'string' ? val : String(val);
         const fontSize = Math.min(11, Math.max(7, height * 0.11));

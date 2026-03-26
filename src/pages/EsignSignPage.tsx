@@ -100,6 +100,24 @@ function validateNameTitleDateFieldsComplete(
   return null;
 }
 
+/** User-facing message when generate-signed fails; highlights bad signature image uploads. */
+function friendlyGenerateSignedError(res: Response, apiError: string | undefined): string {
+  const raw = (apiError || '').trim();
+  const lower = raw.toLowerCase();
+  const imageLikely =
+    /signature image|image (encoding|data)|png or jpg|place the signature|invalid.*image|could not.*image|embed|webp/i.test(
+      lower
+    );
+  if (imageLikely) {
+    return 'That image format could not be used as your signature. Please upload a PNG or JPG, or use Draw or Type instead.';
+  }
+  if (raw) return raw;
+  if (!res.ok) {
+    return 'We could not finish signing. If you uploaded a signature image, try PNG or JPG—or use Draw or Type.';
+  }
+  return 'Failed to generate signed document';
+}
+
 const EsignSignPage: React.FC = () => {
   const { documentId: documentIdOrToken } = useParams<{ documentId: string }>();
   const navigate = useNavigate();
@@ -414,11 +432,17 @@ const EsignSignPage: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
+      let data: { success?: boolean; error?: string } = {};
+      try {
+        const text = await res.text();
+        if (text && !text.startsWith('<')) data = JSON.parse(text);
+      } catch {
+        data = {};
+      }
       if (data.success) {
         setSuccess(true);
       } else {
-        setError(data.error || 'Failed to generate signed document');
+        setError(friendlyGenerateSignedError(res, data.error));
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to sign document');
