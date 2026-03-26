@@ -320,21 +320,21 @@ const EsignDocumentsPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/80 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <Link to="/deal" className="text-sm text-slate-500 hover:text-slate-800 mb-2 inline-block">
+    <div className="min-h-screen bg-slate-50/80 py-5 sm:py-6 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto">
+        <div className="mb-4 sm:mb-5">
+          <Link to="/deal" className="text-sm text-slate-500 hover:text-slate-800 mb-1.5 inline-block">
             ← Back to Deal
           </Link>
-          <h1 className="text-2xl font-bold text-slate-900">e sign</h1>
-          <p className="text-slate-500 mt-1 text-sm">Upload agreements and send them for signature</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">e sign</h1>
+          <p className="text-slate-500 mt-0.5 text-sm">Upload agreements and send them for signature</p>
         </div>
 
-        {/* Upload Document card */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Upload Document</h2>
-          <div className="flex flex-wrap gap-4 items-center">
-            <label className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-lg font-medium cursor-pointer hover:bg-violet-700 disabled:opacity-50 shadow-sm">
+        {/* Upload — compact card, no dead horizontal space */}
+        <div className="w-fit max-w-full bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <h2 className="text-base font-semibold text-slate-900 sm:shrink-0">Upload Document</h2>
+            <label className="inline-flex items-center gap-2 px-4 py-2.5 sm:px-5 bg-violet-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-violet-700 disabled:opacity-50 shadow-sm w-fit">
               <Upload className="h-5 w-5 shrink-0" />
               {uploading ? (
                 <>
@@ -354,13 +354,13 @@ const EsignDocumentsPage: React.FC = () => {
             </label>
           </div>
           {uploadError && (
-            <p className="mt-2 text-sm text-red-600">{uploadError}</p>
+            <p className="mt-3 text-sm text-red-600">{uploadError}</p>
           )}
         </div>
 
-        {/* Your Documents — same table layout as e sign status page */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <h2 className="text-lg font-semibold text-slate-900 px-6 pt-5 pb-4 border-b border-slate-200">Your Documents</h2>
+        {/* Your Documents — tighter table columns (fixed layout) */}
+        <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <h2 className="text-base font-semibold text-slate-900 px-4 sm:px-5 py-3 border-b border-slate-200">Your Documents</h2>
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
@@ -372,12 +372,17 @@ const EsignDocumentsPage: React.FC = () => {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
+              <table className="w-full table-fixed min-w-[520px] divide-y divide-slate-200">
+                <colgroup>
+                  <col style={{ width: '48%' }} />
+                  <col style={{ width: '26%' }} />
+                  <col style={{ width: '26%' }} />
+                </colgroup>
                 <thead className="bg-slate-50">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Document</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Stage</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">Actions</th>
+                    <th scope="col" className="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Document</th>
+                    <th scope="col" className="px-3 sm:px-4 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Stage</th>
+                    <th scope="col" className="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-200">
@@ -386,25 +391,25 @@ const EsignDocumentsPage: React.FC = () => {
                     const createdAtLine = formatEsignCreatedAtLine(doc);
                     return (
                       <tr key={doc.id} className="hover:bg-slate-50/50">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
+                        <td className="px-4 sm:px-5 py-3 align-top min-w-0">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
                               <FileText className="h-4 w-4 text-indigo-600" />
                             </div>
-                            <div>
-                              <span className="font-medium text-slate-900 truncate max-w-xs block" title={doc.file_name}>
+                            <div className="min-w-0 flex-1">
+                              <span className="font-medium text-slate-900 text-sm truncate block" title={doc.file_name}>
                                 {doc.file_name}
                               </span>
-                              <p className="text-xs text-slate-500 mt-0.5">
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
                                 {formatEsignCreatedByLine(doc)}
                               </p>
                               {createdAtLine ? (
-                                <p className="text-xs text-slate-500 mt-0.5">{createdAtLine}</p>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{createdAtLine}</p>
                               ) : null}
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-4 py-3 align-top">
                           <div className="flex flex-col gap-0.5">
                             {doc.status === 'sent' && getSentStage(doc.recipients || []) ? (
                               <>
@@ -433,14 +438,14 @@ const EsignDocumentsPage: React.FC = () => {
                               })()}
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-wrap items-center justify-end gap-3">
+                        <td className="px-4 sm:px-5 py-3 align-top">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
                             {doc.status === 'draft' && (
                               <Link
                                 to={`/esign/${doc.id}/place-fields`}
-                                className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                                className="inline-flex items-center gap-1 text-xs sm:text-sm font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
                               >
-                                <PenLine className="h-4 w-4" />
+                                <PenLine className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
                                 Place fields
                               </Link>
                             )}
@@ -452,9 +457,9 @@ const EsignDocumentsPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => openStatusModal(doc.id)}
-                                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-slate-900"
+                                className="inline-flex items-center gap-1 text-xs sm:text-sm font-medium text-slate-700 hover:text-slate-900 whitespace-nowrap"
                               >
-                                <Eye className="h-4 w-4" />
+                                <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
                                 View status
                               </button>
                             )}
@@ -470,7 +475,7 @@ const EsignDocumentsPage: React.FC = () => {
                                     setOpenActionsId(doc.id);
                                   }
                                 }}
-                                className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400"
+                                className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400 shrink-0"
                                 title="Actions"
                                 aria-expanded={openActionsId === doc.id}
                               >
