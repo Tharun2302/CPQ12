@@ -104,6 +104,7 @@ app.use((req, res, next) => {
   }
   next();
 });
+// Large enough for generate-signed JSON bodies with base64 signature images (multiple fields).
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -5079,6 +5080,13 @@ function esignApplyReviewerMapToFieldValues(doc, fields, values) {
   }
 }
 
+/** Client-provided field value present (signatures: data URLs; typed/draw/upload all end as non-empty strings). */
+function esignSignatureFieldValueProvided(val) {
+  if (val == null || val === '') return false;
+  const s = typeof val === 'string' ? val.trim() : String(val);
+  return s.length > 0;
+}
+
 /** 32-byte AES-256 key from ESIGN_SIGNATURE_ENCRYPTION_KEY (64 hex chars or 32-byte base64). */
 function getEsignSignatureEncryptionKey() {
   const raw = process.env.ESIGN_SIGNATURE_ENCRYPTION_KEY;
@@ -6214,11 +6222,11 @@ app.get('/api/esign/signature-fields/:documentId', async (req, res) => {
   }
 });
 
-// POST /api/esign/signatures/store-encrypted — AES-256-GCM blob in MongoDB only; response never includes plaintext.
+// POST /api/esign/signatures/store-encrypted — deprecated: signatures are sent in POST /api/esign/documents/generate-signed field_values; merged PDF is authoritative. Validates token/doc like before but does not write esign_signature_secrets (legacy clients should upgrade).
 app.post('/api/esign/signatures/store-encrypted', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
-    const { document_id, signing_token, field_index: fieldIndexRaw, mode, payload } = req.body || {};
+    const { document_id, signing_token, field_index: fieldIndexRaw, payload } = req.body || {};
     if (document_id === undefined || document_id === null || !signing_token || fieldIndexRaw === undefined || fieldIndexRaw === null) {
       return res.status(400).json({ success: false, error: 'document_id, signing_token, and field_index required' });
     }
@@ -6245,33 +6253,7 @@ app.post('/api/esign/signatures/store-encrypted', async (req, res) => {
     if (!img || (!img.startsWith('data:image') && img.length < 80)) {
       return res.status(400).json({ success: false, error: 'payload.imagePngBase64 required' });
     }
-    const envelope = {
-      v: 1,
-      mode: ['draw', 'type', 'upload'].includes(mode) ? mode : 'draw',
-      imagePngBase64: img,
-    };
-    let enc;
-    try {
-      enc = encryptEsignSignaturePlaintext(JSON.stringify(envelope));
-    } catch (e) {
-      return res.status(503).json({ success: false, error: e.message || 'Encryption not configured' });
-    }
-
-    await db.collection('esign_signature_secrets').replaceOne(
-      { document_id: docId, recipient_id: recipient._id, field_index },
-      {
-        document_id: docId,
-        recipient_id: recipient._id,
-        field_index,
-        alg: 'aes-256-gcm',
-        iv: enc.iv,
-        auth_tag: enc.authTag,
-        ciphertext: enc.ciphertext,
-        created_at: new Date(),
-      },
-      { upsert: true }
-    );
-    return res.json({ success: true });
+    return res.json({ success: true, deprecated: true });
   } catch (error) {
     console.error('❌ E-sign store-encrypted error:', error?.message || error);
     return res.status(500).json({ success: false, error: 'Failed to store signature' });
@@ -6615,6 +6597,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       values['0'] = signature_data;
     }
 
+    // Prefer field_values for signature images. Legacy fallback: encrypted rows in esign_signature_secrets (e.g. old clients that still called store-encrypted before submit).
     if (signing_token && recipient) {
       const secrets = await db.collection('esign_signature_secrets').find({
         document_id: docId,
@@ -6624,6 +6607,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
         if ((f.type || 'signature').toLowerCase() !== 'signature') continue;
+        if (esignSignatureFieldValueProvided(values[String(i)])) continue;
         const sec = byIdx.get(i);
         if (!sec) continue;
         try {
@@ -6652,10 +6636,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       if (!val) {
         return res.status(400).json({
           success: false,
-          error:
-            signing_token && recipient
-              ? 'Missing stored signature for one or more fields. Open each signature box and click Apply.'
-              : 'Missing signature for one or more fields.',
+          error: 'Missing signature for one or more fields. Open each signature box and click Apply.',
         });
       }
     }
@@ -6801,6 +6782,12 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     }
 
     await logAudit(docId, 'signed', signer_email, req.ip || req.connection?.remoteAddress);
+
+    if (signing_token && recipient) {
+      try {
+        await db.collection('esign_signature_secrets').deleteMany({ recipient_id: recipient._id });
+      } catch (_) { /* non-fatal */ }
+    }
 
     res.json({
       success: true,

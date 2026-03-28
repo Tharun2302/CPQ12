@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical, BookOpen } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
+import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
 
 interface RecipientRow {
   id: string;
@@ -95,10 +96,28 @@ const EsignDocumentsPage: React.FC = () => {
   const [statusModalRecipients, setStatusModalRecipients] = useState<StatusModalRecipient[]>([]);
   const [statusModalLoading, setStatusModalLoading] = useState(false);
   const [statusModalDownloading, setStatusModalDownloading] = useState(false);
+  const landingTourAutoStartedRef = useRef(false);
+  const landingTourTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadDocuments();
   }, []);
+
+  useEffect(() => {
+    if (loading || landingTourAutoStartedRef.current || !shouldAutoStartLandingTour()) return;
+    landingTourAutoStartedRef.current = true;
+    const hasDraft = documents.some((d) => d.status === 'draft');
+    landingTourTimeoutRef.current = window.setTimeout(() => {
+      landingTourTimeoutRef.current = null;
+      startEsignLandingTour(hasDraft);
+    }, 450);
+    return () => {
+      if (landingTourTimeoutRef.current) {
+        window.clearTimeout(landingTourTimeoutRef.current);
+        landingTourTimeoutRef.current = null;
+      }
+    };
+  }, [loading, documents]);
 
   const closeActionsMenu = useCallback(() => {
     setOpenActionsId(null);
@@ -319,19 +338,38 @@ const EsignDocumentsPage: React.FC = () => {
     return (pending.name || '').trim() || (pending.email || '').trim() || 'Pending signer';
   };
 
+  const firstDraftId = documents.find((d) => d.status === 'draft')?.id;
+
   return (
     <div className="min-h-screen bg-slate-50/80 py-5 sm:py-6 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto">
-        <div className="mb-4 sm:mb-5">
-          <Link to="/deal" className="text-sm text-slate-500 hover:text-slate-800 mb-1.5 inline-block">
-            ← Back to Deal
-          </Link>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">e sign</h1>
-          <p className="text-slate-500 mt-0.5 text-sm">Upload agreements and send them for signature</p>
+        <div className="mb-4 sm:mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <Link to="/deal" className="text-sm text-slate-500 hover:text-slate-800 mb-1.5 inline-block">
+              ← Back to Deal
+            </Link>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">e sign</h1>
+            <p className="text-slate-500 mt-0.5 text-sm">Upload agreements and send them for signature</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (landingTourTimeoutRef.current) {
+                window.clearTimeout(landingTourTimeoutRef.current);
+                landingTourTimeoutRef.current = null;
+              }
+              landingTourAutoStartedRef.current = true;
+              startEsignLandingTour(documents.some((d) => d.status === 'draft'));
+            }}
+            className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300"
+          >
+            <BookOpen className="h-4 w-4 shrink-0 text-violet-600" aria-hidden />
+            Guide
+          </button>
         </div>
 
         {/* Upload — compact card, no dead horizontal space */}
-        <div className="w-fit max-w-full bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4">
+        <div id="esign-tour-upload" className="w-fit max-w-full bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4 scroll-mt-24">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
             <h2 className="text-base font-semibold text-slate-900 sm:shrink-0">Upload Document</h2>
             <label className="inline-flex items-center gap-2 px-4 py-2.5 sm:px-5 bg-violet-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-violet-700 disabled:opacity-50 shadow-sm w-fit">
@@ -359,7 +397,7 @@ const EsignDocumentsPage: React.FC = () => {
         </div>
 
         {/* Your Documents — tighter table columns (fixed layout) */}
-        <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden">
+        <div id="esign-tour-documents" className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden scroll-mt-24">
           <h2 className="text-base font-semibold text-slate-900 px-4 sm:px-5 py-3 border-b border-slate-200">Your Documents</h2>
           {loading ? (
             <div className="flex justify-center py-12">
@@ -442,6 +480,7 @@ const EsignDocumentsPage: React.FC = () => {
                           <div className="flex flex-wrap items-center justify-end gap-2">
                             {doc.status === 'draft' && (
                               <Link
+                                id={doc.id === firstDraftId ? 'esign-tour-place-fields' : undefined}
                                 to={`/esign/${doc.id}/place-fields`}
                                 className="inline-flex items-center gap-1 text-xs sm:text-sm font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
                               >

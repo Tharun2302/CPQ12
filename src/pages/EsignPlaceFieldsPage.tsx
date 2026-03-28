@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
-import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star, FileText } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star, FileText, BookOpen } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 import { validateSignatureFieldsBeforeSend } from '../utils/esignSendValidation';
@@ -14,6 +14,7 @@ import {
   normalizeEsignTextColor,
   normalizeEsignTextFont,
 } from '../utils/esignTextFieldStyle';
+import { shouldAutoStartPlaceFieldsTour, startEsignPlaceFieldsTour } from '../utils/esignTour';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
@@ -257,6 +258,24 @@ const EsignPlaceFieldsPage: React.FC = () => {
       setPendingApproval(null);
     }
   }, [documentId]);
+
+  const placeFieldsTourAutoStartedRef = useRef(false);
+  const placeFieldsTourTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (loading || !doc || placeFieldsTourAutoStartedRef.current || !shouldAutoStartPlaceFieldsTour()) return;
+    placeFieldsTourAutoStartedRef.current = true;
+    placeFieldsTourTimeoutRef.current = window.setTimeout(() => {
+      placeFieldsTourTimeoutRef.current = null;
+      startEsignPlaceFieldsTour();
+    }, 500);
+    return () => {
+      if (placeFieldsTourTimeoutRef.current) {
+        window.clearTimeout(placeFieldsTourTimeoutRef.current);
+        placeFieldsTourTimeoutRef.current = null;
+      }
+    };
+  }, [loading, doc]);
 
   useEffect(() => {
     if (!documentId) return;
@@ -990,22 +1009,41 @@ const EsignPlaceFieldsPage: React.FC = () => {
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Place Fields</h1>
             <p className="text-slate-600 mt-0.5 sm:mt-1 text-xs sm:text-sm leading-snug">Drag signature, name, title, date, and text fields onto the document.</p>
           </div>
-          <button
-            type="button"
-            onClick={handleSendForSignature}
-            disabled={saving || sending}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 shadow-md hover:shadow-lg transition-shadow"
-          >
-            {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Send for Signature</>}
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (placeFieldsTourTimeoutRef.current) {
+                  window.clearTimeout(placeFieldsTourTimeoutRef.current);
+                  placeFieldsTourTimeoutRef.current = null;
+                }
+                placeFieldsTourAutoStartedRef.current = true;
+                startEsignPlaceFieldsTour();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <BookOpen className="h-4 w-4 shrink-0 text-indigo-600" aria-hidden />
+              Guide
+            </button>
+            <button
+              type="button"
+              id="esign-tour-send-signature"
+              onClick={handleSendForSignature}
+              disabled={saving || sending}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 shadow-md hover:shadow-lg transition-shadow"
+            >
+              {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Send for Signature</>}
+            </button>
+          </div>
         </div>
 
         <div className="flex gap-4 lg:gap-6 flex-col lg:flex-row flex-1 min-h-0 lg:items-stretch">
           {/* Document area first (left / full width on mobile) */}
           <div className="flex flex-1 flex-col min-w-0 order-2 lg:order-1 min-h-[280px] lg:min-h-0">
             <div
+              id="esign-tour-pdf-preview"
               ref={scrollContainerRef}
-              className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-y-auto overflow-x-hidden flex-1 min-h-0"
+              className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-y-auto overflow-x-hidden flex-1 min-h-0 scroll-mt-24"
               onDragOver={(e) => e.preventDefault()}
             >
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
@@ -1346,7 +1384,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
           <div className="w-full lg:w-80 shrink-0 order-1 lg:order-2 flex flex-col min-h-0 max-h-[min(52vh,420px)] lg:max-h-none lg:h-full">
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-3 sm:p-4 space-y-4 sm:space-y-5 overflow-y-auto flex-1 min-h-0">
-                <div>
+                <div id="esign-tour-recipients-panel">
                   <h2 className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</h2>
                   <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers need a Signature field; Reviewers use Name, Title, Date, or Text only, then mark as Reviewed.</p>
               <div className="space-y-2 max-h-40 overflow-y-auto">
@@ -1458,6 +1496,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                   </div>
                 )}
               </div>
+                </div>
               {savedGroups.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-200">
                   <p className="text-xs font-medium text-slate-700 mb-1">Saved groups</p>
@@ -1534,7 +1573,12 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 </div>
               )}
               <p className="text-xs text-slate-500 mt-3">Place fields for:</p>
-              <select value={selectedRecipientId || ''} onChange={(e) => setSelectedRecipientId(e.target.value || null)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+              <select
+                id="esign-tour-place-for-select"
+                value={selectedRecipientId || ''}
+                onChange={(e) => setSelectedRecipientId(e.target.value || null)}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 scroll-mt-24"
+              >
                 <option value="">— None —</option>
                 {recipients.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -1547,8 +1591,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                   For reviewers, <strong className="font-medium text-slate-800">Signature</strong> is not used. Drag <strong className="font-medium text-slate-800">Name</strong>, <strong className="font-medium text-slate-800">Title</strong>, <strong className="font-medium text-slate-800">Date</strong>, or <strong className="font-medium text-slate-800">Text</strong> onto the PDF. They complete those fields and mark as Reviewed from their link.
                 </p>
               )}
-            </div>
-            <div>
+            <div id="esign-tour-field-palette">
               <p className="text-xs text-slate-500 mb-2">Drag onto the document to place</p>
               <div className="space-y-2">
                 {FIELD_DEFS.map(({ type, label, Icon }) => {

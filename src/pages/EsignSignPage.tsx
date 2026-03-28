@@ -397,7 +397,6 @@ const EsignSignPage: React.FC = () => {
     for (let i = 0; i < fields.length; i++) {
       const f = fields[i];
       if (f.type === 'signature') {
-        if (signingToken) continue;
         const v = fieldValues[i];
         if (v) values[String(i)] = v;
       } else {
@@ -1557,32 +1556,6 @@ const EsignSignPage: React.FC = () => {
                       onClick={async () => {
                         const dataUrl = normalizeSignatureImageDataUrl();
                         if (!dataUrl || selectedSignatureFieldIndex === null) return;
-                        if (signingToken && documentId) {
-                          try {
-                            const res = await fetch(`${BACKEND_URL}/api/esign/signatures/store-encrypted`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                document_id: documentId,
-                                signing_token: signingToken,
-                                field_index: selectedSignatureFieldIndex,
-                                mode: activeTab,
-                                payload: { imagePngBase64: dataUrl },
-                              }),
-                            });
-                            const data = await res.json().catch(() => ({}));
-                            if (!res.ok || !data.success) {
-                              setError(
-                                data.error ||
-                                  'Could not save signature securely. Set ESIGN_SIGNATURE_ENCRYPTION_KEY (64 hex chars) on the server.'
-                              );
-                              return;
-                            }
-                          } catch {
-                            setError('Could not save signature. Try again.');
-                            return;
-                          }
-                        }
                         setFieldValues((prev) => ({ ...prev, [selectedSignatureFieldIndex]: dataUrl }));
                         setSelectedSignatureFieldIndex(null);
                         clearSignature();
@@ -1603,18 +1576,7 @@ const EsignSignPage: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
-                onClick={async () => {
-                  if (signingToken) {
-                    try {
-                      await fetch(`${BACKEND_URL}/api/esign/signatures/clear-stored`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ signing_token: signingToken }),
-                      });
-                    } catch {
-                      /* non-fatal */
-                    }
-                  }
+                onClick={() => {
                   setFieldValues(getInitialFieldValues(fields));
                   clearSignature();
                   setSelectedSignatureFieldIndex(null);
