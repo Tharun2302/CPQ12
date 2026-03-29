@@ -57,6 +57,23 @@ function normalizeEsignEmail(e) {
   return e.trim().toLowerCase();
 }
 
+/** Short, safe file name for email subjects. */
+function sanitizeEsignEmailSubjectFileName(name) {
+  if (!name || typeof name !== 'string') return 'document';
+  const t = name.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() || 'document';
+  return t.length > 120 ? `${t.slice(0, 117)}...` : t;
+}
+
+/** Email to notify for creator-facing e-sign events (matches list "Created by" when uploaded_by is not an address). */
+function getEsignDocumentCreatorNotifyEmail(doc) {
+  if (!doc) return '';
+  const up = String(doc.uploaded_by || '').trim();
+  if (up.includes('@')) return up;
+  const req = String(doc.requested_by_email || '').trim();
+  if (req.includes('@')) return req;
+  return '';
+}
+
 /** True when actor is the uploader (creator) of the e-sign document. */
 function esignActorIsDocumentCreator(doc, actorEmail) {
   const uploader = normalizeEsignEmail(doc.uploaded_by);
@@ -940,7 +957,7 @@ async function sendEmail(to, subject, html, attachments = []) {
 
 // Notify document creator by email when a recipient denies (review or sign)
 async function sendEsignDeniedNotificationToCreator(doc, recipient, comment, deniedBy) {
-  const creatorEmail = (doc && doc.uploaded_by) ? String(doc.uploaded_by).trim() : '';
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
   if (!creatorEmail || !creatorEmail.includes('@')) return;
   if (!process.env.SENDGRID_API_KEY) {
     console.warn('📧 E-sign denied notification: SENDGRID_API_KEY not set — creator not emailed.');
@@ -963,6 +980,31 @@ async function sendEsignDeniedNotificationToCreator(doc, recipient, comment, den
     else console.warn('❌ E-sign denied notification not sent to creator', creatorEmail, result.error);
   } catch (err) {
     console.warn('E-sign denied notification to creator failed', creatorEmail, err?.message || err);
+  }
+}
+
+// Notify document creator when all recipients have signed or reviewed (envelope completed).
+async function sendEsignCompletedNotificationToCreator(doc) {
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (!creatorEmail || !creatorEmail.includes('@')) return;
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign completion notification: SENDGRID_API_KEY not set — creator not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const safe = String(fileName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const subject = `E-sign completed: ${sanitizeEsignEmailSubjectFileName(fileName)}`;
+  const html = `
+    <p>All recipients have finished signing or reviewing your document.</p>
+    <p><strong>Document:</strong> ${safe}</p>
+    <p>You can open <strong>e sign</strong> or <strong>e sign status</strong> in the app to download the signed PDF.</p>
+  `;
+  try {
+    const result = await sendEmail(creatorEmail, subject, html);
+    if (result.success) console.log('✅ E-sign completion notification sent to creator', creatorEmail);
+    else console.warn('❌ E-sign completion notification not sent to creator', creatorEmail, result.error);
+  } catch (err) {
+    console.warn('E-sign completion notification to creator failed', creatorEmail, err?.message || err);
   }
 }
 
@@ -5599,7 +5641,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   if (!doc) return { success: false, error: 'Document not found' };
   if (doc.status === 'sent') {
     console.log('📧 E-sign document already sent, skipping auto-send');
-    return { success: true, emails_sent: 0, already_sent: true };
+    return { success: true, emails_sent: 0, already_sent: true, emails_sent_to: [] };
   }
   const FRONTEND_DEV = 'http://localhost:5173';
   let baseUrl = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
@@ -5645,6 +5687,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       .replace(/"/g, '&quot;')
       .replace(/\n/g, '<br />');
   };
+  const fileNameForSubject = sanitizeEsignEmailSubjectFileName(doc.file_name);
   const getEsignEmailByRole = (rec, signingUrl, inboxUrl) => {
     const roleLower = (rec.role || 'signer').toString().toLowerCase();
     const nameLower = (rec.name || '').toString().toLowerCase().trim();
@@ -5668,7 +5711,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
         <p><strong>Option 2 – Direct link:</strong> `
         : '<p><strong>Signing link:</strong> ';
       return {
-        subject: 'Please review the document',
+        subject: `Action required: Review ${fileNameForSubject}`,
         html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
         ${customMessageBlock}<p>You have been requested to <strong>review</strong> a document.</p>
         ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
@@ -5680,7 +5723,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
         <p><strong>Option 2 – Sign directly:</strong> `
       : '<p><strong>Signing link:</strong> ';
     return {
-      subject: 'Please sign the document',
+      subject: `Action required: Sign ${fileNameForSubject}`,
       html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
         ${customMessageBlock}<p>You have been requested to sign a document.</p>
         ${signDashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
@@ -5688,6 +5731,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     };
   };
   let emailsSent = 0;
+  const emailsSentTo = [];
   for (const rec of recipients) {
     const token = crypto.randomUUID();
     await db.collection('esign_recipients').updateOne(
@@ -5706,6 +5750,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
         const result = await sendEmail(rec.email, subject, html);
         if (result.success) {
           emailsSent++;
+          emailsSentTo.push(String(rec.email).trim());
           console.log('✅ E-sign email sent to', rec.email);
         } else {
           console.warn('❌ E-sign email not sent to', rec.email, '—', result.error?.message || result.error?.code || result.error);
@@ -5725,7 +5770,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     { $set: { status: 'sent', sent_at: new Date() }, $unset: { sequential: '' } }
   );
   await logAudit(docId, 'sent', uploadedBy, null);
-  return { success: true, emails_sent: emailsSent };
+  return { success: true, emails_sent: emailsSent, emails_sent_to: emailsSentTo };
 }
 
 // POST /api/esign/documents/:id/send-for-signature - Generate tokens, send emails, mark sent
@@ -5738,10 +5783,16 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     if (!result.success) {
       return res.status(result.error === 'Document not found' ? 404 : 400).json({ success: false, error: result.error });
     }
+    const sentList = Array.isArray(result.emails_sent_to) ? result.emails_sent_to : [];
+    const message =
+      result.emails_sent > 0
+        ? `Successfully sent email to ${result.emails_sent} recipient(s).`
+        : 'Document already sent.';
     res.json({
       success: true,
-      message: result.emails_sent > 0 ? `Signing links sent to ${result.emails_sent} recipient(s).` : 'Document marked as sent.',
+      message,
       emails_sent: result.emails_sent,
+      emails_sent_to: sentList,
     });
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
@@ -6028,6 +6079,7 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    const esignEnvelopeWasAlreadyCompleted = doc.status === 'completed';
     if (recipient.status === 'reviewed') {
       return res.json({ success: true, message: 'Already reviewed', already_reviewed: true });
     }
@@ -6078,6 +6130,14 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
         { _id: docId },
         { $set: { status: 'completed', signed_at: doc.signed_at || new Date() } }
       );
+      if (!esignEnvelopeWasAlreadyCompleted) {
+        try {
+          const docFresh = await db.collection('esign_documents').findOne({ _id: docId });
+          await sendEsignCompletedNotificationToCreator(docFresh || doc);
+        } catch (completeNotifyErr) {
+          console.warn('E-sign completion email failed (non-fatal):', completeNotifyErr?.message || completeNotifyErr);
+        }
+      }
     }
     try {
       await logAudit(docId.toString(), 'reviewed', recipient.email || null, req.ip || req.connection?.remoteAddress);
@@ -6550,6 +6610,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     const doc = await db.collection('esign_documents').findOne({ _id: docId });
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    const esignDocWasAlreadyCompleted = doc.status === 'completed';
     const sourcePath = (doc.signed_file_path && fs.existsSync(doc.signed_file_path)) ? doc.signed_file_path : doc.file_path;
     if (!fs.existsSync(sourcePath)) return res.status(404).json({ success: false, error: 'Source file not found' });
 
@@ -6768,6 +6829,14 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
           { _id: docId },
           { $set: { status: 'completed', signed_file_path: outPath, signed_at: new Date() } }
         );
+        if (!esignDocWasAlreadyCompleted) {
+          try {
+            const docFresh = await db.collection('esign_documents').findOne({ _id: docId });
+            await sendEsignCompletedNotificationToCreator(docFresh || doc);
+          } catch (completeNotifyErr) {
+            console.warn('E-sign completion email failed (non-fatal):', completeNotifyErr?.message || completeNotifyErr);
+          }
+        }
       } else {
         await db.collection('esign_documents').updateOne(
           { _id: docId },

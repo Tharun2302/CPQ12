@@ -5,7 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star, FileText, BookOpen } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
-import { validateSignatureFieldsBeforeSend } from '../utils/esignSendValidation';
+import {
+  formatSendForSignatureSuccessMessage,
+  validateSignatureFieldsBeforeSend,
+} from '../utils/esignSendValidation';
 import {
   ESIGN_DEFAULT_TEXT_COLOR,
   ESIGN_TEXT_FONT_OPTIONS,
@@ -839,9 +842,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         });
         const sendData = await sendRes.json();
         if (sendData.success) {
-          const msg = sendData.message || 'Sent.';
-          const dashNote = sendData.emails_sent > 0 ? ' Recipients will receive an email link to view and sign.' : '';
-          setSendForSignatureResult(msg + dashNote);
+          setSendForSignatureResult(formatSendForSignatureSuccessMessage(sendData));
         } else {
           setSendForSignatureResult(sendData.error || 'Failed to send.');
         }
@@ -1342,7 +1343,15 @@ const EsignPlaceFieldsPage: React.FC = () => {
             )}
             {sendForSignatureResult && (
               <div className="mt-2 shrink-0">
-                <p className={`text-xs sm:text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>
+                <p
+                  className={`text-xs sm:text-sm ${
+                    sendForSignatureResult.startsWith('Successfully') ||
+                    sendForSignatureResult.startsWith('Signing') ||
+                    sendForSignatureResult.startsWith('Document')
+                      ? 'text-emerald-600'
+                      : 'text-amber-600'
+                  }`}
+                >
                   {sendForSignatureResult}
                 </p>
               </div>

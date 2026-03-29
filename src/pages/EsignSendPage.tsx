@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Mail, Loader2, ListChecks } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
-import { validateSignatureFieldsBeforeSend } from '../utils/esignSendValidation';
+import {
+  formatSendForSignatureSuccessMessage,
+  validateSignatureFieldsBeforeSend,
+} from '../utils/esignSendValidation';
 
 const EsignSendPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -55,8 +58,9 @@ const EsignSendPage: React.FC = () => {
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (data.success) setSendForSignatureResult(data.message || 'Sent.');
-      else setSendForSignatureResult(data.error || 'Failed.');
+      if (data.success) {
+        setSendForSignatureResult(formatSendForSignatureSuccessMessage(data));
+      } else setSendForSignatureResult(data.error || 'Failed.');
     } catch {
       setSendForSignatureResult('Failed to send.');
     } finally {
@@ -89,12 +93,23 @@ const EsignSendPage: React.FC = () => {
             </p>
 
             {sendForSignatureResult && (
-              <p className={`text-sm ${sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document') ? 'text-emerald-600' : 'text-amber-600'}`}>
+              <p
+                className={`text-sm ${
+                  sendForSignatureResult.startsWith('Successfully') ||
+                  sendForSignatureResult.startsWith('Signing') ||
+                  sendForSignatureResult.startsWith('Document')
+                    ? 'text-emerald-600'
+                    : 'text-amber-600'
+                }`}
+              >
                 {sendForSignatureResult}
               </p>
             )}
 
-            {sendForSignatureResult && (sendForSignatureResult.startsWith('Signing') || sendForSignatureResult.startsWith('Document')) && (
+            {sendForSignatureResult &&
+              (sendForSignatureResult.startsWith('Successfully') ||
+                sendForSignatureResult.startsWith('Signing') ||
+                sendForSignatureResult.startsWith('Document')) && (
               <button
                 type="button"
                 onClick={() => documentId && navigate(`/esign/${documentId}/status`)}

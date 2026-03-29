@@ -185,14 +185,17 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     });
   };
 
-  const dateFilteredAgreements = applyDateFilter(agreements);
+  /** This page tracks sent workflows only; drafts belong on the main e sign page. */
+  const agreementsSentOrBeyond = agreements.filter((ag) => ag.status !== 'draft');
+
+  const dateFilteredAgreements = applyDateFilter(agreementsSentOrBeyond);
 
   const filterAgreementsByTab = (list: Agreement[]): Agreement[] => {
     switch (activeTab) {
       case 'completed':
         return list.filter((ag) => ag.status === 'completed');
       case 'pending':
-        return list.filter((ag) => ag.status === 'draft' || ag.status === 'sent');
+        return list.filter((ag) => ag.status === 'sent' || ag.status === 'signed');
       case 'rejected':
         return list.filter((ag) => ag.status === 'denied' || ag.status === 'voided');
       default:
@@ -204,7 +207,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const tabCounts = {
     all: dateFilteredAgreements.length,
     completed: dateFilteredAgreements.filter((ag) => ag.status === 'completed').length,
-    pending: dateFilteredAgreements.filter((ag) => ag.status === 'draft' || ag.status === 'sent').length,
+    pending: dateFilteredAgreements.filter((ag) => ag.status === 'sent' || ag.status === 'signed').length,
     rejected: dateFilteredAgreements.filter((ag) => ag.status === 'denied' || ag.status === 'voided').length
   };
 
@@ -339,7 +342,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
 
       <div className="lg:pl-64">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {!loading && !error && (
+          {!loading && !error && agreementsSentOrBeyond.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
               <div
                 className="rounded-xl border border-sky-200 bg-sky-50/80 p-5 flex items-start justify-between gap-4 min-h-[100px] cursor-pointer hover:bg-sky-100/80 hover:border-sky-300 transition-colors"
@@ -403,7 +406,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
               </div>
             </div>
           )}
-          {!loading && !error && agreements.length > 0 && (
+          {!loading && !error && agreementsSentOrBeyond.length > 0 && (
             <div className="flex flex-wrap items-center gap-4 mb-6 p-4 rounded-xl border border-slate-200 bg-white/80">
               <div className="flex items-center gap-2 text-slate-600">
                 <Calendar className="h-4 w-4 shrink-0" />
@@ -476,7 +479,18 @@ const EsignAgreementStatusDashboard: React.FC = () => {
               </div>
             )}
 
-            {!loading && !error && agreements.length > 0 && (
+            {!loading && !error && agreements.length > 0 && agreementsSentOrBeyond.length === 0 && (
+              <div className="text-center py-16 px-6">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileText className="w-8 h-8 text-slate-400" />
+                </div>
+                <p className="text-slate-600 font-medium">Nothing sent for signature yet</p>
+                <p className="text-slate-500 text-sm mt-1">Drafts stay on the e sign page. After you send a document, it will appear here.</p>
+                <Link to="/esign" className="inline-block mt-4 text-indigo-600 hover:text-indigo-700 font-medium text-sm">Go to e sign →</Link>
+              </div>
+            )}
+
+            {!loading && !error && agreementsSentOrBeyond.length > 0 && (
               <>
                 <div className="border-b border-slate-200 px-6">
                   <nav className="flex gap-1" aria-label="Status filter">
@@ -580,7 +594,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 Place fields
                               </Link>
                             )}
-                            {(ag.status === 'sent' || ag.status === 'completed' || ag.status === 'voided' || ag.status === 'denied') && (
+                            {(ag.status === 'sent' || ag.status === 'signed' || ag.status === 'completed' || ag.status === 'voided' || ag.status === 'denied') && (
                               <button
                                 type="button"
                                 onClick={() => openStatusModal(ag.id)}
@@ -727,6 +741,23 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                     {statusModalDoc.status === 'voided' && (
                       <div className="flex items-center gap-2 rounded-lg bg-slate-100 border border-slate-200 px-4 py-3 mt-4">
                         <span className="font-medium text-slate-700">This document was voided. Signing links no longer work.</span>
+                      </div>
+                    )}
+                    {['sent', 'signed', 'denied', 'voided'].includes(statusModalDoc.status) && (
+                      <div className="mt-4 flex flex-col gap-2">
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={handleStatusModalPreview}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50"
+                          >
+                            <Eye className="h-5 w-5" />
+                            Preview document
+                          </button>
+                        </div>
+                        {(statusModalDoc.status === 'sent' || statusModalDoc.status === 'signed') && (
+                          <p className="text-xs text-slate-500">Shows the latest PDF on file, including any signatures applied so far.</p>
+                        )}
                       </div>
                     )}
                     {statusModalDoc.status === 'completed' && (

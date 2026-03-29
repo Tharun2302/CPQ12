@@ -53,8 +53,14 @@ function normalizeEmail(email: string | undefined | null): string {
   return (email || '').trim().toLowerCase();
 }
 
-function isDocumentCreator(doc: EsignDocument, userEmail: string | undefined | null): boolean {
-  return normalizeEmail(userEmail) === normalizeEmail(doc.uploaded_by) && normalizeEmail(doc.uploaded_by) !== '';
+/** True if this agreement row belongs to the signed-in user (matches "Created by" semantics from the API). */
+function isEsignDocumentForCurrentUser(doc: EsignDocument, userEmail: string | undefined | null): boolean {
+  const u = normalizeEmail(userEmail);
+  if (!u) return false;
+  const uploaded = String(doc.uploaded_by || '').trim();
+  if (uploaded.includes('@') && normalizeEmail(uploaded) === u) return true;
+  if (normalizeEmail(doc.creator_email) === u) return true;
+  return false;
 }
 
 function formatEsignCreatedByLine(doc: EsignDocument): string {
@@ -81,7 +87,7 @@ function formatEsignCreatedAtLine(doc: EsignDocument): string | null {
 
 const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [documents, setDocuments] = useState<EsignDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -99,9 +105,32 @@ const EsignDocumentsPage: React.FC = () => {
   const landingTourAutoStartedRef = useRef(false);
   const landingTourTimeoutRef = useRef<number | null>(null);
 
+  const loadDocuments = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.agreements)) {
+        const email = user?.email;
+        const mine = email
+          ? (data.agreements as EsignDocument[]).filter((d) => isEsignDocumentForCurrentUser(d, email))
+          : [];
+        setDocuments(mine);
+      } else {
+        setDocuments([]);
+      }
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+      setDocuments([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.email]);
+
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    if (authLoading) return;
+    setLoading(true);
+    void loadDocuments();
+  }, [authLoading, loadDocuments]);
 
   useEffect(() => {
     if (loading || landingTourAutoStartedRef.current || !shouldAutoStartLandingTour()) return;
@@ -123,20 +152,6 @@ const EsignDocumentsPage: React.FC = () => {
     setOpenActionsId(null);
     setDropdownPosition(null);
   }, []);
-
-  const loadDocuments = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/agreement-status`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.agreements)) {
-        setDocuments(data.agreements);
-      }
-    } catch (err) {
-      console.error('Failed to load documents:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -406,7 +421,14 @@ const EsignDocumentsPage: React.FC = () => {
           ) : documents.length === 0 ? (
             <div className="py-12 text-center text-slate-500">
               <FileText className="h-12 w-12 mx-auto mb-3 text-slate-300" />
-              <p>No documents yet. Upload a PDF to get started.</p>
+              {!normalizeEmail(user?.email) ? (
+                <>
+                  <p>Sign in to see your documents.</p>
+                  <p className="text-sm mt-1">Your e-sign agreements are shown for the account you&apos;re logged in with.</p>
+                </>
+              ) : (
+                <p>No documents yet. Upload a PDF to get started.</p>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -425,7 +447,6 @@ const EsignDocumentsPage: React.FC = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-200">
                   {documents.map((doc) => {
-                    const isCreator = isDocumentCreator(doc, user?.email);
                     const createdAtLine = formatEsignCreatedAtLine(doc);
                     return (
                       <tr key={doc.id} className="hover:bg-slate-50/50">
@@ -538,7 +559,7 @@ const EsignDocumentsPage: React.FC = () => {
         (() => {
           const openDoc = documents.find((d) => d.id === openActionsId);
           if (!openDoc) return null;
-          const isCreator = isDocumentCreator(openDoc, user?.email);
+          const isCreator = isEsignDocumentForCurrentUser(openDoc, user?.email);
           const st = (openDoc.status || '').toLowerCase();
           const showVoid = st === 'sent' && isCreator;
           const showViewLink = st === 'sent';
@@ -681,6 +702,23 @@ const EsignDocumentsPage: React.FC = () => {
                   {statusModalDoc.status === 'voided' && (
                     <div className="flex items-center gap-2 rounded-lg bg-slate-100 border border-slate-200 px-4 py-3 mt-4">
                       <span className="font-medium text-slate-700">This document was voided. Signing links no longer work.</span>
+                    </div>
+                  )}
+                  {['sent', 'signed', 'denied', 'voided'].includes(statusModalDoc.status) && (
+                    <div className="mt-4 flex flex-col gap-2">
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={handleStatusModalPreview}
+                          className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50"
+                        >
+                          <Eye className="h-5 w-5" />
+                          Preview document
+                        </button>
+                      </div>
+                      {(statusModalDoc.status === 'sent' || statusModalDoc.status === 'signed') && (
+                        <p className="text-xs text-slate-500">Shows the latest PDF on file, including any signatures applied so far.</p>
+                      )}
                     </div>
                   )}
                   {statusModalDoc.status === 'completed' && (

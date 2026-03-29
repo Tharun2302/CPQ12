@@ -44,3 +44,27 @@ export function validateSignatureFieldsBeforeSend(
   }
   return null;
 }
+
+/** Success banner after send-for-signature: hides legacy SendGrid parentheticals; short copy when no mail went out. */
+export function formatSendForSignatureSuccessMessage(data: {
+  message?: string;
+  emails_sent?: number;
+  emails_sent_to?: string[];
+}): string {
+  const n = Number(data.emails_sent);
+  if (Number.isFinite(n) && n === 0) {
+    return 'Document already sent.';
+  }
+  const stripLegacy = (s: string) =>
+    s
+      .replace(/\s*\(No signing emails were delivered[^)]*\)/gi, '')
+      .replace(/\s*\(No invitation emails were delivered[^)]*\)/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  let msg = stripLegacy(String(data.message || 'Successfully sent email to recipient(s).'));
+  const sentTo = Array.isArray(data.emails_sent_to) ? data.emails_sent_to : [];
+  if (sentTo.length > 0) {
+    msg += ` Notified: ${sentTo.join(', ')}.`;
+  }
+  return msg;
+}

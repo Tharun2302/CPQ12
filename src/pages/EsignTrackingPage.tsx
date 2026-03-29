@@ -204,6 +204,24 @@ const EsignTrackingPage: React.FC = () => {
               </div>
             )}
 
+            {['sent', 'signed', 'denied', 'voided'].includes(doc.status) && !allSigned && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handlePreview}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50"
+                  >
+                    <Eye className="h-5 w-5" />
+                    Preview document
+                  </button>
+                </div>
+                {(doc.status === 'sent' || doc.status === 'signed') && (
+                  <p className="text-xs text-slate-500">Shows the latest PDF on file, including any signatures applied so far.</p>
+                )}
+              </div>
+            )}
+
             {allSigned && (
               <>
                 <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
