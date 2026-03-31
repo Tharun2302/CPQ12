@@ -187,6 +187,181 @@ export class DocxTemplateProcessor {
     zip.file(path, content);
   }
 
+  private escapeXmlText(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  private plainTextFromWXml(xml: string): string {
+    return xml
+      .replace(/<w:tab\b[^/>]*\/?>/gi, '\t')
+      .replace(/<w:br\b[^/>]*\/?>|<w:cr\b[^/>]*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\u00a0/g, ' ');
+  }
+
+  private extractParagraphProperties(para: string): string {
+    const m = para.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/i);
+    return m ? m[0] : '';
+  }
+
+  private parseSignatureFieldLine(plainOneLine: string): {
+    label: string | null;
+    header: string;
+    unders: number;
+    tailNoUnders: string;
+  } {
+    const t = plainOneLine.replace(/\r?\n/g, '').replace(/^\s+/, '');
+    const firstU = t.indexOf('_');
+    const before = firstU === -1 ? t : t.slice(0, firstU);
+    const unders = firstU === -1 ? 0 : (t.slice(firstU).match(/_/g) || []).length;
+    const m = before.match(/^(By\s*:|Name:|Title\s*:|Date\s*:)([\s\S]*)$/i);
+    if (!m) return { label: null, header: '', unders: 0, tailNoUnders: '' };
+    const label = m[1];
+    const header = before;
+    const restFromLabel = firstU === -1 ? '' : t.slice(firstU);
+    const tailNoUnders = restFromLabel.replace(/_/g, '');
+    return { label, header, unders, tailNoUnders };
+  }
+
+  /** Tabs / NBSP affect visual gap before underscores; expand to spaces for consistent alignment. */
+  private normalizeSignatureHeaderForAlign(header: string): string {
+    return header.replace(/\t/g, '    ').replace(/\u00a0/g, ' ');
+  }
+
+  private buildSignatureLineParagraph(pPr: string, header: string, underscoreCount: number): string {
+    const u = '_'.repeat(Math.max(0, underscoreCount));
+    const full = `${header}${u}`;
+    return `<w:p>${pPr}<w:r><w:t xml:space="preserve">${this.escapeXmlText(full)}</w:t></w:r></w:p>`;
+  }
+
+  /**
+   * In two-column signature tables: same start column for underscores (pad shorter labels to match
+   * the widest header+gap in that cell) and same underscore count (match the longest line).
+   */
+  private normalizeSignatureTableCell(tcXml: string): string {
+    const MIN_UNDERS = 8;
+    const DEFAULT_UNDERS = 28;
+    const paraRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/gi;
+    const paras = [...tcXml.matchAll(paraRegex)].map((m) => m[0]);
+    if (paras.length === 0) return tcXml;
+
+    type RowInfo = {
+      xml: string;
+      plain: string;
+      label: string | null;
+      header: string;
+      unders: number;
+      skip: boolean;
+    };
+    const rows: RowInfo[] = paras.map((xml) => {
+      const plainRaw = this.plainTextFromWXml(xml);
+      const plainOneLine = plainRaw.replace(/\r?\n/g, ' ');
+      const parsed = this.parseSignatureFieldLine(plainOneLine);
+      const plain = plainOneLine.replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim();
+      let skip = false;
+      if (parsed.label) {
+        const afterLabel = parsed.header.slice(parsed.label.length).trim();
+        const hasFillText =
+          parsed.unders === 0 &&
+          afterLabel.length > 0 &&
+          !afterLabel.includes('_') &&
+          /[A-Za-z0-9]/.test(afterLabel);
+        const tail = parsed.tailNoUnders.replace(/\s/g, '');
+        const hasTailAfterLine = tail.length > 0 && /[A-Za-z0-9]/.test(tail);
+        if (hasFillText || hasTailAfterLine) skip = true;
+      }
+      return { xml, plain, label: parsed.label, header: parsed.header, unders: parsed.unders, skip };
+    });
+
+    const sigRows = rows.filter((r) => r.label && !r.skip);
+    const normHeaders = sigRows.map((r) => this.normalizeSignatureHeaderForAlign(r.header));
+    const alignLen =
+      normHeaders.length > 0 ? Math.max(...normHeaders.map((h) => h.length)) : 0;
+
+    const undersList = sigRows.map((r) => r.unders);
+    let target =
+      undersList.length > 0 ? Math.max(MIN_UNDERS, ...undersList) : DEFAULT_UNDERS;
+
+    let result = tcXml;
+    let pos = 0;
+    for (const r of rows) {
+      if (!r.label || r.skip) continue;
+
+      const pPr = this.extractParagraphProperties(r.xml);
+      const nh = this.normalizeSignatureHeaderForAlign(r.header);
+      const pad = alignLen > 0 ? Math.max(0, alignLen - nh.length) : 0;
+      const paddedHeader = nh + ' '.repeat(pad);
+      const newP = this.buildSignatureLineParagraph(pPr, paddedHeader, target);
+
+      const idx = result.indexOf(r.xml, pos);
+      if (idx === -1) continue;
+      result = result.slice(0, idx) + newP + result.slice(idx + r.xml.length);
+      pos = idx + newP.length;
+    }
+    return result;
+  }
+
+  private normalizeSignatureLineLengthsInTableCells(documentXml: string): string {
+    return documentXml.replace(/<w:tc\b[^>]*>[\s\S]*?<\/w:tc>/gi, (tc) => {
+      if (/<w:tbl\b/i.test(tc)) return tc;
+      const flat = this.plainTextFromWXml(tc).replace(/[ \t\n]+/g, ' ').trim();
+      if (
+        !/By\s*:/i.test(flat) ||
+        !/Name:/i.test(flat) ||
+        !/Title\s*:/i.test(flat) ||
+        !/Date\s*:/i.test(flat)
+      ) {
+        return tc;
+      }
+      return this.normalizeSignatureTableCell(tc);
+    });
+  }
+
+  /**
+   * Ensures visible fill-in lines after signature labels. DOCX→PDF conversion often drops Word
+   * "underline on space" rules, leaving By / Title / Date rows blank while Name still shows fills.
+   */
+  private ensureSignatureBlankLinesInDocumentXml(documentXml: string): string {
+    const MIN_UNDERS = 8;
+    // Short line so two-column signature blocks match template "By :" width (long runs wrap).
+    const SIGNATURE_LINE_CHARS = 24;
+    const FILL = '_'.repeat(SIGNATURE_LINE_CHARS);
+    const LABEL_RE = /(By\s*:|Title\s*:|Date\s*:|Name:)/gi;
+
+    return documentXml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/gi, (para) => {
+      const plainForMatch = para
+        .replace(/<w:tab\b[^/>]*\/?>/gi, '\t')
+        .replace(/<w:br\b[^/>]*\/?>|<w:cr\b[^/>]*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\u00a0/g, ' ');
+      const plain = plainForMatch.replace(/[ \t]+/g, ' ').replace(/\n+/g, ' ').trim();
+      if (!plain || plain.length > 600) return para;
+
+      const matches = [...plain.matchAll(LABEL_RE)];
+      if (matches.length === 0) return para;
+
+      let needsFill = false;
+      for (let i = 0; i < matches.length; i++) {
+        const m = matches[i];
+        const labelEnd = m.index! + m[0].length;
+        const nextStart = i + 1 < matches.length ? matches[i + 1].index! : plain.length;
+        const segment = plain.slice(labelEnd, nextStart);
+        const u = (segment.match(/_/g) || []).length;
+        if (u >= MIN_UNDERS) continue;
+        const segTrim = segment.trim();
+        if (segTrim.length > 0 && /[A-Za-z0-9]/.test(segTrim)) continue;
+        needsFill = true;
+        break;
+      }
+
+      if (!needsFill) return para;
+      if (para.includes(FILL)) return para;
+
+      const injectRun = `<w:r><w:t xml:space="preserve">${FILL}</w:t></w:r>`;
+      return para.replace(/<\/w:p>/i, `${injectRun}</w:p>`);
+    });
+  }
+
   /**
    * Static method for easy access
    */
@@ -1186,6 +1361,26 @@ export class DocxTemplateProcessor {
         /Dedicated\s+Project\s+Manager/gi,
         'Assigned Project Manager'
       );
+
+      try {
+        const beforeNorm = finalDocumentXml;
+        finalDocumentXml = this.normalizeSignatureLineLengthsInTableCells(finalDocumentXml);
+        if (finalDocumentXml !== beforeNorm) {
+          console.log('✅ Signature table cells: aligned By / Title / Date underscores to Name row length');
+        }
+      } catch (normErr) {
+        console.warn('⚠️ Could not normalize signature line lengths in table cells:', normErr);
+      }
+
+      try {
+        const beforeSig = finalDocumentXml;
+        finalDocumentXml = this.ensureSignatureBlankLinesInDocumentXml(finalDocumentXml);
+        if (finalDocumentXml !== beforeSig) {
+          console.log('✅ Signature fields: appended underscore fill lines where blanks were missing');
+        }
+      } catch (sigLineErr) {
+        console.warn('⚠️ Could not patch signature blank lines in DOCX:', sigLineErr);
+      }
 
       if (finalDocumentXml !== originalFinalXml) {
         this.setZipFile(finalZip, finalXmlPath, finalDocumentXml);

@@ -1064,6 +1064,67 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
 
   const delayFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
+  const hidePreviewLogoTableBorders = (container: HTMLElement) => {
+    const pageSelectors = ['.docx .page', '.docx .docx-page', '.docx-page', '.page'];
+    const pages = pageSelectors.flatMap((selector) =>
+      Array.from(container.querySelectorAll<HTMLElement>(selector))
+    );
+    const pageRoots = pages.length > 0 ? Array.from(new Set(pages)) : [container];
+
+    const stripBrandingTableBorders = (table: HTMLTableElement) => {
+      table.removeAttribute('border');
+      table.removeAttribute('frame');
+      table.removeAttribute('rules');
+      table.dataset.previewLogoTable = 'true';
+
+      const stripEl = (node: HTMLElement) => {
+        node.style.setProperty('border', 'none', 'important');
+        node.style.setProperty('border-top', 'none', 'important');
+        node.style.setProperty('border-right', 'none', 'important');
+        node.style.setProperty('border-bottom', 'none', 'important');
+        node.style.setProperty('border-left', 'none', 'important');
+        node.style.setProperty('outline', 'none', 'important');
+        node.style.setProperty('box-shadow', 'none', 'important');
+        node.style.setProperty('background-clip', 'padding-box', 'important');
+      };
+
+      stripEl(table);
+      table.style.setProperty('border-collapse', 'collapse', 'important');
+      table.style.setProperty('border-spacing', '0', 'important');
+
+      Array.from(table.querySelectorAll<HTMLElement>('*')).forEach((node) => {
+        stripEl(node);
+        if (node.tagName === 'TD' || node.tagName === 'TH') {
+          node.style.setProperty('background', 'transparent', 'important');
+        }
+      });
+    };
+
+    pageRoots.forEach((pageRoot) => {
+      const pageRect = pageRoot.getBoundingClientRect();
+      if (pageRect.height < 40) return;
+
+      Array.from(pageRoot.querySelectorAll<HTMLTableElement>('table')).forEach((table) => {
+        const rect = table.getBoundingClientRect();
+        const isNearTop = rect.top - pageRoot.getBoundingClientRect().top < Math.max(pageRect.height * 0.45, 320);
+
+        const t = (table.textContent || '').replace(/\s+/g, ' ').toLowerCase();
+        const hasLogoMedia = table.querySelectorAll('img, svg, picture source, canvas').length > 0;
+        const isBrandingHeader =
+          hasLogoMedia &&
+          (t.includes('microsoft') ||
+            t.includes('partner') ||
+            t.includes('gold cloud') ||
+            t.includes('cloud productivity') ||
+            t.includes('cloudfuze'));
+
+        if (isNearTop && isBrandingHeader) {
+          stripBrandingTableBorders(table);
+        }
+      });
+    });
+  };
+
   const renderDocxPreview = async (blob: Blob) => {
     try {
       // Validate blob before processing
@@ -1109,6 +1170,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         className: 'docx',
         debug: false
       } as any);
+      await delayFrame();
+      hidePreviewLogoTableBorders(previewContainerRef.current as HTMLElement);
       setPreviewUrl(null);
       console.log('✅ DOCX rendered with docx-preview');
     } catch (err) {

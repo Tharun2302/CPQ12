@@ -2354,7 +2354,9 @@ const replacePlaceholdersInExistingPage = async (
         // Align with the actual underlined spaces in "For CloudFuze, Inc." section
         const leftColumnStartX = 120; // Position after "By:", "Name:", "Title:", "Date:" labels
         const leftColumnStartY = pageHeight - 200; // Position higher up for professional appearance
-        
+        const byFieldIndentPt = 32; // "By :" is shorter than "Name:" — indent By rule + sig to line up with other rows
+        const leftColumnByStartX = leftColumnStartX + byFieldIndentPt;
+
         // Signature font styles mapping
         const signatureFonts = [
           { fontFamily: '"Brush Script MT", cursive', fontSize: 14, fontStyle: 'normal', fontWeight: 'normal' },
@@ -2397,10 +2399,19 @@ const replacePlaceholdersInExistingPage = async (
           color: rgb(1, 1, 1), // White background
         });
         
-        // Draw signature data according to reference images
+        const sigRuleWidth = 160;
+        const sigRuleThickness = 0.75;
+        const sigRuleColor = rgb(0, 0, 0);
+        // Rule under "By:" (signature sits above this line; template line can be lost after overlay)
+        page.drawLine({
+          start: { x: leftColumnByStartX, y: leftColumnStartY + 8 },
+          end: { x: leftColumnStartX + sigRuleWidth, y: leftColumnStartY + 8 },
+          thickness: sigRuleThickness,
+          color: sigRuleColor,
+        });
         // E-Signature - positioned ABOVE the "By:" line (not on the underline)
         page.drawText(signatureData.eSignature, {
-          x: leftColumnStartX + 2, // Small offset for better alignment
+          x: leftColumnByStartX + 2, // Small offset for better alignment
           y: leftColumnStartY + 20, // Position higher ABOVE the "By:" line for professional appearance
           size: 12, // Appropriate size for signature
           font: helveticaFont, // We'll use standard font since custom fonts are complex in PDF
@@ -2416,6 +2427,13 @@ const replacePlaceholdersInExistingPage = async (
           color: rgb(0, 0, 0),
         });
         
+        // White rectangles erase the template underscores for Title/Date; redraw rules before text (same visual as By/Name).
+        page.drawLine({
+          start: { x: leftColumnStartX, y: leftColumnStartY - 47 },
+          end: { x: leftColumnStartX + sigRuleWidth, y: leftColumnStartY - 47 },
+          thickness: sigRuleThickness,
+          color: sigRuleColor,
+        });
         // Title (Title: field) - positioned exactly on the "Title:" underlined space
         page.drawText(signatureData.title, {
           x: leftColumnStartX + 2, // Small offset for better alignment
@@ -2424,7 +2442,13 @@ const replacePlaceholdersInExistingPage = async (
           font: helveticaFont,
           color: rgb(0, 0, 0),
         });
-        
+
+        page.drawLine({
+          start: { x: leftColumnStartX, y: leftColumnStartY - 72 },
+          end: { x: leftColumnStartX + sigRuleWidth, y: leftColumnStartY - 72 },
+          thickness: sigRuleThickness,
+          color: sigRuleColor,
+        });
         // Date (Date: field) - positioned exactly on the "Date:" underlined space
         page.drawText(signatureData.date, {
           x: leftColumnStartX + 2, // Small offset for better alignment
@@ -2443,6 +2467,9 @@ const replacePlaceholdersInExistingPage = async (
         // Align with the actual underlined spaces in the client section
         const rightColumnStartX = 350; // Position after client "By:", "Name:", "Title:", "Date:" labels
         const rightColumnStartY = pageHeight - 200; // Same Y position as left column
+        // "By :" label is shorter than "Name:" — indent By rule + signature so the line starts with Name/Title/Date
+        const clientByFieldIndentPt = 32;
+        const rightColumnByStartX = rightColumnStartX + clientByFieldIndentPt;
         
         // Draw precise white rectangles to cover only the client underlined spaces
         // White rectangle for client "Name:" underlined space
@@ -2472,10 +2499,19 @@ const replacePlaceholdersInExistingPage = async (
           color: rgb(1, 1, 1), // White background
         });
         
+        const clientSigRuleWidth = 160;
+        const clientSigRuleThickness = 0.75;
+        const clientSigRuleColor = rgb(0, 0, 0);
+        page.drawLine({
+          start: { x: rightColumnByStartX, y: rightColumnStartY + 8 },
+          end: { x: rightColumnStartX + clientSigRuleWidth, y: rightColumnStartY + 8 },
+          thickness: clientSigRuleThickness,
+          color: clientSigRuleColor,
+        });
         // Draw client signature data according to reference images
         // Client E-Signature - positioned ABOVE the client "By:" line
         page.drawText(clientSignatureData.eSignature, {
-          x: rightColumnStartX + 2, // Small offset for better alignment
+          x: rightColumnByStartX + 2, // Small offset for better alignment
           y: rightColumnStartY + 20, // Position higher ABOVE the client "By:" line for professional appearance
           size: 12, // Appropriate size for signature
           font: helveticaFont,
@@ -2491,6 +2527,12 @@ const replacePlaceholdersInExistingPage = async (
           color: rgb(0, 0, 0),
         });
         
+        page.drawLine({
+          start: { x: rightColumnStartX, y: rightColumnStartY - 47 },
+          end: { x: rightColumnStartX + clientSigRuleWidth, y: rightColumnStartY - 47 },
+          thickness: clientSigRuleThickness,
+          color: clientSigRuleColor,
+        });
         // Client Title (Title: field) - positioned exactly on the client "Title:" underlined space
         page.drawText(clientSignatureData.title, {
           x: rightColumnStartX + 2, // Small offset for better alignment
@@ -2499,7 +2541,13 @@ const replacePlaceholdersInExistingPage = async (
           font: helveticaFont,
           color: rgb(0, 0, 0),
         });
-        
+
+        page.drawLine({
+          start: { x: rightColumnStartX, y: rightColumnStartY - 72 },
+          end: { x: rightColumnStartX + clientSigRuleWidth, y: rightColumnStartY - 72 },
+          thickness: clientSigRuleThickness,
+          color: clientSigRuleColor,
+        });
         // Client Date (Date: field) - positioned exactly on the client "Date:" underlined space
         page.drawText(clientSignatureData.date, {
           x: rightColumnStartX + 2, // Small offset for better alignment
