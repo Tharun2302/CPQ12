@@ -4,6 +4,15 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    // Dev-only: browser calls same origin (/api → backend) so PDF fetches avoid CORS (5173 vs 3001)
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
+  },
   // Optimize dependency pre-bundling
   optimizeDeps: {
     include: [

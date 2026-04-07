@@ -84,9 +84,12 @@ function esignActorIsDocumentCreator(doc, actorEmail) {
 // Middleware - Configure CORS to allow frontend requests
 app.use(cors({
   origin: [
-    'http://localhost:5173', 
-    'http://localhost:3000', 
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
     'http://localhost:3001',
+    'http://127.0.0.1:3001',
     'https://zenop.ai',
     'https://www.zenop.ai',
     'https://159.89.175.168'
@@ -100,8 +103,11 @@ app.use(cors({
 app.use((req, res, next) => {
   const allowedOrigins = new Set([
     'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'http://localhost:3000',
+    'http://127.0.0.1:3000',
     'http://localhost:3001',
+    'http://127.0.0.1:3001',
     'https://zenop.ai',
     'https://www.zenop.ai',
     'https://159.89.175.168',

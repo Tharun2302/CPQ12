@@ -5,17 +5,24 @@
 
 // Get backend URL from environment
 const getBackendUrl = (): string => {
+  // Vite dev: relative base so /api hits the dev server and vite proxies to :3001 (avoids CORS)
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    const { port, hostname } = window.location;
+    if (port === '5173' && (hostname === 'localhost' || hostname === '127.0.0.1')) {
+      return '';
+    }
+  }
+
   const backendUrl = import.meta.env.VITE_BACKEND_URL;
-  
+
   if (!backendUrl) {
-    // Development fallback
     const developmentUrl = 'http://localhost:3001';
     console.warn('⚠️ VITE_BACKEND_URL is not set in .env file!');
     console.warn('📝 Using development fallback:', developmentUrl);
     console.warn('📝 For production, please add VITE_BACKEND_URL to your .env file');
     return developmentUrl;
   }
-  
+
   return backendUrl;
 };
 
@@ -24,7 +31,11 @@ export const BACKEND_URL = getBackendUrl();
 
 // Helper function to get full API endpoint
 export const getApiEndpoint = (path: string): string => {
-  const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+  const baseUrl = BACKEND_URL
+    ? BACKEND_URL.endsWith('/')
+      ? BACKEND_URL.slice(0, -1)
+      : BACKEND_URL
+    : '';
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   return `${baseUrl}${cleanPath}`;
 };
@@ -81,7 +92,9 @@ export const API_ENDPOINTS = {
 // Debug info (only in development)
 if (import.meta.env.DEV) {
   console.log('🔧 API Configuration:');
-  console.log('   Backend URL:', BACKEND_URL);
-  console.log('   Source: Environment variable (VITE_BACKEND_URL)');
+  console.log(
+    '   Backend URL:',
+    BACKEND_URL || '(same origin; /api proxied to VITE_BACKEND_URL / localhost:3001)',
+  );
 }
 
