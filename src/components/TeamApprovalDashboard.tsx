@@ -4,6 +4,7 @@ import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye, PenLine } from 'lucide-react';
 import EsignPdfPageView from '../components/EsignPdfPageView';
+import PdfCanvasViewer from '../components/PdfCanvasViewer';
 import { track } from '../analytics/clarity';
 
 function showSuccessToast(message: string, durationMs = 3000) {
@@ -868,12 +869,8 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                       </div>
                     ) : (
                       <>
-                        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                          <iframe
-                            src={documentPreview}
-                            className="w-full h-[50vh] sm:h-[70vh] border-0"
-                            title="Document Preview"
-                          />
+                        <div className="bg-white rounded-lg shadow-sm overflow-hidden overflow-y-auto max-h-[50vh] sm:max-h-[70vh]" style={{ WebkitOverflowScrolling: 'touch' }}>
+                          <PdfCanvasViewer src={documentPreview} />
                         </div>
                         <div className="flex justify-center">
                           <button

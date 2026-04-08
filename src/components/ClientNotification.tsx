@@ -3,6 +3,7 @@ import { CheckCircle, X, MessageCircle, FileText, DollarSign, User, Eye, Downloa
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
+import PdfCanvasViewer from './PdfCanvasViewer';
 import { track } from '../analytics/clarity';
 
 interface ClientNotificationProps {
@@ -555,12 +556,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <div className="flex-1 p-4" style={{ height: 'calc(100% - 120px)' }}>
-              <iframe
-                src={documentPreviewUrl}
-                className="w-full h-full border-0 rounded-lg"
-                title="Document Preview"
-              />
+            <div className="flex-1 p-4 overflow-y-auto" style={{ height: 'calc(100% - 120px)', WebkitOverflowScrolling: 'touch' }}>
+              <PdfCanvasViewer src={documentPreviewUrl!} />
             </div>
             {/* Optional in-modal comment box (triggered by Add Comment button) */}
             {showCommentInModal && (

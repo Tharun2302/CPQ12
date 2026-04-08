@@ -14,6 +14,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
+import PdfCanvasViewer from './PdfCanvasViewer';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -815,12 +816,8 @@ const ApprovalDashboard: React.FC = () => {
               )}
 
               {!isPreviewLoading && !previewError && documentPreviewUrl && (
-                <div className="rounded-xl border border-gray-200 overflow-hidden min-h-[45vh] sm:min-h-[60vh]">
-                  <iframe
-                    src={documentPreviewUrl}
-                    title="Agreement Preview"
-                    className="w-full h-[45vh] sm:h-[60vh] md:h-[70vh] border-0"
-                  />
+                <div className="rounded-xl border border-gray-200 overflow-hidden overflow-y-auto max-h-[45vh] sm:max-h-[60vh] md:max-h-[70vh]" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  <PdfCanvasViewer src={documentPreviewUrl} />
                 </div>
               )}
             </div>

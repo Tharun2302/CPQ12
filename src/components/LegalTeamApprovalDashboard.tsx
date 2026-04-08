@@ -5,6 +5,7 @@ import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
 import EsignPdfPageView from './EsignPdfPageView';
+import PdfCanvasViewer from './PdfCanvasViewer';
 
 function showSuccessToast(message: string, durationMs = 3000) {
   const el = document.createElement('div');
@@ -872,8 +873,8 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                       </div>
                     ) : (
                       <>
-                        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                          <iframe src={documentPreview} className="w-full h-[50vh] sm:h-[70vh] border-0" title="Document Preview" />
+                        <div className="bg-white rounded-lg shadow-sm overflow-hidden overflow-y-auto max-h-[50vh] sm:max-h-[70vh]" style={{ WebkitOverflowScrolling: 'touch' }}>
+                          <PdfCanvasViewer src={documentPreview} />
                         </div>
                         <div className="flex justify-center">
                           <button onClick={() => { const link = document.createElement('a'); link.href = documentPreview; link.download = `${selectedWorkflow.documentId || 'document'}.pdf`; link.click(); }} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm">

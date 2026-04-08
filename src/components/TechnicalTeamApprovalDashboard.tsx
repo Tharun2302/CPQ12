@@ -5,6 +5,7 @@ import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
 import EsignPdfPageView from './EsignPdfPageView';
+import PdfCanvasViewer from './PdfCanvasViewer';
 
 function showSuccessToast(message: string, durationMs = 3000) {
   const el = document.createElement('div');
@@ -865,8 +866,8 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                       </div>
                     ) : (
                       <>
-                        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-                          <iframe src={documentPreview} className="w-full h-[50vh] sm:h-[70vh] border-0" title="Document Preview" />
+                        <div className="bg-white rounded-xl shadow-lg overflow-hidden overflow-y-auto max-h-[50vh] sm:max-h-[70vh] border border-gray-200" style={{ WebkitOverflowScrolling: 'touch' }}>
+                          <PdfCanvasViewer src={documentPreview} />
                         </div>
                         <div className="flex justify-center">
                           <button onClick={() => { const link = document.createElement('a'); link.href = documentPreview; link.download = `${selectedWorkflow.documentId || 'document'}.pdf`; link.click(); }} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-teal-700 hover:to-teal-800 transition-all duration-300 transform hover:scale-105">

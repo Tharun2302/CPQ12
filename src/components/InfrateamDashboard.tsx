@@ -3,6 +3,7 @@ import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, Thu
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
+import PdfCanvasViewer from './PdfCanvasViewer';
 import { track } from '../analytics/clarity';
 import { useLocation } from 'react-router-dom';
 import Navigation from './Navigation';
@@ -541,11 +542,9 @@ const InfrateamDashboard: React.FC<InfrateamDashboardProps> = ({
                       <p className="text-gray-600 text-sm">Loading document preview...</p>
                     </div>
                   ) : documentPreview ? (
-                    <iframe
-                      src={documentPreview}
-                      className="w-full h-[60vh] border-0 rounded"
-                      title="Document Preview"
-                    />
+                    <div className="overflow-y-auto max-h-[60vh] rounded" style={{ WebkitOverflowScrolling: 'touch' }}>
+                      <PdfCanvasViewer src={documentPreview} />
+                    </div>
                   ) : (
                     <div className="text-center py-8">
                       <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
