@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, ThumbsDown, Crown, Eye, FileText, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
 import EsignPdfPageView from './EsignPdfPageView';
 
@@ -142,37 +143,27 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
         console.log('📡 Response ok:', response.ok);
         
         if (!response.ok) {
+          setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const result = await response.json();
         console.log('📄 API Response:', result);
         
-        if (result.success && result.dataUrl) {
-          setDocumentPreview(result.dataUrl);
+        const src = iframeSrcFromDocumentPreview(result, workflow.documentId);
+        if (src) {
+          setDocumentPreview(src);
           console.log('✅ Document preview loaded successfully:', result.fileName);
-          console.log('📄 Data URL length:', result.dataUrl.length);
+        } else if (result.success) {
+          setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
         } else {
           console.log('⚠️ Document not found or no file data');
-          console.log('📄 Result:', result);
-          
-          // Fallback: Try to load document directly
-          console.log('🔄 Trying fallback method...');
-          try {
-            const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
-            if (directResponse.ok) {
-              const blob = await directResponse.blob();
-              const url = URL.createObjectURL(blob);
-              setDocumentPreview(url);
-              console.log('✅ Document loaded via fallback method');
-            }
-          } catch (fallbackError) {
-            console.error('❌ Fallback method also failed:', fallbackError);
-          }
+          setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
         }
       } catch (error) {
         console.error('❌ Error fetching document preview:', error);
         console.error('❌ Error details:', (error as Error).message);
+        if (workflow.documentId) setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
       } finally {
         setIsLoadingPreview(false);
       }
@@ -455,22 +446,18 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
           const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
           if (response.ok) {
             const result = await response.json();
-            if (result?.success && result?.dataUrl) setDocumentPreview(result.dataUrl);
+            const previewSrc = iframeSrcFromDocumentPreview(result, workflow.documentId);
+            if (previewSrc) setDocumentPreview(previewSrc);
+            else if (result?.success) setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
           }
         }
       } else {
         const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const result = await response.json();
-        if (result.success && result.dataUrl) {
-          setDocumentPreview(result.dataUrl);
-        } else {
-          const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
-          if (directResponse.ok) {
-            const blob = await directResponse.blob();
-            setDocumentPreview(URL.createObjectURL(blob));
-          }
-        }
+        const previewSrc = iframeSrcFromDocumentPreview(result, workflow.documentId);
+        if (previewSrc) setDocumentPreview(previewSrc);
+        else setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
       }
     } catch (error) {
       console.error('❌ Error fetching document preview:', error);

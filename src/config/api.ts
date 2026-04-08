@@ -13,9 +13,22 @@ const getBackendUrl = (): string => {
     }
   }
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+  const envUrl = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim();
 
-  if (!backendUrl) {
+  // Production (or preview) opened from a real host (e.g. phone via http://159.x.x.x:3001):
+  // same server serves SPA + API — use current origin so we never call localhost from the device.
+  if (!import.meta.env.DEV && typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    const isLocalPage = host === 'localhost' || host === '127.0.0.1';
+    if (!envUrl) {
+      return window.location.origin;
+    }
+    if (!isLocalPage && /localhost|127\.0\.0\.1/i.test(envUrl)) {
+      return window.location.origin;
+    }
+  }
+
+  if (!envUrl) {
     const developmentUrl = 'http://localhost:3001';
     console.warn('⚠️ VITE_BACKEND_URL is not set in .env file!');
     console.warn('📝 Using development fallback:', developmentUrl);
@@ -23,7 +36,7 @@ const getBackendUrl = (): string => {
     return developmentUrl;
   }
 
-  return backendUrl;
+  return envUrl;
 };
 
 // Export the backend URL (with development fallback)

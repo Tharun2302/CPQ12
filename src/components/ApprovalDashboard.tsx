@@ -13,6 +13,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -337,24 +338,17 @@ const ApprovalDashboard: React.FC = () => {
       const previewResp = await fetch(`${BACKEND_URL}/api/documents/${docId}/preview`);
       if (previewResp.ok) {
         const result = await previewResp.json();
-        if (result?.success && result?.dataUrl) {
-          setDocumentPreviewUrl(result.dataUrl as string);
+        if (result?.success) {
+          const src =
+            iframeSrcFromDocumentPreview(result, docId) || getDocumentFileInlineUrl(docId);
+          setDocumentPreviewUrl(src);
           setIsPreviewLoading(false);
           return;
         }
       }
 
-      // 2) Fallback: fetch the document file directly
-      const directResp = await fetch(`${BACKEND_URL}/api/documents/${docId}`);
-      if (!directResp.ok) {
-        setPreviewError(`Document not found (HTTP ${directResp.status}).`);
-        setIsPreviewLoading(false);
-        return;
-      }
-      const blob = await directResp.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      objectUrlRef.current = objectUrl;
-      setDocumentPreviewUrl(objectUrl);
+      // 2) Fallback: binary PDF stream (avoid JSON /api/documents/:id in iframe — that showed raw text on mobile)
+      setDocumentPreviewUrl(getDocumentFileInlineUrl(docId));
       setIsPreviewLoading(false);
     } catch (e) {
       console.error('Failed to load agreement preview:', e);

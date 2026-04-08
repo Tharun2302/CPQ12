@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { FileText, X, Loader2, ThumbsUp, ThumbsDown, MessageCircle, User, BarChart3, Clock, CheckCircle, AlertCircle, Eye, PenLine } from 'lucide-react';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import { track } from '../analytics/clarity';
@@ -294,7 +295,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
           const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
           if (response.ok) {
             const result = await response.json();
-            if (result?.success && result?.dataUrl) setDocumentPreview(result.dataUrl);
+            const src = iframeSrcFromDocumentPreview(result, workflow.documentId);
+            if (src) setDocumentPreview(src);
+            else if (result?.success) setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
           }
         }
       } else {
@@ -302,15 +305,12 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
         const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const result = await response.json();
-        if (result.success && result.dataUrl) {
-          setDocumentPreview(result.dataUrl);
+        const src = iframeSrcFromDocumentPreview(result, workflow.documentId);
+        if (src) {
+          setDocumentPreview(src);
           console.log('✅ Document preview loaded successfully:', result.fileName);
         } else {
-          const directResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
-          if (directResponse.ok) {
-            const blob = await directResponse.blob();
-            setDocumentPreview(URL.createObjectURL(blob));
-          }
+          setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
         }
       }
     } catch (error) {
@@ -370,7 +370,9 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
           const resp = await fetch(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`);
           if (resp.ok) {
             const result = await resp.json();
-            if (result?.success && result?.dataUrl) setDocumentPreview(result.dataUrl);
+            const src = iframeSrcFromDocumentPreview(result, wf.documentId);
+            if (src) setDocumentPreview(src);
+            else if (result?.success) setDocumentPreview(getDocumentFileInlineUrl(wf.documentId));
           }
         }
       } else {
@@ -378,7 +380,11 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
         const resp = await fetch(`${BACKEND_URL}/api/documents/${wf.documentId}/preview`);
         if (resp.ok) {
           const result = await resp.json();
-          if (result.success && result.dataUrl) setDocumentPreview(result.dataUrl);
+          const src = iframeSrcFromDocumentPreview(result, wf.documentId);
+          if (src) setDocumentPreview(src);
+          else if (result.success) setDocumentPreview(getDocumentFileInlineUrl(wf.documentId));
+        } else {
+          setDocumentPreview(getDocumentFileInlineUrl(wf.documentId));
         }
       }
     } catch {}

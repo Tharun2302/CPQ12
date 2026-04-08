@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle, X, MessageCircle, FileText, DollarSign, User, Eye, Download } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
 
 interface ClientNotificationProps {
@@ -267,34 +268,27 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       console.log('📄 Fetching document for preview:', workflow.documentId);
       
-      // Try preview API first
       try {
         const previewResponse = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         if (previewResponse.ok) {
           const result = await previewResponse.json();
-          if (result.success && result.dataUrl) {
-            setDocumentPreviewUrl(result.dataUrl);
+          if (result.success) {
+            const src =
+              iframeSrcFromDocumentPreview(result, workflow.documentId) ||
+              getDocumentFileInlineUrl(workflow.documentId);
+            setDocumentPreviewUrl(src);
             setShowDocumentPreview(true);
             console.log('✅ Document preview loaded successfully:', result.fileName);
             return;
           }
         }
       } catch (previewError) {
-        console.log('⚠️ Preview API failed, trying direct method:', previewError);
+        console.log('⚠️ Preview API failed, using PDF file URL:', previewError);
       }
-      
-      // Fallback: Fetch document directly
-      const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch document');
-      }
-      
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      setDocumentPreviewUrl(url);
+
+      setDocumentPreviewUrl(getDocumentFileInlineUrl(workflow.documentId));
       setShowDocumentPreview(true);
-      
-      console.log('✅ Document loaded for preview via direct method');
+      console.log('✅ Document preview URL set (file stream)');
     } catch (error) {
       console.error('❌ Error loading document:', error);
       alert('❌ Failed to load document preview. Please try again.');
@@ -312,22 +306,13 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
     try {
       console.log('📥 Downloading document:', workflow.documentId);
       
-      const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch document');
-      }
-      
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      // Create download link
+      const fileUrl = `${BACKEND_URL}/api/documents/${encodeURIComponent(workflow.documentId)}/file`;
       const link = document.createElement('a');
-      link.href = url;
+      link.href = fileUrl;
       link.download = `${workflow.documentId}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
       
       console.log('✅ Document downloaded');
     } catch (error) {
@@ -562,10 +547,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                 onClick={() => {
                   setShowDocumentPreview(false);
                   setHasAutoOpened(true); // Mark as manually closed to prevent auto-reopening
-                  if (documentPreviewUrl) {
-                    URL.revokeObjectURL(documentPreviewUrl);
-                    setDocumentPreviewUrl(null);
-                  }
+                  if (documentPreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(documentPreviewUrl);
+                  setDocumentPreviewUrl(null);
                 }}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
@@ -638,10 +621,8 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
                   setShowDocumentPreview(false);
                   setHasAutoOpened(true); // Mark as manually closed to prevent auto-reopening
                   setShowCommentInModal(false);
-                  if (documentPreviewUrl) {
-                    URL.revokeObjectURL(documentPreviewUrl);
-                    setDocumentPreviewUrl(null);
-                  }
+                  if (documentPreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(documentPreviewUrl);
+                  setDocumentPreviewUrl(null);
                 }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
               >

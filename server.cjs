@@ -6985,6 +6985,71 @@ app.get('/api/esign/agreement-status', async (req, res) => {
 // NOTE: This endpoint is replaced by the one below at line 3725 to avoid duplicates
 // Keeping this comment for reference but the endpoint below should be used
 
+/** Resolve a documents row by exact id or workflow-style id (company_client_timestamp). */
+async function resolveStoredDocumentById(db, idParam) {
+  const id = String(idParam || '');
+  let document = await db.collection('documents').findOne({ id });
+  if (document) return document;
+  console.log('⚠️ Exact ID not found, attempting smart search...');
+  const parts = id.split('_');
+  if (parts.length < 2) return null;
+  const companyPart = parts[0].replace(/[0-9]/g, '');
+  const clientPart = parts[1].replace(/[0-9]/g, '');
+  if (!companyPart || !clientPart) return null;
+  console.log('🔍 Searching by company/client pattern:', { companyPart, clientPart });
+  const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
+  let matchingDocs = await db
+    .collection('documents')
+    .find({ id: { $regex: idPattern } })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .toArray();
+  if (matchingDocs.length > 0) {
+    console.log(`✅ Found matching document: ${matchingDocs[0].id} (searched for: ${id})`);
+    return matchingDocs[0];
+  }
+  const searchQuery = {
+    $and: [
+      { company: { $regex: companyPart, $options: 'i' } },
+      { clientName: { $regex: clientPart, $options: 'i' } },
+    ],
+  };
+  matchingDocs = await db
+    .collection('documents')
+    .find(searchQuery)
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .toArray();
+  if (matchingDocs.length > 0) {
+    console.log(`✅ Found matching document by client/company: ${matchingDocs[0].id} (searched for: ${id})`);
+    return matchingDocs[0];
+  }
+  const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
+  matchingDocs = await db
+    .collection('documents')
+    .find({ clientName: { $regex: clientNamePattern, $options: 'i' } })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .toArray();
+  if (matchingDocs.length > 0) {
+    console.log(`✅ Found matching document by client name only: ${matchingDocs[0].id} (searched for: ${id})`);
+    console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${matchingDocs[0].company}`);
+  }
+  return matchingDocs[0] || null;
+}
+
+function fileDataToBuffer(fileData) {
+  if (Buffer.isBuffer(fileData)) return fileData;
+  if (fileData && fileData.buffer) return Buffer.from(fileData.buffer);
+  if (fileData && fileData.data) return Buffer.from(fileData.data);
+  if (typeof fileData === 'string') {
+    const s = fileData.trim();
+    const m = /^data:[^;]+;base64,([\s\S]+)$/i.exec(s);
+    return Buffer.from(m ? m[1] : s, 'base64');
+  }
+  throw new Error('Unsupported document fileData format');
+}
+
 // API endpoint to get specific PDF document file
 app.get('/api/documents/:id/file', async (req, res) => {
   try {
@@ -7000,7 +7065,7 @@ app.get('/api/documents/:id/file', async (req, res) => {
     
     console.log('📄 Fetching document file:', id);
     
-    const document = await db.collection('documents').findOne({ id: id });
+    const document = await resolveStoredDocumentById(db, id);
     
     if (!document) {
       return res.status(404).json({
@@ -7011,16 +7076,10 @@ app.get('/api/documents/:id/file', async (req, res) => {
 
     // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
     let fileBuffer;
-    if (Buffer.isBuffer(document.fileData)) {
-      fileBuffer = document.fileData;
-    } else if (document.fileData && document.fileData.buffer) {
-      // Some drivers store Binary with .buffer
-      fileBuffer = Buffer.from(document.fileData.buffer);
-    } else if (typeof document.fileData === 'string') {
-      // Base64 string
-      fileBuffer = Buffer.from(document.fileData, 'base64');
-    } else {
-      throw new Error('Unsupported document fileData format');
+    try {
+      fileBuffer = fileDataToBuffer(document.fileData);
+    } catch (e) {
+      throw new Error(e?.message || 'Unsupported document fileData format');
     }
     
     const inline = req.query.inline === '1' || req.query.inline === 'true';
@@ -7056,112 +7115,36 @@ app.get('/api/documents/:id/preview', async (req, res) => {
     
     console.log('📄 Fetching document preview:', id);
     
-    let document = await db.collection('documents').findOne({ id: id });
-    
-    // Smart search fallback: if exact ID doesn't match, try to find by client/company
+    const document = await resolveStoredDocumentById(db, id);
     if (!document) {
-      console.log('⚠️ Exact ID not found, attempting smart search...');
-      
-      // Extract client and company from ID pattern: Company_Client_Timestamp
-      const parts = id.split('_');
-      if (parts.length >= 2) {
-        // Try to match documents with similar company and client names
-        // The ID format is: sanitizedCompany_sanitizedClient_timestamp
-        // We'll search for documents where company or clientName contains parts of the ID
-        const companyPart = parts[0].replace(/[0-9]/g, ''); // Remove numbers
-        const clientPart = parts[1].replace(/[0-9]/g, ''); // Remove numbers
-        
-        if (companyPart && clientPart) {
-          console.log('🔍 Searching by company/client pattern:', { companyPart, clientPart });
-          
-          // Search for documents where ID starts with the same company_client pattern
-          const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
-          const matchingDocs = await db.collection('documents')
-            .find({ id: { $regex: idPattern } })
-            .sort({ createdAt: -1 })
-            .limit(1)
-            .toArray();
-          
-          if (matchingDocs.length > 0) {
-            document = matchingDocs[0];
-            console.log(`✅ Found matching document: ${document.id} (searched for: ${id})`);
-          } else {
-            // Fallback 1: search by company and clientName fields
-            const searchQuery = {
-              $and: [
-                { company: { $regex: companyPart, $options: 'i' } },
-                { clientName: { $regex: clientPart, $options: 'i' } }
-              ]
-            };
-            
-            const matchingDocs2 = await db.collection('documents')
-              .find(searchQuery)
-              .sort({ createdAt: -1 })
-              .limit(1)
-              .toArray();
-            
-            if (matchingDocs2.length > 0) {
-              document = matchingDocs2[0];
-              console.log(`✅ Found matching document by client/company: ${document.id} (searched for: ${id})`);
-            } else {
-              // Fallback 2: search by clientName only (in case company name changed)
-              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
-              // Insert optional spaces before capital letters (camelCase handling)
-              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
-              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
-              const clientOnlyQuery = {
-                clientName: { $regex: clientNamePattern, $options: 'i' }
-              };
-              
-              const matchingDocs3 = await db.collection('documents')
-                .find(clientOnlyQuery)
-                .sort({ createdAt: -1 })
-                .limit(1)
-                .toArray();
-              
-              if (matchingDocs3.length > 0) {
-                document = matchingDocs3[0];
-                console.log(`✅ Found matching document by client name only: ${document.id} (searched for: ${id})`);
-                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${document.company}`);
-              }
-            }
-          }
-        }
-      }
-      
-      if (!document) {
-        return res.status(404).json({
-          success: false,
-          error: 'Document not found'
-        });
-      }
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
     }
 
-    // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
     let fileBuffer;
-    if (Buffer.isBuffer(document.fileData)) {
-      fileBuffer = document.fileData;
-    } else if (document.fileData && document.fileData.buffer) {
-      // Some drivers store Binary with .buffer
-      fileBuffer = Buffer.from(document.fileData.buffer);
-    } else if (typeof document.fileData === 'string') {
-      // Base64 string
-      fileBuffer = Buffer.from(document.fileData, 'base64');
-    } else {
-      throw new Error('Unsupported document fileData format');
+    try {
+      fileBuffer = fileDataToBuffer(document.fileData);
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        error: e?.message || 'Unsupported document fileData format',
+      });
     }
     
     console.log('✅ PDF preview data found:', document.fileName);
     
-    // Convert binary data to base64 for inline display
+    // Convert binary data to base64 for inline display (legacy clients)
     const base64Data = fileBuffer.toString('base64');
     const dataUrl = `data:application/pdf;base64,${base64Data}`;
     
     res.json({
       success: true,
-      dataUrl: dataUrl,
+      dataUrl,
+      documentId: document.id,
       fileName: document.fileName,
-      fileSize: document.fileSize
+      fileSize: document.fileSize,
     });
     
   } catch (error) {

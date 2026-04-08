@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, User, BarChart3, X, MessageCircle, CheckCircle, AlertCircle, ThumbsUp, Eye, FileText, Loader2, Server, TestTube } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
+import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import { track } from '../analytics/clarity';
 import { useLocation } from 'react-router-dom';
 import Navigation from './Navigation';
@@ -78,9 +79,11 @@ const InfrateamDashboard: React.FC<InfrateamDashboardProps> = ({
         const response = await fetch(`${BACKEND_URL}/api/documents/${workflow.documentId}/preview`);
         if (response.ok) {
           const result = await response.json();
-          if (result.success && result.dataUrl) {
-            setDocumentPreview(result.dataUrl);
-          }
+          const src = iframeSrcFromDocumentPreview(result, workflow.documentId);
+          if (src) setDocumentPreview(src);
+          else if (result.success) setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
+        } else {
+          setDocumentPreview(getDocumentFileInlineUrl(workflow.documentId));
         }
       } catch (error) {
         console.error('❌ Error fetching document preview:', error);
