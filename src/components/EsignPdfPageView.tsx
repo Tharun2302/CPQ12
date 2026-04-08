@@ -54,9 +54,11 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [mobileScale, setMobileScale] = useState(1);
 
   useEffect(() => {
     if (!pdfUrl || pageNumber < 1) return;
@@ -118,6 +120,24 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
     };
   }, [pdfUrl, pageNumber, scale]);
 
+  useEffect(() => {
+    if (!dimensions || !wrapperRef.current) return;
+    const updateMobileScale = () => {
+      const parent = wrapperRef.current?.parentElement;
+      if (!parent) return;
+      const availableWidth = parent.clientWidth;
+      if (availableWidth > 0 && dimensions.width > availableWidth) {
+        setMobileScale(availableWidth / dimensions.width);
+      } else {
+        setMobileScale(1);
+      }
+    };
+    updateMobileScale();
+    const ro = new ResizeObserver(updateMobileScale);
+    if (wrapperRef.current.parentElement) ro.observe(wrapperRef.current.parentElement);
+    return () => ro.disconnect();
+  }, [dimensions]);
+
   if (error) {
     return (
       <div className={`flex items-center justify-center min-h-[400px] bg-slate-100 rounded-lg ${className}`}>
@@ -126,65 +146,80 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
     );
   }
 
+  const scaledHeight = dimensions ? dimensions.height * mobileScale : 600;
+
   return (
     <div
-      ref={containerRef}
-      className={`relative ${className}`}
+      ref={wrapperRef}
+      className={`${className}`}
       style={{
-        width: dimensions?.width ?? '100%',
-        height: dimensions?.height ?? 600,
-        minHeight: 400,
+        width: '100%',
+        maxWidth: dimensions?.width ?? '100%',
+        height: scaledHeight,
+        minHeight: 200,
+        overflow: 'hidden',
       }}
     >
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-100 rounded-lg">
-          <div className="animate-spin h-8 w-8 border-2 border-indigo-600 border-t-transparent rounded-full" />
-        </div>
-      )}
-      <canvas
-        ref={canvasRef}
-        className="block max-w-none"
-        style={{ display: loading ? 'none' : 'block', maxWidth: 'none' }}
-      />
-      {/* Field layer: same size as canvas. Fields use position:absolute relative to this page. z-index so drop target is above canvas. */}
       <div
-        className="absolute inset-0"
+        ref={containerRef}
+        className="relative origin-top-left"
         style={{
-          left: 0,
-          top: 0,
           width: dimensions?.width ?? '100%',
-          height: dimensions?.height ?? '100%',
-          pointerEvents: loading ? 'none' : 'auto',
-          zIndex: 10,
+          height: dimensions?.height ?? 600,
+          transform: mobileScale < 1 ? `scale(${mobileScale})` : undefined,
+          transformOrigin: 'top left',
         }}
-        onDragOver={onDrop ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } : undefined}
-        onDrop={onDrop ? (e) => {
-          e.preventDefault();
-          const fieldType = (e.dataTransfer.getData('text/plain') || 'signature') as string;
-          if (!['signature', 'name', 'title', 'date', 'text'].includes(fieldType)) return;
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (!rect || !dimensions) return;
-          const pxX = e.clientX - rect.left;
-          const pxY = e.clientY - rect.top;
-          const fw = fieldType === 'text' ? DEFAULT_TEXT_FIELD_WIDTH_PT : DEFAULT_FIELD_WIDTH_PT;
-          const fh = fieldType === 'text' ? DEFAULT_TEXT_FIELD_HEIGHT_PT : DEFAULT_FIELD_HEIGHT_PT;
-          const x = Math.max(0, Math.min(dimensions.width / scale - fw, pxX / scale - fw / 2));
-          const y = Math.max(0, Math.min(dimensions.height / scale - fh, pxY / scale - fh / 2));
-          const pageWidthPt = dimensions.width / scale;
-          const pageHeightPt = dimensions.height / scale;
-          onDrop({
-            page: pageNumber,
-            x,
-            y,
-            width: fw,
-            height: fh,
-            fieldType,
-            pageWidthPt,
-            pageHeightPt,
-          });
-        } : undefined}
       >
-        {children}
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-100 rounded-lg">
+            <div className="animate-spin h-8 w-8 border-2 border-indigo-600 border-t-transparent rounded-full" />
+          </div>
+        )}
+        <canvas
+          ref={canvasRef}
+          className="block max-w-none"
+          style={{ display: loading ? 'none' : 'block', maxWidth: 'none' }}
+        />
+        {/* Field layer: same size as canvas. Fields use position:absolute relative to this page. z-index so drop target is above canvas. */}
+        <div
+          className="absolute inset-0"
+          style={{
+            left: 0,
+            top: 0,
+            width: dimensions?.width ?? '100%',
+            height: dimensions?.height ?? '100%',
+            pointerEvents: loading ? 'none' : 'auto',
+            zIndex: 10,
+          }}
+          onDragOver={onDrop ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } : undefined}
+          onDrop={onDrop ? (e) => {
+            e.preventDefault();
+            const fieldType = (e.dataTransfer.getData('text/plain') || 'signature') as string;
+            if (!['signature', 'name', 'title', 'date', 'text'].includes(fieldType)) return;
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect || !dimensions) return;
+            const pxX = (e.clientX - rect.left) / mobileScale;
+            const pxY = (e.clientY - rect.top) / mobileScale;
+            const fw = fieldType === 'text' ? DEFAULT_TEXT_FIELD_WIDTH_PT : DEFAULT_FIELD_WIDTH_PT;
+            const fh = fieldType === 'text' ? DEFAULT_TEXT_FIELD_HEIGHT_PT : DEFAULT_FIELD_HEIGHT_PT;
+            const x = Math.max(0, Math.min(dimensions.width / scale - fw, pxX / scale - fw / 2));
+            const y = Math.max(0, Math.min(dimensions.height / scale - fh, pxY / scale - fh / 2));
+            const pageWidthPt = dimensions.width / scale;
+            const pageHeightPt = dimensions.height / scale;
+            onDrop({
+              page: pageNumber,
+              x,
+              y,
+              width: fw,
+              height: fh,
+              fieldType,
+              pageWidthPt,
+              pageHeightPt,
+            });
+          } : undefined}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

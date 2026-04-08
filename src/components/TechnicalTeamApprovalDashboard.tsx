@@ -797,22 +797,22 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
 
       {/* Document Preview Modal - Enhanced UI/UX */}
       {showDocumentModal && selectedWorkflow && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/50 max-w-7xl w-full max-h-[95vh] overflow-hidden transform transition-all duration-300 scale-100">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/50 max-w-7xl w-full max-h-[95vh] flex flex-col overflow-hidden transform transition-all duration-300 scale-100">
             {/* Enhanced Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-blue-50/30">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shadow-md">
-                  <FileText className="w-6 h-6 text-white" />
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-blue-50/30 flex-shrink-0">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+                  <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Document Preview</h2>
-                  <p className="text-sm text-gray-600 font-mono mt-0.5">ID: {selectedWorkflow.documentId}</p>
+                <div className="min-w-0">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-900">Document Preview</h2>
+                  <p className="text-sm text-gray-600 font-mono mt-0.5 truncate">ID: {selectedWorkflow.documentId}</p>
                 </div>
               </div>
               <button
                 onClick={closeDocumentModal}
-                className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-300 flex-shrink-0"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -820,8 +820,8 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
             </div>
             
             {/* Enhanced Content Area */}
-            <div className="p-6 overflow-y-auto max-h-[calc(95vh-200px)]">
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200 shadow-inner">
+            <div className="p-3 sm:p-6 overflow-y-auto flex-1 min-h-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-3 sm:p-6 border border-gray-200 shadow-inner">
                 {isLoadingPreview ? (
                   <div className="text-center py-12">
                     <div className="inline-flex items-center justify-center w-16 h-16 mb-4">
@@ -834,7 +834,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                   <div className="space-y-4">
                     {documentPreview && esignFields.length > 0 && selectedWorkflow?.esignDocumentId ? (
                       <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-                        <div className="overflow-y-auto max-h-[70vh] p-4 space-y-6">
+                        <div className="overflow-y-auto p-2 sm:p-4 space-y-6" style={{ WebkitOverflowScrolling: 'touch' }}>
                           {Array.from({ length: approvalDocNumPages }, (_, i) => i + 1).map((pageNum) => (
                             <div key={pageNum} className="flex flex-col items-center">
                               <span className="text-xs text-slate-500 mb-2">Page {pageNum} of {approvalDocNumPages}</span>
@@ -879,7 +879,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
                     ) : (
                       <>
                         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-                          <iframe src={documentPreview} className="w-full h-[70vh] border-0" title="Document Preview" />
+                          <iframe src={documentPreview} className="w-full h-[50vh] sm:h-[70vh] border-0" title="Document Preview" />
                         </div>
                         <div className="flex justify-center">
                           <button onClick={() => { const link = document.createElement('a'); link.href = documentPreview; link.download = `${selectedWorkflow.documentId || 'document'}.pdf`; link.click(); }} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg hover:from-teal-700 hover:to-teal-800 transition-all duration-300 transform hover:scale-105">
@@ -917,7 +917,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
             </div>
 
             {/* Enhanced Action Buttons Footer */}
-            <div className="flex items-center justify-between gap-4 p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-slate-50">
+            <div className="flex items-center justify-between gap-2 sm:gap-4 p-3 sm:p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-slate-50 flex-shrink-0 flex-wrap">
                {modalOpenedFromTab === 'queue' ? (
                  (() => {
                   // Use latest workflow state from store to avoid stale selectedWorkflow after actions

@@ -810,28 +810,28 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
 
       {/* Document Preview Modal */}
       {showDocumentModal && selectedWorkflow && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <FileText className="w-5 h-5 text-teal-600" />
                 </div>
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Document Preview</h2>
-                  <p className="text-sm text-gray-500">ID: {selectedWorkflow.documentId}</p>
+                <div className="min-w-0">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Document Preview</h2>
+                  <p className="text-sm text-gray-500 truncate">ID: {selectedWorkflow.documentId}</p>
                 </div>
               </div>
               <button
                 onClick={closeDocumentModal}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto max-h-[calc(95vh-200px)]">
-              <div className="bg-gray-100 rounded-lg p-4">
+            <div className="p-3 sm:p-6 overflow-y-auto flex-1 min-h-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <div className="bg-gray-100 rounded-lg p-2 sm:p-4">
                 {isLoadingPreview ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto mb-4"></div>
@@ -841,7 +841,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                   <div className="space-y-4">
                     {documentPreview && esignFields.length > 0 && selectedWorkflow?.esignDocumentId ? (
                       <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                        <div className="overflow-y-auto max-h-[70vh] p-4 space-y-6">
+                        <div className="overflow-y-auto p-2 sm:p-4 space-y-6" style={{ WebkitOverflowScrolling: 'touch' }}>
                           {Array.from({ length: approvalDocNumPages }, (_, i) => i + 1).map((pageNum) => (
                             <div key={pageNum} className="flex flex-col items-center">
                               <span className="text-xs text-slate-500 mb-2">Page {pageNum} of {approvalDocNumPages}</span>
@@ -886,7 +886,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
                     ) : (
                       <>
                         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                          <iframe src={documentPreview} className="w-full h-[70vh] border-0" title="Document Preview" />
+                          <iframe src={documentPreview} className="w-full h-[50vh] sm:h-[70vh] border-0" title="Document Preview" />
                         </div>
                         <div className="flex justify-center">
                           <button onClick={() => { const link = document.createElement('a'); link.href = documentPreview; link.download = `${selectedWorkflow.documentId || 'document'}.pdf`; link.click(); }} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm">
@@ -920,7 +920,7 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
             </div>
 
             {/* Action Buttons - Only show when opened from "My Approval Queue" tab */}
-            <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between gap-2 sm:gap-3 p-3 sm:p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0 flex-wrap">
                {modalOpenedFromTab === 'queue' ? (
                  (() => {
                  // Use latest workflow state from store to avoid stale selectedWorkflow after actions
