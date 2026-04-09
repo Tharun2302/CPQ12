@@ -1014,6 +1014,62 @@ async function sendEsignCompletedNotificationToCreator(doc) {
   }
 }
 
+// Notify ALL recipients and creator when everyone has signed/reviewed (envelope completed), with signed PDF attached.
+async function sendEsignCompletedNotificationToAllRecipients(doc) {
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign completion notification: SENDGRID_API_KEY not set — recipients not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const safe = String(fileName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const subject = `E-sign completed: ${sanitizeEsignEmailSubjectFileName(fileName)}`;
+  const html = `
+    <p>Everyone has signed the agreement. The completed signed document is attached.</p>
+    <p><strong>Document:</strong> ${safe}</p>
+    <p>Please find the fully executed document attached to this email for your records.</p>
+  `;
+
+  // Attach the signed PDF if available
+  const attachments = [];
+  const filePath = doc.signed_file_path;
+  if (filePath && fs.existsSync(filePath)) {
+    try {
+      const fileContent = fs.readFileSync(filePath);
+      const attachName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+      attachments.push({ content: fileContent, filename: attachName, contentType: 'application/pdf' });
+    } catch (attachErr) {
+      console.warn('Could not read signed PDF for attachment:', attachErr?.message || attachErr);
+    }
+  }
+
+  // Collect all unique email addresses: creator + every recipient
+  const emailSet = new Set();
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (creatorEmail && creatorEmail.includes('@')) emailSet.add(creatorEmail.toLowerCase().trim());
+
+  if (db) {
+    try {
+      const docId = doc._id instanceof ObjectId ? doc._id : new ObjectId(doc._id.toString());
+      const recipients = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
+      for (const r of recipients) {
+        if (r.email && r.email.includes('@')) emailSet.add(r.email.toLowerCase().trim());
+      }
+    } catch (fetchErr) {
+      console.warn('Could not fetch recipients for completion email:', fetchErr?.message || fetchErr);
+    }
+  }
+
+  for (const email of emailSet) {
+    try {
+      const result = await sendEmail(email, subject, html, attachments);
+      if (result.success) console.log('✅ E-sign completion notification sent to', email);
+      else console.warn('❌ E-sign completion notification not sent to', email, result.error);
+    } catch (err) {
+      console.warn('E-sign completion notification failed for', email, err?.message || err);
+    }
+  }
+}
+
 // NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
 
 // HubSpot redirect handler - only when deal/contact params present; otherwise SPA handles /
@@ -6139,7 +6195,7 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
       if (!esignEnvelopeWasAlreadyCompleted) {
         try {
           const docFresh = await db.collection('esign_documents').findOne({ _id: docId });
-          await sendEsignCompletedNotificationToCreator(docFresh || doc);
+          await sendEsignCompletedNotificationToAllRecipients(docFresh || doc);
         } catch (completeNotifyErr) {
           console.warn('E-sign completion email failed (non-fatal):', completeNotifyErr?.message || completeNotifyErr);
         }
@@ -6838,7 +6894,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         if (!esignDocWasAlreadyCompleted) {
           try {
             const docFresh = await db.collection('esign_documents').findOne({ _id: docId });
-            await sendEsignCompletedNotificationToCreator(docFresh || doc);
+            await sendEsignCompletedNotificationToAllRecipients(docFresh || doc);
           } catch (completeNotifyErr) {
             console.warn('E-sign completion email failed (non-fatal):', completeNotifyErr?.message || completeNotifyErr);
           }
