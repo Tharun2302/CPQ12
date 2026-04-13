@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { FileText, Loader2, PenLine, ShieldX, ArrowRight, User, BarChart3, CheckCircle, X, Eye, Check, XCircle } from 'lucide-react';
+import { FileText, Loader2, PenLine, ShieldX, ArrowRight, User, BarChart3, CheckCircle, X, Eye, Check, XCircle, Clock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface QueueItem {
@@ -35,7 +35,7 @@ const EsignInboxByToken: React.FC = () => {
   const navigate = useNavigate();
   const token = searchParams.get('token') || '';
 
-  const [status, setStatus] = useState<'loading' | 'denied' | 'ok'>('loading');
+  const [status, setStatus] = useState<'loading' | 'denied' | 'expired' | 'ok'>('loading');
   const [data, setData] = useState<InboxResponse | null>(null);
   const [activeTab, setActiveTab] = useState<'queue' | 'status'>('queue');
   const [showDocumentModal, setShowDocumentModal] = useState(false);
@@ -139,14 +139,13 @@ const EsignInboxByToken: React.FC = () => {
       signal: controller.signal,
     })
       .then((res) => {
-        if (res.status === 403 || !res.ok) {
-          setStatus('denied');
-          return null;
-        }
-        return res.json();
+        if (res.status === 410) { setStatus('expired'); return null; }
+        if (res.status === 403 || !res.ok) { setStatus('denied'); return null; }
+        return res.json() as Promise<InboxResponse>;
       })
-      .then((json: InboxResponse | null) => {
-        if (json?.success) {
+      .then((json: InboxResponse | null | undefined) => {
+        if (!json) return;
+        if (json.success) {
           const queue = json.queue ?? [];
           if (queue.length > 0 && queue[0].signing_token) {
             navigate(`/sign/${queue[0].signing_token}`, { replace: true });
@@ -174,13 +173,29 @@ const EsignInboxByToken: React.FC = () => {
     );
   }
 
+  if (status === 'expired') {
+    return (
+      <div className=”min-h-screen flex items-center justify-center bg-slate-50 p-4”>
+        <div className=”max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8 text-center”>
+          <div className=”inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-50 border border-amber-200 mx-auto mb-4”>
+            <Clock className=”w-8 h-8 text-amber-500” />
+          </div>
+          <h1 className=”text-2xl font-bold text-slate-900 mb-2”>Signing link expired</h1>
+          <p className=”text-slate-600 text-sm”>
+            This e-signature link has expired (links are valid for 15 days). Please contact the sender to request a new signing link.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (status === 'denied') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <div className="max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8 text-center">
-          <ShieldX className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">{token ? 'Access Denied' : 'Open your dashboard'}</h1>
-          <p className="text-slate-600">
+      <div className=”min-h-screen flex items-center justify-center bg-slate-50 p-4”>
+        <div className=”max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8 text-center”>
+          <ShieldX className=”w-16 h-16 text-red-500 mx-auto mb-4” />
+          <h1 className=”text-2xl font-bold text-slate-900 mb-2”>{token ? 'Access Denied' : 'Open your dashboard'}</h1>
+          <p className=”text-slate-600”>
             {token
               ? 'This link is invalid or has expired. Please use the link from your email to open your dashboard.'
               : 'No login required. Use the link from your email (Option 1 – “Team Lead Dashboard”) to open your queue and documents.'}

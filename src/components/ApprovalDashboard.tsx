@@ -3,12 +3,13 @@ import {
   Check,
   Calendar,
   FileText,
-  ListChecks,
   Loader2,
   Search,
   X,
   XCircle,
   ArrowLeft,
+  PenLine,
+  Bell,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
@@ -173,11 +174,70 @@ const ApprovalDashboard: React.FC = () => {
   const objectUrlRef = useRef<string | null>(null);
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
+  // Tracks which workflow is currently being prepared for eSign (loading state)
+  const [processingEsignId, setProcessingEsignId] = useState<string | null>(null);
+  // Tracks which workflow reminder is being sent + per-workflow success flash
+  const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
+  const [reminderSentId, setReminderSentId] = useState<string | null>(null);
 
   const {
     workflows,
     refreshWorkflows,
   } = useApprovalWorkflows();
+
+  /**
+   * Creates an eSign document from the approved workflow's agreement and
+   * navigates to the place-fields page so the creator can add recipients,
+   * place signature fields, and send for e-signature.
+   */
+  const handleProceedToEsign = async (workflow: any) => {
+    setProcessingEsignId(workflow.id);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: workflow.documentId,
+          uploaded_by: workflow.creatorEmail || 'approval-workflow',
+          requested_by_name: workflow.creatorName || '',
+          requested_by_email: workflow.creatorEmail || '',
+          workflowId: workflow.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.document?.id) {
+        throw new Error(data.error || 'Failed to create e-sign document');
+      }
+      // Clear pending-approval sessionStorage so the place-fields page shows
+      // "Send for Signature" directly (approval is already complete)
+      sessionStorage.removeItem('quotePendingApproval');
+      navigate(`/esign/${data.document.id}/place-fields`);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to open e-sign. Please try again.');
+    } finally {
+      setProcessingEsignId(null);
+    }
+  };
+
+  /** Sends a reminder email to the current pending approver. */
+  const handleSendReminder = async (workflowId: string) => {
+    setSendingReminderId(workflowId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}/remind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send reminder');
+      // Show brief success flash on the card
+      setReminderSentId(workflowId);
+      setTimeout(() => setReminderSentId(null), 3000);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to send reminder. Please try again.');
+    } finally {
+      setSendingReminderId(null);
+    }
+  };
 
   // Refetch workflows when user returns to this tab/window so Deal Desk "Email sent" shows after Legal approval
   const refreshRef = useRef(refreshWorkflows);
@@ -581,6 +641,14 @@ const ApprovalDashboard: React.FC = () => {
                           <div className="mt-1 text-sm text-gray-700">
                             Requested by <span className="text-gray-900 font-semibold">{requestedBy}</span>
                           </div>
+                          {workflow.reminderDays > 0 && (
+                            <div className="mt-1.5 flex items-center gap-1">
+                              <Bell className="w-3 h-3 text-amber-500 shrink-0" />
+                              <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap">
+                                Reminder every {workflow.reminderDays} day{workflow.reminderDays > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="min-w-0">
@@ -602,19 +670,71 @@ const ApprovalDashboard: React.FC = () => {
                       </div>
 
                       <div className="flex w-full shrink-0 flex-col gap-2 self-stretch sm:w-auto sm:flex-row sm:self-start lg:self-stretch">
-                        {workflow?.documentId &&
-                          legalStep?.status === 'approved' &&
-                          workflow.esignDocumentId && (
+                        {/* Send Reminder — shown for pending / in_progress workflows */}
+                        {(status === 'pending' || status === 'in_progress') && (
+                          reminderSentId === workflow.id ? (
+                            <span className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-50 border border-emerald-200 px-3.5 py-2 text-sm font-semibold text-emerald-700 whitespace-nowrap">
+                              <Check className="h-4 w-4 shrink-0" />
+                              Reminder Sent
+                            </span>
+                          ) : (
                             <button
                               type="button"
-                              onClick={() => navigate(`/esign/${workflow.esignDocumentId}/status`)}
-                              title="View e-sign status (Recipient 1 & 2)"
-                              className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-[#2563EB] border border-[#2563EB] px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1D4ED8] hover:border-[#1D4ED8] transition-all whitespace-nowrap"
+                              onClick={() => handleSendReminder(workflow.id)}
+                              disabled={sendingReminderId === workflow.id}
+                              title="Send a reminder email to the current pending approver"
+                              className={`inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-amber-500 border border-amber-500 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap ${
+                                sendingReminderId === workflow.id
+                                  ? 'opacity-70 cursor-not-allowed'
+                                  : 'hover:bg-amber-600 hover:border-amber-600'
+                              }`}
                             >
-                              <ListChecks className="h-4 w-4 shrink-0 text-white" />
-                              <span className="hidden sm:inline">View e-sign status</span>
+                              {sendingReminderId === workflow.id ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                  <span>Sending…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Bell className="h-4 w-4 shrink-0" />
+                                  <span>Send Reminder</span>
+                                </>
+                              )}
                             </button>
-                          )}
+                          )
+                        )}
+
+                        {/* e-Sign button — shown for all approved workflows, same look regardless of state */}
+                        {status === 'approved' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              workflow.esignDocumentId
+                                ? (sessionStorage.removeItem('quotePendingApproval'),
+                                   navigate(`/esign/${workflow.esignDocumentId}/place-fields`))
+                                : handleProceedToEsign(workflow)
+                            }
+                            disabled={processingEsignId === workflow.id}
+                            title="Approval complete — add recipients, place fields and send for e-signature"
+                            className={`inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-600 border border-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap ${
+                              processingEsignId === workflow.id
+                                ? 'opacity-70 cursor-not-allowed'
+                                : 'hover:bg-emerald-700 hover:border-emerald-700'
+                            }`}
+                          >
+                            {processingEsignId === workflow.id ? (
+                              <>
+                                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                <span>Opening…</span>
+                              </>
+                            ) : (
+                              <>
+                                <PenLine className="h-4 w-4 shrink-0" />
+                                <span>Proceed to e-Sign</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}

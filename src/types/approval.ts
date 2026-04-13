@@ -12,6 +12,10 @@ export interface ApprovalWorkflow {
   isOverage?: boolean;
   // E-sign document id when agreement was sent via "Add e-sign fields first" flow
   esignDocumentId?: string;
+  // Auto-reminder: number of days between reminder emails (0 or undefined = disabled)
+  reminderDays?: number;
+  // ISO timestamp of the last auto-reminder sent (null = never sent)
+  lastReminderSentAt?: string | null;
   status: 'pending' | 'approved' | 'denied' | 'in_progress';
   currentStep: number;
   totalSteps: number;

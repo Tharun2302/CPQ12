@@ -15,6 +15,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
 import { FileText } from 'lucide-react';
+import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface DashboardProps {
   // All the props that were previously in App component
@@ -119,6 +120,10 @@ const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Check if any approval workflow has been fully approved (gates eSign access)
+  const { workflows: approvalWorkflows } = useApprovalWorkflows();
+  const isEsignEnabled = approvalWorkflows.some((w) => w.status === 'approved');
 
   // Navigation state to track current session
   const [navigationState, setNavigationState] = React.useState({
@@ -629,7 +634,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="min-h-screen w-full max-w-[100%] bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
-      <Navigation currentTab={currentTab} onStartManualApproval={triggerStartManualApproval} />
+      <Navigation currentTab={currentTab} onStartManualApproval={triggerStartManualApproval} isEsignEnabled={isEsignEnabled} />
 
       <main className="min-w-0 w-full max-w-full box-border px-2 sm:px-3 py-4 sm:py-6 lg:py-6 transition-all duration-300 lg:ml-64 lg:w-[calc(100%-16rem)] lg:max-w-[calc(100%-16rem)] lg:pl-3 lg:pr-4">
         {renderTabContent()}

@@ -582,6 +582,18 @@ function formatUsdAmount(value) {
 
 // Approval portal access tokens (secure links for role-based portals)
 const APPROVAL_TOKEN_EXPIRY_DAYS = 7;
+
+// E-sign link expiry: recipients must sign within this many days of the email being sent
+const ESIGN_LINK_EXPIRY_DAYS = 15;
+
+/**
+ * Returns true if the esign_recipients record has a token_expires_at in the past.
+ * Tokens created before this feature was added (no token_expires_at) are treated as valid.
+ */
+function isEsignTokenExpired(recipient) {
+  if (!recipient || !recipient.token_expires_at) return false;
+  return new Date(recipient.token_expires_at).getTime() < Date.now();
+}
 async function createApprovalAccessToken(db, workflowId, role) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + APPROVAL_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
@@ -5796,9 +5808,11 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   const emailsSentTo = [];
   for (const rec of recipients) {
     const token = crypto.randomUUID();
+    const tokenCreatedAt = new Date();
+    const tokenExpiresAt = new Date(tokenCreatedAt.getTime() + ESIGN_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
     await db.collection('esign_recipients').updateOne(
       { _id: rec._id },
-      { $set: { signing_token: token, status: 'pending' } }
+      { $set: { signing_token: token, status: 'pending', token_created_at: tokenCreatedAt, token_expires_at: tokenExpiresAt } }
     );
     const signingUrl = `${baseUrl}/sign/${token}`;
     const inboxUrl = `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(token)}`;
@@ -5934,6 +5948,9 @@ app.get('/api/esign/inbox-by-token', async (req, res) => {
     if (!token) return res.status(400).json({ success: false, error: 'Token required' });
     const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
     if (!recipient) return res.status(403).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
     const email = (recipient.email || '').toString().trim().toLowerCase();
     if (!email) return res.status(403).json({ success: false, error: 'Invalid link' });
     const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
@@ -6013,6 +6030,9 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     if (!token) return res.status(400).json({ success: false, error: 'Token required' });
     const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
     if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
     let docId = recipient.document_id;
     if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
     try {
@@ -6098,6 +6118,9 @@ app.post('/api/esign/reviewer-save-fields', async (req, res) => {
     if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
     const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
     if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
     if (!recipientIsEsignReviewer(recipient)) {
       return res.status(403).json({ success: false, error: 'Only reviewers can save field entries' });
     }
@@ -6131,6 +6154,9 @@ app.post('/api/esign/mark-reviewed', async (req, res) => {
     if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
     const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
     if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
     let docId = recipient.document_id;
     if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
     try {
@@ -6230,6 +6256,9 @@ app.post('/api/esign/deny-signing', async (req, res) => {
     }
     const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
     if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
     let docId = recipient.document_id;
     if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
     try {
@@ -6701,6 +6730,9 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       if (!recipient) {
         return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
       }
+      if (isEsignTokenExpired(recipient)) {
+        return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+      }
       let rDocId;
       try {
         rDocId = recipient.document_id instanceof ObjectId ? recipient.document_id : new ObjectId(String(recipient.document_id));
@@ -7118,9 +7150,27 @@ app.get('/api/documents/:id/file', async (req, res) => {
     }
 
     const { id } = req.params;
-    
+
     console.log('📄 Fetching document file:', id);
-    
+
+    // Block file *downloads* when an active approval workflow exists.
+    // Inline preview requests (inline=1) are always allowed so that the approval portal
+    // can display the document to approvers — they must see it to approve it.
+    const inline = req.query.inline === '1' || req.query.inline === 'true';
+    if (!inline) {
+      const activeWorkflow = await db.collection('approval_workflows').findOne({
+        documentId: id,
+        status: { $in: ['pending', 'in_progress'] }
+      });
+      if (activeWorkflow) {
+        return res.status(403).json({
+          success: false,
+          error: 'Download restricted',
+          message: 'This document has a pending approval workflow. Downloads are not permitted until the workflow is fully approved.'
+        });
+      }
+    }
+
     const document = await resolveStoredDocumentById(db, id);
     
     if (!document) {
@@ -7138,7 +7188,6 @@ app.get('/api/documents/:id/file', async (req, res) => {
       throw new Error(e?.message || 'Unsupported document fileData format');
     }
     
-    const inline = req.query.inline === '1' || req.query.inline === 'true';
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': inline ? `inline; filename="${document.fileName}"` : `attachment; filename="${document.fileName}"`,
@@ -7574,6 +7623,10 @@ app.get('/api/approval-workflows/:workflowId/document', async (req, res) => {
     if (!workflow || !workflow.documentId) {
       return res.status(404).send('Workflow or document not found');
     }
+    // Block download if the workflow has not been fully approved
+    if (workflow.status !== 'approved') {
+      return res.status(403).send('This document cannot be downloaded until the approval workflow is complete.');
+    }
     const document = await db.collection('documents').findOne({ id: workflow.documentId });
     if (!document || !document.fileData) {
       return res.status(404).send('Document file not found');
@@ -7823,6 +7876,144 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// ── Approval Reminder ────────────────────────────────────────────────────────
+// Sends a reminder email to the current pending approver for a workflow.
+// Regenerates a fresh 7-day token so the link in the reminder is always valid.
+app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
+  if (!db) return res.status(503).json({ success: false, error: 'Database unavailable' });
+
+  const { workflowId } = req.params;
+
+  try {
+    // 1. Fetch workflow
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow) {
+      return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+
+    // 2. Only remind for pending / in_progress workflows
+    if (!['pending', 'in_progress'].includes(workflow.status)) {
+      return res.status(400).json({ success: false, error: 'Workflow is not awaiting approval' });
+    }
+
+    // 3. Find the first step that is still pending
+    const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
+    const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
+
+    if (!pendingStep) {
+      return res.status(400).json({ success: false, error: 'No pending step found' });
+    }
+
+    const role       = pendingStep.role;
+    const approverEmail = pendingStep.email;
+
+    if (!approverEmail) {
+      return res.status(400).json({ success: false, error: 'No email address for pending step' });
+    }
+
+    // 4. Map role → token role key
+    const roleKeyMap = {
+      'Team Approval':   'teamlead',
+      'Technical Team':  'technical',
+      'Legal Team':      'legal',
+    };
+    const tokenRole = roleKeyMap[role] || role.toLowerCase().replace(/\s+/g, '-');
+
+    // 5. Regenerate token (fresh 7-day expiry)
+    const token = await createApprovalAccessToken(db, workflowId, tokenRole);
+
+    // 6. Build workflowData shape expected by HTML generators
+    const workflowData = {
+      ...workflow,
+      workflowId:     workflow.id,
+      teamGroup:      pendingStep.group || workflow.teamGroup,
+      requestedByName: workflow.creatorName || workflow.requestedByName,
+    };
+
+    // 7. Fetch document PDF for attachment (best-effort)
+    const attachments = [];
+    if (workflow.documentId) {
+      try {
+        const doc = await db.collection('documents').findOne({ id: workflow.documentId });
+        if (doc && doc.fileData) {
+          let fileBuffer;
+          if (Buffer.isBuffer(doc.fileData))        fileBuffer = doc.fileData;
+          else if (doc.fileData.buffer)             fileBuffer = Buffer.from(doc.fileData.buffer);
+          else if (doc.fileData.data)               fileBuffer = Buffer.from(doc.fileData.data);
+          if (fileBuffer) {
+            attachments.push({ filename: doc.fileName || `${workflow.documentId}.pdf`, content: fileBuffer, contentType: 'application/pdf' });
+          }
+        }
+      } catch (e) {
+        console.error('⚠️ Reminder: could not attach document:', e.message);
+      }
+    }
+
+    // 8. Build HTML using existing role-specific generators
+    let baseHtml;
+    if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
+    else if (role === 'Technical Team') baseHtml = generateManagerEmailHTML(workflowData, token);
+    else if (role === 'Legal Team')     baseHtml = generateCEOEmailHTML(workflowData, token);
+    else {
+      // Generic fallback for any other role
+      const baseUrl      = process.env.BASE_URL || 'http://localhost:5173';
+      const approvalLink = `${baseUrl}/approval/${workflowId}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
+      baseHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333">
+        <div style="max-width:600px;margin:0 auto;padding:20px">
+          <div style="background:linear-gradient(135deg,#0ea5e9,#0369a1);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0">
+            <h1>⏰ Approval Reminder</h1>
+          </div>
+          <div style="background:white;padding:30px;border:1px solid #E5E7EB">
+            <p>Hello,</p>
+            <p>Your approval is still pending for the following document:</p>
+            <div style="background:#F3F4F6;padding:20px;border-radius:8px;margin:20px 0">
+              <p><strong>Document:</strong> ${workflow.documentId}</p>
+              <p><strong>Client:</strong> ${workflow.clientName}</p>
+              <p><strong>Amount:</strong> $${formatUsdAmount(workflow.amount)}</p>
+              <p><strong>Requested by:</strong> ${workflow.creatorName || workflow.creatorEmail || '—'}</p>
+            </div>
+            <div style="text-align:center;margin:30px 0">
+              <a href="${approvalLink}" style="background:#0ea5e9;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold">Review &amp; Approve</a>
+            </div>
+            <p><strong>Note:</strong> This link is secure and will expire in 7 days.</p>
+          </div>
+        </div>
+      </body></html>`;
+    }
+
+    // 9. Inject a prominent reminder banner at the top of the email body
+    const reminderBanner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;margin:0 0 0 0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
+      ⏰ <strong>Reminder:</strong> Your approval for <strong>${workflow.documentId}</strong> is still pending. Please review and take action at your earliest convenience.
+    </div>`;
+    const htmlWithBanner = baseHtml.replace(/<body([^>]*)>/, `<body$1>${reminderBanner}`);
+
+    // 10. Update lastReminderSentAt in the workflow document
+    const reminderTimestamp = new Date().toISOString();
+    await db.collection('approval_workflows').updateOne(
+      { id: workflowId },
+      { $set: { lastReminderSentAt: reminderTimestamp, updatedAt: reminderTimestamp } }
+    );
+
+    // 11. Send (fire-and-forget)
+    const subject = `Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`;
+    sendEmail(approverEmail, subject, htmlWithBanner, attachments)
+      .then(r  => console.log(`✅ Reminder sent to ${approverEmail} [${role}]: ${r.success}`))
+      .catch(e => console.error(`❌ Reminder email error [${role}]:`, e));
+
+    res.json({
+      success: true,
+      message: `Reminder sent to ${approverEmail}`,
+      role,
+      email: approverEmail,
+      lastReminderSentAt: reminderTimestamp,
+    });
+
+  } catch (err) {
+    console.error('❌ Error sending approval reminder:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -8696,3 +8887,131 @@ app.put('/api/authorization-requests/:id/status', async (req, res) => {
 
 // Start the server
 startServer();
+
+// ─── Auto-Reminder Scheduler ─────────────────────────────────────────────────
+// Runs every hour. For each pending/in_progress workflow with reminderDays > 0,
+// sends a reminder if enough time has elapsed since the last reminder (or since
+// the workflow was created if no reminder has been sent yet).
+const AUTO_REMINDER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+async function runAutoReminderJob() {
+  if (!db) return; // skip if DB not yet available
+
+  try {
+    const now = Date.now();
+
+    // Fetch all pending/in_progress workflows that have a reminderDays schedule
+    const workflows = await db.collection('approval_workflows').find({
+      status: { $in: ['pending', 'in_progress'] },
+      reminderDays: { $gt: 0 },
+    }).toArray();
+
+    if (workflows.length === 0) return;
+
+    console.log(`⏰ Auto-reminder check: ${workflows.length} workflow(s) with reminder schedule`);
+
+    for (const workflow of workflows) {
+      try {
+        const intervalMs = workflow.reminderDays * 24 * 60 * 60 * 1000;
+
+        // Last reference time: last reminder sent, or workflow creation time
+        const lastRef = workflow.lastReminderSentAt
+          ? new Date(workflow.lastReminderSentAt).getTime()
+          : new Date(workflow.createdAt).getTime();
+
+        if (now - lastRef < intervalMs) continue; // not due yet
+
+        // Find first pending step
+        const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
+        const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
+        if (!pendingStep || !pendingStep.email) continue;
+
+        const role = pendingStep.role;
+        const approverEmail = pendingStep.email;
+
+        // Map role → token key
+        const roleKeyMap = {
+          'Team Approval':  'teamlead',
+          'Technical Team': 'technical',
+          'Legal Team':     'legal',
+        };
+        const tokenRole = roleKeyMap[role] || role.toLowerCase().replace(/\s+/g, '-');
+
+        // Regenerate token
+        const token = await createApprovalAccessToken(db, workflow.id, tokenRole);
+
+        // Build workflowData
+        const workflowData = {
+          ...workflow,
+          workflowId:      workflow.id,
+          teamGroup:       pendingStep.group || workflow.teamGroup,
+          requestedByName: workflow.creatorName || workflow.requestedByName,
+        };
+
+        // Fetch PDF attachment (best-effort)
+        const attachments = [];
+        if (workflow.documentId) {
+          try {
+            const doc = await db.collection('documents').findOne({ id: workflow.documentId });
+            if (doc && doc.fileData) {
+              let fileBuffer;
+              if (Buffer.isBuffer(doc.fileData))     fileBuffer = doc.fileData;
+              else if (doc.fileData.buffer)          fileBuffer = Buffer.from(doc.fileData.buffer);
+              else if (doc.fileData.data)            fileBuffer = Buffer.from(doc.fileData.data);
+              if (fileBuffer) {
+                attachments.push({ filename: doc.fileName || `${workflow.documentId}.pdf`, content: fileBuffer, contentType: 'application/pdf' });
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Build HTML
+        let baseHtml;
+        if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
+        else if (role === 'Technical Team') baseHtml = generateManagerEmailHTML(workflowData, token);
+        else if (role === 'Legal Team')     baseHtml = generateCEOEmailHTML(workflowData, token);
+        else {
+          const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+          const approvalLink = `${baseUrl}/approval/${workflow.id}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
+          baseHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333">
+            <div style="max-width:600px;margin:0 auto;padding:20px">
+              <p>Hello,</p>
+              <p>Your approval is still pending for <strong>${workflow.documentId}</strong> (${workflow.clientName}).</p>
+              <div style="text-align:center;margin:30px 0">
+                <a href="${approvalLink}" style="background:#0ea5e9;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold">Review &amp; Approve</a>
+              </div>
+            </div>
+          </body></html>`;
+        }
+
+        const reminderBanner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
+          ⏰ <strong>Reminder:</strong> Your approval for <strong>${workflow.documentId}</strong> is still pending. Please review and take action at your earliest convenience.
+        </div>`;
+        const htmlWithBanner = baseHtml.replace(/<body([^>]*)>/, `<body$1>${reminderBanner}`);
+
+        // Update lastReminderSentAt before sending
+        const reminderTimestamp = new Date().toISOString();
+        await db.collection('approval_workflows').updateOne(
+          { id: workflow.id },
+          { $set: { lastReminderSentAt: reminderTimestamp, updatedAt: reminderTimestamp } }
+        );
+
+        const subject = `Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`;
+        sendEmail(approverEmail, subject, htmlWithBanner, attachments)
+          .then(r  => console.log(`⏰ Auto-reminder sent to ${approverEmail} [${role}] for workflow ${workflow.id}: ${r.success}`))
+          .catch(e => console.error(`❌ Auto-reminder email error [${role}]:`, e));
+
+      } catch (wErr) {
+        console.error(`❌ Auto-reminder error for workflow ${workflow.id}:`, wErr.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Auto-reminder job failed:', err.message);
+  }
+}
+
+// Delay first run by 2 minutes after server start (let DB warm up), then run hourly
+setTimeout(() => {
+  runAutoReminderJob();
+  setInterval(runAutoReminderJob, AUTO_REMINDER_INTERVAL_MS);
+}, 2 * 60 * 1000);

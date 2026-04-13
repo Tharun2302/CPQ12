@@ -640,7 +640,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Approval workflow state
-  const { createWorkflow } = useApprovalWorkflows();
+  const { createWorkflow, workflows } = useApprovalWorkflows();
+  // Tracks the MongoDB document ID of the most recently submitted approval workflow
+  const [activeWorkflowDocumentId, setActiveWorkflowDocumentId] = useState<string | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   // Use centralized hardcoded defaults (original team addresses)
   const defaultTechEmail = 'cpq.zenop.ai.technical@cloudfuze.com';
@@ -2623,11 +2625,27 @@ Total Price: {{total price}}`;
     setShowPlaceholderPreview(true);
   };
 
+  // True when a pending/in_progress approval workflow exists for the current document
+  const isDownloadBlocked = !!activeWorkflowDocumentId &&
+    workflows.some(
+      (w) => w.documentId === activeWorkflowDocumentId && ['pending', 'in_progress'].includes(w.status)
+    );
+
+  // True when no approved workflow exists for this document — blocks eSign until approval is complete
+  const isEsignBlocked = !activeWorkflowDocumentId ||
+    !workflows.some(
+      (w) => w.documentId === activeWorkflowDocumentId && w.status === 'approved'
+    );
+
   // Handle Word download from the generated agreement
   const handleDownloadAgreement = () => {
+    if (isDownloadBlocked) {
+      alert('Downloads are restricted while the approval workflow is pending. Please wait for the workflow to be fully approved.');
+      return;
+    }
     // For Word downloads, prefer the original DOCX if available
     const documentToDownload = originalDocxAgreement || processedAgreement;
-    
+
     if (!documentToDownload) {
       alert('No agreement available. Please generate an agreement first.');
       return;
@@ -2675,6 +2693,10 @@ Total Price: {{total price}}`;
 
   // Handle PDF download from the generated agreement using document preview
   const handleDownloadAgreementPDF = async () => {
+    if (isDownloadBlocked) {
+      alert('Downloads are restricted while the approval workflow is pending. Please wait for the workflow to be fully approved.');
+      return;
+    }
     try {
       if (!processedAgreement) {
         alert('No agreement available. Please generate an agreement first.');
@@ -3013,6 +3035,8 @@ Total Price: {{total price}}`;
 
       const newWorkflow = await createWorkflow(workflowData);
       console.log('✅ Approval workflow created:', newWorkflow);
+      // Lock downloads for this document until the workflow is approved
+      setActiveWorkflowDocumentId(documentId);
 
       // Analytics: workflow started
       try {
@@ -3094,20 +3118,9 @@ Total Price: {{total price}}`;
       return;
     }
 
-    const autoSelectedTeam = useManualSelection ? manualTeamSelection : getAutoSelectedTeam(calculation?.totalCost || 0, clientInfo.clientName || '') || 'SMB';
-    const teamEmail = getTeamApprovalEmail(autoSelectedTeam) || '';
-
     setIsAddingEsignFields(true);
     setAddEsignFieldsProgress('Preparing…');
     try {
-      const MINIMUM_TOTAL = 2500;
-      const baseApprovalAmount = Math.max(totalCost, MINIMUM_TOTAL);
-      let approvalAmount = baseApprovalAmount;
-      if (shouldApplyDiscount) {
-        const discountAmount = baseApprovalAmount * (discountPercent / 100);
-        approvalAmount = Math.max(baseApprovalAmount - discountAmount, MINIMUM_TOTAL);
-      }
-
       let pdfBlob: Blob;
       if (processedAgreement.type === 'application/pdf') {
         pdfBlob = processedAgreement;
@@ -3133,7 +3146,7 @@ Total Price: {{total price}}`;
         generatedDate: new Date().toISOString(),
         quoteId: quoteId,
         metadata: {
-          totalCost: Number(approvalAmount) || 0,
+          totalCost: Number(totalCost) || 0,
           duration: configuration?.duration || 0,
           migrationType: configuration?.migrationType || 'Messaging',
           numberOfUsers: configuration?.numberOfUsers || 0
@@ -3149,10 +3162,6 @@ Total Price: {{total price}}`;
 
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       setAddEsignFieldsProgress('Opening…');
-      const additionalRecipients = teamApprovalSettings.additionalRecipients[autoSelectedTeam] || [];
-      const isOverageWorkflow =
-        (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
-        (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
 
       const creatorEmail = (() => {
         try {
@@ -3177,6 +3186,11 @@ Total Price: {{total price}}`;
         return creatorEmail ? creatorEmail.split('@')[0] : null;
       })();
 
+      // Find the approved workflow for this document so we can link the esign doc to it
+      const approvedWorkflow = workflows.find(
+        (w) => w.documentId === activeWorkflowDocumentId && w.status === 'approved'
+      );
+
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3185,6 +3199,7 @@ Total Price: {{total price}}`;
           uploaded_by: creatorEmail,
           requested_by_name: requestedByName || undefined,
           requested_by_email: creatorEmail,
+          workflowId: approvedWorkflow?.id || undefined,
         }),
       });
       const data = await res.json();
@@ -3192,25 +3207,9 @@ Total Price: {{total price}}`;
         throw new Error(data.error || data.message || 'Failed to create e-sign document');
       }
 
-      const quotePendingApproval = {
-        documentId,
-        esignId: data.document.id,
-        clientName: clientInfo.clientName || 'Unknown Client',
-        amount: Number(approvalAmount) || 0,
-        approvalEmails: {
-          role1: approvalEmails.role1 || '',
-          role2: approvalEmails.role2 || '',
-          role4: approvalEmails.role4 || ''
-        },
-        teamId: autoSelectedTeam,
-        teamEmail,
-        creatorEmail,
-        creatorName: requestedByName || creatorEmail,
-        quoteId,
-        isOverage: isOverageWorkflow,
-        additionalRecipients
-      };
-      sessionStorage.setItem(QUOTE_PENDING_APPROVAL_KEY, JSON.stringify(quotePendingApproval));
+      // Approval is already complete — do NOT store quotePendingApproval.
+      // The place-fields page will show "Send for Signature" directly.
+      sessionStorage.removeItem(QUOTE_PENDING_APPROVAL_KEY);
 
       setShowApprovalModal(false);
       navigate(`/esign/${data.document.id}/place-fields`);
@@ -9405,18 +9404,21 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       </button>
                       <button
                         onClick={handleDownloadAgreement}
-                        disabled={!processedAgreement}
+                        disabled={!processedAgreement || isDownloadBlocked}
                         className={`text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold ${
-                          !processedAgreement ? 'opacity-50 cursor-not-allowed' : ''
+                          !processedAgreement || isDownloadBlocked ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
-                        title={processedAgreement ? "Download Word Document" : "No agreement available"}
+                        title={isDownloadBlocked ? "Awaiting approval — downloads locked" : processedAgreement ? "Download Word Document" : "No agreement available"}
                       >
                         📥 Word
                       </button>
                       <button
                         onClick={handleDownloadAgreementPDF}
-                        className="text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold"
-                        title="Download PDF"
+                        disabled={isDownloadBlocked}
+                        className={`text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold ${
+                          isDownloadBlocked ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isDownloadBlocked ? "Awaiting approval — downloads locked" : "Download PDF"}
                       >
                         📄 PDF
                       </button>
@@ -9431,9 +9433,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       </button>
                       <button
                         onClick={handleAddEsignFields}
-                        disabled={isAddingEsignFields}
-                        className="text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40 transition-all duration-300"
-                        title="Go to agreements and add signature fields to this agreement"
+                        disabled={isAddingEsignFields || isEsignBlocked}
+                        className={`text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 transition-all duration-300 ${
+                          isEsignBlocked
+                            ? 'opacity-40 cursor-not-allowed'
+                            : 'hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40'
+                        }`}
+                        title={isEsignBlocked ? 'Approval required — complete the approval workflow before sending for e-sign' : 'Go to agreements and add signature fields to this agreement'}
                       >
                         <PenLine className="w-3 h-3 inline mr-1" />
                         {isAddingEsignFields ? (addEsignFieldsProgress || 'Opening…') : 'Add signature fields'}
@@ -9535,13 +9541,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                             <div className="absolute bottom-4 right-4 flex flex-col gap-2">
                               <button
                                 onClick={handleDownloadAgreement}
-                                disabled={!processedAgreement}
+                                disabled={!processedAgreement || isDownloadBlocked}
                                 className={`text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform ${
-                                  !processedAgreement
+                                  !processedAgreement || isDownloadBlocked
                                     ? 'bg-gray-400 cursor-not-allowed opacity-50'
                                     : 'bg-green-600 hover:bg-green-700 hover:scale-105'
                                 }`}
-                                title={processedAgreement ? "Download Word Document" : "No agreement available"}
+                                title={isDownloadBlocked ? "Awaiting approval — downloads locked" : processedAgreement ? "Download Word Document" : "No agreement available"}
                               >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -9549,8 +9555,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                               </button>
                               <button
                                 onClick={handleDownloadAgreementPDF}
-                                className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform hover:scale-105"
-                                title="Download PDF"
+                                disabled={isDownloadBlocked}
+                                className={`text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform ${
+                                  isDownloadBlocked
+                                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                                    : 'bg-blue-600 hover:bg-blue-700 hover:scale-105'
+                                }`}
+                                title={isDownloadBlocked ? "Awaiting approval — downloads locked" : "Download PDF"}
                               >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -9611,13 +9622,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     {/* Download Word button */}
                     <button
                       onClick={handleDownloadAgreement}
-                      disabled={!processedAgreement}
+                      disabled={!processedAgreement || isDownloadBlocked}
                       className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
-                        !processedAgreement
+                        !processedAgreement || isDownloadBlocked
                           ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                           : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
                       }`}
-                      title={processedAgreement ? "Download Word Document" : "Generate agreement first"}
+                      title={isDownloadBlocked ? "Awaiting approval — downloads locked" : processedAgreement ? "Download Word Document" : "Generate agreement first"}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -9627,7 +9638,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     {/* Download PDF button with functionality */}
                     <button
                       onClick={handleDownloadAgreementPDF}
-                      className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold text-xs shadow-lg"
+                      disabled={isDownloadBlocked}
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                        isDownloadBlocked
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800'
+                      }`}
+                      title={isDownloadBlocked ? "Awaiting approval — downloads locked" : "Download PDF"}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

@@ -43,6 +43,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     role4Email: 'salesops@cloudfuze.com'
   });
 
+  // Reminder days: 0 = disabled, otherwise auto-send reminders every N days
+  const [reminderDays, setReminderDays] = useState(0);
+
   // Contact Information for manual approval workflow (saved contact / from navigation)
   const [contactInfo, setContactInfo] = useState<{ clientName: string; clientEmail: string; company: string }>({
     clientName: '',
@@ -597,6 +600,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         ...(clientEmail && { clientEmail }),
         creatorEmail: loggedInUserEmail || undefined,
         creatorName: currentUser?.name || (loggedInUserEmail ? loggedInUserEmail.split('@')[0] : undefined),
+        reminderDays: reminderDays > 0 ? reminderDays : undefined,
+        lastReminderSentAt: null,
         totalSteps: 4,
         workflowSteps: [
           {
@@ -1055,6 +1060,32 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
               <p className="text-sm text-gray-500">
                 Workflow order: Team Approval → Technical Team → Legal Team → Deal Desk. Each role will receive the document and can approve or deny it.
               </p>
+
+              {/* Auto-Reminder Settings */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-amber-900 mb-1">
+                    Auto-Reminder Schedule
+                  </label>
+                  <p className="text-xs text-amber-700">
+                    Automatically send reminder emails to pending approvers at the selected interval. Set to <strong>None</strong> to disable.
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <select
+                    value={reminderDays}
+                    onChange={(e) => setReminderDays(Number(e.target.value))}
+                    className="px-3 py-2 text-sm border border-amber-300 rounded-lg bg-white focus:ring-2 focus:ring-amber-400 focus:border-amber-400 font-semibold text-amber-900 min-w-[150px]"
+                  >
+                    <option value={0}>None (disabled)</option>
+                    <option value={1}>Every 1 day</option>
+                    <option value={2}>Every 2 days</option>
+                    <option value={3}>Every 3 days</option>
+                    <option value={5}>Every 5 days</option>
+                    <option value={7}>Every 7 days</option>
+                  </select>
+                </div>
+              </div>
 
               {/* Start Workflow Button */}
               <div className="pt-4">

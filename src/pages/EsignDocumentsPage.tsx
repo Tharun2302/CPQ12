@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical, BookOpen } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Lock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
+import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface RecipientRow {
   id: string;
@@ -88,6 +89,17 @@ function formatEsignCreatedAtLine(doc: EsignDocument): string | null {
 const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+
+  // Gate: eSign is only accessible after an approval workflow has been fully approved
+  const { workflows: approvalWorkflows, isLoading: approvalLoading } = useApprovalWorkflows();
+  const isEsignEnabled = approvalWorkflows.some((w) => w.status === 'approved');
+
+  /** Returns the approval status for an eSign document by matching workflow.esignDocumentId */
+  const getDocApprovalStatus = (docId: string): 'approved' | 'in_progress' | 'denied' | 'pending' | null => {
+    const match = approvalWorkflows.find((w) => w.esignDocumentId === docId);
+    if (!match) return null;
+    return match.status as 'approved' | 'in_progress' | 'denied' | 'pending';
+  };
   const [documents, setDocuments] = useState<EsignDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -355,6 +367,32 @@ const EsignDocumentsPage: React.FC = () => {
 
   const firstDraftId = documents.find((d) => d.status === 'draft')?.id;
 
+  // Block access until at least one approval workflow has been fully approved
+  if (!approvalLoading && !isEsignEnabled) {
+    return (
+      <div className="min-h-screen bg-slate-50/80 flex items-center justify-center px-4">
+        <div className="max-w-md w-full text-center bg-white rounded-2xl shadow-lg border border-slate-200 p-10">
+          <div className="flex justify-center mb-5">
+            <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
+              <Lock className="w-7 h-7 text-amber-500" />
+            </div>
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Approval Required</h2>
+          <p className="text-slate-500 text-sm mb-6">
+            e-Sign is only available after an approval workflow has been fully approved. Please complete
+            the approval process first.
+          </p>
+          <button
+            onClick={() => navigate('/approval')}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+          >
+            Go to Approval
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50/80 py-5 sm:py-6 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto">
@@ -411,9 +449,73 @@ const EsignDocumentsPage: React.FC = () => {
           )}
         </div>
 
+        {/* ── Ready for e-Sign section ── */}
+        {(() => {
+          const readyDocs = documents.filter(
+            (d) => getDocApprovalStatus(d.id) === 'approved' && d.status === 'draft'
+          );
+          if (readyDocs.length === 0) return null;
+          return (
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 shadow-sm overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3 border-b border-emerald-200 bg-emerald-100/60">
+                <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                  <Check className="w-3.5 h-3.5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-emerald-900">
+                    Ready for e-Sign
+                    <span className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">
+                      {readyDocs.length}
+                    </span>
+                  </h2>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">
+                    These agreements have been approved — place signature fields to send for signing.
+                  </p>
+                </div>
+              </div>
+
+              {/* Cards */}
+              <div className="divide-y divide-emerald-100">
+                {readyDocs.map((doc) => (
+                  <div key={doc.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-emerald-50 transition-colors">
+                    {/* Icon */}
+                    <div className="w-9 h-9 rounded-lg bg-emerald-100 border border-emerald-200 flex items-center justify-center shrink-0">
+                      <FileText className="h-4 w-4 text-emerald-600" />
+                    </div>
+
+                    {/* Name + meta */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 truncate" title={doc.file_name}>
+                        {doc.file_name}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{formatEsignCreatedByLine(doc)}</p>
+                    </div>
+
+                    {/* Approved badge */}
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200 shrink-0">
+                      <Check className="w-3 h-3" />
+                      Approved
+                    </span>
+
+                    {/* CTA */}
+                    <Link
+                      to={`/esign/${doc.id}/place-fields`}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors shrink-0 shadow-sm"
+                    >
+                      <PenLine className="w-3.5 h-3.5 shrink-0" />
+                      Place fields &amp; Send
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Your Documents — tighter table columns (fixed layout) */}
         <div id="esign-tour-documents" className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden scroll-mt-24">
-          <h2 className="text-base font-semibold text-slate-900 px-4 sm:px-5 py-3 border-b border-slate-200">Your Documents</h2>
+          <h2 className="text-base font-semibold text-slate-900 px-4 sm:px-5 py-3 border-b border-slate-200">All Documents</h2>
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
@@ -432,16 +534,18 @@ const EsignDocumentsPage: React.FC = () => {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full table-fixed min-w-[520px] divide-y divide-slate-200">
+              <table className="w-full table-fixed min-w-[580px] divide-y divide-slate-200">
                 <colgroup>
-                  <col style={{ width: '48%' }} />
-                  <col style={{ width: '26%' }} />
-                  <col style={{ width: '26%' }} />
+                  <col style={{ width: '42%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '22%' }} />
                 </colgroup>
                 <thead className="bg-slate-50">
                   <tr>
                     <th scope="col" className="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Document</th>
                     <th scope="col" className="px-3 sm:px-4 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Stage</th>
+                    <th scope="col" className="px-3 sm:px-4 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Approval</th>
                     <th scope="col" className="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
@@ -496,6 +600,45 @@ const EsignDocumentsPage: React.FC = () => {
                                 ) : null;
                               })()}
                           </div>
+                        </td>
+                        {/* Approval status column */}
+                        <td className="px-3 sm:px-4 py-3 align-top">
+                          {(() => {
+                            const approvalStatus = getDocApprovalStatus(doc.id);
+                            if (approvalStatus === 'approved') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <Check className="w-3 h-3 shrink-0" />
+                                  Approved
+                                </span>
+                              );
+                            }
+                            if (approvalStatus === 'in_progress') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                  <Clock className="w-3 h-3 shrink-0" />
+                                  In Review
+                                </span>
+                              );
+                            }
+                            if (approvalStatus === 'pending') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                  <Clock className="w-3 h-3 shrink-0" />
+                                  Pending
+                                </span>
+                              );
+                            }
+                            if (approvalStatus === 'denied') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                                  <XCircle className="w-3 h-3 shrink-0" />
+                                  Denied
+                                </span>
+                              );
+                            }
+                            return <span className="text-xs text-slate-400">—</span>;
+                          })()}
                         </td>
                         <td className="px-4 sm:px-5 py-3 align-top">
                           <div className="flex flex-wrap items-center justify-end gap-2">
