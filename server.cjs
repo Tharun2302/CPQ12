@@ -585,6 +585,8 @@ const APPROVAL_TOKEN_EXPIRY_DAYS = 7;
 
 // E-sign link expiry: recipients must sign within this many days of the email being sent
 const ESIGN_LINK_EXPIRY_DAYS = 15;
+const ESIGN_EXPIRY_REMINDER_DAYS_BEFORE = 3;
+const ESIGN_EXPIRY_REMINDER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
  * Returns true if the esign_recipients record has a token_expires_at in the past.
@@ -836,7 +838,7 @@ function generateDealDeskEmailHTML(workflowData) {
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
           <h2>Hello Deal Desk Team,</h2>
           
-          <p>The approval workflow has been completed successfully. The <strong>final signed document</strong> is attached to this email.</p>
+          <p>All approval steps have been completed successfully. The <strong>approved document</strong> is attached to this email for your review.</p>
           
           <div style="background: #EFF6FF; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #93C5FD;">
             <h3>📄 Document Details</h3>
@@ -844,9 +846,9 @@ function generateDealDeskEmailHTML(workflowData) {
             <p><strong>Client:</strong> ${workflowData.clientName}</p>
             <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
             <p><strong>Status:</strong> All Approvals Complete</p>
-            <p><strong>📎 Final signed PDF:</strong> The approved document is attached to this email.</p>
+            <p><strong>📎 Approved document:</strong> The approved document is attached to this email.</p>
             ${downloadLink ? `
-            <p style="margin-top: 12px;"><a href="${downloadLink}" style="color: #2563EB; font-weight: bold;">Download the final signed document</a></p>
+            <p style="margin-top: 12px;"><a href="${downloadLink}" style="color: #2563EB; font-weight: bold;">Download the approved document</a></p>
             ` : ''}
           </div>
           
@@ -864,7 +866,7 @@ function generateDealDeskEmailHTML(workflowData) {
           <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
             <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Next Steps</p>
             <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
-              Please review the final signed document and proceed with any necessary deal desk processes.
+              Please review the approved document and proceed with any necessary deal desk processes. If e-sign is required, it will happen in the next step.
             </p>
           </div>
         </div>
@@ -1023,6 +1025,36 @@ async function sendEsignCompletedNotificationToCreator(doc) {
     else console.warn('❌ E-sign completion notification not sent to creator', creatorEmail, result.error);
   } catch (err) {
     console.warn('E-sign completion notification to creator failed', creatorEmail, err?.message || err);
+  }
+}
+
+async function sendEsignForwardedNotificationToCreator(doc, previousRecipient, nextRecipient, comment) {
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (!creatorEmail || !creatorEmail.includes('@')) return;
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign forwarded notification: SENDGRID_API_KEY not set — creator not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const fromLabel = previousRecipient?.name || previousRecipient?.email || 'Recipient';
+  const toLabel = nextRecipient?.name || nextRecipient?.email || 'Recipient';
+  const commentBlock = comment
+    ? `<p><strong>Forwarding note:</strong></p><p>${escapeEmailMessage(comment)}</p>`
+    : '';
+  const html = `
+    <p>An e-sign request was forwarded to a new recipient.</p>
+    <p><strong>Document:</strong> ${escapeHtml(fileName)}</p>
+    <p><strong>Forwarded by:</strong> ${escapeHtml(fromLabel)}${previousRecipient?.email ? ` (${escapeHtml(previousRecipient.email)})` : ''}</p>
+    <p><strong>Forwarded to:</strong> ${escapeHtml(toLabel)}${nextRecipient?.email ? ` (${escapeHtml(nextRecipient.email)})` : ''}</p>
+    ${commentBlock}
+    <p>You can view the latest recipient details in e sign status in the app.</p>
+  `;
+  try {
+    const result = await sendEmail(creatorEmail, `E-sign request forwarded: ${sanitizeEsignEmailSubjectFileName(fileName)}`, html);
+    if (result.success) console.log('✅ E-sign forwarded notification sent to creator', creatorEmail);
+    else console.warn('❌ E-sign forwarded notification not sent to creator', creatorEmail, result.error);
+  } catch (err) {
+    console.warn('E-sign forwarded notification to creator failed', creatorEmail, err?.message || err);
   }
 }
 
@@ -5265,6 +5297,191 @@ async function logAudit(documentId, action, userEmail, ipAddress) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function escapeEmailMessage(value) {
+  return escapeHtml(value).replace(/\n/g, '<br />');
+}
+
+function formatEsignExpiryDate(dateLike) {
+  if (!dateLike) return '';
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function getEsignBaseUrls() {
+  const FRONTEND_DEV = 'http://localhost:5173';
+  let baseUrl = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
+  let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
+  if (baseUrl.includes('localhost:3001')) {
+    baseUrl = FRONTEND_DEV;
+    baseUrlForDashboard = FRONTEND_DEV;
+  }
+  if (baseUrlForDashboard.includes('localhost:3001')) baseUrlForDashboard = FRONTEND_DEV;
+  return { baseUrl, baseUrlForDashboard };
+}
+
+function getEsignRecipientUrls(token) {
+  const { baseUrl, baseUrlForDashboard } = getEsignBaseUrls();
+  return {
+    signingUrl: `${baseUrl}/sign/${token}`,
+    inboxUrl: `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(token)}`,
+  };
+}
+
+function buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, options = {}) {
+  const {
+    mode = 'initial',
+    tokenExpiresAt = null,
+    expiryDays = ESIGN_LINK_EXPIRY_DAYS,
+    forwardedByName = '',
+    forwardedByEmail = '',
+    forwardComment = '',
+  } = options;
+  const isReviewer = recipientIsEsignReviewer(rec);
+  const ctaText = isReviewer ? 'Review Document' : 'Sign Document';
+  const roleStr = (rec.role || '').toString().trim();
+  const isTechnical = roleStr === 'Technical Team';
+  const isLegal = roleStr === 'Legal Team';
+  const isTeamLead = roleStr === 'Team Lead' || roleStr === 'Team Approval';
+  const showDashboardLink = isTechnical || isLegal || isTeamLead;
+  const dashboardLabel = isTechnical
+    ? 'E-Sign Technical Dashboard'
+    : isLegal
+      ? 'E-Sign Legal Dashboard'
+      : isTeamLead
+        ? 'E-Sign Team Lead Dashboard'
+        : 'your E-Sign dashboard';
+  const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
+  const dashboardBlock = showDashboardLink
+    ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}${isReviewer ? '. The agreement will appear in your queue; open it from there to review.' : '. The agreement will open in your dashboard; you can then review and sign.'}</p>
+        <p><strong>Option 2 – ${isReviewer ? 'Direct link' : 'Sign directly'}:</strong> `
+    : '<p><strong>Signing link:</strong> ';
+  const fileNameForSubject = sanitizeEsignEmailSubjectFileName(doc.file_name || 'Document');
+  const customMessageBlock = (rec.email_message && rec.email_message.trim())
+    ? `<p style="margin:1em 0;">${escapeEmailMessage(rec.email_message.trim())}</p>`
+    : '';
+  const expiryLabel = formatEsignExpiryDate(tokenExpiresAt);
+  const expiryLine = expiryLabel
+    ? `<p><strong>Link expires:</strong> ${escapeHtml(expiryLabel)}</p>`
+    : '';
+
+  let subject;
+  let introLine;
+  let helperLine = '';
+  if (mode === 'reminder') {
+    subject = `Reminder: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject} before it expires`;
+    introLine = isReviewer
+      ? 'This is a reminder that your review is still pending.'
+      : 'This is a reminder that your signature is still pending.';
+    helperLine = '<p>Please complete the document before the secure link expires.</p>';
+  } else if (mode === 'extended') {
+    subject = `Signing link renewed: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
+    introLine = isReviewer
+      ? 'The sender has extended your review window and issued a fresh secure link.'
+      : 'The sender has extended your signing window and issued a fresh secure link.';
+    helperLine = `<p>Your new secure link is active now and remains valid for ${expiryDays} day${expiryDays === 1 ? '' : 's'}.</p>`;
+  } else if (mode === 'forwarded') {
+    const forwardedByLabel = (forwardedByName || forwardedByEmail || 'The original recipient').trim();
+    subject = `Forwarded: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
+    introLine = isReviewer
+      ? `${escapeHtml(forwardedByLabel)} forwarded this review request to you.`
+      : `${escapeHtml(forwardedByLabel)} forwarded this signing request to you.`;
+    helperLine = `${forwardComment ? `<p><strong>Forwarding note:</strong> ${escapeEmailMessage(forwardComment)}</p>` : ''}<p>Please use the secure link below to complete the request.</p>`;
+  } else {
+    subject = `Action required: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
+    introLine = isReviewer
+      ? 'You have been requested to <strong>review</strong> a document.'
+      : 'You have been requested to sign a document.';
+  }
+
+  return {
+    subject,
+    html: `<p>Hello${rec.name ? ` ${escapeHtml(rec.name)}` : ''},</p>
+      ${customMessageBlock}<p>${introLine}</p>
+      ${expiryLine}
+      ${helperLine}
+      ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+      <p>Thank you.</p>`,
+  };
+}
+
+function buildEsignRecipientRestoreUpdate(recipient) {
+  const set = {};
+  const unset = {};
+  if (recipient.name) set.name = recipient.name;
+  else unset.name = '';
+  if (recipient.email) set.email = recipient.email;
+  else unset.email = '';
+  if (recipient.status) set.status = recipient.status;
+  else unset.status = '';
+  if (recipient.signing_token != null && recipient.signing_token !== '') set.signing_token = recipient.signing_token;
+  else unset.signing_token = '';
+  if (recipient.token_created_at) set.token_created_at = recipient.token_created_at;
+  else unset.token_created_at = '';
+  if (recipient.token_expires_at) set.token_expires_at = recipient.token_expires_at;
+  else unset.token_expires_at = '';
+  if (recipient.expiry_reminder_sent_at) set.expiry_reminder_sent_at = recipient.expiry_reminder_sent_at;
+  else unset.expiry_reminder_sent_at = '';
+  if (recipient.expiry_extended_at) set.expiry_extended_at = recipient.expiry_extended_at;
+  else unset.expiry_extended_at = '';
+  if (recipient.expiry_extended_by) set.expiry_extended_by = recipient.expiry_extended_by;
+  else unset.expiry_extended_by = '';
+  if (recipient.expiry_extension_count != null) set.expiry_extension_count = recipient.expiry_extension_count;
+  else unset.expiry_extension_count = '';
+  if (recipient.original_recipient_email) set.original_recipient_email = recipient.original_recipient_email;
+  else unset.original_recipient_email = '';
+  if (recipient.original_recipient_name) set.original_recipient_name = recipient.original_recipient_name;
+  else unset.original_recipient_name = '';
+  if (recipient.forwarded_from_email) set.forwarded_from_email = recipient.forwarded_from_email;
+  else unset.forwarded_from_email = '';
+  if (recipient.forwarded_from_name) set.forwarded_from_name = recipient.forwarded_from_name;
+  else unset.forwarded_from_name = '';
+  if (recipient.forwarded_by_email) set.forwarded_by_email = recipient.forwarded_by_email;
+  else unset.forwarded_by_email = '';
+  if (recipient.forwarded_to_email) set.forwarded_to_email = recipient.forwarded_to_email;
+  else unset.forwarded_to_email = '';
+  if (recipient.forwarded_to_name) set.forwarded_to_name = recipient.forwarded_to_name;
+  else unset.forwarded_to_name = '';
+  if (recipient.forwarded_at) set.forwarded_at = recipient.forwarded_at;
+  else unset.forwarded_at = '';
+  if (recipient.forward_comment) set.forward_comment = recipient.forward_comment;
+  else unset.forward_comment = '';
+  if (recipient.forward_count != null) set.forward_count = recipient.forward_count;
+  else unset.forward_count = '';
+  const update = {};
+  if (Object.keys(set).length) update.$set = set;
+  if (Object.keys(unset).length) update.$unset = unset;
+  return update;
+}
+
+async function getEsignDocumentForRecipient(recipient) {
+  if (!recipient || !recipient.document_id || !db) return null;
+  const rawId = recipient.document_id;
+  const filters = [];
+  if (rawId instanceof ObjectId) {
+    filters.push({ _id: rawId });
+    filters.push({ _id: rawId.toString() });
+  } else {
+    const idStr = rawId && typeof rawId.toString === 'function' ? rawId.toString() : String(rawId);
+    if (idStr) {
+      filters.push({ _id: idStr });
+      try {
+        filters.push({ _id: new ObjectId(idStr) });
+      } catch (_) { /* ignore */ }
+    }
+  }
+  if (!filters.length) return null;
+  return db.collection('esign_documents').findOne(filters.length === 1 ? filters[0] : { $or: filters });
+}
+
 // POST /api/esign/documents/upload - Upload PDF to disk, save metadata
 app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), async (req, res) => {
   try {
@@ -5415,7 +5632,10 @@ app.get('/api/esign/documents/:id', async (req, res) => {
         file_name: doc.file_name,
         file_path: doc.file_path,
         uploaded_by: doc.uploaded_by,
+        creator_name: doc.requested_by_name || null,
+        creator_email: doc.requested_by_email || (String(doc.uploaded_by || '').includes('@') ? doc.uploaded_by : null),
         created_at: doc.created_at,
+        sent_at: doc.sent_at || null,
         status: doc.status,
         signed_file_path: doc.signed_file_path
       }
@@ -5587,6 +5807,8 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         comment: r.comment || null,
         email_message: r.email_message || null,
         signing_token: r.signing_token || null,
+        token_expires_at: r.token_expires_at || null,
+        expiry_reminder_sent_at: r.expiry_reminder_sent_at || null,
       })),
     });
   } catch (error) {
@@ -5717,14 +5939,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
     console.log('📧 E-sign document already sent, skipping auto-send');
     return { success: true, emails_sent: 0, already_sent: true, emails_sent_to: [] };
   }
-  const FRONTEND_DEV = 'http://localhost:5173';
-  let baseUrl = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
-  let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
-  if (baseUrl.includes('localhost:3001')) {
-    baseUrl = FRONTEND_DEV;
-    baseUrlForDashboard = FRONTEND_DEV;
-  }
-  if (baseUrlForDashboard.includes('localhost:3001')) baseUrlForDashboard = FRONTEND_DEV;
   let recipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).sort({ order: 1, _id: 1 }).toArray();
   if (!recipients.length) return { success: false, error: 'Add at least one recipient before sending' };
 
@@ -5751,59 +5965,6 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       }
     }
   }
-
-  const escapeEmailMessage = (s) => {
-    if (!s || typeof s !== 'string') return '';
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/\n/g, '<br />');
-  };
-  const fileNameForSubject = sanitizeEsignEmailSubjectFileName(doc.file_name);
-  const getEsignEmailByRole = (rec, signingUrl, inboxUrl) => {
-    const roleLower = (rec.role || 'signer').toString().toLowerCase();
-    const nameLower = (rec.name || '').toString().toLowerCase().trim();
-    const hasExplicitAction = rec.action === 'signer' || rec.action === 'reviewer';
-    const isReviewer = hasExplicitAction ? (rec.action === 'reviewer') : (roleLower === 'reviewer' || rec.role === 'Technical Team' || rec.role === 'Legal Team');
-    const ctaText = isReviewer ? 'Review Document' : 'Sign Document';
-    const customMessageBlock = (rec.email_message && rec.email_message.trim())
-      ? `<p style="margin:1em 0;">${escapeEmailMessage(rec.email_message.trim())}</p>`
-      : '';
-    // Only show dashboard when Role is explicitly set to a dashboard role (not by name). Role "None" = no dashboard.
-    const roleStr = (rec.role || '').toString().trim();
-    const isTechnical = roleStr === 'Technical Team';
-    const isLegal = roleStr === 'Legal Team';
-    const isTeamLead = roleStr === 'Team Lead' || roleStr === 'Team Approval';
-    const showDashboardLink = isTechnical || isLegal || isTeamLead;
-    const dashboardLabel = isTechnical ? 'E-Sign Technical Dashboard' : isLegal ? 'E-Sign Legal Dashboard' : isTeamLead ? 'E-Sign Team Lead Dashboard' : 'your E-Sign dashboard';
-    const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
-    if (isReviewer) {
-      const dashboardBlock = showDashboardLink
-        ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will appear in your queue; open it from there to review.</p>
-        <p><strong>Option 2 – Direct link:</strong> `
-        : '<p><strong>Signing link:</strong> ';
-      return {
-        subject: `Action required: Review ${fileNameForSubject}`,
-        html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
-        ${customMessageBlock}<p>You have been requested to <strong>review</strong> a document.</p>
-        ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-        <p>Thank you.</p>`
-      };
-    }
-    const signDashboardBlock = showDashboardLink
-      ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}. The agreement will open in your dashboard; you can then review and sign.</p>
-        <p><strong>Option 2 – Sign directly:</strong> `
-      : '<p><strong>Signing link:</strong> ';
-    return {
-      subject: `Action required: Sign ${fileNameForSubject}`,
-      html: `<p>Hello${rec.name ? ` ${rec.name}` : ''},</p>
-        ${customMessageBlock}<p>You have been requested to sign a document.</p>
-        ${signDashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
-        <p>Thank you.</p>`
-    };
-  };
   let emailsSent = 0;
   const emailsSentTo = [];
   for (const rec of recipients) {
@@ -5814,14 +5975,16 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       { _id: rec._id },
       { $set: { signing_token: token, status: 'pending', token_created_at: tokenCreatedAt, token_expires_at: tokenExpiresAt } }
     );
-    const signingUrl = `${baseUrl}/sign/${token}`;
-    const inboxUrl = `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(token)}`;
+    const { signingUrl, inboxUrl } = getEsignRecipientUrls(token);
     if (process.env.SENDGRID_API_KEY && rec.email) {
       if (emailsSent === 0) {
         console.log('📧 E-sign email URLs:', { signing: signingUrl.substring(0, 60) + '...', dashboard: inboxUrl.substring(0, 60) + '...' });
         console.log('📧 Sender (EMAIL_FROM):', process.env.EMAIL_FROM || 'noreply@yourdomain.com', '— must be verified in SendGrid');
       }
-      const { subject, html } = getEsignEmailByRole(rec, signingUrl, inboxUrl);
+      const { subject, html } = buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, {
+        mode: 'initial',
+        tokenExpiresAt,
+      });
       try {
         const result = await sendEmail(rec.email, subject, html);
         if (result.success) {
@@ -5872,6 +6035,128 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/extend-expiry - Creator-only: reissue fresh links for pending recipients
+app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(400).json({ success: false, error: 'Email delivery is not configured. Configure SENDGRID_API_KEY before extending expiry.' });
+    }
+    let docId;
+    try {
+      docId = new ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const actorEmail = (req.body?.actor_email || req.body?.user_email || '').toString().trim();
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can extend expiry for this document' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only documents with status "sent" can have their expiry extended' });
+    }
+
+    const requestedDays = Number(req.body?.days);
+    const expiryDays = Number.isFinite(requestedDays) && requestedDays > 0
+      ? Math.min(Math.floor(requestedDays), 90)
+      : ESIGN_LINK_EXPIRY_DAYS;
+
+    const pendingRecipients = await db.collection('esign_recipients')
+      .find({
+        ...esignRecipientsDocumentFilter(docId),
+        status: 'pending',
+        email: { $exists: true, $ne: '' },
+      })
+      .sort({ order: 1, _id: 1 })
+      .toArray();
+
+    if (!pendingRecipients.length) {
+      return res.status(400).json({ success: false, error: 'No pending recipients are eligible for expiry extension' });
+    }
+
+    const emailsSentTo = [];
+    const failedRecipients = [];
+    const now = new Date();
+    const tokenExpiresAt = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000);
+
+    for (const rec of pendingRecipients) {
+      const token = crypto.randomUUID();
+      const { signingUrl, inboxUrl } = getEsignRecipientUrls(token);
+      const { subject, html } = buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, {
+        mode: 'extended',
+        tokenExpiresAt,
+        expiryDays,
+      });
+      const previousRecipientState = {
+        signing_token: rec.signing_token,
+        token_created_at: rec.token_created_at,
+        token_expires_at: rec.token_expires_at,
+        expiry_reminder_sent_at: rec.expiry_reminder_sent_at,
+        expiry_extended_at: rec.expiry_extended_at,
+        expiry_extended_by: rec.expiry_extended_by,
+        expiry_extension_count: rec.expiry_extension_count,
+      };
+
+      await db.collection('esign_recipients').updateOne(
+        { _id: rec._id },
+        {
+          $set: {
+            signing_token: token,
+            token_created_at: now,
+            token_expires_at: tokenExpiresAt,
+            expiry_extended_at: now,
+            expiry_extended_by: actorEmail || 'system',
+            expiry_extension_count: Number(rec.expiry_extension_count || 0) + 1,
+          },
+          $unset: { expiry_reminder_sent_at: '' },
+        }
+      );
+
+      try {
+        const result = await sendEmail(rec.email, subject, html);
+        if (!result.success) throw result.error || new Error('Email send failed');
+        emailsSentTo.push(String(rec.email).trim());
+        try {
+          await logAudit(docId.toString(), 'expiry_extended', actorEmail || rec.email || 'system', req.ip || req.connection?.remoteAddress);
+        } catch (_) { /* non-fatal */ }
+      } catch (mailErr) {
+        failedRecipients.push({
+          email: rec.email,
+          error: mailErr?.message || String(mailErr || 'Email send failed'),
+        });
+        const restoreUpdate = buildEsignRecipientRestoreUpdate(previousRecipientState);
+        if (Object.keys(restoreUpdate).length) {
+          await db.collection('esign_recipients').updateOne({ _id: rec._id }, restoreUpdate);
+        }
+      }
+    }
+
+    if (!emailsSentTo.length) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to extend expiry for pending recipients',
+        failed_recipients: failedRecipients,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Expiry extended for ${emailsSentTo.length} pending recipient(s).`,
+      emails_sent: emailsSentTo.length,
+      emails_sent_to: emailsSentTo,
+      failed_recipients: failedRecipients,
+      expires_at: tokenExpiresAt,
+      extension_days: expiryDays,
+    });
+  } catch (error) {
+    console.error('❌ E-sign extend-expiry error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -6105,6 +6390,169 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ E-sign sign-by-token error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/forward-signing-request - Recipient forwards a pending request to another person.
+app.post('/api/esign/forward-signing-request', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(400).json({ success: false, error: 'Email delivery is not configured. Configure SENDGRID_API_KEY before forwarding requests.' });
+    }
+
+    const token = (req.body?.signing_token || '').toString().trim();
+    const newEmail = (req.body?.new_email || '').toString().trim().toLowerCase();
+    const newName = (req.body?.new_name || '').toString().trim();
+    const forwardComment = (req.body?.comment || '').toString().trim().slice(0, 1000);
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    if (!newEmail) return res.status(400).json({ success: false, error: 'New recipient email is required' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      return res.status(400).json({ success: false, error: 'Enter a valid email address for the new recipient' });
+    }
+
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
+    if ((recipient.status || 'pending') !== 'pending') {
+      return res.status(400).json({ success: false, error: 'Only pending requests can be forwarded' });
+    }
+    if (String(recipient.email || '').trim().toLowerCase() === newEmail) {
+      return res.status(400).json({ success: false, error: 'Enter a different email address to forward this request' });
+    }
+
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') {
+      return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only sent documents can be forwarded' });
+    }
+
+    const duplicateRecipient = await db.collection('esign_recipients').findOne({
+      $and: [
+        esignRecipientsDocumentFilter(docId),
+        { email: newEmail },
+        { _id: { $ne: recipient._id } },
+      ],
+    });
+    if (duplicateRecipient) {
+      return res.status(400).json({ success: false, error: 'That email is already a recipient on this document' });
+    }
+
+    const now = new Date();
+    const freshToken = crypto.randomUUID();
+    const tokenExpiresAt = new Date(now.getTime() + ESIGN_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    const forwardedRecipient = {
+      ...recipient,
+      name: newName || newEmail,
+      email: newEmail,
+    };
+    const previousRecipientState = {
+      name: recipient.name,
+      email: recipient.email,
+      status: recipient.status,
+      signing_token: recipient.signing_token,
+      token_created_at: recipient.token_created_at,
+      token_expires_at: recipient.token_expires_at,
+      expiry_reminder_sent_at: recipient.expiry_reminder_sent_at,
+      expiry_extended_at: recipient.expiry_extended_at,
+      expiry_extended_by: recipient.expiry_extended_by,
+      expiry_extension_count: recipient.expiry_extension_count,
+      original_recipient_email: recipient.original_recipient_email,
+      original_recipient_name: recipient.original_recipient_name,
+      forwarded_from_email: recipient.forwarded_from_email,
+      forwarded_from_name: recipient.forwarded_from_name,
+      forwarded_by_email: recipient.forwarded_by_email,
+      forwarded_to_email: recipient.forwarded_to_email,
+      forwarded_to_name: recipient.forwarded_to_name,
+      forwarded_at: recipient.forwarded_at,
+      forward_comment: recipient.forward_comment,
+      forward_count: recipient.forward_count,
+    };
+
+    await db.collection('esign_recipients').updateOne(
+      { _id: recipient._id },
+      {
+        $set: {
+          name: forwardedRecipient.name,
+          email: forwardedRecipient.email,
+          signing_token: freshToken,
+          token_created_at: now,
+          token_expires_at: tokenExpiresAt,
+          original_recipient_email: recipient.original_recipient_email || recipient.email || null,
+          original_recipient_name: recipient.original_recipient_name || recipient.name || null,
+          forwarded_from_email: recipient.email || null,
+          forwarded_from_name: recipient.name || null,
+          forwarded_by_email: recipient.email || null,
+          forwarded_to_email: newEmail,
+          forwarded_to_name: forwardedRecipient.name,
+          forwarded_at: now,
+          forward_comment: forwardComment || null,
+          forward_count: Number(recipient.forward_count || 0) + 1,
+        },
+        $unset: {
+          expiry_reminder_sent_at: '',
+          expiry_extended_at: '',
+          expiry_extended_by: '',
+          expiry_extension_count: '',
+        },
+      }
+    );
+
+    try {
+      const { signingUrl, inboxUrl } = getEsignRecipientUrls(freshToken);
+      const { subject, html } = buildEsignRecipientEmail(doc, forwardedRecipient, signingUrl, inboxUrl, {
+        mode: 'forwarded',
+        tokenExpiresAt,
+        forwardedByName: recipient.name || '',
+        forwardedByEmail: recipient.email || '',
+        forwardComment,
+      });
+      const result = await sendEmail(newEmail, subject, html);
+      if (!result.success) throw result.error || new Error('Email send failed');
+    } catch (mailErr) {
+      const restoreUpdate = buildEsignRecipientRestoreUpdate(previousRecipientState);
+      if (Object.keys(restoreUpdate).length) {
+        await db.collection('esign_recipients').updateOne({ _id: recipient._id }, restoreUpdate);
+      }
+      return res.status(500).json({ success: false, error: mailErr?.message || 'Failed to forward request' });
+    }
+
+    try {
+      await sendEsignForwardedNotificationToCreator(
+        doc,
+        { name: recipient.name, email: recipient.email },
+        { name: forwardedRecipient.name, email: newEmail },
+        forwardComment
+      );
+    } catch (_) { /* non-fatal */ }
+    try {
+      await logAudit(docId.toString(), 'forwarded', recipient.email || 'system', req.ip || req.connection?.remoteAddress);
+    } catch (_) { /* non-fatal */ }
+
+    res.json({
+      success: true,
+      message: `Request forwarded to ${newEmail}`,
+      forwarded_to: {
+        name: forwardedRecipient.name,
+        email: newEmail,
+      },
+      expires_at: tokenExpiresAt,
+    });
+  } catch (error) {
+    console.error('❌ E-sign forward-signing-request error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -8888,6 +9336,65 @@ app.put('/api/authorization-requests/:id/status', async (req, res) => {
 // Start the server
 startServer();
 
+// ─── E-sign Expiry Reminder Scheduler ────────────────────────────────────────
+// Runs hourly and sends one reminder when a pending recipient is within the
+// pre-expiry reminder window.
+async function runEsignExpiryReminderJob() {
+  if (!db || !process.env.SENDGRID_API_KEY) return;
+
+  try {
+    const now = new Date();
+    const reminderWindowEnd = new Date(now.getTime() + ESIGN_EXPIRY_REMINDER_DAYS_BEFORE * 24 * 60 * 60 * 1000);
+    const dueRecipients = await db.collection('esign_recipients').find({
+      status: 'pending',
+      email: { $exists: true, $ne: '' },
+      signing_token: { $exists: true, $ne: '' },
+      token_expires_at: { $gt: now, $lte: reminderWindowEnd },
+      $or: [
+        { expiry_reminder_sent_at: { $exists: false } },
+        { expiry_reminder_sent_at: null },
+      ],
+    }).sort({ token_expires_at: 1, _id: 1 }).toArray();
+
+    if (!dueRecipients.length) return;
+
+    console.log(`⏰ E-sign expiry reminder check: ${dueRecipients.length} recipient(s) due`);
+
+    for (const recipient of dueRecipients) {
+      try {
+        if (isEsignTokenExpired(recipient)) continue;
+        const doc = await getEsignDocumentForRecipient(recipient);
+        if (!doc || doc.status !== 'sent') continue;
+
+        const { signingUrl, inboxUrl } = getEsignRecipientUrls(recipient.signing_token);
+        const { subject, html } = buildEsignRecipientEmail(doc, recipient, signingUrl, inboxUrl, {
+          mode: 'reminder',
+          tokenExpiresAt: recipient.token_expires_at,
+        });
+        const result = await sendEmail(recipient.email, subject, html);
+        if (!result.success) {
+          console.warn('❌ E-sign reminder email not sent to', recipient.email, result.error?.message || result.error);
+          continue;
+        }
+
+        const reminderTimestamp = new Date();
+        await db.collection('esign_recipients').updateOne(
+          { _id: recipient._id },
+          { $set: { expiry_reminder_sent_at: reminderTimestamp } }
+        );
+        try {
+          await logAudit(doc._id.toString(), 'expiry_reminder_sent', recipient.email || 'system', null);
+        } catch (_) { /* non-fatal */ }
+        console.log(`⏰ E-sign expiry reminder sent to ${recipient.email} for document ${doc._id.toString()}`);
+      } catch (recipientErr) {
+        console.error(`❌ E-sign expiry reminder error for ${recipient.email || recipient._id}:`, recipientErr.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ E-sign expiry reminder job failed:', err.message);
+  }
+}
+
 // ─── Auto-Reminder Scheduler ─────────────────────────────────────────────────
 // Runs every hour. For each pending/in_progress workflow with reminderDays > 0,
 // sends a reminder if enough time has elapsed since the last reminder (or since
@@ -9012,6 +9519,8 @@ async function runAutoReminderJob() {
 
 // Delay first run by 2 minutes after server start (let DB warm up), then run hourly
 setTimeout(() => {
+  runEsignExpiryReminderJob();
+  setInterval(runEsignExpiryReminderJob, ESIGN_EXPIRY_REMINDER_INTERVAL_MS);
   runAutoReminderJob();
   setInterval(runAutoReminderJob, AUTO_REMINDER_INTERVAL_MS);
 }, 2 * 60 * 1000);

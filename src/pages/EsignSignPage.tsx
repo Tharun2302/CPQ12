@@ -158,6 +158,12 @@ const EsignSignPage: React.FC = () => {
   const [denyingSign, setDenyingSign] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isExpired, setIsExpired] = useState(false);
+  const [showForwardForm, setShowForwardForm] = useState(false);
+  const [forwardName, setForwardName] = useState('');
+  const [forwardEmail, setForwardEmail] = useState('');
+  const [forwardComment, setForwardComment] = useState('');
+  const [forwardingRequest, setForwardingRequest] = useState(false);
+  const [forwardedSuccess, setForwardedSuccess] = useState<{ name: string; email: string; expiresAt: string | null } | null>(null);
   const [selectedSignatureFieldIndex, setSelectedSignatureFieldIndex] = useState<number | null>(null);
   const [totalPages, setTotalPages] = useState(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -612,6 +618,146 @@ const EsignSignPage: React.FC = () => {
     }
   };
 
+  const handleForwardRequest = async () => {
+    if (!signingToken) return;
+    const trimmedEmail = forwardEmail.trim().toLowerCase();
+    const trimmedName = forwardName.trim();
+    if (!trimmedEmail) {
+      setError('Please enter the email address of the person you want to forward this request to.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    setForwardingRequest(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/forward-signing-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signing_token: signingToken,
+          new_email: trimmedEmail,
+          new_name: trimmedName || undefined,
+          comment: forwardComment.trim() || undefined,
+        }),
+      });
+      const text = await res.text();
+      let data: { success?: boolean; error?: string; forwarded_to?: { name?: string; email?: string }; expires_at?: string | null };
+      try {
+        data = text.startsWith('<') ? {} : JSON.parse(text);
+      } catch {
+        setError(res.ok ? 'Invalid response from server' : `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Failed to forward the signing request.');
+        return;
+      }
+      setForwardedSuccess({
+        name: data.forwarded_to?.name || trimmedName || trimmedEmail,
+        email: data.forwarded_to?.email || trimmedEmail,
+        expiresAt: data.expires_at || null,
+      });
+      setShowForwardForm(false);
+      setForwardName('');
+      setForwardEmail('');
+      setForwardComment('');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to forward the signing request.');
+    } finally {
+      setForwardingRequest(false);
+    }
+  };
+
+  const renderForwardRequestPanel = () => {
+    if (!signingToken) return null;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Need someone else to handle this request?</h2>
+            <p className="text-sm text-slate-600">
+              Forwarding replaces your pending request with a new recipient and sends them a fresh secure link.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowForwardForm((prev) => !prev);
+              setError(null);
+            }}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            {showForwardForm ? 'Cancel forward' : 'Forward request'}
+          </button>
+        </div>
+        {showForwardForm && (
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor="forward-name" className="text-xs font-medium text-slate-600">
+                New recipient name
+              </label>
+              <input
+                id="forward-name"
+                type="text"
+                value={forwardName}
+                onChange={(e) => setForwardName(e.target.value)}
+                placeholder="Name"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="forward-email" className="text-xs font-medium text-slate-600">
+                New recipient email
+              </label>
+              <input
+                id="forward-email"
+                type="email"
+                value={forwardEmail}
+                onChange={(e) => setForwardEmail(e.target.value)}
+                placeholder="name@company.com"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label htmlFor="forward-comment" className="text-xs font-medium text-slate-600">
+                Note for the new recipient
+              </label>
+              <textarea
+                id="forward-comment"
+                value={forwardComment}
+                onChange={(e) => setForwardComment(e.target.value)}
+                placeholder="Optional context for why you are forwarding this request"
+                rows={3}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <button
+                type="button"
+                onClick={handleForwardRequest}
+                disabled={forwardingRequest}
+                className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {forwardingRequest ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Forwarding...
+                  </>
+                ) : (
+                  'Send forwarded link'
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const getFieldStyle = (f: SignatureField) => {
     if (
       f.xNorm != null &&
@@ -932,6 +1078,9 @@ const EsignSignPage: React.FC = () => {
           <p className="text-slate-600 text-sm mb-4">
             Signature fields are not shown here. Fill name, title, date, and text fields, then <strong>Save field entries</strong> — that updates the downloadable PDF (and database). Then click <strong>Approve</strong>. Use the Download button on this flow so the file comes from e-sign; other downloads (e.g. agreement from Quotes) are separate files.
           </p>
+          <div className="mb-4">
+            {renderForwardRequestPanel()}
+          </div>
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
             <div
               ref={scrollContainerRef}
@@ -1166,6 +1315,29 @@ const EsignSignPage: React.FC = () => {
     );
   }
 
+  if (forwardedSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 mb-4">
+            <Check className="h-8 w-8 text-indigo-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Request forwarded</h2>
+          <p className="text-slate-600 mb-4">{doc.file_name}</p>
+          <p className="text-slate-500 text-sm mb-2">
+            A fresh secure link has been sent to <strong>{forwardedSuccess.name}</strong> ({forwardedSuccess.email}).
+          </p>
+          {forwardedSuccess.expiresAt && (
+            <p className="text-slate-500 text-sm mb-6">
+              Their link expires on {new Date(forwardedSuccess.expiresAt).toLocaleString()}.
+            </p>
+          )}
+          <p className="text-slate-500 text-sm">Your current link is no longer active for signing or review.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (signerChoice === null && signingToken) {
     const signerPreviewFileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
     return (
@@ -1188,6 +1360,7 @@ const EsignSignPage: React.FC = () => {
                 </div>
               </div>
               <p className="text-slate-600">Do you approve this document and wish to sign, or decline to sign?</p>
+              {renderForwardRequestPanel()}
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-slate-50 rounded-xl border border-slate-200 p-4 sm:p-5">
                 <button
@@ -1247,6 +1420,7 @@ const EsignSignPage: React.FC = () => {
           </div>
 
           <div className="p-6 space-y-6">
+            {renderForwardRequestPanel()}
             {fields.length === 0 && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 {error || 'No signature fields are assigned to you for this document. Ask the sender to assign fields to your recipient in Place Fields, then resend the link.'}

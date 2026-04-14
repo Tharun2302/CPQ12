@@ -745,7 +745,12 @@ export class DocxTemplateProcessor {
         'server_descriptions': processedData['{{server_descriptions}}'] || processedData['{{serverDescriptions}}'] || '',
         // Date tokens (template may use {{date}} or {{Date}})
         'date': processedData['{{date}}'] || processedData['{{Date}}'] || new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
-        'Date': processedData['{{Date}}'] || processedData['{{date}}'] || new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' })
+        'Date': processedData['{{Date}}'] || processedData['{{date}}'] || new Date().toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' }),
+        // Quote expiry tokens (long ordinal format: "20th of May, 2026")
+        'quote_expiry_date_long': processedData['{{quote_expiry_date_long}}'] || processedData['{{quoteExpiryDateLong}}'] || processedData['{{expiry_date_long}}'] || '',
+        'quoteExpiryDateLong': processedData['{{quoteExpiryDateLong}}'] || processedData['{{quote_expiry_date_long}}'] || '',
+        'expiry_date_long': processedData['{{expiry_date_long}}'] || processedData['{{quote_expiry_date_long}}'] || '',
+        'quote_validity_line': processedData['{{quote_validity_line}}'] || ''
       };
       
       // Add common tokens to docxtemplater data
@@ -1584,6 +1589,70 @@ export class DocxTemplateProcessor {
                 console.warn('⚠️ Verification: Discount still present in main document after cleanup');
               }
             }
+          }
+
+          // INJECT QUOTE VALIDITY LINE: Add "This quote is valid till ..." after Total Price if not already present
+          const quoteValidityLine = processedData['{{quote_validity_line}}'] || '';
+          if (quoteValidityLine && !finalCleanText.includes('This quote is valid till')) {
+            console.log('📝 Injecting quote validity line:', quoteValidityLine);
+            try {
+              // Re-read the current document XML from finalZip
+              let injectZip = new PizZip(await buffer.arrayBuffer());
+              let injectDocXml = injectZip.file('word/document.xml')?.asText() || '';
+              
+              // Find the last occurrence of "Total Price" followed by a price value (e.g., "$2,500.00")
+              // We look for the closing tag of the paragraph containing Total Price
+              // Pattern: find </w:p> after "Total Price" and inject a new paragraph after it
+              const totalPricePattern = /<w:p[^>]*>[\s\S]*?Total\s*Price[\s\S]*?<\/w:p>/gi;
+              const matches = [...injectDocXml.matchAll(totalPricePattern)];
+              
+              if (matches.length > 0) {
+                // Get the last match (in case there are multiple Total Price mentions)
+                const lastMatch = matches[matches.length - 1];
+                const insertPosition = lastMatch.index! + lastMatch[0].length;
+                
+                // Create a new paragraph with the quote validity line
+                // Style: left-aligned with table, black color, proper spacing below table
+                const validityParagraph = `
+<w:p>
+  <w:pPr>
+    <w:jc w:val="left"/>
+    <w:spacing w:before="240" w:after="120"/>
+    <w:ind w:left="0" w:right="0"/>
+  </w:pPr>
+  <w:r>
+    <w:rPr>
+      <w:color w:val="000000"/>
+      <w:sz w:val="22"/>
+      <w:szCs w:val="22"/>
+    </w:rPr>
+    <w:t>${quoteValidityLine}</w:t>
+  </w:r>
+</w:p>`;
+                
+                // Insert the validity paragraph after the Total Price paragraph
+                const modifiedDocXml = injectDocXml.slice(0, insertPosition) + validityParagraph + injectDocXml.slice(insertPosition);
+                
+                // Update the ZIP with the modified document
+                injectZip.file('word/document.xml', modifiedDocXml);
+                
+                // Regenerate the buffer
+                buffer = injectZip.generate({
+                  type: 'blob',
+                  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                });
+                
+                console.log('✅ Quote validity line injected successfully');
+              } else {
+                console.log('ℹ️ Total Price paragraph not found, skipping validity line injection');
+              }
+            } catch (injectErr) {
+              console.warn('⚠️ Failed to inject quote validity line:', injectErr);
+            }
+          } else if (!quoteValidityLine) {
+            console.log('ℹ️ No quote validity line to inject');
+          } else {
+            console.log('ℹ️ Quote validity line already present in document');
           }
         }
       } catch (verifyError) {

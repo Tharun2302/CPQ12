@@ -21,11 +21,11 @@ function toYMD(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** Display a YYYY-MM-DD value as DD-MM-YYYY for the UI. */
+/** Display a YYYY-MM-DD value as MM-DD-YYYY for the UI. */
 function formatDisplay(dateStr: string): string {
   const p = parseYMD(dateStr);
   if (!p) return '';
-  return `${String(p.day).padStart(2, '0')}-${String(p.month + 1).padStart(2, '0')}-${p.year}`;
+  return `${String(p.month + 1).padStart(2, '0')}-${String(p.day).padStart(2, '0')}-${p.year}`;
 }
 
 interface CustomDatePickerProps {
@@ -158,7 +158,7 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
         className={`w-full px-4 py-2.5 border-2 rounded-lg flex items-center justify-between cursor-pointer bg-white/80 backdrop-blur-sm text-base font-medium select-none ${className}`}
       >
         <span className={displayValue ? 'text-gray-900' : 'text-gray-400'}>
-          {displayValue || 'dd-mm-yyyy'}
+          {displayValue || 'mm-dd-yyyy'}
         </span>
         {/* Calendar icon */}
         <svg className="w-4 h-4 text-gray-400 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

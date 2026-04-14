@@ -82,6 +82,16 @@ function formatDateMMDDYYYY(dateString: string): string {
   }
 }
 
+function formatDateMMDDYYYYForUi(dateString: string): string {
+  if (!dateString) return '';
+  const parts = dateString.split('-');
+  if (parts.length === 3) {
+    const [year, month, day] = parts;
+    if (year && month && day) return `${month}-${day}-${year}`;
+  }
+  return dateString;
+}
+
 // Today in YYYY-MM-DD (default for Project Start Date)
 function getTodayDate(): string {
   const d = new Date();
@@ -99,6 +109,46 @@ function getDefaultDateOneMonthFromToday(): string {
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
   const day = d.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// Thirty days from today in YYYY-MM-DD (default for Quote Expiry Date)
+function getDefaultQuoteExpiryDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Format date as "20th of May, 2026" for quote validity display
+function formatDateLongOrdinal(dateString: string): string {
+  if (!dateString || dateString === 'N/A' || dateString === 'undefined' || dateString === 'null') {
+    return '';
+  }
+  try {
+    const date = dateString.includes('-')
+      ? new Date(dateString + 'T00:00:00')
+      : new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+
+    const day = date.getDate();
+    const suffix = day >= 11 && day <= 13
+      ? 'th'
+      : day % 10 === 1
+        ? 'st'
+        : day % 10 === 2
+          ? 'nd'
+          : day % 10 === 3
+            ? 'rd'
+            : 'th';
+
+    const month = date.toLocaleString('en-US', { month: 'long' });
+    const year = date.getFullYear();
+    return `${day}${suffix} of ${month}, ${year}`;
+  } catch {
+    return '';
+  }
 }
 
 // Helper function to limit consecutive spaces to maximum 5
@@ -317,6 +367,7 @@ interface ClientInfo {
   clientEmail: string;
   company: string;
   effectiveDate?: string;
+  quoteExpiryDate?: string;
   discount?: number;
   paymentTerms?: string;
 }
@@ -390,6 +441,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     clientEmail: '',
     company: '',
     effectiveDate: getDefaultDateOneMonthFromToday(),
+    quoteExpiryDate: getDefaultQuoteExpiryDate(),
     discount: undefined,
     paymentTerms: '100% Upfront'
   });
@@ -472,6 +524,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           clientEmail: parsed.clientEmail || '',
           company: parsed.company || '',
           effectiveDate: parsed.effectiveDate || getDefaultDateOneMonthFromToday(),
+          quoteExpiryDate: parsed.quoteExpiryDate || getDefaultQuoteExpiryDate(),
           paymentTerms: parsed.paymentTerms || '100% Upfront'
         }));
       }
@@ -505,7 +558,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isEmailingAgreement, setIsEmailingAgreement] = useState(false);
   const [dateValidationErrors, setDateValidationErrors] = useState({
     projectStartDate: false,
-    effectiveDate: false
+    effectiveDate: false,
+    quoteExpiryDate: false
   });
   
   // Calculate discount logic - source discount primarily from Configure session (localStorage)
@@ -594,7 +648,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     try { localStorage.setItem('cpq_quote_client_info', JSON.stringify(newClientInfo)); } catch {}
     
     // Only notify parent when user makes actual changes (not during auto-fill)
-    if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.effectiveDate || updates.discount !== undefined || updates.paymentTerms !== undefined)) {
+    if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.effectiveDate || updates.quoteExpiryDate || updates.discount !== undefined || updates.paymentTerms !== undefined)) {
       onClientInfoChange(newClientInfo);
     }
   };
@@ -1221,6 +1275,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       setClientInfo((prev) => ({
         ...configureContactInfo,
         effectiveDate: (src?.effectiveDate && String(src.effectiveDate).trim()) || prev.effectiveDate || getDefaultDateOneMonthFromToday(),
+        quoteExpiryDate: (src?.quoteExpiryDate && String(src.quoteExpiryDate).trim()) || prev.quoteExpiryDate || getDefaultQuoteExpiryDate(),
         paymentTerms: src?.paymentTerms || prev.paymentTerms || '100% Upfront',
         discount: src?.discount !== undefined ? src.discount : prev.discount
       }));
@@ -1264,6 +1319,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         ...prev,
         ...newClientInfo,
         effectiveDate: prev.effectiveDate?.trim() || getDefaultDateOneMonthFromToday(),
+        quoteExpiryDate: prev.quoteExpiryDate?.trim() || getDefaultQuoteExpiryDate(),
         paymentTerms: prev.paymentTerms || '100% Upfront'
       }));
     }
@@ -1297,6 +1353,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         ...prev,
         ...newClientInfo,
         effectiveDate: prev.effectiveDate?.trim() || getDefaultDateOneMonthFromToday(),
+        quoteExpiryDate: prev.quoteExpiryDate?.trim() || getDefaultQuoteExpiryDate(),
         paymentTerms: prev.paymentTerms || '100% Upfront'
       }));
     } else if (configureContactInfo) {
@@ -1905,6 +1962,11 @@ Quote ID: ${quoteData.id}
           '{{total_after_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           '{{Total After Discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           '{{total_price_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          // Quote validity line tokens (long ordinal format: "20th of May, 2026")
+          '{{quote_expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDateLong}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quote_validity_line}}': clientInfo.quoteExpiryDate ? `This quote is valid till ${formatDateLongOrdinal(clientInfo.quoteExpiryDate)}` : `This quote is valid till ${formatDateLongOrdinal(getDefaultQuoteExpiryDate())}`,
           '{{final_total}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           '{{finalTotal}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           
@@ -1923,6 +1985,10 @@ Quote ID: ${quoteData.id}
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -2407,6 +2473,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         clientName: clientInfo.clientName,
         clientEmail: clientInfo.clientEmail,
         company: clientInfo.company,
+        quoteExpiryDate: clientInfo.quoteExpiryDate,
         configuration: finalConfiguration,
         selectedTier: safeCalculation.tier,
         calculation: safeCalculation,
@@ -2457,6 +2524,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       clientName: clientInfo.clientName,
       clientEmail: clientInfo.clientEmail,
       company: clientInfo.company,
+      quoteExpiryDate: clientInfo.quoteExpiryDate,
       configuration: configuration,
       calculation: safeCalculation,
       selectedTier: safeCalculation.tier,
@@ -2570,6 +2638,8 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       '{{client_email}}': quote.clientEmail,
       '{{quote_number}}': quoteNumber,
       '{{date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+        '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+        '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
         '{{instance_cost}}': formatCurrency(safeCalculation.instanceCost),
         '{{discount}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
         '{{discount_percent}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
@@ -3797,21 +3867,24 @@ Total Price: {{total price}}`;
       return;
     }
 
-    // Validate both date fields are provided
+    // Validate required quote dates are provided
     const hasProjectStartDate = configuration?.startDate && configuration.startDate.trim() !== '';
     const hasEffectiveDate = clientInfo.effectiveDate && clientInfo.effectiveDate.trim() !== '';
+    const hasQuoteExpiryDate = clientInfo.quoteExpiryDate && clientInfo.quoteExpiryDate.trim() !== '';
     
-    if (!hasProjectStartDate || !hasEffectiveDate) {
+    if (!hasProjectStartDate || !hasEffectiveDate || !hasQuoteExpiryDate) {
       // Set validation errors to show red borders
       setDateValidationErrors({
         projectStartDate: !hasProjectStartDate,
-        effectiveDate: !hasEffectiveDate
+        effectiveDate: !hasEffectiveDate,
+        quoteExpiryDate: !hasQuoteExpiryDate
       });
 
       // Show alert with specific missing fields
       const missingFields = [];
       if (!hasProjectStartDate) missingFields.push('Project Start Date');
       if (!hasEffectiveDate) missingFields.push('Effective Date');
+      if (!hasQuoteExpiryDate) missingFields.push('Quote Expiry Date');
 
       alert(`Please fill in the following required fields:\n- ${missingFields.join('\n- ')}`);
       return;
@@ -3825,6 +3898,16 @@ Total Price: {{total price}}`;
     ) {
       setDateValidationErrors(prev => ({ ...prev, effectiveDate: true }));
       alert('Effective Date must be on or after the Project Start Date.');
+      return;
+    }
+
+    if (
+      hasQuoteExpiryDate &&
+      ((hasEffectiveDate && clientInfo.quoteExpiryDate! < clientInfo.effectiveDate!) ||
+        (hasProjectStartDate && clientInfo.quoteExpiryDate! < configuration!.startDate!))
+    ) {
+      setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: true }));
+      alert('Quote Expiry Date must be on or after the Effective Date.');
       return;
     }
 
@@ -3960,6 +4043,7 @@ Total Price: {{total price}}`;
         company: clientInfo.company || clientInfo.clientName || 'Demo Company Inc.',
         clientName: clientInfo.clientName,
         clientEmail: clientInfo.clientEmail,
+        quoteExpiryDate: clientInfo.quoteExpiryDate,
         configuration: {
           numberOfUsers: finalConfiguration.numberOfUsers,
           instanceType: finalConfiguration.instanceType,
@@ -4752,6 +4836,11 @@ Total Price: {{total price}}`;
           '{{discount_percent_with_parentheses}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `(${localDiscountPercent}%)` : '',
           '{{discount_display}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%)` : '',
           '{{discount_full_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          // Quote validity line tokens (long ordinal format: "20th of May, 2026")
+          '{{quote_expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDateLong}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quote_validity_line}}': clientInfo.quoteExpiryDate ? `This quote is valid till ${formatDateLongOrdinal(clientInfo.quoteExpiryDate)}` : `This quote is valid till ${formatDateLongOrdinal(getDefaultQuoteExpiryDate())}`,
         '{{total_after_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           '{{total_price_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
           '{{final_total}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
@@ -4772,6 +4861,10 @@ Total Price: {{total price}}`;
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -8193,6 +8286,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         clientName: clientInfo.clientName,
         clientEmail: clientInfo.clientEmail,
         company: clientInfo.company,
+        quoteExpiryDate: clientInfo.quoteExpiryDate,
         configuration: configuration,
         calculation: safeCalculation,
         selectedTier: safeCalculation.tier,
@@ -8508,6 +8602,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       clientName: clientInfo.clientName,
                       clientEmail: clientInfo.clientEmail,
                       company: clientInfo.company,
+                      quoteExpiryDate: clientInfo.quoteExpiryDate,
                       configuration: configuration,
                       calculation: safeCalculation,
                       selectedTier: safeCalculation.tier,
@@ -8888,7 +8983,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Contact Name and Legal Entity Name in one row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="group">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
                   <div className="w-7 h-7 bg-purple-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
@@ -8962,7 +9057,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             </div>
 
             {/* Date Selection - side by side */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Project Start Date - MOVED from Project Configuration */}
             <div className="group">
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
@@ -8991,10 +9086,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     console.warn('⚠️ No onConfigurationChange callback provided');
                   }
 
-                  // If Effective Date is now before the new start date, clear it so user re-picks.
+                  // If downstream dates are now before the new start date, clear them so user re-picks.
                   if (newStartDate && clientInfo.effectiveDate && clientInfo.effectiveDate < newStartDate) {
-                    updateClientInfo({ effectiveDate: '' });
-                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
+                    updateClientInfo({ effectiveDate: '', quoteExpiryDate: '' });
+                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: false, quoteExpiryDate: false }));
+                  } else if (newStartDate && clientInfo.quoteExpiryDate && clientInfo.quoteExpiryDate < newStartDate) {
+                    updateClientInfo({ quoteExpiryDate: '' });
+                    setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: false }));
                   }
                 }}
                 onBlur={() => {
@@ -9036,7 +9134,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 })()}
                 onChange={(selectedDate) => {
                   setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
-                  updateClientInfo({ effectiveDate: selectedDate });
+                  if (clientInfo.quoteExpiryDate && selectedDate && clientInfo.quoteExpiryDate < selectedDate) {
+                    updateClientInfo({ effectiveDate: selectedDate, quoteExpiryDate: '' });
+                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: false, quoteExpiryDate: false }));
+                  } else {
+                    updateClientInfo({ effectiveDate: selectedDate });
+                  }
                 }}
                 onBlur={() => {
                   if (!clientInfo.effectiveDate) {
@@ -9058,8 +9161,53 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               {!dateValidationErrors.effectiveDate && (
                 <p className="text-xs text-gray-500 mt-2">
                   {configuration?.startDate
-                    ? `Must be on or after ${configuration.startDate}`
+                    ? `Must be on or after ${formatDateMMDDYYYYForUi(configuration.startDate)}`
                     : 'Select a date on or after the Project Start Date'}
+                </p>
+              )}
+            </div>
+
+            {/* Quote Expiry Date */}
+            <div className="group">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-3.5 h-3.5 text-white" />
+                </div>
+                Quote Expiry Date <span className="text-red-500">*</span>
+              </label>
+              <CustomDatePicker
+                required
+                value={clientInfo.quoteExpiryDate || ''}
+                minDate={clientInfo.effectiveDate || configuration?.startDate || (() => {
+                  const today = new Date();
+                  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                })()}
+                onChange={(selectedDate) => {
+                  setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: false }));
+                  updateClientInfo({ quoteExpiryDate: selectedDate });
+                }}
+                onBlur={() => {
+                  if (!clientInfo.quoteExpiryDate) {
+                    setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: true }));
+                  }
+                }}
+                className={
+                  dateValidationErrors.quoteExpiryDate
+                    ? 'border-red-500 hover:border-red-500'
+                    : 'border-gray-200 hover:border-blue-300'
+                }
+              />
+              {dateValidationErrors.quoteExpiryDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Quote Expiry Date is required and must be on or after the Effective Date
+                </p>
+              )}
+              {!dateValidationErrors.quoteExpiryDate && (
+                <p className="text-xs text-gray-500 mt-2">
+                  {(clientInfo.effectiveDate || configuration?.startDate)
+                    ? `Must be on or after ${formatDateMMDDYYYYForUi(clientInfo.effectiveDate || configuration?.startDate || '')}`
+                    : 'Select a quote expiry date'}
                 </p>
               )}
             </div>

@@ -3,6 +3,31 @@ import { Quote } from '../types/pricing';
 import { formatCurrency } from './pricing';
 import { getEffectiveDurationMonths, formatMonths } from './configDuration';
 
+function formatQuoteExpiryLong(dateInput: string | Date): string {
+  const date = dateInput instanceof Date ? dateInput : new Date(
+    typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)
+      ? `${dateInput}T00:00:00`
+      : dateInput
+  );
+
+  if (Number.isNaN(date.getTime())) return '';
+
+  const day = date.getDate();
+  const suffix = day >= 11 && day <= 13
+    ? 'th'
+    : day % 10 === 1
+      ? 'st'
+      : day % 10 === 2
+        ? 'nd'
+        : day % 10 === 3
+          ? 'rd'
+          : 'th';
+
+  const month = date.toLocaleString('en-US', { month: 'long' });
+  const year = date.getFullYear();
+  return `${day}${suffix} of ${month}, ${year}`;
+}
+
 /**
  * Extracts content from uploaded template files (PDF, Word, HTML)
  * @param templateFile - The uploaded template file
@@ -1700,11 +1725,9 @@ export const createTemplatePreviewHTML = async (
       '[Quote.Total]': formatCurrency(quote.calculation.totalCost),
       '[Quote.Number]': quoteNumber,
       '[Quote.Date]': currentDate,
-      '[Document.Expiration Date]': new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      }),
+      '[Document.Expiration Date]': quote.quoteExpiryDate
+        ? formatQuoteExpiryLong(quote.quoteExpiryDate)
+        : formatQuoteExpiryLong(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
       
       // Additional bracket placeholders
       '[Company.Name]': quote.company || 'Company Name',

@@ -2,12 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Loader2, Check, Clock, Download, Eye, XCircle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
+import { useAuth } from '../hooks/useAuth';
 
 interface EsignDocument {
   id: string;
   file_name: string;
   status: string;
   signed_file_path?: string;
+  uploaded_by?: string;
+  creator_name?: string | null;
+  creator_email?: string | null;
+  sent_at?: string | null;
 }
 
 interface Recipient {
@@ -18,17 +23,46 @@ interface Recipient {
   status: 'pending' | 'signed' | 'reviewed' | 'denied';
   order?: number;
   comment?: string | null;
+  token_expires_at?: string | null;
 }
 
 const POLL_INTERVAL_MS = 12000;
 
+function normalizeEmail(email: string | undefined | null): string {
+  return (email || '').trim().toLowerCase();
+}
+
+function isEsignDocumentForCurrentUser(doc: EsignDocument, userEmail: string | undefined | null): boolean {
+  const u = normalizeEmail(userEmail);
+  if (!u) return false;
+  const uploaded = String(doc.uploaded_by || '').trim();
+  if (uploaded.includes('@') && normalizeEmail(uploaded) === u) return true;
+  if (normalizeEmail(doc.creator_email) === u) return true;
+  return false;
+}
+
+function formatDateTime(iso: string | undefined | null): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return '';
+  }
+}
+
 const EsignTrackingPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
+  const { user } = useAuth();
   const [doc, setDoc] = useState<EsignDocument | null>(null);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [extendingExpiry, setExtendingExpiry] = useState(false);
+  const [extendResult, setExtendResult] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!documentId) return;
@@ -41,6 +75,7 @@ const EsignTrackingPage: React.FC = () => {
       const recData = await recRes.json();
       if (docData.success && docData.document) {
         setDoc(docData.document);
+        setError(null);
       } else {
         setDoc(null);
         setError('Document not found');
@@ -102,6 +137,36 @@ const EsignTrackingPage: React.FC = () => {
     window.open(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, '_blank', 'noopener,noreferrer');
   };
 
+  const handleExtendExpiry = async () => {
+    if (!documentId || !doc) return;
+    if (!window.confirm('Extend expiry for pending recipients? This will issue fresh secure links and email only the recipients who are still pending.')) return;
+    setExtendingExpiry(true);
+    setExtendResult(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/extend-expiry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email || '' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setExtendResult(data.error || 'Failed to extend expiry.');
+        return;
+      }
+      const expiresAtLabel = formatDateTime(data.expires_at);
+      setExtendResult(
+        expiresAtLabel
+          ? `Expiry extended for ${data.emails_sent || 0} pending recipient(s). New expiry: ${expiresAtLabel}.`
+          : `Expiry extended for ${data.emails_sent || 0} pending recipient(s).`
+      );
+      await loadData();
+    } catch {
+      setExtendResult('Failed to extend expiry.');
+    } finally {
+      setExtendingExpiry(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -125,6 +190,13 @@ const EsignTrackingPage: React.FC = () => {
 
   const isSentOrCompleted = doc.status === 'sent' || doc.status === 'completed';
   const allSigned = doc.status === 'completed';
+  const isCreator = isEsignDocumentForCurrentUser(doc, user?.email);
+  const pendingRecipients = recipients.filter((rec) => rec.status === 'pending');
+  const pendingExpiryLabel = formatDateTime(
+    pendingRecipients
+      .map((rec) => rec.token_expires_at || '')
+      .find((value) => Boolean(value)) || null
+  );
 
   if (doc.status === 'draft') {
     return (
@@ -160,6 +232,12 @@ const EsignTrackingPage: React.FC = () => {
           </div>
 
           <div className="p-6 space-y-6">
+            {extendResult && (
+              <div className={`rounded-lg border px-4 py-3 text-sm ${extendResult.startsWith('Expiry extended') ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                {extendResult}
+              </div>
+            )}
+
             <div>
               <h2 className="text-sm font-semibold text-slate-700 mb-3">Recipients</h2>
               <ul className="space-y-2">
@@ -204,6 +282,12 @@ const EsignTrackingPage: React.FC = () => {
               </div>
             )}
 
+            {doc.status === 'sent' && pendingRecipients.length > 0 && pendingExpiryLabel && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Pending signing links expire on <strong>{pendingExpiryLabel}</strong>.
+              </div>
+            )}
+
             {['sent', 'signed', 'denied', 'voided'].includes(doc.status) && !allSigned && (
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap gap-3">
@@ -215,9 +299,23 @@ const EsignTrackingPage: React.FC = () => {
                     <Eye className="h-5 w-5" />
                     Preview document
                   </button>
+                  {doc.status === 'sent' && isCreator && pendingRecipients.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleExtendExpiry}
+                      disabled={extendingExpiry}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {extendingExpiry ? <Loader2 className="h-5 w-5 animate-spin" /> : <Clock className="h-5 w-5" />}
+                      Extend expiry
+                    </button>
+                  )}
                 </div>
                 {(doc.status === 'sent' || doc.status === 'signed') && (
-                  <p className="text-xs text-slate-500">Shows the latest PDF on file, including any signatures applied so far.</p>
+                  <p className="text-xs text-slate-500">
+                    Shows the latest PDF on file, including any signatures applied so far.
+                    {doc.status === 'sent' && isCreator ? ' Use Extend expiry to reissue fresh 15-day links for pending recipients only.' : ''}
+                  </p>
                 )}
               </div>
             )}

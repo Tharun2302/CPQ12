@@ -165,6 +165,7 @@ export interface Quote {
   clientName: string;
   clientEmail: string;
   company: string;
+  quoteExpiryDate?: string;
   configuration: ConfigurationData;
   selectedTier: PricingTier;
   calculation: PricingCalculation;
