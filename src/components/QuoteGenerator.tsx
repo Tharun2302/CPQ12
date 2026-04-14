@@ -34,6 +34,7 @@ import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 import { getCurrentUser } from '../utils/authUtils';
+import CustomDatePicker from './CustomDatePicker';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -3806,13 +3807,24 @@ Total Price: {{total price}}`;
         projectStartDate: !hasProjectStartDate,
         effectiveDate: !hasEffectiveDate
       });
-      
+
       // Show alert with specific missing fields
       const missingFields = [];
       if (!hasProjectStartDate) missingFields.push('Project Start Date');
       if (!hasEffectiveDate) missingFields.push('Effective Date');
-      
+
       alert(`Please fill in the following required fields:\n- ${missingFields.join('\n- ')}`);
+      return;
+    }
+
+    // Guard: effective date must not be before the project start date.
+    if (
+      hasProjectStartDate &&
+      hasEffectiveDate &&
+      clientInfo.effectiveDate! < configuration!.startDate!
+    ) {
+      setDateValidationErrors(prev => ({ ...prev, effectiveDate: true }));
+      alert('Effective Date must be on or after the Project Start Date.');
       return;
     }
 
@@ -8959,43 +8971,42 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 </div>
                 Project Start Date <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
+              <CustomDatePicker
                 required
                 value={configuration?.startDate || ''}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={(e) => {
-                  const newStartDate = e.target.value;
+                minDate={(() => {
+                  const today = new Date();
+                  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                })()}
+                onChange={(newStartDate) => {
                   console.log('📅 Project Start Date changed:', newStartDate);
-                  
-                  // Clear validation error when user selects a date
+
                   setDateValidationErrors(prev => ({ ...prev, projectStartDate: false }));
-                  
+
                   if (onConfigurationChange) {
-                    // Update the configuration with the new start date
-                    const updatedConfig = {
-                      ...configuration,
-                      startDate: newStartDate
-                    };
+                    const updatedConfig = { ...configuration, startDate: newStartDate };
                     onConfigurationChange(updatedConfig);
                     console.log('✅ Configuration updated with new start date:', newStartDate);
                   } else {
                     console.warn('⚠️ No onConfigurationChange callback provided');
                   }
+
+                  // If Effective Date is now before the new start date, clear it so user re-picks.
+                  if (newStartDate && clientInfo.effectiveDate && clientInfo.effectiveDate < newStartDate) {
+                    updateClientInfo({ effectiveDate: '' });
+                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
+                  }
                 }}
-                onBlur={(e) => {
-                  // Validate on blur
-                  if (!e.target.value || e.target.value.trim() === '') {
+                onBlur={() => {
+                  if (!configuration?.startDate) {
                     setDateValidationErrors(prev => ({ ...prev, projectStartDate: true }));
                   }
                 }}
-                className={`w-full px-4 py-2.5 border-2 rounded-lg focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-base font-medium ${
+                className={
                   dateValidationErrors.projectStartDate
-                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
-                    : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 hover:border-blue-300'
-                }`}
-                placeholder="dd-mm-yyyy"
-                autoComplete="off"
+                    ? 'border-red-500 hover:border-red-500'
+                    : 'border-gray-200 hover:border-blue-300'
+                }
               />
               {dateValidationErrors.projectStartDate && (
                 <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
@@ -9016,71 +9027,40 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 </div>
                 Effective Date <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
+              <CustomDatePicker
                 required
                 value={clientInfo.effectiveDate || ''}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={(e) => {
-                  const selectedDate = e.target.value;
-                  
-                  // Clear validation error when user selects a date
-                  setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
-                  
-                  if (!selectedDate) {
-                    updateClientInfo({ effectiveDate: '' });
-                    return;
-                  }
-                  
+                minDate={configuration?.startDate || (() => {
                   const today = new Date();
-                  const todayStr = today.toISOString().split('T')[0];
-                  
-                  console.log('Effective Date validation:', { selectedDate, todayStr });
-                  
-                  // Compare as strings (YYYY-MM-DD format)
-                  if (selectedDate >= todayStr) {
-                    updateClientInfo({ effectiveDate: selectedDate });
-                  } else {
-                    // Past date detected - show warning and reset
-                    alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
-                    e.target.value = todayStr;
-                    updateClientInfo({ effectiveDate: todayStr });
-                  }
+                  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                })()}
+                onChange={(selectedDate) => {
+                  setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
+                  updateClientInfo({ effectiveDate: selectedDate });
                 }}
-                onBlur={(e) => {
-                  const selectedDate = e.target.value;
-                  
-                  // Validate on blur - check if empty
-                  if (!selectedDate || selectedDate.trim() === '') {
+                onBlur={() => {
+                  if (!clientInfo.effectiveDate) {
                     setDateValidationErrors(prev => ({ ...prev, effectiveDate: true }));
-                    return;
-                  }
-                  
-                  if (selectedDate) {
-                    const today = new Date();
-                    const todayStr = today.toISOString().split('T')[0];
-                    
-                    if (selectedDate < todayStr) {
-                      alert('Effective date cannot be in the past. Please select today\'s date or a future date.');
-                      e.target.value = todayStr;
-                      updateClientInfo({ effectiveDate: todayStr });
-                    }
                   }
                 }}
-                className={`w-full px-4 py-2.5 border-2 rounded-lg focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-base font-medium ${
+                className={
                   dateValidationErrors.effectiveDate
-                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
-                    : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 hover:border-blue-300'
-                }`}
+                    ? 'border-red-500 hover:border-red-500'
+                    : 'border-gray-200 hover:border-blue-300'
+                }
               />
               {dateValidationErrors.effectiveDate && (
                 <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
                   <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                  Effective Date is required
+                  Effective Date is required and must be on or after the Project Start Date
                 </p>
               )}
               {!dateValidationErrors.effectiveDate && (
-                <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  {configuration?.startDate
+                    ? `Must be on or after ${configuration.startDate}`
+                    : 'Select a date on or after the Project Start Date'}
+                </p>
               )}
             </div>
             </div>

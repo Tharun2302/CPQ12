@@ -1238,8 +1238,14 @@ function App() {
     // Check if combination has changed
     const combinationChanged = configuration && configuration.combination !== config.combination;
     
-    setConfiguration(config);
-    
+    // Preserve startDate from the previous configuration when the incoming config doesn't
+    // explicitly set it (e.g. ConfigurationForm doesn't own the startDate field, so it
+    // passes undefined; QuoteGenerator always passes a string — '' to clear, or a date).
+    setConfiguration(prev => ({
+      ...config,
+      startDate: config.startDate !== undefined ? config.startDate : prev?.startDate,
+    }));
+
     // If migration type changed, reset pricing display
     if (migrationTypeChanged) {
       console.log('🔄 Migration type changed, resetting pricing display');
