@@ -5,10 +5,12 @@
 
 // Get backend URL from environment
 const getBackendUrl = (): string => {
-  // Vite dev: relative base so /api hits the dev server and vite proxies to :3001 (avoids CORS)
+  // Vite dev: relative base so /api hits the dev server and vite proxies to :3001 (avoids CORS).
+  // Vite's proxy is active on whatever port it starts (5173, 5174, 5177, …), so use it for
+  // any localhost/127.0.0.1 origin in dev mode — not just port 5173.
   if (import.meta.env.DEV && typeof window !== 'undefined') {
-    const { port, hostname } = window.location;
-    if (port === '5173' && (hostname === 'localhost' || hostname === '127.0.0.1')) {
+    const { hostname } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return '';
     }
   }

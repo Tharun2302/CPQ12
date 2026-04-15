@@ -175,13 +175,13 @@ const EsignInboxByToken: React.FC = () => {
 
   if (status === 'expired') {
     return (
-      <div className=”min-h-screen flex items-center justify-center bg-slate-50 p-4”>
-        <div className=”max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8 text-center”>
-          <div className=”inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-50 border border-amber-200 mx-auto mb-4”>
-            <Clock className=”w-8 h-8 text-amber-500” />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-50 border border-amber-200 mx-auto mb-4">
+            <Clock className="w-8 h-8 text-amber-500" />
           </div>
-          <h1 className=”text-2xl font-bold text-slate-900 mb-2”>Signing link expired</h1>
-          <p className=”text-slate-600 text-sm”>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Signing link expired</h1>
+          <p className="text-slate-600 text-sm">
             This e-signature link has expired (links are valid for 15 days). Please contact the sender to request a new signing link.
           </p>
         </div>
@@ -191,14 +191,14 @@ const EsignInboxByToken: React.FC = () => {
 
   if (status === 'denied') {
     return (
-      <div className=”min-h-screen flex items-center justify-center bg-slate-50 p-4”>
-        <div className=”max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8 text-center”>
-          <ShieldX className=”w-16 h-16 text-red-500 mx-auto mb-4” />
-          <h1 className=”text-2xl font-bold text-slate-900 mb-2”>{token ? 'Access Denied' : 'Open your dashboard'}</h1>
-          <p className=”text-slate-600”>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-lg border border-slate-200 p-8 text-center">
+          <ShieldX className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">{token ? 'Access Denied' : 'Open your dashboard'}</h1>
+          <p className="text-slate-600">
             {token
               ? 'This link is invalid or has expired. Please use the link from your email to open your dashboard.'
-              : 'No login required. Use the link from your email (Option 1 – “Team Lead Dashboard”) to open your queue and documents.'}
+              : 'No login required. Use the link from your email (Option 1 – "Team Lead Dashboard") to open your queue and documents.'}
           </p>
         </div>
       </div>

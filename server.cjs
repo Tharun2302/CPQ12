@@ -81,19 +81,28 @@ function esignActorIsDocumentCreator(doc, actorEmail) {
   return uploader !== '' && actor !== '' && uploader === actor;
 }
 
-// Middleware - Configure CORS to allow frontend requests
-app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
+// Helper: returns true for any localhost / 127.0.0.1 origin (any port) or known prod domains.
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  const prodOrigins = new Set([
     'https://zenop.ai',
     'https://www.zenop.ai',
-    'https://159.89.175.168'
-  ],
+    'https://159.89.175.168',
+    (process.env.APP_BASE_URL || '').replace(/\/$/, ''),
+  ].filter(Boolean));
+  return prodOrigins.has(origin);
+}
+
+// Middleware - Configure CORS to allow frontend requests
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS: ' + origin));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
@@ -101,21 +110,8 @@ app.use(cors({
 
 // Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
 app.use((req, res, next) => {
-  const allowedOrigins = new Set([
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
-    'https://zenop.ai',
-    'https://www.zenop.ai',
-    'https://159.89.175.168',
-    process.env.APP_BASE_URL?.replace(/\/$/, '')
-  ].filter(Boolean));
-
   const origin = req.headers.origin;
-  if (origin && allowedOrigins.has(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Vary', 'Origin');
     res.header('Access-Control-Allow-Credentials', 'true');
@@ -5809,6 +5805,13 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         signing_token: r.signing_token || null,
         token_expires_at: r.token_expires_at || null,
         expiry_reminder_sent_at: r.expiry_reminder_sent_at || null,
+        // Forwarding fields
+        forwarded_to_email: r.forwarded_to_email || null,
+        forwarded_to_name: r.forwarded_to_name || null,
+        forwarded_at: r.forwarded_at || null,
+        forward_count: r.forward_count || 0,
+        forwarded_from_email: r.forwarded_from_email || null,
+        forwarded_from_name: r.forwarded_from_name || null,
       })),
     });
   } catch (error) {
@@ -6001,8 +6004,25 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       console.warn('📧 E-sign skip (no SENDGRID_API_KEY):', rec.email);
     }
   }
-  if (emailsSent === 0 && recipients.some(r => r.email)) {
-    console.warn('📧 No e-sign emails were sent. Check: 1) SENDGRID_API_KEY valid, 2) EMAIL_FROM verified in SendGrid (Settings → Sender Authentication), 3) Recipient not on suppression list. Activity: https://app.sendgrid.com/email_activity');
+  const hasRecipientsWithEmail = recipients.some(r => r.email);
+  // If SendGrid is configured but every email failed, do NOT mark the document as 'sent'.
+  // Leaving it in 'draft' allows the user to retry the send once the issue is fixed
+  // (e.g. verified sender in SendGrid, corrected API key, etc.).
+  if (emailsSent === 0 && hasRecipientsWithEmail && process.env.SENDGRID_API_KEY) {
+    console.error('❌ E-sign: no emails were delivered even though SENDGRID_API_KEY is set.');
+    console.error('   Document NOT marked as sent — you can retry once the issue is resolved.');
+    console.error('   Common causes:');
+    console.error('   1) EMAIL_FROM (' + (process.env.EMAIL_FROM || 'not set') + ') is not verified in SendGrid');
+    console.error('      → https://app.sendgrid.com/settings/sender_auth');
+    console.error('   2) SENDGRID_API_KEY is invalid or lacks "Mail Send" permission');
+    console.error('      → https://app.sendgrid.com/settings/api_keys');
+    console.error('   3) Recipient email is on the suppression/bounce list');
+    console.error('      → https://app.sendgrid.com/suppressions/bounces');
+    return { success: false, emails_sent: 0, emails_sent_to: [], error: 'Email delivery failed. Check server logs for details (sender verification, API key, suppression list).' };
+  }
+  if (emailsSent === 0 && hasRecipientsWithEmail) {
+    // No SENDGRID_API_KEY — offline/dev mode; mark sent so the flow can proceed without email.
+    console.warn('📧 No e-sign emails sent (SENDGRID_API_KEY not configured). Marking as sent in offline mode.');
   }
   await db.collection('esign_documents').updateOne(
     { _id: docId },
@@ -7471,7 +7491,12 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         role: r.role || 'signer',
         status: r.status || 'pending',
         order: r.order ?? 999,
-        comment: r.comment || null
+        comment: r.comment || null,
+        // Forwarding fields
+        forwarded_to_email: r.forwarded_to_email || null,
+        forwarded_to_name: r.forwarded_to_name || null,
+        forwarded_at: r.forwarded_at || null,
+        forward_count: r.forward_count || 0,
       });
     });
     const agreements = docs.map((d) => {

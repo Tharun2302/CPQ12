@@ -14,6 +14,10 @@ interface RecipientStatus {
   status: string;
   order?: number;
   comment?: string | null;
+  forwarded_to_name?: string | null;
+  forwarded_to_email?: string | null;
+  forwarded_at?: string | null;
+  forward_count?: number;
 }
 
 interface StatusModalDoc {
@@ -708,6 +712,8 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       <h3 className="text-sm font-semibold text-slate-700 mb-3">Recipients</h3>
                       <ul className="space-y-2">
                         {statusModalRecipients.map((rec, idx) => {
+                          const isForwarded = !!rec.forwarded_to_email;
+                          const forwardedTo = rec.forwarded_to_name || rec.forwarded_to_email;
                           const statusLabel = rec.status === 'signed' ? 'Signed' : rec.status === 'reviewed' ? 'Reviewed' : rec.status === 'denied' ? 'Denied' : 'Pending';
                           const statusClass = rec.status === 'signed' ? 'text-emerald-600 font-medium' : rec.status === 'reviewed' ? 'text-amber-600 font-medium' : rec.status === 'denied' ? 'text-red-600 font-medium' : 'text-slate-500';
                           return (
@@ -717,10 +723,23 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                   {rec.name || rec.email || 'Signer'}{' '}
                                   <span className="text-slate-400">({(rec.role || 'signer').toLowerCase()})</span>
                                   {' — '}
-                                  <span className={statusClass}>{statusLabel}</span>
+                                  {isForwarded ? (
+                                    <span className="text-purple-600 font-medium">Forwarded</span>
+                                  ) : (
+                                    <span className={statusClass}>{statusLabel}</span>
+                                  )}
                                 </span>
-                                {rec.status === 'signed' ? <Check className="h-5 w-5 text-emerald-600 shrink-0" /> : rec.status === 'denied' ? <XCircle className="h-5 w-5 text-red-500 shrink-0" /> : rec.status === 'reviewed' ? <Check className="h-5 w-5 text-amber-600 shrink-0" /> : <Clock className="h-5 w-5 text-amber-500 shrink-0" />}
+                                {isForwarded ? (
+                                  <svg className="h-5 w-5 text-purple-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                ) : rec.status === 'signed' ? <Check className="h-5 w-5 text-emerald-600 shrink-0" /> : rec.status === 'denied' ? <XCircle className="h-5 w-5 text-red-500 shrink-0" /> : rec.status === 'reviewed' ? <Check className="h-5 w-5 text-amber-600 shrink-0" /> : <Clock className="h-5 w-5 text-amber-500 shrink-0" />}
                               </div>
+                              {isForwarded && (
+                                <div className="mt-1.5 text-xs text-slate-500">
+                                  Forwarded to: <span className="font-medium text-purple-600">{forwardedTo}</span>
+                                </div>
+                              )}
                               {rec.comment && (
                                 <div className="mt-1.5 text-sm text-slate-600 bg-slate-50 rounded-md px-2.5 py-1.5 border border-slate-100">
                                   <span className="font-medium text-slate-500">Comment: </span>

@@ -1591,68 +1591,123 @@ export class DocxTemplateProcessor {
             }
           }
 
-          // INJECT QUOTE VALIDITY LINE: Add "This quote is valid till ..." after Total Price if not already present
+          // VALIDITY LINE: Ensure "This quote is valid till …" is a standalone, left-aligned
+          // paragraph placed directly after the closing </w:tbl> of the table that contains
+          // "Total Price".  This covers two scenarios:
+          //   (a) The token {{quote_validity_line}} was already in the template (possibly
+          //       inside a right-hand table cell) — we extract it and re-inject it outside.
+          //   (b) The text is missing entirely — we inject it fresh.
+          // Either way the paragraph ends up outside any table and is truly left-aligned.
           const quoteValidityLine = processedData['{{quote_validity_line}}'] || '';
-          if (quoteValidityLine && !finalCleanText.includes('This quote is valid till')) {
-            console.log('📝 Injecting quote validity line:', quoteValidityLine);
+          if (quoteValidityLine) {
             try {
-              // Re-read the current document XML from finalZip
-              let injectZip = new PizZip(await buffer.arrayBuffer());
-              let injectDocXml = injectZip.file('word/document.xml')?.asText() || '';
-              
-              // Find the last occurrence of "Total Price" followed by a price value (e.g., "$2,500.00")
-              // We look for the closing tag of the paragraph containing Total Price
-              // Pattern: find </w:p> after "Total Price" and inject a new paragraph after it
-              const totalPricePattern = /<w:p[^>]*>[\s\S]*?Total\s*Price[\s\S]*?<\/w:p>/gi;
-              const matches = [...injectDocXml.matchAll(totalPricePattern)];
-              
-              if (matches.length > 0) {
-                // Get the last match (in case there are multiple Total Price mentions)
-                const lastMatch = matches[matches.length - 1];
-                const insertPosition = lastMatch.index! + lastMatch[0].length;
-                
-                // Create a new paragraph with the quote validity line
-                // Style: left-aligned with table, black color, proper spacing below table
-                const validityParagraph = `
-<w:p>
-  <w:pPr>
-    <w:jc w:val="left"/>
-    <w:spacing w:before="240" w:after="120"/>
-    <w:ind w:left="0" w:right="0"/>
-  </w:pPr>
-  <w:r>
-    <w:rPr>
-      <w:color w:val="000000"/>
-      <w:sz w:val="22"/>
-      <w:szCs w:val="22"/>
-    </w:rPr>
-    <w:t>${quoteValidityLine}</w:t>
-  </w:r>
-</w:p>`;
-                
-                // Insert the validity paragraph after the Total Price paragraph
-                const modifiedDocXml = injectDocXml.slice(0, insertPosition) + validityParagraph + injectDocXml.slice(insertPosition);
-                
-                // Update the ZIP with the modified document
-                injectZip.file('word/document.xml', modifiedDocXml);
-                
-                // Regenerate the buffer
-                buffer = injectZip.generate({
+              let vZip = new PizZip(await buffer.arrayBuffer());
+              let vXml = vZip.file('word/document.xml')?.asText() || '';
+
+              // Build the canonical standalone validity paragraph (left-aligned, outside table).
+              const validityPara =
+                `<w:p>` +
+                `<w:pPr>` +
+                `<w:jc w:val="left"/>` +
+                `<w:spacing w:before="160" w:after="0"/>` +
+                `<w:ind w:left="0" w:right="0"/>` +
+                `</w:pPr>` +
+                `<w:r>` +
+                `<w:rPr>` +
+                `<w:color w:val="000000"/>` +
+                `<w:sz w:val="22"/>` +
+                `<w:szCs w:val="22"/>` +
+                `</w:rPr>` +
+                `<w:t>${quoteValidityLine}</w:t>` +
+                `</w:r>` +
+                `</w:p>`;
+
+              // Step 1: Remove every existing validity paragraph (wherever it lives — table cell or standalone).
+              const existingValidityRe = /<w:p(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:p>/g;
+              const xmlNoValidity = vXml.replace(existingValidityRe, '');
+
+              // Step 2: Find the closing </w:tbl> of the table that contains "Total Price".
+              //   - Locate the last occurrence of "Total Price" in the XML.
+              //   - Then find the first </w:tbl> that appears after it — that is the table
+              //     boundary we want to insert AFTER.
+              const totalPricePos = xmlNoValidity.lastIndexOf('Total Price');
+              let insertAt = -1;
+
+              if (totalPricePos !== -1) {
+                const tblEndPos = xmlNoValidity.indexOf('</w:tbl>', totalPricePos);
+                if (tblEndPos !== -1) {
+                  insertAt = tblEndPos + '</w:tbl>'.length;
+                }
+              }
+
+              // Fallback: insert after the very last </w:tbl> in the document.
+              if (insertAt === -1) {
+                const lastTblEnd = xmlNoValidity.lastIndexOf('</w:tbl>');
+                if (lastTblEnd !== -1) insertAt = lastTblEnd + '</w:tbl>'.length;
+              }
+
+              if (insertAt !== -1) {
+                const finalVXml =
+                  xmlNoValidity.slice(0, insertAt) +
+                  validityPara +
+                  xmlNoValidity.slice(insertAt);
+
+                vZip.file('word/document.xml', finalVXml);
+                buffer = vZip.generate({
                   type: 'blob',
                   mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 });
-                
-                console.log('✅ Quote validity line injected successfully');
+                console.log('✅ Quote validity line placed after table, left-aligned');
               } else {
-                console.log('ℹ️ Total Price paragraph not found, skipping validity line injection');
+                console.log('ℹ️ Could not find table anchor for validity line — skipping reposition');
               }
-            } catch (injectErr) {
-              console.warn('⚠️ Failed to inject quote validity line:', injectErr);
+            } catch (vErr) {
+              console.warn('⚠️ Could not reposition quote validity line:', vErr);
             }
-          } else if (!quoteValidityLine) {
-            console.log('ℹ️ No quote validity line to inject');
-          } else {
-            console.log('ℹ️ Quote validity line already present in document');
+          }
+
+          // POST-PROCESS: Center the "CloudFuze Purchase Agreement for …" title paragraph.
+          // The template stores this as a normal left-aligned paragraph; we force it to center.
+          try {
+            let titleZip = new PizZip(await buffer.arrayBuffer());
+            const titleDocXml = titleZip.file('word/document.xml')?.asText() || '';
+
+            if (titleDocXml.includes('Purchase Agreement for')) {
+              const titleParaPattern = /(<w:p(?:\s[^>]*)?>)([\s\S]*?Purchase Agreement for[\s\S]*?)(<\/w:p>)/g;
+              let titleChanged = false;
+
+              const titleFixedXml = titleDocXml.replace(titleParaPattern, (_match, openTag, body, closeTag) => {
+                titleChanged = true;
+
+                if (/<w:pPr[\s>]/.test(body)) {
+                  // w:pPr exists — remove any existing w:jc and add center
+                  const fixedBody = body.replace(
+                    /(<w:pPr(?:\s[^>]*)?>)([\s\S]*?)(<\/w:pPr>)/,
+                    (_pPr: string, pPrOpen: string, pPrContent: string, pPrClose: string) => {
+                      const stripped = pPrContent
+                        .replace(/<w:jc\b[^/]*\/>/g, '')
+                        .replace(/<w:jc\b[\s\S]*?<\/w:jc>/g, '');
+                      return `${pPrOpen}${stripped}<w:jc w:val="center"/>${pPrClose}`;
+                    }
+                  );
+                  return `${openTag}${fixedBody}${closeTag}`;
+                } else {
+                  // No w:pPr — insert one with center alignment
+                  return `${openTag}<w:pPr><w:jc w:val="center"/></w:pPr>${body}${closeTag}`;
+                }
+              });
+
+              if (titleChanged) {
+                titleZip.file('word/document.xml', titleFixedXml);
+                buffer = titleZip.generate({
+                  type: 'blob',
+                  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                });
+                console.log('✅ Purchase Agreement title alignment set to center');
+              }
+            }
+          } catch (titleErr) {
+            console.warn('⚠️ Could not center Purchase Agreement title:', titleErr);
           }
         }
       } catch (verifyError) {

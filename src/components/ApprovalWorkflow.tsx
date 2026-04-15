@@ -93,6 +93,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         setSettingsError(null);
         
         const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
         const result = await response.json();
         
         if (result.success && result.data) {
@@ -168,6 +171,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
           body: JSON.stringify(teamApprovalSettings),
         });
 
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
         const result = await response.json();
         if (result.success) {
           console.log('✅ Team approval settings saved to MongoDB');

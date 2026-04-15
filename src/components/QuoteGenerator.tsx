@@ -3954,29 +3954,10 @@ Total Price: {{total price}}`;
         lastModified: selectedTemplate.file?.lastModified
       });
 
-      // Check if template has a file
-      if (!selectedTemplate.file) {
-        console.error('❌ Selected template missing file:', selectedTemplate);
-        console.log('🔍 Template details:', {
-          id: selectedTemplate.id,
-          name: selectedTemplate.name,
-          hasFileData: !!selectedTemplate.fileData,
-          hasFile: !!selectedTemplate.file,
-          fileType: selectedTemplate.fileType,
-          fileName: selectedTemplate.fileName
-        });
-        
-        // Try to provide more helpful error message
-        if (selectedTemplate.fileData) {
-          alert('Template file is being processed. Please wait a moment and try again, or go to the Template session to re-select your template.');
-        } else {
-        alert('Selected template does not have a valid file. Please go to the Template session and re-select your template.');
-        }
-        return;
-      }
-
+      // Note: selectedTemplate.file may be null for backend-stored templates;
+      // the fetchLatestTemplateFile() call below will retrieve it from the server.
       console.log('📄 Processing template:', selectedTemplate.name);
-      console.log('📊 Template file type:', selectedTemplate.file.type);
+      console.log('📊 Template file type:', selectedTemplate.file?.type ?? selectedTemplate.fileType ?? 'unknown (will fetch from backend)');
       console.log('📊 Calculation object:', calculation);
       console.log('📊 SafeCalculation object:', safeCalculation);
       console.log('📊 Configuration object:', configuration);
@@ -7254,8 +7235,8 @@ Total Price: {{total price}}`;
         
         // Debug: Show the exact data being sent to DOCX processor
         console.log('🚀 SENDING TO DOCX PROCESSOR:');
-        console.log('  Template file:', selectedTemplate.file.name);
-        console.log('  Template file type:', selectedTemplate.file.type);
+        console.log('  Template file:', templateFileForAgreement.name);
+        console.log('  Template file type:', templateFileForAgreement.type);
         console.log('  Template data keys:', Object.keys(templateData));
         console.log('  Template data values:', Object.values(templateData));
         
@@ -7815,13 +7796,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           throw new Error(result.error || 'Failed to process DOCX template');
         }
 
-      } else if (selectedTemplate.file.type === 'application/pdf') {
+      } else if (templateFileForAgreement.type === 'application/pdf') {
         console.log('🔄 Processing PDF template (Fallback Method)...');
         console.log('⚠️ Note: PDF processing is less reliable. Consider using DOCX templates for better results.');
-        
+
         // Import PDF orchestrator
         const { pdfOrchestrator } = await import('../utils/pdfOrchestratorIntegration');
-        
+
         // Debug: Log the quote data being passed
         console.log('🔍 Quote data being passed to PDF orchestrator:', {
           company: quoteData.company,
@@ -7831,10 +7812,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           calculation: quoteData.calculation,
           selectedPlan: quoteData.selectedPlan
         });
-        
+
         // Process PDF template with quote data
         const result = await pdfOrchestrator.buildMergedPDFFromFile(
-          selectedTemplate.file,
+          templateFileForAgreement,
           quoteData
         );
 

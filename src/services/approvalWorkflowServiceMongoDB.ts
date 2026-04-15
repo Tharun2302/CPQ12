@@ -1,14 +1,27 @@
 // MongoDB service for approval workflows
 import { ApprovalWorkflow, ApprovalStep } from '../types/approval';
+import { BACKEND_URL } from '../config/api';
+
+/** Safely extract an error message from a non-ok response without crashing on empty bodies. */
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const text = await response.text();
+    if (!text) return `${fallback} (HTTP ${response.status})`;
+    const data = JSON.parse(text);
+    return data.error || data.message || fallback;
+  } catch {
+    return `${fallback} (HTTP ${response.status})`;
+  }
+}
 
 class ApprovalWorkflowServiceMongoDB {
-  private baseUrl = import.meta.env.VITE_BACKEND_URL ? `${import.meta.env.VITE_BACKEND_URL}/api` : 'http://localhost:3001/api';
+  private baseUrl = `${BACKEND_URL}/api`;
 
   // Save workflow to MongoDB
   async saveWorkflow(workflow: Omit<ApprovalWorkflow, 'id' | 'createdAt' | 'updatedAt' | 'currentStep' | 'status'>): Promise<string> {
     try {
       console.log('💾 Saving workflow to MongoDB:', workflow);
-      
+
       const response = await fetch(`${this.baseUrl}/approval-workflows`, {
         method: 'POST',
         headers: {
@@ -18,8 +31,7 @@ class ApprovalWorkflowServiceMongoDB {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save workflow');
+        throw new Error(await extractErrorMessage(response, 'Failed to save workflow'));
       }
 
       const result = await response.json();
@@ -35,12 +47,11 @@ class ApprovalWorkflowServiceMongoDB {
   async getAllWorkflows(): Promise<ApprovalWorkflow[]> {
     try {
       console.log('📄 Fetching workflows from MongoDB...');
-      
+
       const response = await fetch(`${this.baseUrl}/approval-workflows`);
-      
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch workflows');
+        throw new Error(await extractErrorMessage(response, 'Failed to fetch workflows'));
       }
 
       const result = await response.json();
@@ -56,15 +67,14 @@ class ApprovalWorkflowServiceMongoDB {
   async getWorkflow(workflowId: string): Promise<ApprovalWorkflow | null> {
     try {
       console.log('📄 Fetching workflow from MongoDB:', workflowId);
-      
+
       const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}`);
-      
+
       if (!response.ok) {
         if (response.status === 404) {
           return null;
         }
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch workflow');
+        throw new Error(await extractErrorMessage(response, 'Failed to fetch workflow'));
       }
 
       const result = await response.json();
@@ -80,7 +90,7 @@ class ApprovalWorkflowServiceMongoDB {
   async updateWorkflow(workflowId: string, updates: Partial<ApprovalWorkflow>): Promise<void> {
     try {
       console.log('📝 Updating workflow in MongoDB:', workflowId, updates);
-      
+
       const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}`, {
         method: 'PUT',
         headers: {
@@ -90,8 +100,7 @@ class ApprovalWorkflowServiceMongoDB {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update workflow');
+        throw new Error(await extractErrorMessage(response, 'Failed to update workflow'));
       }
 
       console.log('✅ Workflow updated in MongoDB');
@@ -105,7 +114,7 @@ class ApprovalWorkflowServiceMongoDB {
   async updateWorkflowStep(workflowId: string, stepNumber: number, stepUpdates: Partial<ApprovalStep>): Promise<void> {
     try {
       console.log('📝 Updating workflow step in MongoDB:', workflowId, stepNumber, stepUpdates);
-      
+
       const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}/step/${stepNumber}`, {
         method: 'PUT',
         headers: {
@@ -115,8 +124,7 @@ class ApprovalWorkflowServiceMongoDB {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update workflow step');
+        throw new Error(await extractErrorMessage(response, 'Failed to update workflow step'));
       }
 
       console.log('✅ Workflow step updated in MongoDB');
@@ -130,14 +138,13 @@ class ApprovalWorkflowServiceMongoDB {
   async deleteWorkflow(workflowId: string): Promise<void> {
     try {
       console.log('🗑️ Deleting workflow from MongoDB:', workflowId);
-      
+
       const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}`, {
         method: 'DELETE'
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete workflow');
+        throw new Error(await extractErrorMessage(response, 'Failed to delete workflow'));
       }
 
       console.log('✅ Workflow deleted from MongoDB');

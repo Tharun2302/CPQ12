@@ -219,6 +219,46 @@ const ApprovalDashboard: React.FC = () => {
     }
   };
 
+  /**
+   * Checks the current status of an existing eSign document and navigates
+   * to the appropriate page:
+   *   - 'draft'              → place-fields (add recipients/fields and send)
+   *   - 'sent' / 'completed' → tracking/status page
+   *   - not found / voided   → create a fresh document via handleProceedToEsign
+   */
+  const handleProceedToEsignWithCheck = async (workflow: any) => {
+    const esignDocId = workflow.esignDocumentId;
+    if (!esignDocId) {
+      handleProceedToEsign(workflow);
+      return;
+    }
+    setProcessingEsignId(workflow.id);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${esignDocId}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.document) {
+        const docStatus: string = data.document.status || 'draft';
+        sessionStorage.removeItem('quotePendingApproval');
+        if (docStatus === 'draft') {
+          navigate(`/esign/${esignDocId}/place-fields`);
+        } else {
+          // sent, completed, denied, voided — show tracking page
+          navigate(`/esign/${esignDocId}/status`);
+        }
+      } else {
+        // Document not found or invalid — create a new one
+        setProcessingEsignId(null);
+        handleProceedToEsign(workflow);
+      }
+    } catch {
+      // Network error — fall back to creating a new document
+      setProcessingEsignId(null);
+      handleProceedToEsign(workflow);
+    } finally {
+      setProcessingEsignId(null);
+    }
+  };
+
   /** Sends a reminder email to the current pending approver. */
   const handleSendReminder = async (workflowId: string) => {
     setSendingReminderId(workflowId);
@@ -708,12 +748,7 @@ const ApprovalDashboard: React.FC = () => {
                         {status === 'approved' && (
                           <button
                             type="button"
-                            onClick={() =>
-                              workflow.esignDocumentId
-                                ? (sessionStorage.removeItem('quotePendingApproval'),
-                                   navigate(`/esign/${workflow.esignDocumentId}/place-fields`))
-                                : handleProceedToEsign(workflow)
-                            }
+                            onClick={() => handleProceedToEsignWithCheck(workflow)}
                             disabled={processingEsignId === workflow.id}
                             title="Approval complete — add recipients, place fields and send for e-signature"
                             className={`inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-600 border border-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap ${
