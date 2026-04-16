@@ -84,15 +84,20 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: 'dealdesk@zenop.ai',
+          to: 'cpq.zenop.ai.support@cloudfuze.com',
           subject: `[CPQ Support] ${subject} — ${name || email || 'Unknown User'}`,
           message: htmlBody,
         }),
       });
 
-      const data = await res.json();
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        if (!res.ok) throw new Error(`Server error (${res.status}). Please check the server is running and try again.`);
+      }
       if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Failed to send message');
+        throw new Error(data.message || `Failed to send message (${res.status})`);
       }
       setSubmitted(true);
     } catch (err: any) {
@@ -145,7 +150,7 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
             <h3 className="text-base font-semibold text-slate-900">Message Sent!</h3>
             <p className="text-sm text-slate-500">
               Your message has been sent to our support team at{' '}
-              <span className="font-medium text-slate-700">dealdesk@zenop.ai</span>.
+              <span className="font-medium text-slate-700">cpq.zenop.ai.support@cloudfuze.com</span>.
               We'll follow up with you shortly.
             </p>
             <button
@@ -220,7 +225,7 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
 
             {/* Actions */}
             <div className="flex items-center justify-between pt-1">
-              <p className="text-[11px] text-slate-400">Sends to dealdesk@zenop.ai</p>
+              <p className="text-[11px] text-slate-400">Sends to cpq.zenop.ai.support@cloudfuze.com</p>
               <div className="flex gap-2">
                 <button
                   type="button"

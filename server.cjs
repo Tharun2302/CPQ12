@@ -5777,6 +5777,61 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
   }
 });
 
+// POST /api/approval-workflows/:workflowId/reset-esign
+// Deletes the linked esign document (all recipients, fields, secrets, files) and
+// clears esignDocumentId from the workflow so the user can start a fresh signing request.
+app.post('/api/approval-workflows/:workflowId/reset-esign', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const workflowId = req.params.workflowId;
+    if (!workflowId) return res.status(400).json({ success: false, error: 'Invalid workflow ID' });
+
+    // Workflows use a string `id` field (e.g. "WF-1775162752752"), not a MongoDB ObjectId
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow) return res.status(404).json({ success: false, error: 'Workflow not found' });
+
+    const esignDocIdStr = workflow.esignDocumentId;
+    if (esignDocIdStr) {
+      let docId;
+      try { docId = new ObjectId(esignDocIdStr); } catch { /* invalid id — skip document deletion */ }
+
+      if (docId) {
+        const esignDoc = await db.collection('esign_documents').findOne({ _id: docId });
+
+        await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
+        await db.collection('esign_recipients').deleteMany({ document_id: docId });
+        await db.collection('esign_signature_secrets').deleteMany({
+          $or: [{ document_id: docId }, { document_id: docId.toString() }],
+        });
+        await db.collection('audit_logs').deleteMany({ document_id: docId });
+        await db.collection('esign_documents').deleteOne({ _id: docId });
+
+        if (esignDoc) {
+          [esignDoc.file_path, esignDoc.signed_file_path, esignDoc.review_merged_file_path]
+            .filter(Boolean)
+            .forEach((filePath) => {
+              try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {
+                console.warn('reset-esign: could not delete file:', filePath, e.message);
+              }
+            });
+        }
+        console.log('reset-esign: esign document deleted', esignDocIdStr);
+      }
+    }
+
+    // Clear the esignDocumentId reference so the next "Proceed to e-Sign" creates a fresh doc
+    await db.collection('approval_workflows').updateOne(
+      { id: workflowId },
+      { $unset: { esignDocumentId: '' } }
+    );
+
+    res.json({ success: true, message: 'E-sign reset. You can now create a new signing request.' });
+  } catch (error) {
+    console.error('❌ reset-esign error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET /api/esign/documents/:id/recipients - List recipients for a document
 app.get('/api/esign/documents/:id/recipients', async (req, res) => {
   try {
@@ -7497,6 +7552,8 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         forwarded_to_name: r.forwarded_to_name || null,
         forwarded_at: r.forwarded_at || null,
         forward_count: r.forward_count || 0,
+        forwarded_from_email: r.forwarded_from_email || null,
+        forwarded_from_name: r.forwarded_from_name || null,
       });
     });
     const agreements = docs.map((d) => {

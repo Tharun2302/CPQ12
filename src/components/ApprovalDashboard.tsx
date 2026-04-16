@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   PenLine,
   Bell,
+  RotateCcw,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
@@ -176,6 +177,8 @@ const ApprovalDashboard: React.FC = () => {
   const [filterDateTo, setFilterDateTo] = useState('');
   // Tracks which workflow is currently being prepared for eSign (loading state)
   const [processingEsignId, setProcessingEsignId] = useState<string | null>(null);
+  // Tracks which workflow's eSign is being reset
+  const [resettingEsignId, setResettingEsignId] = useState<string | null>(null);
   // Tracks which workflow reminder is being sent + per-workflow success flash
   const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
   const [reminderSentId, setReminderSentId] = useState<string | null>(null);
@@ -256,6 +259,33 @@ const ApprovalDashboard: React.FC = () => {
       handleProceedToEsign(workflow);
     } finally {
       setProcessingEsignId(null);
+    }
+  };
+
+  /**
+   * Resets the e-sign for a workflow by deleting the existing esign document
+   * (recipients, fields, files) and clearing the reference so the user can
+   * click "Proceed to e-Sign" again to start fresh.
+   */
+  const handleResetEsign = async (workflow: any) => {
+    const confirmed = window.confirm(
+      'Reset e-sign for this quote?\n\nThis will delete the current signing document, all recipients, and placed fields. You will be able to add recipients and fields again from scratch.\n\nThis cannot be undone.'
+    );
+    if (!confirmed) return;
+    setResettingEsignId(workflow.id);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflow.id}/reset-esign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: workflow.creatorEmail || '' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to reset e-sign');
+      await refreshWorkflows();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to reset e-sign. Please try again.');
+    } finally {
+      setResettingEsignId(null);
     }
   };
 
@@ -746,29 +776,52 @@ const ApprovalDashboard: React.FC = () => {
 
                         {/* e-Sign button — shown for all approved workflows, same look regardless of state */}
                         {status === 'approved' && (
-                          <button
-                            type="button"
-                            onClick={() => handleProceedToEsignWithCheck(workflow)}
-                            disabled={processingEsignId === workflow.id}
-                            title="Approval complete — add recipients, place fields and send for e-signature"
-                            className={`inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-600 border border-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap ${
-                              processingEsignId === workflow.id
-                                ? 'opacity-70 cursor-not-allowed'
-                                : 'hover:bg-emerald-700 hover:border-emerald-700'
-                            }`}
-                          >
-                            {processingEsignId === workflow.id ? (
-                              <>
-                                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                                <span>Opening…</span>
-                              </>
-                            ) : (
-                              <>
-                                <PenLine className="h-4 w-4 shrink-0" />
-                                <span>Proceed to e-Sign</span>
-                              </>
+                          <div className="inline-flex w-full sm:w-auto items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleProceedToEsignWithCheck(workflow)}
+                              disabled={processingEsignId === workflow.id || resettingEsignId === workflow.id}
+                              title="Approval complete — add recipients, place fields and send for e-signature"
+                              className={`inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 rounded-md bg-emerald-600 border border-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap ${
+                                processingEsignId === workflow.id || resettingEsignId === workflow.id
+                                  ? 'opacity-70 cursor-not-allowed'
+                                  : 'hover:bg-emerald-700 hover:border-emerald-700'
+                              }`}
+                            >
+                              {processingEsignId === workflow.id ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                  <span>Opening…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <PenLine className="h-4 w-4 shrink-0" />
+                                  <span>Proceed to e-Sign</span>
+                                </>
+                              )}
+                            </button>
+                            {/* Reset e-sign — only shown when an esign document already exists */}
+                            {workflow.esignDocumentId && (
+                              <button
+                                type="button"
+                                onClick={() => handleResetEsign(workflow)}
+                                disabled={resettingEsignId === workflow.id || processingEsignId === workflow.id}
+                                title="Reset e-sign — delete current document and start over with new recipients and fields"
+                                aria-label="Reset e-sign"
+                                className={`inline-flex items-center justify-center rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition-all whitespace-nowrap ${
+                                  resettingEsignId === workflow.id || processingEsignId === workflow.id
+                                    ? 'opacity-70 cursor-not-allowed bg-gray-100 border-gray-200 text-gray-400'
+                                    : 'bg-white border-gray-300 text-gray-600 hover:bg-red-50 hover:border-red-300 hover:text-red-600'
+                                }`}
+                              >
+                                {resettingEsignId === workflow.id ? (
+                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="h-4 w-4 shrink-0" />
+                                )}
+                              </button>
                             )}
-                          </button>
+                          </div>
                         )}
                         <button
                           type="button"

@@ -1591,75 +1591,173 @@ export class DocxTemplateProcessor {
             }
           }
 
-          // VALIDITY LINE: Ensure "This quote is valid till …" is a standalone, left-aligned
-          // paragraph placed directly after the closing </w:tbl> of the table that contains
-          // "Total Price".  This covers two scenarios:
-          //   (a) The token {{quote_validity_line}} was already in the template (possibly
-          //       inside a right-hand table cell) — we extract it and re-inject it outside.
-          //   (b) The text is missing entirely — we inject it fresh.
-          // Either way the paragraph ends up outside any table and is truly left-aligned.
+          // VALIDITY LINE: Insert "This quote is valid till …" as a new table row directly
+          // below the "Total Price" row, inside the same <w:tbl>.  The row spans all
+          // columns, is left-aligned, and appears as a single unbroken line.
+          //
+          // This covers two scenarios:
+          //   (a) The token {{quote_validity_line}} was already placed inside a table cell
+          //       in the template — we remove it and re-inject it as a proper row.
+          //   (b) The text is missing entirely — we inject a fresh row.
           const quoteValidityLine = processedData['{{quote_validity_line}}'] || '';
           if (quoteValidityLine) {
             try {
               let vZip = new PizZip(await buffer.arrayBuffer());
               let vXml = vZip.file('word/document.xml')?.asText() || '';
 
-              // Build the canonical standalone validity paragraph (left-aligned, outside table).
-              const validityPara =
-                `<w:p>` +
-                `<w:pPr>` +
-                `<w:jc w:val="left"/>` +
-                `<w:spacing w:before="160" w:after="0"/>` +
-                `<w:ind w:left="0" w:right="0"/>` +
-                `</w:pPr>` +
-                `<w:r>` +
-                `<w:rPr>` +
-                `<w:color w:val="000000"/>` +
-                `<w:sz w:val="22"/>` +
-                `<w:szCs w:val="22"/>` +
-                `</w:rPr>` +
-                `<w:t>${quoteValidityLine}</w:t>` +
-                `</w:r>` +
-                `</w:p>`;
+              // Step 1: Remove every existing validity paragraph or table row that already
+              // carries the validity text (handles re-runs and scenario a).
+              const existingValidityParaRe = /<w:p(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:p>/g;
+              const existingValidityRowRe  = /<w:tr(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:tr>/g;
+              let xmlNoValidity = vXml
+                .replace(existingValidityRowRe, '')   // rows first (wider match)
+                .replace(existingValidityParaRe, ''); // then bare paragraphs
 
-              // Step 1: Remove every existing validity paragraph (wherever it lives — table cell or standalone).
-              const existingValidityRe = /<w:p(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:p>/g;
-              const xmlNoValidity = vXml.replace(existingValidityRe, '');
-
-              // Step 2: Find the closing </w:tbl> of the table that contains "Total Price".
-              //   - Locate the last occurrence of "Total Price" in the XML.
-              //   - Then find the first </w:tbl> that appears after it — that is the table
-              //     boundary we want to insert AFTER.
+              // Step 2: Locate the "Total Price" row so we know which table to append to.
               const totalPricePos = xmlNoValidity.lastIndexOf('Total Price');
               let insertAt = -1;
 
               if (totalPricePos !== -1) {
-                const tblEndPos = xmlNoValidity.indexOf('</w:tbl>', totalPricePos);
-                if (tblEndPos !== -1) {
-                  insertAt = tblEndPos + '</w:tbl>'.length;
+                // Check if the table containing "Total Price" is right-aligned.
+                // Right-aligned tables (e.g. Slack/message migration discount+total tables)
+                // must NOT have the validity row inserted inside them — the text would
+                // appear flush against the right margin instead of the left edge of the
+                // main pricing table.  In that case we insert a standalone paragraph
+                // immediately after </w:tbl> so the text sits left-aligned on the page.
+                const tblStartPos = xmlNoValidity.lastIndexOf('<w:tbl>', totalPricePos);
+                const tblEndPos   = xmlNoValidity.indexOf('</w:tbl>', totalPricePos);
+                const tblChunk    = tblStartPos !== -1 && tblEndPos !== -1
+                  ? xmlNoValidity.slice(tblStartPos, tblEndPos)
+                  : '';
+                // Look for right-alignment only in the <w:tblPr> block (not in cell/row jc)
+                const tblPrChunk  = tblChunk.slice(0, tblChunk.indexOf('</w:tblPr>') + '</w:tblPr>'.length);
+                const isRightAlignedTable = tblPrChunk.includes('<w:jc w:val="right"/>');
+
+                if (isRightAlignedTable && tblEndPos !== -1) {
+                  // The "Total Price" table is right-aligned (e.g. Slack/message migration).
+                  // Insert the validity row at the bottom of the MAIN pricing table
+                  // (the full-width center-aligned table that contains "Job Requirement")
+                  // so the text is flush with the left edge of the pricing table.
+                  const mainTblAnchor = xmlNoValidity.indexOf('Job Requirement');
+                  const mainTblStart  = mainTblAnchor !== -1 ? xmlNoValidity.lastIndexOf('<w:tbl>', mainTblAnchor) : -1;
+                  const mainTblEnd    = mainTblAnchor !== -1 ? xmlNoValidity.indexOf('</w:tbl>', mainTblAnchor) : -1;
+
+                  if (mainTblStart !== -1 && mainTblEnd !== -1) {
+                    // Count columns in the main table's first row for correct gridSpan
+                    const mainTblXml  = xmlNoValidity.slice(mainTblStart, mainTblEnd);
+                    const firstRowMatch = mainTblXml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/);
+                    const mainColCount  = firstRowMatch
+                      ? (firstRowMatch[0].match(/<\/w:tc>/g) || []).length
+                      : 3;
+                    const mainGridSpan  = mainColCount > 1 ? mainColCount : 3;
+
+                    const validityRow =
+                      `<w:tr>` +
+                      `<w:tc>` +
+                      `<w:tcPr><w:gridSpan w:val="${mainGridSpan}"/></w:tcPr>` +
+                      `<w:p>` +
+                      `<w:pPr>` +
+                      `<w:jc w:val="left"/>` +
+                      `<w:spacing w:before="80" w:after="80"/>` +
+                      `<w:ind w:left="0" w:right="0"/>` +
+                      `</w:pPr>` +
+                      `<w:r>` +
+                      `<w:rPr><w:color w:val="000000"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>` +
+                      `<w:t xml:space="preserve">${quoteValidityLine}</w:t>` +
+                      `</w:r>` +
+                      `</w:p>` +
+                      `</w:tc>` +
+                      `</w:tr>`;
+
+                    insertAt = mainTblEnd; // before </w:tbl> of main pricing table
+                    const finalVXml =
+                      xmlNoValidity.slice(0, mainTblEnd) +
+                      validityRow +
+                      xmlNoValidity.slice(mainTblEnd);
+
+                    vZip.file('word/document.xml', finalVXml);
+                    buffer = vZip.generate({
+                      type: 'blob',
+                      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    });
+                    console.log(`✅ Quote validity line inserted as row (${mainGridSpan}-col span) at bottom of main pricing table`);
+                  }
+                } else {
+                  // Normal case: insert as a row inside the table, spanning all columns.
+                  const tpRowStart = xmlNoValidity.lastIndexOf('<w:tr', totalPricePos);
+                  const tpRowEnd   = xmlNoValidity.indexOf('</w:tr>', totalPricePos);
+                  const colCount   = tpRowStart !== -1 && tpRowEnd !== -1
+                    ? (xmlNoValidity.slice(tpRowStart, tpRowEnd + '</w:tr>'.length).match(/<\/w:tc>/g) || []).length
+                    : 0;
+                  const gridSpan   = colCount > 1 ? colCount : 2; // safe default
+
+                  const validityRow =
+                    `<w:tr>` +
+                    `<w:tc>` +
+                    `<w:tcPr>` +
+                    `<w:gridSpan w:val="${gridSpan}"/>` +
+                    `</w:tcPr>` +
+                    `<w:p>` +
+                    `<w:pPr>` +
+                    `<w:jc w:val="left"/>` +
+                    `<w:spacing w:before="80" w:after="80"/>` +
+                    `<w:ind w:left="0" w:right="0"/>` +
+                    `</w:pPr>` +
+                    `<w:r>` +
+                    `<w:rPr>` +
+                    `<w:color w:val="000000"/>` +
+                    `<w:sz w:val="22"/>` +
+                    `<w:szCs w:val="22"/>` +
+                    `</w:rPr>` +
+                    `<w:t xml:space="preserve">${quoteValidityLine}</w:t>` +
+                    `</w:r>` +
+                    `</w:p>` +
+                    `</w:tc>` +
+                    `</w:tr>`;
+
+                  if (tblEndPos !== -1) {
+                    insertAt = tblEndPos; // before </w:tbl>, not after
+                    const finalVXml =
+                      xmlNoValidity.slice(0, insertAt) +
+                      validityRow +
+                      xmlNoValidity.slice(insertAt);
+
+                    vZip.file('word/document.xml', finalVXml);
+                    buffer = vZip.generate({
+                      type: 'blob',
+                      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    });
+                    console.log(`✅ Quote validity line inserted as table row (${gridSpan}-col span) below Total Price`);
+                  }
                 }
               }
 
-              // Fallback: insert after the very last </w:tbl> in the document.
+              // Fallback: if we couldn't find the Total Price table, append a standalone
+              // paragraph after the last table in the document so the text still appears.
               if (insertAt === -1) {
                 const lastTblEnd = xmlNoValidity.lastIndexOf('</w:tbl>');
-                if (lastTblEnd !== -1) insertAt = lastTblEnd + '</w:tbl>'.length;
-              }
-
-              if (insertAt !== -1) {
-                const finalVXml =
-                  xmlNoValidity.slice(0, insertAt) +
-                  validityPara +
-                  xmlNoValidity.slice(insertAt);
-
-                vZip.file('word/document.xml', finalVXml);
-                buffer = vZip.generate({
-                  type: 'blob',
-                  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                });
-                console.log('✅ Quote validity line placed after table, left-aligned');
-              } else {
-                console.log('ℹ️ Could not find table anchor for validity line — skipping reposition');
+                if (lastTblEnd !== -1) {
+                  const fallbackPara =
+                    `<w:p>` +
+                    `<w:pPr><w:jc w:val="left"/><w:spacing w:before="160" w:after="0"/></w:pPr>` +
+                    `<w:r>` +
+                    `<w:rPr><w:color w:val="000000"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>` +
+                    `<w:t xml:space="preserve">${quoteValidityLine}</w:t>` +
+                    `</w:r>` +
+                    `</w:p>`;
+                  const fallbackXml =
+                    xmlNoValidity.slice(0, lastTblEnd + '</w:tbl>'.length) +
+                    fallbackPara +
+                    xmlNoValidity.slice(lastTblEnd + '</w:tbl>'.length);
+                  vZip.file('word/document.xml', fallbackXml);
+                  buffer = vZip.generate({
+                    type: 'blob',
+                    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  });
+                  console.log('ℹ️ Validity line: Total Price table not found — placed after last table as fallback');
+                } else {
+                  console.log('ℹ️ Could not find any table anchor for validity line — skipping');
+                }
               }
             } catch (vErr) {
               console.warn('⚠️ Could not reposition quote validity line:', vErr);

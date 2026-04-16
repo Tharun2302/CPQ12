@@ -18,6 +18,8 @@ interface RecipientStatus {
   forwarded_to_email?: string | null;
   forwarded_at?: string | null;
   forward_count?: number;
+  forwarded_from_name?: string | null;
+  forwarded_from_email?: string | null;
 }
 
 interface StatusModalDoc {
@@ -714,6 +716,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                         {statusModalRecipients.map((rec, idx) => {
                           const isForwarded = !!rec.forwarded_to_email;
                           const forwardedTo = rec.forwarded_to_name || rec.forwarded_to_email;
+                          const forwardedBy = rec.forwarded_from_name || rec.forwarded_from_email;
                           const statusLabel = rec.status === 'signed' ? 'Signed' : rec.status === 'reviewed' ? 'Reviewed' : rec.status === 'denied' ? 'Denied' : 'Pending';
                           const statusClass = rec.status === 'signed' ? 'text-emerald-600 font-medium' : rec.status === 'reviewed' ? 'text-amber-600 font-medium' : rec.status === 'denied' ? 'text-red-600 font-medium' : 'text-slate-500';
                           return (
@@ -737,7 +740,10 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                               </div>
                               {isForwarded && (
                                 <div className="mt-1.5 text-xs text-slate-500">
-                                  Forwarded to: <span className="font-medium text-purple-600">{forwardedTo}</span>
+                                  {forwardedBy
+                                    ? <><span className="font-medium text-slate-700">{forwardedBy}</span> forwarded to: <span className="font-medium text-purple-600">{forwardedTo}</span></>
+                                    : <>Forwarded to: <span className="font-medium text-purple-600">{forwardedTo}</span></>
+                                  }
                                 </div>
                               )}
                               {rec.comment && (
