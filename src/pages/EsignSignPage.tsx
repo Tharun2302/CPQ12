@@ -1341,71 +1341,163 @@ const EsignSignPage: React.FC = () => {
   if (signerChoice === null && signingToken) {
     const signerPreviewFileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
     return (
-      <div className="min-h-screen bg-slate-50 py-8 px-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-            <div className="bg-indigo-600 px-6 py-4">
-              <h1 className="text-xl font-bold text-white">Sign Document</h1>
-              <p className="text-indigo-100 text-sm mt-0.5">{doc.file_name}</p>
+      <div className="h-screen overflow-hidden bg-slate-100 flex flex-col">
+
+        {/* ── Top header ── */}
+        <header className="flex-shrink-0 bg-white border-b border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0">
+              <PenLine className="w-4 h-4 text-white" />
             </div>
-            <div className="p-6 space-y-6">
-              <div>
-                <p className="text-sm font-medium text-slate-700 mb-2">Review the document below, then choose to approve or decline to sign.</p>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                  <iframe
-                    src={signerPreviewFileUrl}
-                    title="Document preview"
-                    className="w-full h-[60vh] border-0"
-                  />
-                </div>
-              </div>
-              <p className="text-slate-600">Do you approve this document and wish to sign, or decline to sign?</p>
-              {renderForwardRequestPanel()}
-              {error && <p className="text-red-600 text-sm">{error}</p>}
-              <div className="flex flex-nowrap items-end gap-3 w-full min-w-0 overflow-x-auto bg-slate-50 rounded-xl border border-slate-200 p-4 sm:p-5">
-                <button
-                  type="button"
-                  onClick={() => setSignerChoice('approve')}
-                  className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 whitespace-nowrap"
-                >
-                  <Check className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
-                  Approve (proceed to sign)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDenySigning}
-                  disabled={denyingSign}
-                  className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {denyingSign ? (
-                    <>
-                      <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin shrink-0" />
-                      Submitting…
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
-                      Deny (decline to sign)
-                    </>
-                  )}
-                </button>
-                <div className="flex flex-col gap-1 w-64 min-w-[16rem] flex-shrink-0">
-                  <label htmlFor="signer-comment" className="text-xs font-medium text-slate-600 leading-tight">
-                    Comment (optional for Approve; required for Deny)
-                  </label>
-                  <input
-                    id="signer-comment"
-                    type="text"
-                    value={signerComment}
-                    onChange={(e) => setSignerComment(e.target.value)}
-                    placeholder="Add a comment…"
-                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
+            <div className="min-w-0">
+              <p className="text-xs text-slate-500 leading-none">Document for signature</p>
+              <p className="text-sm font-semibold text-slate-800 leading-tight truncate max-w-[220px] sm:max-w-sm md:max-w-lg">{doc.file_name}</p>
             </div>
           </div>
+          {recipientName && (
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full flex-shrink-0">
+              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
+                {recipientName.charAt(0).toUpperCase()}
+              </span>
+              {recipientName}
+            </span>
+          )}
+        </header>
+
+        {/* ── Instruction banner ── */}
+        <div className="flex-shrink-0 bg-indigo-50 border-b border-indigo-200 px-4 py-2 flex items-center gap-2">
+          <div className="w-4 h-4 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
+            <span className="text-white text-[9px] font-bold">i</span>
+          </div>
+          <p className="text-xs text-indigo-800">
+            Please review the document carefully before making your decision. Scroll through all pages before approving.
+          </p>
         </div>
+
+        {/* ── Document preview — fills all remaining space ── */}
+        <div className="flex-1 min-h-0 bg-white">
+          <iframe
+            src={signerPreviewFileUrl}
+            title="Document preview"
+            className="w-full h-full border-0"
+          />
+        </div>
+
+        {/* ── Bottom action panel ── */}
+        <div className="flex-shrink-0 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)]">
+
+          {/* Forward form — only shown when expanded */}
+          {signingToken && showForwardForm && (
+            <div className="px-4 pt-3 border-b border-slate-100">
+              <div className="grid gap-2 sm:grid-cols-2 pb-3">
+                <input
+                  type="text"
+                  value={forwardName}
+                  onChange={(e) => setForwardName(e.target.value)}
+                  placeholder="Recipient name"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none"
+                />
+                <input
+                  type="email"
+                  value={forwardEmail}
+                  onChange={(e) => setForwardEmail(e.target.value)}
+                  placeholder="Recipient email"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none"
+                />
+                <input
+                  type="text"
+                  value={forwardComment}
+                  onChange={(e) => setForwardComment(e.target.value)}
+                  placeholder="Optional note for recipient"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none sm:col-span-2"
+                />
+                <div className="sm:col-span-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleForwardRequest}
+                    disabled={forwardingRequest}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {forwardingRequest ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {forwardingRequest ? 'Forwarding…' : 'Send forwarded link'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowForwardForm(false); setError(null); }}
+                    className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="mx-4 mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Main action row */}
+          <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+
+            {/* Comment input */}
+            <div className="flex-1 min-w-0">
+              <input
+                id="signer-comment"
+                type="text"
+                value={signerComment}
+                onChange={(e) => setSignerComment(e.target.value)}
+                placeholder="Comment (optional for Approve; required for Deny)"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400"
+              />
+            </div>
+
+            {/* Buttons */}
+            <div className="flex gap-2 flex-shrink-0">
+              {/* Forward — subtle icon button */}
+              {signingToken && (
+                <button
+                  type="button"
+                  onClick={() => { setShowForwardForm((prev) => !prev); setError(null); }}
+                  title="Forward to someone else"
+                  className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors whitespace-nowrap"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="hidden sm:inline">Forward</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setSignerChoice('approve')}
+                className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm whitespace-nowrap"
+              >
+                <Check className="h-4 w-4 shrink-0" />
+                Approve &amp; Sign
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDenySigning}
+                disabled={denyingSign}
+                className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap"
+              >
+                {denyingSign ? (
+                  <><Loader2 className="h-4 w-4 animate-spin shrink-0" />Submitting…</>
+                ) : (
+                  <><XCircle className="h-4 w-4 shrink-0" />Decline</>
+                )}
+              </button>
+            </div>
+
+          </div>
+        </div>
+
       </div>
     );
   }
