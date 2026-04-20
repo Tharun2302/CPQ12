@@ -1592,7 +1592,7 @@ export class DocxTemplateProcessor {
           }
 
           // VALIDITY LINE: Insert "This quote is valid till …" as a new table row directly
-          // below the "Total Price" row, inside the same <w:tbl>.  The row spans all
+          // above the "Total Price" row, inside the same <w:tbl>. The row spans all
           // columns, is left-aligned, and appears as a single unbroken line.
           //
           // This covers two scenarios:
@@ -1634,32 +1634,44 @@ export class DocxTemplateProcessor {
                 const isRightAlignedTable = tblPrChunk.includes('<w:jc w:val="right"/>');
 
                 if (isRightAlignedTable && tblEndPos !== -1) {
-                  // The "Total Price" table is right-aligned (e.g. Slack/message migration).
-                  // Insert the validity row at the bottom of the MAIN pricing table
-                  // (the full-width center-aligned table that contains "Job Requirement")
-                  // so the text is flush with the left edge of the pricing table.
-                  const mainTblAnchor = xmlNoValidity.indexOf('Job Requirement');
-                  const mainTblStart  = mainTblAnchor !== -1 ? xmlNoValidity.lastIndexOf('<w:tbl>', mainTblAnchor) : -1;
-                  const mainTblEnd    = mainTblAnchor !== -1 ? xmlNoValidity.indexOf('</w:tbl>', mainTblAnchor) : -1;
+                  // Message migration: Total Price table is right-justified + narrower than page
+                  // width. Any standalone paragraph near it fills the gap on its left (Word wraps
+                  // text beside narrow inline-right tables). The only safe place is a BORDERLESS
+                  // row at the bottom of the MAIN pricing table (full-width, center-aligned).
+                  //
+                  // Find the main pricing table: it is the table immediately BEFORE the
+                  // Total Price table (they are back-to-back: </w:tbl><w:tbl>).
+                  // Using positional lookup instead of text search ("Job Requirement") because
+                  // the text may be split across multiple XML runs in the template.
+                  const totalPriceTblStart = tblStartPos; // <w:tbl> of Total Price table
+                  const mainTblEndTag = xmlNoValidity.lastIndexOf('</w:tbl>', totalPriceTblStart);
+                  const mainTblStart  = mainTblEndTag !== -1 ? xmlNoValidity.lastIndexOf('<w:tbl>', mainTblEndTag) : -1;
 
-                  if (mainTblStart !== -1 && mainTblEnd !== -1) {
-                    // Count columns in the main table's first row for correct gridSpan
-                    const mainTblXml  = xmlNoValidity.slice(mainTblStart, mainTblEnd);
+                  if (mainTblStart !== -1 && mainTblEndTag !== -1) {
+                    const mainTblXml    = xmlNoValidity.slice(mainTblStart, mainTblEndTag);
                     const firstRowMatch = mainTblXml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/);
                     const mainColCount  = firstRowMatch
                       ? (firstRowMatch[0].match(/<\/w:tc>/g) || []).length
                       : 3;
                     const mainGridSpan  = mainColCount > 1 ? mainColCount : 3;
 
+                    // Borderless row — visually looks like a standalone paragraph
+                    const noBorder = `<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                      `<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                      `<w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                      `<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>`;
+
                     const validityRow =
                       `<w:tr>` +
                       `<w:tc>` +
-                      `<w:tcPr><w:gridSpan w:val="${mainGridSpan}"/></w:tcPr>` +
+                      `<w:tcPr>` +
+                      `<w:gridSpan w:val="${mainGridSpan}"/>` +
+                      `<w:tcBorders>${noBorder}</w:tcBorders>` +
+                      `</w:tcPr>` +
                       `<w:p>` +
                       `<w:pPr>` +
                       `<w:jc w:val="left"/>` +
-                      `<w:spacing w:before="80" w:after="80"/>` +
-                      `<w:ind w:left="0" w:right="0"/>` +
+                      `<w:spacing w:before="80" w:after="0"/>` +
                       `</w:pPr>` +
                       `<w:r>` +
                       `<w:rPr><w:color w:val="000000"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>` +
@@ -1669,34 +1681,65 @@ export class DocxTemplateProcessor {
                       `</w:tc>` +
                       `</w:tr>`;
 
-                    insertAt = mainTblEnd; // before </w:tbl> of main pricing table
+                    insertAt = mainTblEndTag; // before </w:tbl> of main pricing table
                     const finalVXml =
-                      xmlNoValidity.slice(0, mainTblEnd) +
+                      xmlNoValidity.slice(0, mainTblEndTag) +
                       validityRow +
-                      xmlNoValidity.slice(mainTblEnd);
+                      xmlNoValidity.slice(mainTblEndTag);
 
                     vZip.file('word/document.xml', finalVXml);
                     buffer = vZip.generate({
                       type: 'blob',
                       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                     });
-                    console.log(`✅ Quote validity line inserted as row (${mainGridSpan}-col span) at bottom of main pricing table`);
+                    console.log(`✅ Quote validity line inserted as borderless row in main pricing table (message migration)`);
                   }
                 } else {
-                  // Normal case: insert as a row inside the table, spanning all columns.
+                  // Normal case: insert as a row inside the same table,
+                  // directly ABOVE the "Total Price" row.
                   const tpRowStart = xmlNoValidity.lastIndexOf('<w:tr', totalPricePos);
-                  const tpRowEnd   = xmlNoValidity.indexOf('</w:tr>', totalPricePos);
-                  const colCount   = tpRowStart !== -1 && tpRowEnd !== -1
-                    ? (xmlNoValidity.slice(tpRowStart, tpRowEnd + '</w:tr>'.length).match(/<\/w:tc>/g) || []).length
+                  const tblStart   = xmlNoValidity.lastIndexOf('<w:tbl>', totalPricePos);
+                  const tblEnd     = xmlNoValidity.indexOf('</w:tbl>', totalPricePos);
+                  const prevTblEnd = tblStart !== -1 ? xmlNoValidity.lastIndexOf('</w:tbl>', tblStart - 1) : -1;
+                  const prevTblStart = prevTblEnd !== -1 ? xmlNoValidity.lastIndexOf('<w:tbl>', prevTblEnd) : -1;
+
+                  // IMPORTANT: derive span from the pricing table's first row, not from the
+                  // Total Price row (which can be structurally narrower in some templates).
+                  const tableColCount = tblStart !== -1 && tblEnd !== -1
+                    ? (() => {
+                        const tableXml = xmlNoValidity.slice(tblStart, tblEnd);
+                        const firstRow = tableXml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/);
+                        return firstRow ? (firstRow[0].match(/<\/w:tc>/g) || []).length : 0;
+                      })()
                     : 0;
-                  const gridSpan   = colCount > 1 ? colCount : 2; // safe default
+                  const prevTableColCount = prevTblStart !== -1 && prevTblEnd !== -1
+                    ? (() => {
+                        const tableXml = xmlNoValidity.slice(prevTblStart, prevTblEnd);
+                        const firstRow = tableXml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/);
+                        return firstRow ? (firstRow[0].match(/<\/w:tc>/g) || []).length : 0;
+                      })()
+                    : 0;
+
+                  // When "Total Price" is inside a narrow summary table, place validity line
+                  // in the previous (main pricing) table so it starts at the left table border.
+                  const usePreviousMainTable = prevTblStart !== -1 && prevTblEnd !== -1 &&
+                    prevTableColCount >= 3 &&
+                    (tableColCount === 0 || tableColCount < prevTableColCount);
+
+                  const targetInsertAt = usePreviousMainTable ? prevTblEnd : tpRowStart;
+                  const gridSpan = usePreviousMainTable
+                    ? prevTableColCount
+                    : (tableColCount > 1 ? tableColCount : 3); // stable fallback
+
+                  const noBorder = `<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                    `<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                    `<w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                    `<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>`;
 
                   const validityRow =
                     `<w:tr>` +
                     `<w:tc>` +
-                    `<w:tcPr>` +
-                    `<w:gridSpan w:val="${gridSpan}"/>` +
-                    `</w:tcPr>` +
+                    `<w:tcPr><w:gridSpan w:val="${gridSpan}"/><w:tcBorders>${noBorder}</w:tcBorders></w:tcPr>` +
                     `<w:p>` +
                     `<w:pPr>` +
                     `<w:jc w:val="left"/>` +
@@ -1715,8 +1758,8 @@ export class DocxTemplateProcessor {
                     `</w:tc>` +
                     `</w:tr>`;
 
-                  if (tblEndPos !== -1) {
-                    insertAt = tblEndPos; // before </w:tbl>, not after
+                  if (targetInsertAt !== -1) {
+                    insertAt = targetInsertAt;
                     const finalVXml =
                       xmlNoValidity.slice(0, insertAt) +
                       validityRow +
@@ -1727,7 +1770,11 @@ export class DocxTemplateProcessor {
                       type: 'blob',
                       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                     });
-                    console.log(`✅ Quote validity line inserted as table row (${gridSpan}-col span) below Total Price`);
+                    console.log(
+                      usePreviousMainTable
+                        ? `✅ Quote validity line inserted in main pricing table (above Total Price section)`
+                        : `✅ Quote validity line inserted as table row above Total Price`
+                    );
                   }
                 }
               }
