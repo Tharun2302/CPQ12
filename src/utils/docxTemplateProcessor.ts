@@ -1697,7 +1697,20 @@ export class DocxTemplateProcessor {
                 } else {
                   // Normal case: insert as a row inside the same table,
                   // directly ABOVE the "Total Price" row.
-                  const tpRowStart = xmlNoValidity.lastIndexOf('<w:tr', totalPricePos);
+                  // IMPORTANT: search backwards for a true <w:tr> or <w:tr  start tag,
+                  // skipping <w:trPr>, <w:trHeight>, <w:trWidth> etc. which also start with
+                  // '<w:tr' but are child elements, not row openers.
+                  let tpRowStart = -1;
+                  {
+                    let _s = totalPricePos;
+                    while (_s > 0) {
+                      const _c = xmlNoValidity.lastIndexOf('<w:tr', _s);
+                      if (_c === -1) break;
+                      const _next = xmlNoValidity[_c + 5];
+                      if (_next === '>' || _next === ' ') { tpRowStart = _c; break; }
+                      _s = _c - 1;
+                    }
+                  }
                   const tblStart   = xmlNoValidity.lastIndexOf('<w:tbl>', totalPricePos);
                   const tblEnd     = xmlNoValidity.indexOf('</w:tbl>', totalPricePos);
                   const prevTblEnd = tblStart !== -1 ? xmlNoValidity.lastIndexOf('</w:tbl>', tblStart - 1) : -1;
@@ -1809,6 +1822,53 @@ export class DocxTemplateProcessor {
             } catch (vErr) {
               console.warn('⚠️ Could not reposition quote validity line:', vErr);
             }
+          }
+
+          // POST-PROCESS: Remove borders from the "Total Price" row so it renders
+          // as borderless text rather than a boxed table row.
+          try {
+            let tpBorderZip = new PizZip(await buffer.arrayBuffer());
+            let tpBorderXml = tpBorderZip.file('word/document.xml')?.asText() || '';
+            const tpPos = tpBorderXml.lastIndexOf('Total Price');
+            if (tpPos !== -1) {
+              // Find the actual <w:tr> opener for this row
+              let tpTrStart = -1;
+              let _sp = tpPos;
+              while (_sp > 0) {
+                const _cp = tpBorderXml.lastIndexOf('<w:tr', _sp);
+                if (_cp === -1) break;
+                if (tpBorderXml[_cp + 5] === '>' || tpBorderXml[_cp + 5] === ' ') { tpTrStart = _cp; break; }
+                _sp = _cp - 1;
+              }
+              const tpTrEnd = tpBorderXml.indexOf('</w:tr>', tpPos) + '</w:tr>'.length;
+              if (tpTrStart !== -1 && tpTrEnd > tpTrStart) {
+                const noBorder =
+                  `<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                  `<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                  `<w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+                  `<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>`;
+                const tpRowXml = tpBorderXml.slice(tpTrStart, tpTrEnd);
+                // Replace every <w:tcBorders>…</w:tcBorders> block inside this row
+                const tpRowNoBorder = tpRowXml.replace(
+                  /<w:tcBorders>[\s\S]*?<\/w:tcBorders>/g,
+                  `<w:tcBorders>${noBorder}</w:tcBorders>`
+                );
+                if (tpRowNoBorder !== tpRowXml) {
+                  const fixedXml =
+                    tpBorderXml.slice(0, tpTrStart) +
+                    tpRowNoBorder +
+                    tpBorderXml.slice(tpTrEnd);
+                  tpBorderZip.file('word/document.xml', fixedXml);
+                  buffer = tpBorderZip.generate({
+                    type: 'blob',
+                    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  });
+                  console.log('✅ Total Price row borders removed');
+                }
+              }
+            }
+          } catch (tpBorderErr) {
+            console.warn('⚠️ Could not remove Total Price row borders:', tpBorderErr);
           }
 
           // POST-PROCESS: Center the "CloudFuze Purchase Agreement for …" title paragraph.
