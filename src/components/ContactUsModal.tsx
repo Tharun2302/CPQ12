@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, CheckCircle, Loader2, HelpCircle } from 'lucide-react';
+import { X, Send, CheckCircle, Loader2, HelpCircle, Paperclip, Trash2 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 
 interface ContactUsModalProps {
@@ -30,10 +30,12 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
   const [email, setEmail] = useState(userEmail);
   const [subject, setSubject] = useState(SUBJECT_OPTIONS[0]);
   const [message, setMessage] = useState('');
+  const [attachment, setAttachment] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync pre-filled values when user changes
   useEffect(() => {
@@ -46,6 +48,7 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
     if (isOpen) {
       setMessage('');
       setSubject(SUBJECT_OPTIONS[0]);
+      setAttachment(null);
       setError(null);
       setSubmitted(false);
       setTimeout(() => messageRef.current?.focus(), 100);
@@ -80,14 +83,15 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
     `;
 
     try {
+      const formData = new FormData();
+      formData.append('to', 'cpq.zenop.ai.support@cloudfuze.com');
+      formData.append('subject', `[CPQ Support] ${subject} — ${name || email || 'Unknown User'}`);
+      formData.append('message', htmlBody);
+      if (attachment) formData.append('attachment', attachment);
+
       const res = await fetch(`${BACKEND_URL}/api/email/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: 'cpq.zenop.ai.support@cloudfuze.com',
-          subject: `[CPQ Support] ${subject} — ${name || email || 'Unknown User'}`,
-          message: htmlBody,
-        }),
+        body: formData,
       });
 
       let data: any = {};
@@ -214,6 +218,45 @@ const ContactUsModal: React.FC<ContactUsModalProps> = ({
                 rows={4}
                 className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
               />
+            </div>
+
+            {/* Attachment */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-600">Attachment <span className="text-slate-400">(optional)</span></label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+              />
+              {attachment ? (
+                <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Paperclip className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <span className="text-xs text-slate-700 truncate">{attachment.name}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0">
+                      ({(attachment.size / 1024).toFixed(0)} KB)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                    className="ml-2 p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                    aria-label="Remove file"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-slate-500 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                  Click to attach a file (screenshot, document, etc.)
+                </button>
+              )}
             </div>
 
             {/* Error */}
