@@ -359,31 +359,61 @@ export async function mergeDocxFiles(
         if (child.nodeName === 'w:tbl' && child instanceof Element) {
           // Tables should be imported with all properties (tblPr, alignment, borders, etc.)
           const importedTable = mainDoc.importNode(child, true) as Element;
-          
+
           // Ensure table is centered by adding/updating table justification
           let tblPr = importedTable.getElementsByTagName('w:tblPr')[0];
           if (!tblPr) {
-            // Create tblPr if it doesn't exist
             tblPr = mainDoc.createElementNS(ns, 'w:tblPr');
             importedTable.insertBefore(tblPr, importedTable.firstChild);
           }
-          
+
+          // CRITICAL FIX: Remove w:tblpPr (floating/absolute table position) which causes
+          // tables to overlap other content when merged into a different document.
+          const tblpPr = tblPr.getElementsByTagName('w:tblpPr')[0];
+          if (tblpPr) {
+            tblPr.removeChild(tblpPr);
+            console.log('   🔧 Removed floating table position (w:tblpPr) to prevent overlap');
+          }
+
+          // Set table width to 100% of page (auto-fit) to avoid overflow
+          let tblW = tblPr.getElementsByTagName('w:tblW')[0];
+          if (!tblW) {
+            tblW = mainDoc.createElementNS(ns, 'w:tblW');
+            tblPr.appendChild(tblW);
+          }
+          tblW.setAttribute('w:w', '0');
+          tblW.setAttribute('w:type', 'auto');
+
           // Check if justification already exists
           let jc = tblPr.getElementsByTagName('w:jc')[0];
           if (!jc) {
-            // Add center justification if it doesn't exist
             jc = mainDoc.createElementNS(ns, 'w:jc');
             jc.setAttribute('w:val', 'center');
             tblPr.appendChild(jc);
-            console.log('   📊 Added center alignment to table');
           } else {
-            // Update existing justification to center
             jc.setAttribute('w:val', 'center');
-            console.log('   📊 Updated table alignment to center');
           }
-          
+
+          // CRITICAL FIX: Remove exact/fixed row heights (w:hRule="exact") from all rows.
+          // Fixed heights cause text to overflow outside the cell bounds and overlap nearby content.
+          const rows = importedTable.getElementsByTagName('w:tr');
+          for (let r = 0; r < rows.length; r++) {
+            const trPr = rows[r].getElementsByTagName('w:trPr')[0];
+            if (trPr) {
+              const trHeight = trPr.getElementsByTagName('w:trHeight')[0];
+              if (trHeight) {
+                const rule = trHeight.getAttribute('w:hRule');
+                if (rule === 'exact') {
+                  // Change exact height to atLeast so the row can grow
+                  trHeight.setAttribute('w:hRule', 'atLeast');
+                  console.log('   🔧 Changed exact row height to atLeast to prevent cell overflow');
+                }
+              }
+            }
+          }
+
           mainBody.insertBefore(importedTable, mainBody.lastChild);
-          console.log('   📊 Imported table with all properties preserved and centered');
+          console.log('   📊 Imported table with overlap-safe properties');
           continue;
         }
         

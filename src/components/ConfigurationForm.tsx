@@ -532,7 +532,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'overage-agreement': 'OVERAGE AGREEMENT',
       'multi-combination': 'ORIGINAL MULTI COMBINATION',
       'slack-to-teams': 'SLACK TO TEAMS',
-      'slack-to-google-chat': 'SLACK TO GOOGLE CHAT'
+      'slack-to-google-chat': 'SLACK TO GOOGLE CHAT',
+      'teams-to-slack': 'TEAMS TO SLACK'
     };
     
     return combinationLabels[combinationValue] || combinationValue.replace(/-/g, ' ').toUpperCase();
@@ -1983,7 +1984,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         const fromApi = apiCombinations.filter(c => c.migrationType === 'Messaging');
                         const messagingCombinations = fromApi.length > 0 ? fromApi : [
                           { value: 'slack-to-teams', label: 'SLACK TO TEAMS' },
-                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }
+                          { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' },
+                          { value: 'teams-to-slack', label: 'TEAMS TO SLACK' }
                         ];
                         const filtered = messagingCombinations.filter(combo =>
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
@@ -2092,7 +2094,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       <div className="mt-2 text-sm text-purple-600">
                         {(() => {
                           const msg = apiCombinations.filter(c => c.migrationType === 'Messaging');
-                          const messagingCombinations = msg.length > 0 ? msg : [{ value: 'slack-to-teams', label: 'SLACK TO TEAMS' }, { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }];
+                          const messagingCombinations = msg.length > 0 ? msg : [{ value: 'slack-to-teams', label: 'SLACK TO TEAMS' }, { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT' }, { value: 'teams-to-slack', label: 'TEAMS TO SLACK' }];
                           const cont = apiCombinations.filter(c => c.migrationType === 'Content');
                           const contentCombinations = cont.length > 0 ? cont : [{ value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE' }];
                           const eml = apiCombinations.filter(c => c.migrationType === 'Email');

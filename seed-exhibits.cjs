@@ -1280,6 +1280,31 @@ async function seedDefaultExhibits(db) {
       isRequired: false,
       displayOrder: 12,
       keywords: ['checklist', 'migration', 'preparation']
+    },
+    // Teams to Slack exhibits
+    {
+      name: 'Teams to Slack Basic Plan - Basic Include',
+      description: 'Documentation for features included in Teams to Slack Basic Plan migration',
+      fileName: 'Teams to Slack Basic Plan - Basic Include.docx',
+      combinations: ['teams-to-slack'],
+      category: 'messaging',
+      planType: 'basic',
+      includeType: 'included',
+      isRequired: false,
+      displayOrder: 40,
+      keywords: ['teams', 'slack', 'messaging', 'basic', 'included', 'features', 'migration']
+    },
+    {
+      name: 'Teams to Slack Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Teams to Slack Basic Plan migration',
+      fileName: 'Teams to Slack Basic Plan - Basic Not Include.docx',
+      combinations: ['teams-to-slack'],
+      category: 'messaging',
+      planType: 'basic',
+      includeType: 'notincluded',
+      isRequired: false,
+      displayOrder: 41,
+      keywords: ['teams', 'slack', 'messaging', 'basic', 'not included', 'features', 'limitations', 'migration']
     }
   ];
 

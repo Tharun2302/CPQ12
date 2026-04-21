@@ -22,6 +22,7 @@ interface ExhibitSelectorProps {
 }
 
 const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
+  combination,
   selectedExhibits,
   onExhibitsChange,
   selectedTier
@@ -30,6 +31,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const selectedExhibitsRef = React.useRef(selectedExhibits);
+  useEffect(() => { selectedExhibitsRef.current = selectedExhibits; });
 
   useEffect(() => {
     loadExhibits();
@@ -330,6 +333,25 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       });
     }
   }, [selectedTier, exhibits.length, onExhibitsChange]); // Removed selectedExhibits from deps to avoid infinite loop
+
+  // Auto-select exhibits that belong to the currently selected combination
+  useEffect(() => {
+    if (!combination || combination === 'all' || exhibits.length === 0) return;
+
+    const matchingIds = exhibits
+      .filter(ex => ex.combinations?.some(c => c.toLowerCase() === combination.toLowerCase()))
+      .map(ex => ex._id);
+
+    if (matchingIds.length === 0) return;
+
+    const current = selectedExhibitsRef.current;
+    const newSelection = Array.from(new Set([...current, ...matchingIds]));
+
+    if (JSON.stringify(newSelection.sort()) !== JSON.stringify([...current].sort())) {
+      console.log('✅ Auto-selecting exhibits for combination:', combination, { count: matchingIds.length });
+      onExhibitsChange(newSelection);
+    }
+  }, [combination, exhibits.length, onExhibitsChange]);
 
   // Helper function to extract base combination from combination string
   const extractBaseCombination = (combination: string): string => {
