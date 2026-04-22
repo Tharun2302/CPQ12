@@ -185,6 +185,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               if (baseKey === 'onedrive-sharepoint' || baseKey === 'onedrive-to-sharepoint') {
                 return 'OneDrive / SharePoint - OneDrive / SharePoint';
               }
+              // Box to Google MyDrive covers both MyDrive and Shared Drive
+              if (baseKey === 'box-to-google-mydrive') {
+                return 'Box to Google My Drive & Shared Drive';
+              }
               // Default: "testing-to-production" -> "Testing To Production"
               return baseKey
                 .split('-')
@@ -499,7 +503,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'box-to-box': 'BOX TO BOX',
       'box-to-dropbox': 'BOX TO DROPBOX',
       'box-to-sharefile': 'BOX TO SHAREFILE',
-      'box-to-google-mydrive': 'BOX TO GOOGLE MYDRIVE',
+      'box-to-google-mydrive': 'BOX TO GOOGLE MYDRIVE & SHARED DRIVE',
       'box-to-aws-s3': 'BOX TO AWS S3',
       'box-to-microsoft': 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'box-to-sharepoint': 'BOX TO SHAREPOINT',
@@ -2006,7 +2010,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           { value: 'box-to-box', label: 'BOX TO BOX' },
                           { value: 'box-to-dropbox', label: 'BOX TO DROPBOX' },
                           { value: 'box-to-sharefile', label: 'BOX TO SHAREFILE' },
-                          { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE' },
+                          { value: 'box-to-google-mydrive', label: 'BOX TO GOOGLE MYDRIVE & SHARED DRIVE' },
                           { value: 'box-to-aws-s3', label: 'BOX TO AWS S3' },
                           { value: 'box-to-microsoft', label: 'BOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)' },
                           { value: 'box-to-sharepoint', label: 'BOX TO SHAREPOINT' },

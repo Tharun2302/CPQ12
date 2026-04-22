@@ -200,7 +200,12 @@ function formatCombinationNameForDisplay(name: string): string {
   if (normalized === 'onedrive to sharepoint' || normalized === 'onedrive to share point') {
     return 'OneDrive / SharePoint - OneDrive / SharePoint';
   }
-  
+
+  // Special case: "Box To Google Mydrive" covers both MyDrive and Shared Drive
+  if (normalized === 'box to google mydrive') {
+    return 'Box to Google My Drive & Shared Drive';
+  }
+
   return name;
 }
 
@@ -4946,7 +4951,7 @@ Total Price: {{total price}}`;
                     'google-sharedrive-to-onedrive': 'GOOGLE SHARED DRIVE TO ONEDRIVE',
                     'google-sharedrive-to-sharepoint': 'GOOGLE SHARED DRIVE TO SHAREPOINT',
                     'google-sharedrive-to-google-sharedrive': 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE',
-                    'box-to-google-mydrive': 'BOX TO GOOGLE MYDRIVE',
+                    'box-to-google-mydrive': 'BOX TO GOOGLE MYDRIVE & SHARED DRIVE',
                     'box-to-google-sharedrive': 'BOX TO GOOGLE SHARED DRIVE',
                     'box-to-onedrive': 'BOX TO ONEDRIVE',
                     'box-to-sharepoint': 'BOX TO SHAREPOINT',

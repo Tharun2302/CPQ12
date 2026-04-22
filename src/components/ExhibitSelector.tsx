@@ -414,6 +414,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       return 'Box to SharePoint Online';
     }
 
+    // Special case: Box to Google MyDrive covers both MyDrive and Shared Drive
+    if (normalized === 'box-to-google-mydrive') {
+      return 'Box to Google My Drive & Shared Drive';
+    }
+
     // Special case: Google Shared Drive to SharePoint should display as SharePoint Online
     if (normalized === 'google-sharedrive-to-sharepoint') {
       return 'Google ShareDrive to SharePoint Online';
