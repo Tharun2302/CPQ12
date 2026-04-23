@@ -2376,6 +2376,7 @@ app.post('/api/combinations/seed', async (req, res) => {
     const defaults = [
       { value: 'slack-to-teams', label: 'SLACK TO TEAMS', migrationType: 'Messaging', displayOrder: 1 },
       { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT', migrationType: 'Messaging', displayOrder: 2 },
+      { value: 'teams-to-slack', label: 'TEAMS TO SLACK', migrationType: 'Messaging', displayOrder: 3 },
       { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK', migrationType: 'Email', displayOrder: 1 },
       { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL', migrationType: 'Email', displayOrder: 2 },
       { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK', migrationType: 'Email', displayOrder: 3 },

@@ -3895,26 +3895,6 @@ Total Price: {{total price}}`;
       return;
     }
 
-    // Guard: effective date must not be before the project start date.
-    if (
-      hasProjectStartDate &&
-      hasEffectiveDate &&
-      clientInfo.effectiveDate! < configuration!.startDate!
-    ) {
-      setDateValidationErrors(prev => ({ ...prev, effectiveDate: true }));
-      alert('Effective Date must be on or after the Project Start Date.');
-      return;
-    }
-
-    if (
-      hasQuoteExpiryDate &&
-      ((hasEffectiveDate && clientInfo.quoteExpiryDate! < clientInfo.effectiveDate!) ||
-        (hasProjectStartDate && clientInfo.quoteExpiryDate! < configuration!.startDate!))
-    ) {
-      setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: true }));
-      alert('Quote Expiry Date must be on or after the Effective Date.');
-      return;
-    }
 
     setIsGeneratingAgreement(true);
     setCachedPdfAgreement(null);
@@ -9055,10 +9035,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <CustomDatePicker
                 required
                 value={configuration?.startDate || ''}
-                minDate={(() => {
-                  const today = new Date();
-                  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-                })()}
                 onChange={(newStartDate) => {
                   console.log('📅 Project Start Date changed:', newStartDate);
 
@@ -9072,14 +9048,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     console.warn('⚠️ No onConfigurationChange callback provided');
                   }
 
-                  // If downstream dates are now before the new start date, clear them so user re-picks.
-                  if (newStartDate && clientInfo.effectiveDate && clientInfo.effectiveDate < newStartDate) {
-                    updateClientInfo({ effectiveDate: '', quoteExpiryDate: '' });
-                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: false, quoteExpiryDate: false }));
-                  } else if (newStartDate && clientInfo.quoteExpiryDate && clientInfo.quoteExpiryDate < newStartDate) {
-                    updateClientInfo({ quoteExpiryDate: '' });
-                    setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: false }));
-                  }
                 }}
                 onBlur={() => {
                   if (!configuration?.startDate) {
@@ -9099,7 +9067,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 </p>
               )}
               {!dateValidationErrors.projectStartDate && (
-                <p className="text-xs text-gray-500 mt-2">Select a date from today onwards</p>
+                <p className="text-xs text-gray-500 mt-2">Select the project start date</p>
               )}
             </div>
 
@@ -9114,18 +9082,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <CustomDatePicker
                 required
                 value={clientInfo.effectiveDate || ''}
-                minDate={configuration?.startDate || (() => {
-                  const today = new Date();
-                  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-                })()}
                 onChange={(selectedDate) => {
                   setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
-                  if (clientInfo.quoteExpiryDate && selectedDate && clientInfo.quoteExpiryDate < selectedDate) {
-                    updateClientInfo({ effectiveDate: selectedDate, quoteExpiryDate: '' });
-                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: false, quoteExpiryDate: false }));
-                  } else {
-                    updateClientInfo({ effectiveDate: selectedDate });
-                  }
+                  updateClientInfo({ effectiveDate: selectedDate });
                 }}
                 onBlur={() => {
                   if (!clientInfo.effectiveDate) {
@@ -9141,15 +9100,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               {dateValidationErrors.effectiveDate && (
                 <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
                   <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                  Effective Date is required and must be on or after the Project Start Date
+                  Effective Date is required
                 </p>
               )}
               {!dateValidationErrors.effectiveDate && (
-                <p className="text-xs text-gray-500 mt-2">
-                  {configuration?.startDate
-                    ? `Must be on or after ${formatDateMMDDYYYYForUi(configuration.startDate)}`
-                    : 'Select a date on or after the Project Start Date'}
-                </p>
+                <p className="text-xs text-gray-500 mt-2">Select the effective date</p>
               )}
             </div>
 
@@ -9164,10 +9119,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               <CustomDatePicker
                 required
                 value={clientInfo.quoteExpiryDate || ''}
-                minDate={clientInfo.effectiveDate || configuration?.startDate || (() => {
-                  const today = new Date();
-                  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-                })()}
                 onChange={(selectedDate) => {
                   setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: false }));
                   updateClientInfo({ quoteExpiryDate: selectedDate });
@@ -9186,15 +9137,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               {dateValidationErrors.quoteExpiryDate && (
                 <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
                   <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                  Quote Expiry Date is required and must be on or after the Effective Date
+                  Quote Expiry Date is required
                 </p>
               )}
               {!dateValidationErrors.quoteExpiryDate && (
-                <p className="text-xs text-gray-500 mt-2">
-                  {(clientInfo.effectiveDate || configuration?.startDate)
-                    ? `Must be on or after ${formatDateMMDDYYYYForUi(clientInfo.effectiveDate || configuration?.startDate || '')}`
-                    : 'Select a quote expiry date'}
-                </p>
+                <p className="text-xs text-gray-500 mt-2">Select the quote expiry date</p>
               )}
             </div>
             </div>
