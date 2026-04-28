@@ -33,6 +33,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const selectedExhibitsRef = React.useRef(selectedExhibits);
   useEffect(() => { selectedExhibitsRef.current = selectedExhibits; });
+  const listScrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Reset scroll to top whenever the search query changes so the first result is always visible
+  useEffect(() => {
+    if (listScrollRef.current) {
+      listScrollRef.current.scrollTop = 0;
+    }
+  }, [searchQuery]);
 
   useEffect(() => {
     loadExhibits();
@@ -363,7 +371,20 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
       base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
     }
-    
+
+    // Normalize all Box→Google Drive variants into one canonical key (box-to-google-mydrive)
+    // Covers: box-to-google-mydrive-shareddrive, box-to-google-sharedrive, box-to-google-mydrive-sharedrive
+    if (
+      base === 'box-to-google-mydrive-shareddrive' ||
+      base.startsWith('box-to-google-mydrive-shareddrive-') ||
+      base === 'box-to-google-sharedrive' ||
+      base.startsWith('box-to-google-sharedrive-') ||
+      base === 'box-to-google-mydrive-sharedrive' ||
+      base.startsWith('box-to-google-mydrive-sharedrive-')
+    ) {
+      base = 'box-to-google-mydrive';
+    }
+
     // Remove plan type suffixes (including "std" as abbreviation for "standard")
     base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
     
@@ -451,9 +472,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       return 'OneDrive / SharePoint - OneDrive / SharePoint';
     }
 
-    // Special case: map "dropbox-to-google" to "Dropbox To Google Shared Drive"
+    // Special case: map "dropbox-to-google" to a clear label covering both MyDrive & Shared Drive
     if (combination.toLowerCase() === 'dropbox-to-google') {
-      return 'Dropbox To Google Shared Drive';
+      return 'Dropbox To Google (MyDrive & Shared Drive)';
+    }
+
+    // Special case: map "dropbox-to-microsoft" to a clear label covering OneDrive & SharePoint Online
+    if (combination.toLowerCase() === 'dropbox-to-microsoft') {
+      return 'Dropbox To Microsoft (OneDrive & SharePoint Online)';
     }
     
     return combination
@@ -562,10 +588,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       'Sharefile To Google Sharedrive', // Format: "sharefile-to-google-sharedrive" -> "Sharefile To Google Sharedrive"
       'ShareFile to Google MyDrive',
       'Sharefile To Google Mydrive', // Format: "sharefile-to-google-mydrive" -> "Sharefile To Google Mydrive"
-      // Hide legacy Dropbox groups in UI (we use the merged "Google Drive (MyDrive & Shared Drive)" group instead)
+      // Hide legacy Dropbox-to-mydrive groups (merged into Dropbox To Google Shared Drive folder)
       'Dropbox to MyDrive',
       'Dropbox To Google Mydrive', // Format: "dropbox-to-google-mydrive" -> "Dropbox To Google Mydrive"
-      'Dropbox to Google Shared Drive',
+      // NOTE: "Dropbox To Google Shared Drive" intentionally removed — those exhibits have no other folder
     ]);
     
     sorted.forEach((exhibit) => {
@@ -882,10 +908,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             <div className="mb-3">
               <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
             </div>
-            <div 
+            <div
+              ref={listScrollRef}
               className="max-h-[200px] overflow-y-auto space-y-2"
-              style={{ 
-                scrollbarWidth: 'thin', 
+              style={{
+                scrollbarWidth: 'thin',
                 scrollbarColor: '#9ca3af #f3f4f6',
               }}
             >

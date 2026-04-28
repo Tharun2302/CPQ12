@@ -2505,7 +2505,8 @@ app.get('/api/exhibits/:id/file', async (req, res) => {
     // Convert base64 to buffer
     const fileBuffer = Buffer.from(exhibit.fileData, 'base64');
 
-    res.setHeader('Content-Type', exhibit.fileType);
+    const contentType = exhibit.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${exhibit.fileName}"`);
     res.setHeader('Content-Length', fileBuffer.length);
     

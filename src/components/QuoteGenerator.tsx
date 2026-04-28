@@ -564,7 +564,9 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [dateValidationErrors, setDateValidationErrors] = useState({
     projectStartDate: false,
     effectiveDate: false,
-    quoteExpiryDate: false
+    quoteExpiryDate: false,
+    quoteExpiryNotBeforeEffective: false,
+    projectStartNotAfterEffective: false,
   });
   
   // Calculate discount logic - source discount primarily from Configure session (localStorage)
@@ -3882,7 +3884,9 @@ Total Price: {{total price}}`;
       setDateValidationErrors({
         projectStartDate: !hasProjectStartDate,
         effectiveDate: !hasEffectiveDate,
-        quoteExpiryDate: !hasQuoteExpiryDate
+        quoteExpiryDate: !hasQuoteExpiryDate,
+        quoteExpiryNotBeforeEffective: false,
+        projectStartNotAfterEffective: false,
       });
 
       // Show alert with specific missing fields
@@ -3892,6 +3896,25 @@ Total Price: {{total price}}`;
       if (!hasQuoteExpiryDate) missingFields.push('Quote Expiry Date');
 
       alert(`Please fill in the following required fields:\n- ${missingFields.join('\n- ')}`);
+      return;
+    }
+
+    // Cross-field date validation
+    const quoteExpiryNotBeforeEffective =
+      clientInfo.quoteExpiryDate! >= clientInfo.effectiveDate!;
+    const projectStartNotAfterEffective =
+      configuration!.startDate! <= clientInfo.effectiveDate!;
+
+    if (quoteExpiryNotBeforeEffective || projectStartNotAfterEffective) {
+      setDateValidationErrors(prev => ({
+        ...prev,
+        quoteExpiryNotBeforeEffective,
+        projectStartNotAfterEffective,
+      }));
+      const errors: string[] = [];
+      if (quoteExpiryNotBeforeEffective) errors.push('Quote Expiry Date must be before the Effective Date');
+      if (projectStartNotAfterEffective) errors.push('Project Start Date must be after the Effective Date');
+      alert(`Date validation error:\n- ${errors.join('\n- ')}`);
       return;
     }
 
@@ -5298,12 +5321,18 @@ Total Price: {{total price}}`;
           // Use finalConfiguration which has the correct dataSizeGB value
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const cfgAny: any = finalConfiguration as any;
-          const idsFromSelection = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
+          const isMultiCombination = cfgAny.migrationType === 'Multi combination';
           const idsFromConfigs = [
             ...(cfgAny.messagingConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
             ...(cfgAny.contentConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
             ...(cfgAny.emailConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
           ].filter(Boolean);
+
+          // Merge manual selection (from ExhibitSelector) with config-derived ids.
+          // Both are valid seeds for the expansion logic below — config ids cover the
+          // per-combination auto-resolved exhibits, while idsFromSelection captures any
+          // additional folders the user explicitly checked (e.g. "Dropbox To Microsoft").
+          const idsFromSelection = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
 
           let exhibitIds = Array.from(new Set([...idsFromSelection, ...idsFromConfigs]));
 
@@ -7475,7 +7504,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           console.log('📄 Processed DOCX type:', result.processedDocx.type);
           
           // Merge selected exhibits ONLY for Multi combination migration type
-          // Use expanded exhibit IDs (includes both Include and Not Include variants based on plan selection)
+          // Use expanded exhibit IDs (includes both Include and Not Include variants based on plan selection).
+          // Fall back to selectedExhibits so manually picked folders (e.g. Dropbox To Microsoft) are never lost.
           const uniqueSelectedExhibitsForMerge = expandedExhibitIdsForMerge.length > 0
             ? Array.from(new Set(expandedExhibitIdsForMerge.map((id) => (id ?? '').toString()).filter(Boolean)))
             : Array.from(new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean)));
@@ -9037,8 +9067,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 value={configuration?.startDate || ''}
                 onChange={(newStartDate) => {
                   console.log('📅 Project Start Date changed:', newStartDate);
-
-                  setDateValidationErrors(prev => ({ ...prev, projectStartDate: false }));
+                  const notAfterEffective = clientInfo.effectiveDate ? newStartDate <= clientInfo.effectiveDate : false;
+                  setDateValidationErrors(prev => ({ ...prev, projectStartDate: false, projectStartNotAfterEffective: notAfterEffective }));
 
                   if (onConfigurationChange) {
                     const updatedConfig = { ...configuration, startDate: newStartDate };
@@ -9052,10 +9082,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 onBlur={() => {
                   if (!configuration?.startDate) {
                     setDateValidationErrors(prev => ({ ...prev, projectStartDate: true }));
+                  } else if (clientInfo.effectiveDate) {
+                    setDateValidationErrors(prev => ({
+                      ...prev,
+                      projectStartNotAfterEffective: configuration!.startDate! <= clientInfo.effectiveDate!,
+                    }));
                   }
                 }}
                 className={
-                  dateValidationErrors.projectStartDate
+                  (dateValidationErrors.projectStartDate || dateValidationErrors.projectStartNotAfterEffective)
                     ? 'border-red-500 hover:border-red-500'
                     : 'border-gray-200 hover:border-blue-300'
                 }
@@ -9066,7 +9101,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   Project Start Date is required
                 </p>
               )}
-              {!dateValidationErrors.projectStartDate && (
+              {dateValidationErrors.projectStartNotAfterEffective && !dateValidationErrors.projectStartDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Must be after the Effective Date
+                </p>
+              )}
+              {!dateValidationErrors.projectStartDate && !dateValidationErrors.projectStartNotAfterEffective && (
                 <p className="text-xs text-gray-500 mt-2">Select the project start date</p>
               )}
             </div>
@@ -9083,12 +9124,27 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 required
                 value={clientInfo.effectiveDate || ''}
                 onChange={(selectedDate) => {
-                  setDateValidationErrors(prev => ({ ...prev, effectiveDate: false }));
+                  const quoteExpiryErr = clientInfo.quoteExpiryDate ? clientInfo.quoteExpiryDate >= selectedDate : false;
+                  const projectStartErr = configuration?.startDate ? configuration.startDate <= selectedDate : false;
+                  setDateValidationErrors(prev => ({
+                    ...prev,
+                    effectiveDate: false,
+                    quoteExpiryNotBeforeEffective: quoteExpiryErr,
+                    projectStartNotAfterEffective: projectStartErr,
+                  }));
                   updateClientInfo({ effectiveDate: selectedDate });
                 }}
                 onBlur={() => {
                   if (!clientInfo.effectiveDate) {
                     setDateValidationErrors(prev => ({ ...prev, effectiveDate: true }));
+                  } else {
+                    const quoteExpiryErr = clientInfo.quoteExpiryDate ? clientInfo.quoteExpiryDate >= clientInfo.effectiveDate : false;
+                    const projectStartErr = configuration?.startDate ? configuration.startDate <= clientInfo.effectiveDate : false;
+                    setDateValidationErrors(prev => ({
+                      ...prev,
+                      quoteExpiryNotBeforeEffective: quoteExpiryErr,
+                      projectStartNotAfterEffective: projectStartErr,
+                    }));
                   }
                 }}
                 className={
@@ -9120,16 +9176,22 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 required
                 value={clientInfo.quoteExpiryDate || ''}
                 onChange={(selectedDate) => {
-                  setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: false }));
+                  const notBeforeEffective = clientInfo.effectiveDate ? selectedDate >= clientInfo.effectiveDate : false;
+                  setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: false, quoteExpiryNotBeforeEffective: notBeforeEffective }));
                   updateClientInfo({ quoteExpiryDate: selectedDate });
                 }}
                 onBlur={() => {
                   if (!clientInfo.quoteExpiryDate) {
                     setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: true }));
+                  } else if (clientInfo.effectiveDate) {
+                    setDateValidationErrors(prev => ({
+                      ...prev,
+                      quoteExpiryNotBeforeEffective: clientInfo.quoteExpiryDate! >= clientInfo.effectiveDate!,
+                    }));
                   }
                 }}
                 className={
-                  dateValidationErrors.quoteExpiryDate
+                  (dateValidationErrors.quoteExpiryDate || dateValidationErrors.quoteExpiryNotBeforeEffective)
                     ? 'border-red-500 hover:border-red-500'
                     : 'border-gray-200 hover:border-blue-300'
                 }
@@ -9140,7 +9202,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   Quote Expiry Date is required
                 </p>
               )}
-              {!dateValidationErrors.quoteExpiryDate && (
+              {dateValidationErrors.quoteExpiryNotBeforeEffective && !dateValidationErrors.quoteExpiryDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Must be before the Effective Date
+                </p>
+              )}
+              {!dateValidationErrors.quoteExpiryDate && !dateValidationErrors.quoteExpiryNotBeforeEffective && (
                 <p className="text-xs text-gray-500 mt-2">Select the quote expiry date</p>
               )}
             </div>
