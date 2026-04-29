@@ -481,6 +481,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     if (combination.toLowerCase() === 'dropbox-to-microsoft') {
       return 'Dropbox To Microsoft (OneDrive & SharePoint Online)';
     }
+
+    // Special case: Google MyDrive & SharedDrive to Google MyDrive & SharedDrive
+    if (combination.toLowerCase() === 'google-to-google') {
+      return 'Google MyDrive/SharedDrive - Google MyDrive/SharedDrive';
+    }
     
     return combination
       .split('-')
