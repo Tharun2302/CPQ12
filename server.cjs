@@ -5490,9 +5490,14 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
     const fileName = req.file.originalname;
     const filePath = path.join(documentsDir, req.file.filename);
 
+    // Read file from disk immediately and store as base64 in MongoDB so the PDF is always recoverable
+    let fileData = null;
+    try { fileData = fs.readFileSync(filePath).toString('base64'); } catch (_) {}
+
     const doc = {
       file_name: fileName,
       file_path: filePath,
+      file_data: fileData,
       uploaded_by: uploadedBy,
       upload_source: 'manual',
       created_at: new Date(),
@@ -5568,8 +5573,10 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
     const doc = {
       file_name: fileName,
       file_path: filePath,
+      file_data: fileBuffer.toString('base64'),
       uploaded_by: uploadedBy || 'approval-workflow',
       upload_source: 'approval',
+      source_document_id: documentId,
       requested_by_name: requestedByName,
       requested_by_email: requestedByEmail,
       created_at: new Date(),
@@ -5656,14 +5663,84 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
     if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
-    const filePath = doc.signed_file_path || doc.review_merged_file_path || doc.file_path;
-    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
+
     const attachment = req.query.attachment === '1' || req.query.download === '1';
     const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
-    res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
-    if (attachment) res.set('Cache-Control', 'no-store'); // avoid browser using cached inline response
-    res.sendFile(path.resolve(filePath));
+
+    // Try disk paths in priority order: signed → review-merged → original
+    const filePath = doc.signed_file_path || doc.review_merged_file_path || doc.file_path;
+    if (filePath && fs.existsSync(filePath)) {
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
+      if (attachment) res.set('Cache-Control', 'no-store');
+      return res.sendFile(path.resolve(filePath));
+    }
+
+    // Disk file missing — try stored base64 data in MongoDB (signed first, then original)
+    const storedBase64 = doc.signed_file_data || doc.file_data || null;
+    if (storedBase64) {
+      try {
+        const fileBuffer = Buffer.from(storedBase64, 'base64');
+        // Restore to disk so future requests hit the fast path
+        const restoreDir = doc.signed_file_data ? signedDir : documentsDir;
+        const restoredPath = path.join(restoreDir, `${Date.now()}-restored-${doc._id}.pdf`);
+        try {
+          fs.mkdirSync(restoreDir, { recursive: true });
+          fs.writeFileSync(restoredPath, fileBuffer);
+          const updateField = doc.signed_file_data ? 'signed_file_path' : 'file_path';
+          await db.collection('esign_documents').updateOne(
+            { _id: doc._id },
+            { $set: { [updateField]: restoredPath } }
+          );
+        } catch (writeErr) {
+          console.warn('⚠️ Could not restore esign file to disk:', writeErr.message);
+        }
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
+        if (attachment) res.set('Cache-Control', 'no-store');
+        return res.send(fileBuffer);
+      } catch (b64Err) {
+        console.warn('⚠️ Failed to decode stored base64 file data:', b64Err.message);
+      }
+    }
+
+    // Last resort for approval-sourced docs: recover from the original documents collection
+    if (doc.upload_source === 'approval') {
+      try {
+        let sourceDocId = doc.source_document_id || null;
+        if (!sourceDocId) {
+          const workflow = await db.collection('approval_workflows').findOne({ esignDocumentId: req.params.id });
+          sourceDocId = workflow && workflow.documentId ? workflow.documentId : null;
+        }
+        if (sourceDocId) {
+          const sourceDoc = await db.collection('documents').findOne({ id: sourceDocId });
+          if (sourceDoc && sourceDoc.fileData) {
+            const fileBuffer = typeof sourceDoc.fileData === 'string'
+              ? Buffer.from(sourceDoc.fileData, 'base64')
+              : Buffer.isBuffer(sourceDoc.fileData) ? sourceDoc.fileData : Buffer.from(sourceDoc.fileData.buffer);
+            const restoredPath = path.join(documentsDir, `${Date.now()}-restored-${doc._id}.pdf`);
+            try {
+              fs.mkdirSync(documentsDir, { recursive: true });
+              fs.writeFileSync(restoredPath, fileBuffer);
+              await db.collection('esign_documents').updateOne(
+                { _id: doc._id },
+                { $set: { file_path: restoredPath, source_document_id: sourceDocId, file_data: sourceDoc.fileData } }
+              );
+            } catch (writeErr) {
+              console.warn('⚠️ Could not restore esign file to disk:', writeErr.message);
+            }
+            res.set('Content-Type', 'application/pdf');
+            res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
+            if (attachment) res.set('Cache-Control', 'no-store');
+            return res.send(fileBuffer);
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn('⚠️ Esign approval-source recovery failed:', fallbackErr.message);
+      }
+    }
+
+    return res.status(404).json({ success: false, error: 'File not found' });
   } catch (error) {
     console.error('❌ E-sign get file error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -7431,7 +7508,9 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
 
     const outFilename = `signed-${doc._id}-${Date.now()}.pdf`;
     const outPath = path.join(signedDir, outFilename);
-    fs.writeFileSync(outPath, await pdfDoc.save());
+    const signedBytes = await pdfDoc.save();
+    fs.writeFileSync(outPath, signedBytes);
+    const signedFileData = Buffer.from(signedBytes).toString('base64');
 
     if (signing_token) {
       await db.collection('esign_recipients').updateOne(
@@ -7446,7 +7525,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       if (totalCount > 0 && completedCount >= totalCount) {
         await db.collection('esign_documents').updateOne(
           { _id: docId },
-          { $set: { status: 'completed', signed_file_path: outPath, signed_at: new Date() } }
+          { $set: { status: 'completed', signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date() } }
         );
         if (!esignDocWasAlreadyCompleted) {
           try {
@@ -7459,13 +7538,13 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       } else {
         await db.collection('esign_documents').updateOne(
           { _id: docId },
-          { $set: { signed_file_path: outPath, signed_at: new Date(), signer_email: signer_email || null } }
+          { $set: { signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date(), signer_email: signer_email || null } }
         );
       }
     } else {
       await db.collection('esign_documents').updateOne(
         { _id: docId },
-        { $set: { status: 'signed', signed_file_path: outPath, signed_at: new Date(), signer_email: signer_email || null } }
+        { $set: { status: 'signed', signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date(), signer_email: signer_email || null } }
       );
     }
 

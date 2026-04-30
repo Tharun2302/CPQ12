@@ -472,6 +472,26 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       return 'OneDrive / SharePoint - OneDrive / SharePoint';
     }
 
+    // Special case: ShareFile to Google Shared Drive
+    if (normalized === 'sharefile-to-google-sharedrive') {
+      return 'ShareFile to Google Shared Drive';
+    }
+
+    // Special case: ShareFile to Google MyDrive (covers both MyDrive & Shared Drive combined exhibits)
+    if (normalized === 'sharefile-to-google-mydrive') {
+      return 'ShareFile to Google Drive (MyDrive & Shared Drive)';
+    }
+
+    // Special case: Dropbox to MyDrive only
+    if (normalized === 'dropbox-to-mydrive') {
+      return 'Dropbox to MyDrive';
+    }
+
+    // Special case: Dropbox to Google Shared Drive only
+    if (normalized === 'dropbox-to-google-sharedrive') {
+      return 'Dropbox to Google Shared Drive';
+    }
+
     // Special case: map "dropbox-to-google" to a clear label covering both MyDrive & Shared Drive
     if (combination.toLowerCase() === 'dropbox-to-google') {
       return 'Dropbox To Google (MyDrive & Shared Drive)';
@@ -486,7 +506,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     if (combination.toLowerCase() === 'google-to-google') {
       return 'Google MyDrive/SharedDrive - Google MyDrive/SharedDrive';
     }
-    
+
+    // Special case: synthetic key for exhibits covering both Google MyDrive and Google SharedDrive targets
+    if (normalized === 'google-mydrive-to-google') {
+      return 'Google MyDrive to Google (MyDrive & Shared Drive)';
+    }
+
     return combination
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -565,18 +590,27 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       return [];
     }
     
-    // Filter out generic "Included Features" and "Not Included Features" exhibits (without plan type)
-    // These are redundant with plan-specific exhibits (e.g., "Standard Include", "Advanced Include")
+    // Filter out generic "Included Features" / "Not Included Features" exhibits only when
+    // plan-specific versions (Standard/Advanced/etc.) exist for the same combination.
+    // If a combination has NO plan-specific exhibits, keep the generic ones — they are the only option.
+    const planTypeRegex = /\b(Basic|Standard|Advanced|Premium|Enterprise)\s+(Plan\s*-)?\s*(Included|Not Included|Include|Not Include)/i;
+    const combosWithPlanExhibits = new Set<string>();
+    searchFilteredExhibits.forEach(exhibit => {
+      if (planTypeRegex.test(exhibit.name || '')) {
+        const combo = exhibit.combinations?.[0] || 'all';
+        combosWithPlanExhibits.add(combo);
+      }
+    });
+
     const filtered = searchFilteredExhibits.filter(exhibit => {
       const name = exhibit.name || '';
-      // Check if it ends with " - Included Features" or " - Not Included Features" (without plan type)
       const endsWithIncludedFeatures = / - (Included|Not Included) Features$/i.test(name);
-      if (endsWithIncludedFeatures) {
-        // Only exclude if it doesn't have a plan type in the name
-        const hasPlanType = /\b(Basic|Standard|Advanced|Premium|Enterprise)\s+(Plan\s*-)?\s*(Included|Not Included|Include|Not Include)/i.test(name);
-        return hasPlanType; // Keep if it has a plan type, exclude if it doesn't
+      if (endsWithIncludedFeatures && !planTypeRegex.test(name)) {
+        // Only hide if plan-specific exhibits exist for this combination
+        const combo = exhibit.combinations?.[0] || 'all';
+        return !combosWithPlanExhibits.has(combo);
       }
-      return true; // Keep all other exhibits
+      return true;
     });
     
     const sorted = [...filtered].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
@@ -587,17 +621,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     // Track which exhibits have been added to a group to prevent duplicates
     const addedExhibitIds = new Set<string>();
 
-    // Hide legacy ShareFile groups in UI (we use the merged "Google Drive (MyDrive & Shared Drive)" group instead)
-    const hiddenGroupNames = new Set([
-      'ShareFile to Google Shared Drive',
-      'Sharefile To Google Sharedrive', // Format: "sharefile-to-google-sharedrive" -> "Sharefile To Google Sharedrive"
-      'ShareFile to Google MyDrive',
-      'Sharefile To Google Mydrive', // Format: "sharefile-to-google-mydrive" -> "Sharefile To Google Mydrive"
-      // Hide legacy Dropbox-to-mydrive groups (merged into Dropbox To Google Shared Drive folder)
-      'Dropbox to MyDrive',
-      'Dropbox To Google Mydrive', // Format: "dropbox-to-google-mydrive" -> "Dropbox To Google Mydrive"
-      // NOTE: "Dropbox To Google Shared Drive" intentionally removed — those exhibits have no other folder
-    ]);
+    // Hide legacy/duplicate groups that are merged into other folders
+    const hiddenGroupNames = new Set<string>([]);
     
     sorted.forEach((exhibit) => {
       // Skip if already added to a group (prevent duplicates)
@@ -605,10 +630,23 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         return;
       }
       
-      // Get the first combination (or 'all' if no combinations)
-      const primaryCombination = exhibit.combinations && exhibit.combinations.length > 0 
-        ? exhibit.combinations[0] 
-        : 'all';
+      // Get the most specific combination for folder grouping.
+      const combos = exhibit.combinations && exhibit.combinations.length > 0 ? exhibit.combinations : ['all'];
+
+      let primaryCombination: string;
+
+      // Exhibits covering Google MyDrive→MyDrive AND MyDrive→SharedDrive together → own combined folder
+      if (combos.includes('google-mydrive-to-google-mydrive') && combos.includes('google-mydrive-to-google-sharedrive')) {
+        primaryCombination = 'google-mydrive-to-google';
+      // When combinations[0] is 'dropbox-to-google' but the exhibit is Shared Drive only, prefer the specific key
+      } else if (combos.includes('dropbox-to-google-sharedrive')) {
+        primaryCombination = 'dropbox-to-google-sharedrive';
+      // Merge "dropbox-to-google-mydrive" exhibits into the "Dropbox to MyDrive" folder
+      } else if (combos.includes('dropbox-to-google-mydrive') && combos.includes('dropbox-to-mydrive')) {
+        primaryCombination = 'dropbox-to-mydrive';
+      } else {
+        primaryCombination = combos[0];
+      }
       
       // Extract base combination (e.g., "testing-to-production" from "testing-to-production-include-basic")
       const baseCombination = extractBaseCombination(primaryCombination);
