@@ -8002,6 +8002,170 @@ app.post('/api/email/test', async (req, res) => {
 });
 
 // ============================================
+// AI CHAT ENDPOINT
+// ============================================
+
+// Cache exhibit names fetched from MongoDB (refreshed every 10 minutes)
+let _exhibitCache = null;
+let _exhibitCacheTime = 0;
+
+async function getExhibitContext() {
+  const TEN_MIN = 10 * 60 * 1000;
+  if (_exhibitCache && Date.now() - _exhibitCacheTime < TEN_MIN) return _exhibitCache;
+  try {
+    if (!db) return '';
+    const exhibits = await db.collection('exhibits')
+      .find({}, { projection: { name: 1, combinations: 1 } })
+      .toArray();
+
+    // Group unique exhibit names by their primary combination
+    const groups = {};
+    exhibits.forEach(e => {
+      const combo = (e.combinations && e.combinations[0]) || 'general';
+      if (!groups[combo]) groups[combo] = new Set();
+      if (e.name) groups[combo].add(e.name);
+    });
+
+    let context = '\nAVAILABLE EXHIBITS IN THIS TOOL (grouped by migration type):\n';
+    for (const [combo, names] of Object.entries(groups)) {
+      const label = combo.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      context += `\n[${label}]\n`;
+      names.forEach(n => { context += `  - ${n}\n`; });
+    }
+
+    _exhibitCache = context;
+    _exhibitCacheTime = Date.now();
+    return context;
+  } catch {
+    return '';
+  }
+}
+
+app.post('/api/chat/message', async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+    if (!message) return res.status(400).json({ success: false, error: 'Message required' });
+
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) return res.status(500).json({ success: false, error: 'AI not configured' });
+
+    // Log the user question for analytics
+    if (db) {
+      db.collection('chat_logs').insertOne({
+        question: message,
+        timestamp: new Date(),
+        userAgent: req.headers['user-agent'] || ''
+      }).catch(() => {});
+    }
+
+    const exhibitContext = await getExhibitContext();
+
+    const messages = [
+      {
+        role: 'system',
+        content: `You are a helpful assistant for the CloudFuze CPQ (Configure-Price-Quote) tool built for cloud/data migration sales.
+You help users understand how to use the tool. Key features include:
+- Quote generation for cloud/data migration projects
+- Selecting migration exhibits (Standard/Advanced plans with included/not-included features) grouped by migration type
+- E-signature workflows: upload agreements, assign signers, track signing status
+- Approval workflows: Legal, Technical, and General team review stages before e-sign
+- Pricing tier configuration and comparison
+- HubSpot CRM integration for syncing deals and contacts
+- Template management for generating agreement documents (DOCX/PDF)
+- Client quote expiry dates, effective dates, and project start dates
+
+DATE FIELDS IN THE TOOL:
+- Effective Date: The date the agreement/contract terms become active. Set by the user — no fixed number of days.
+- Project Start Date: The date the migration project begins. Must be after the Effective Date (enforced by the tool).
+- Quote Expiry Date: The date the quote offer expires. Set freely by the user — there is no system-enforced fixed number of days or deadline. The user picks any future date they want. It is just a label printed on the agreement document.
+- There are no automatic expiry timers in the tool. All three dates are manually entered by the user when generating a quote.
+${exhibitContext}
+Answer concisely and helpfully. If you do not know a specific detail about this tool, say so honestly.`
+      },
+      ...history,
+      { role: 'user', content: message }
+    ];
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        max_tokens: 4096,
+        messages
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const reply = response.data.choices[0].message.content;
+    res.json({ success: true, data: { response: reply } });
+
+  } catch (error) {
+    console.error('❌ Chat error:', error.response?.data || error.message);
+    const apiError = error.response?.data?.error;
+    const userMessage = apiError?.code === 'insufficient_quota'
+      ? 'The AI service is temporarily unavailable (billing limit reached). Please contact your administrator.'
+      : 'Failed to get AI response. Please try again.';
+    res.status(500).json({ success: false, error: userMessage });
+  }
+});
+
+// GET all raw chat logs (paginated)
+app.get('/api/chat/logs', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+    const logs = await db.collection('chat_logs')
+      .find({})
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+    const total = await db.collection('chat_logs').countDocuments();
+    res.json({ success: true, data: { logs, total, page, totalPages: Math.ceil(total / limit) } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET most-asked chat questions grouped by frequency
+app.get('/api/chat/analytics', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+
+    const limit = parseInt(req.query.limit) || 20;
+
+    // Group by question text, count occurrences, sort by most frequent
+    const topQuestions = await db.collection('chat_logs').aggregate([
+      {
+        $group: {
+          _id: { $toLower: '$question' },
+          question: { $first: '$question' },
+          count: { $sum: 1 },
+          lastAsked: { $max: '$timestamp' }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: limit },
+      { $project: { _id: 0, question: 1, count: 1, lastAsked: 1 } }
+    ]).toArray();
+
+    const totalQuestions = await db.collection('chat_logs').countDocuments();
+
+    res.json({ success: true, data: { topQuestions, totalQuestions } });
+  } catch (error) {
+    console.error('❌ Chat analytics error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to fetch chat analytics' });
+  }
+});
+
+// ============================================
 // APPROVAL WORKFLOW ENDPOINTS
 // ============================================
 

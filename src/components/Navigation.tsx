@@ -4,6 +4,7 @@ import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, 
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
 import ContactUsModal from './ContactUsModal';
+import AIChatWidget from './AIChatWidget';
 
 interface NavigationProps {
   currentTab: string;
@@ -85,6 +86,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
         userName={user?.name || ''}
         userEmail={user?.email || ''}
       />
+
+      {/* AI Chat Widget — floating bottom-right on all authenticated pages */}
+      {isAuthenticated && <AIChatWidget />}
 
       {/* Desktop Vertical Sidebar */}
       {isAuthenticated && (
