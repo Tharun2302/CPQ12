@@ -1114,7 +1114,7 @@ const EsignSignPage: React.FC = () => {
                   className="flex flex-col items-center py-4 first:pt-4 last:pb-4"
                 >
                   <span className="text-xs font-medium text-slate-500 mb-2">Page {pageNum} of {totalPages}</span>
-                  <div className="rounded-lg overflow-hidden shadow-sm">
+                  <div className="rounded-lg overflow-hidden shadow-sm w-full max-w-full">
                     <EsignPdfPageView
                       pdfUrl={fileUrl}
                       pageNumber={pageNum}
@@ -1414,7 +1414,7 @@ const EsignSignPage: React.FC = () => {
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <div key={pageNum} data-page={pageNum} className="flex flex-col items-center w-full">
                   <span className="text-[10px] font-medium text-slate-500 mb-1">Page {pageNum} of {totalPages}</span>
-                  <div className="rounded-md overflow-hidden shadow-sm bg-white max-w-full">
+                  <div className="rounded-md overflow-hidden shadow-sm bg-white w-full max-w-full">
                     <EsignPdfPageView
                       pdfUrl={signerPreviewFileUrl}
                       pageNumber={pageNum}
@@ -1559,15 +1559,15 @@ const EsignSignPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-8 px-4">
+    <div className="min-h-screen bg-slate-50 py-4 px-2 sm:py-8 sm:px-4">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-          <div className="bg-indigo-600 px-6 py-4">
-            <h1 className="text-xl font-bold text-white">Sign Document</h1>
-            <p className="text-indigo-100 text-sm mt-0.5">{doc.file_name}</p>
+          <div className="bg-indigo-600 px-4 py-3 sm:px-6 sm:py-4">
+            <h1 className="text-lg sm:text-xl font-bold text-white">Sign Document</h1>
+            <p className="text-indigo-100 text-xs sm:text-sm mt-0.5 break-words">{doc.file_name}</p>
           </div>
 
-          <div className="p-6 space-y-6">
+          <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
             {renderForwardRequestPanel()}
             {fields.length === 0 && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -1587,7 +1587,7 @@ const EsignSignPage: React.FC = () => {
                     className="flex flex-col items-center py-4 first:pt-4 last:pb-4"
                   >
                     <span className="text-xs font-medium text-slate-500 mb-2">Page {pageNum} of {totalPages}</span>
-                    <div className="rounded-lg overflow-hidden shadow-sm">
+                    <div className="rounded-lg overflow-hidden shadow-sm w-full max-w-full">
                       <EsignPdfPageView
                         pdfUrl={fileUrl}
                         pageNumber={pageNum}
