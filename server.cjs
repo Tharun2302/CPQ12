@@ -5482,18 +5482,49 @@ async function getEsignDocumentForRecipient(recipient) {
 
 // POST /api/esign/documents/upload - Upload PDF to disk, save metadata
 app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), async (req, res) => {
+  let filePath = null;
+  let dbInserted = false;
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     if (!req.file) return res.status(400).json({ success: false, error: 'No file provided' });
 
     const uploadedBy = req.body.uploaded_by || 'anonymous';
     const fileName = req.file.originalname;
-    const filePath = path.join(documentsDir, req.file.filename);
+    filePath = path.join(documentsDir, req.file.filename);
 
-    // Read file from disk immediately and store as base64 in MongoDB so the PDF is always recoverable
-    let fileData = null;
-    try { fileData = fs.readFileSync(filePath).toString('base64'); } catch (_) {}
+    // Step 1: Verify multer actually wrote the file to disk before doing anything else.
+    if (!fs.existsSync(filePath)) {
+      console.error('❌ E-sign upload: multer did not produce a file on disk', { filePath });
+      return res.status(500).json({
+        success: false,
+        error: 'Upload failed: file was not written to storage. Please retry.'
+      });
+    }
 
+    // Step 2: Read and base64-encode for DB-side recovery copy. Failures here
+    // used to be silently swallowed, leaving orphan DB records pointing at files
+    // that could later disappear from disk. Now we fail loudly and clean up.
+    let fileData;
+    try {
+      fileData = fs.readFileSync(filePath).toString('base64');
+    } catch (readErr) {
+      console.error('❌ E-sign upload: failed to read uploaded file from disk', readErr);
+      try { fs.unlinkSync(filePath); } catch {}
+      return res.status(500).json({
+        success: false,
+        error: 'Upload failed: could not read uploaded file. Please retry.'
+      });
+    }
+
+    if (!fileData || fileData.length === 0) {
+      try { fs.unlinkSync(filePath); } catch {}
+      return res.status(500).json({
+        success: false,
+        error: 'Upload failed: uploaded file is empty. Please verify the PDF and retry.'
+      });
+    }
+
+    // Step 3: Both disk + base64 confirmed — safe to insert DB record.
     const doc = {
       file_name: fileName,
       file_path: filePath,
@@ -5504,6 +5535,7 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
       status: 'draft'
     };
     const result = await db.collection('esign_documents').insertOne(doc);
+    dbInserted = true;
     const documentId = result.insertedId.toString();
 
     await logAudit(documentId, 'uploaded', uploadedBy, req.ip || req.connection?.remoteAddress);
@@ -5522,6 +5554,11 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
     });
   } catch (error) {
     console.error('❌ E-sign document upload error:', error);
+    // If DB insert failed AFTER multer wrote the file, clean up the orphan file
+    // so we don't leave untracked uploads on disk.
+    if (filePath && !dbInserted) {
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {}
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -5740,7 +5777,18 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
       }
     }
 
-    return res.status(404).json({ success: false, error: 'File not found' });
+    console.warn('⚠️ E-sign file missing — no disk file, no DB base64, no recoverable source', {
+      documentId: req.params.id,
+      file_path: doc.file_path,
+      upload_source: doc.upload_source
+    });
+    return res.status(404).json({
+      success: false,
+      error: 'File not found',
+      code: 'FILE_MISSING',
+      message: 'The document file is missing from storage. Please re-upload the document and resend it for signature.',
+      documentId: req.params.id
+    });
   } catch (error) {
     console.error('❌ E-sign get file error:', error);
     res.status(500).json({ success: false, error: error.message });

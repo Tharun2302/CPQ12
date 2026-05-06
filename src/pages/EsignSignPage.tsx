@@ -148,6 +148,8 @@ const EsignSignPage: React.FC = () => {
   const [documentFullySigned, setDocumentFullySigned] = useState(false);
   const [recipientRole, setRecipientRole] = useState<'signer' | 'reviewer' | null>(null);
   const [showDashboard, setShowDashboard] = useState(true);
+  /** True when the file endpoint returns 404 — renders a friendly error instead of an iframe full of raw JSON. */
+  const [fileMissing, setFileMissing] = useState(false);
   const [markingReviewed, setMarkingReviewed] = useState(false);
   const [savingReviewerFields, setSavingReviewerFields] = useState(false);
   /** Reviewer must save field entries to DB before Approve (unless there are no fields). */
@@ -335,6 +337,25 @@ const EsignSignPage: React.FC = () => {
     const el = scrollContainerRef.current?.querySelector(`[data-page="${Math.min(...fields.map((f) => f.page || 1))}"]`);
     el?.scrollIntoView({ behavior: 'auto', block: 'start' });
   }, [loading, doc, success, totalPages, fields.length]);
+
+  // Pre-flight the file URL once we know documentId. If the backend returns a
+  // 404 (FILE_MISSING), render a friendly error instead of an iframe full of
+  // raw "{success:false,error:'File not found'}" JSON.
+  useEffect(() => {
+    if (!documentId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, { method: 'HEAD' });
+        if (!cancelled && res.status === 404) {
+          setFileMissing(true);
+        }
+      } catch {
+        // Network error — let the iframe attempt the load and surface its own state.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [documentId]);
 
   const clearSignature = () => {
     sigCanvasRef.current?.clear();
@@ -1374,13 +1395,48 @@ const EsignSignPage: React.FC = () => {
           </p>
         </div>
 
-        {/* ── Document preview — fills all remaining space ── */}
-        <div className="flex-1 min-h-0 bg-white">
-          <iframe
-            src={signerPreviewFileUrl}
-            title="Document preview"
-            className="w-full h-full border-0"
-          />
+        {/* ── Document preview — canvas-based (PDF.js) so it renders on iOS Safari / Outlook mobile ── */}
+        <div className="flex-1 min-h-0 bg-slate-100 overflow-y-auto overflow-x-hidden">
+          {fileMissing ? (
+            <div className="w-full h-full flex items-center justify-center px-6 py-12">
+              <div className="max-w-md text-center">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-rose-100 mb-4">
+                  <XCircle className="h-7 w-7 text-rose-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">Document unavailable</h3>
+                <p className="text-sm text-slate-600">
+                  This document could not be loaded. The PDF file is missing from storage. Please contact the sender to re-upload the document and resend the signing link.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center py-3 px-2 gap-3">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <div key={pageNum} data-page={pageNum} className="flex flex-col items-center w-full">
+                  <span className="text-[10px] font-medium text-slate-500 mb-1">Page {pageNum} of {totalPages}</span>
+                  <div className="rounded-md overflow-hidden shadow-sm bg-white max-w-full">
+                    <EsignPdfPageView
+                      pdfUrl={signerPreviewFileUrl}
+                      pageNumber={pageNum}
+                      scale={PDF_SCALE}
+                      onPdfInfo={pageNum === 1 ? (info) => setTotalPages(info.numPages) : undefined}
+                    />
+                  </div>
+                </div>
+              ))}
+              {/* Direct-download fallback — useful when canvas rendering fails on
+                  older mobile browsers; signer can open the PDF in their device
+                  viewer and still come back to this page to approve or decline. */}
+              <a
+                href={`${BACKEND_URL}/api/esign/documents/${documentId}/file?attachment=1`}
+                className="mt-2 mb-4 text-xs font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-900"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Tap to download the PDF
+              </a>
+            </div>
+          )}
         </div>
 
         {/* ── Bottom action panel ── */}
