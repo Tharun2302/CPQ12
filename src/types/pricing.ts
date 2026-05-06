@@ -42,6 +42,10 @@ export interface ConfigurationData {
   endDate?: string;
   combination?: string;
   timelineProjection?: string;
+  // Service plan: top-level offering tier (Migrate is default; all combinations live under Migrate)
+  servicePlan?: 'Migrate' | 'Manage' | 'Bundle';
+  // Customer Location — region multiplier as a string ('1' = R1 x1.0, '0.8' = R2, '0.65' = R3)
+  customerLocation?: '1' | '0.8' | '0.65';
   // Multi combination specific configs
   messagingConfig?: {
     numberOfUsers: number;
@@ -87,6 +91,10 @@ export interface ConfigurationData {
     duration: number;
     dataSizeGB?: number;
   }>;
+  // Manage Standalone (servicePlan === 'Manage') — separate from Migrate B51/B56.
+  // Maps to COST ESTIMATOR E99 (managed users) and E100 (managed data GB).
+  manageUsers?: number;
+  manageDataGB?: number;
 }
 
 export interface PricingCalculation {
@@ -146,6 +154,10 @@ export interface PricingCalculation {
     instanceCost: number;
     totalCost: number;
   }>;
+  // Manage Standalone — set to 'custom' when users > 5000 (slab returns CUSTOM).
+  // UI should surface as a "Contact sales" CTA rather than a numeric quote.
+  status?: 'custom';
+  message?: string;
 }
 
 export interface DealData {

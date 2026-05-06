@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CloudFuze Pricing Calculator</title>
+<title>CloudFuze Pricing Calculator 2026</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -11,518 +11,668 @@
   --text:#181715;--muted:#65625a;--hint:#a09d95;
   --blue:#2563eb;--blue-l:#eff6ff;--blue-t:#1d4ed8;
   --purple:#6d28d9;--purple-l:#f5f3ff;--purple-t:#4c1d95;
-  --green:#15803d;--green-l:#f0fdf4;
+  --teal:#0f766e;--teal-l:#f0fdfa;--teal-t:#115e59;
   --r:10px;--rs:6px;
 }
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1a1917;--surface:#242320;--border:#3a3834;--border-s:#55524c;
+    --text:#f0eee8;--muted:#a09d95;--hint:#6b6860;
+    --blue-l:#1e3a5f;--blue-t:#93c5fd;
+    --purple-l:#2e1065;--purple-t:#c4b5fd;
+    --teal-l:#0d3330;--teal-t:#5eead4;
+  }
+}
 body{font-family:'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);padding:1.5rem 1rem;min-height:100vh}
-.wrap{max-width:1060px;margin:0 auto}
-h1{font-size:22px;font-weight:600;margin-bottom:4px}
-.subtitle{font-size:13px;color:var(--muted);margin-bottom:1.5rem}
+.wrap{max-width:1120px;margin:0 auto}
+.header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:10px}
+.header-left h1{font-size:22px;font-weight:700;margin-bottom:3px}
+.header-left p{font-size:13px;color:var(--muted)}
+.badge-year{display:inline-block;font-size:10px;font-weight:700;background:var(--blue-l);color:var(--blue-t);padding:2px 8px;border-radius:20px;margin-left:8px}
+.svc-tabs{display:flex;gap:4px;background:var(--border);border-radius:8px;padding:3px}
+.svc-tab{padding:7px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--muted);transition:all .15s}
+.svc-tab.active-migrate{background:var(--blue-l);color:var(--blue-t)}
+.svc-tab.active-manage{background:var(--teal-l);color:var(--teal-t)}
+.svc-tab.active-bundle{background:var(--purple-l);color:var(--purple-t)}
+.svc-tab:hover:not([class*=active]){background:var(--surface)}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px 22px;margin-bottom:12px}
-.sec{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--hint);margin-bottom:14px}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-@media(max-width:680px){.g2,.g3{grid-template-columns:1fr}.g4{grid-template-columns:1fr 1fr}}
-@media(max-width:400px){.g4{grid-template-columns:1fr}}
+.sec{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--hint);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.sec-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.04em}
+.sec-badge.migrate{background:var(--blue-l);color:var(--blue-t)}
+.sec-badge.manage{background:var(--teal-l);color:var(--teal-t)}
+.sec-badge.bundle{background:var(--purple-l);color:var(--purple-t)}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:680px){.g3,.g2{grid-template-columns:1fr}}
 .field{display:flex;flex-direction:column;gap:5px}
 .lbl{font-size:12px;color:var(--muted);font-weight:500}
-select,input{font-size:14px;padding:8px 10px;border:1.5px solid var(--border-s);border-radius:var(--rs);background:var(--surface);color:var(--text);width:100%;outline:none;transition:border-color .12s;-webkit-appearance:none;appearance:none}
+select,input[type=number]{font-size:14px;padding:8px 10px;border:1.5px solid var(--border-s);border-radius:var(--rs);background:var(--surface);color:var(--text);width:100%;outline:none;transition:border-color .15s;-webkit-appearance:none;appearance:none}
 select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%2365625a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
-select:focus,input:focus{border-color:var(--blue)}
+select:focus,input[type=number]:focus{border-color:var(--blue)}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .divider{border:none;border-top:1px solid var(--border);margin:14px 0}
-
-/* Plan cards */
-.pgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
-@media(max-width:780px){.pgrid{grid-template-columns:1fr 1fr}}
-@media(max-width:440px){.pgrid{grid-template-columns:1fr}}
-.pc{border:1px solid var(--border);border-radius:var(--r);padding:14px 15px;position:relative}
-.pc.m{border-top:3px solid var(--blue)}
-.pc.b{border-top:3px solid var(--purple)}
-.pc.pop-m{outline:2px solid var(--blue)}
-.pc.pop-b{outline:2px solid var(--purple)}
-.ptype{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
-.ptype.m{color:var(--blue-t)}.ptype.b{color:var(--purple-t)}
-.pname{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
-.ptotal{font-size:25px;font-weight:600;margin-bottom:10px;letter-spacing:-.5px}
-.badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:20px;margin-bottom:5px}
-.bm{background:var(--blue-l);color:var(--blue-t)}.bb{background:var(--purple-l);color:var(--purple-t)}
-.pr{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);padding:3px 0;border-top:1px solid var(--border)}
-.pr span:last-child{color:var(--text);font-weight:600}
-.psub{font-size:10px;color:var(--hint);padding:1px 0 2px 8px;border-top:1px solid var(--border);font-style:italic}
-
-/* Formula trace */
-.trace{background:#f8f7f3;border:1px solid var(--border);border-radius:var(--rs);padding:10px 14px;margin-top:8px;font-size:11.5px;color:var(--muted);font-family:'Courier New',monospace;line-height:1.7}
-.trace-title{font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase}
-.hl{color:var(--blue-t);font-weight:700}
-
-/* Metrics */
+.pgrid{display:grid;gap:12px;margin-bottom:14px}
+.pgrid.c1{grid-template-columns:minmax(0,480px)}
+.pgrid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:540px){.pgrid{grid-template-columns:1fr!important}}
+.pc{border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;background:var(--surface)}
+.pc.s-migrate{border-top:3px solid var(--blue)}
+.pc.s-manage{border-top:3px solid var(--teal)}
+.pc.s-bundle{border-top:3px solid var(--purple)}
+.pc.p-migrate{outline:2px solid var(--blue)}
+.pc.p-manage{outline:2px solid var(--teal)}
+.pc.p-bundle{outline:2px solid var(--purple)}
+.cbadge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:20px;margin-bottom:6px}
+.cbadge.migrate{background:var(--blue-l);color:var(--blue-t)}
+.cbadge.manage{background:var(--teal-l);color:var(--teal-t)}
+.cbadge.bundle{background:var(--purple-l);color:var(--purple-t)}
+.ptype{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px}
+.ptype.migrate{color:var(--blue-t)}.ptype.manage{color:var(--teal-t)}.ptype.bundle{color:var(--purple-t)}
+.pname{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+.ptotal{font-size:28px;font-weight:700;margin-bottom:12px;letter-spacing:-.5px}
+.pr{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:5px 0;border-top:1px solid var(--border)}
+.pr span:last-child{color:var(--text);font-weight:600;text-align:right;margin-left:8px}
+.psub{font-size:10px;color:var(--hint);padding:2px 0 3px 8px;border-top:1px solid var(--border);font-style:italic}
 .mets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 @media(max-width:600px){.mets{grid-template-columns:1fr 1fr}}
 .met{background:var(--bg);border-radius:var(--rs);padding:10px 12px}
 .met-l{font-size:11px;color:var(--hint);margin-bottom:3px}
 .met-v{font-size:14px;font-weight:600;color:var(--text)}
-
+.trace{background:var(--bg);border:1px solid var(--border);border-radius:var(--rs);padding:12px 16px;margin-top:10px;font-size:11.5px;color:var(--muted);font-family:'Courier New',monospace;line-height:1.8}
+.trace-title{font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;font-weight:700;color:var(--text);margin-bottom:8px;letter-spacing:.04em;text-transform:uppercase}
+.hl{color:var(--blue-t);font-weight:700}
+.hl-t{color:var(--teal-t);font-weight:700}
 .note{font-size:12px;color:var(--muted);margin-top:10px;font-style:italic}
-footer{font-size:11px;color:var(--hint);text-align:center;margin-top:1.2rem;line-height:2}
-
-/* Toggle */
-.toggle-btn{font-size:11px;color:var(--blue-t);cursor:pointer;border:none;background:none;padding:4px 0;margin-top:6px;text-decoration:underline}
+.tbtn{font-size:12px;color:var(--blue-t);cursor:pointer;border:none;background:none;padding:6px 0;margin-top:6px;text-decoration:underline}
+footer{font-size:11px;color:var(--hint);text-align:center;margin-top:1.5rem;padding-bottom:1rem}
+.fade{animation:fi .2s ease}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>CloudFuze Pricing Calculator</h1>
-<p class="subtitle">Formulas extracted directly from COST ESTIMATOR tab · Excel sheet logic replicated exactly</p>
+
+<div class="header">
+  <div class="header-left">
+    <h1>CloudFuze Pricing Calculator <span class="badge-year">2026</span></h1>
+    <p>Exact formulas from COST ESTIMATOR tab — verified against Excel output</p>
+  </div>
+  <div class="svc-tabs">
+    <button class="svc-tab active-migrate" data-svc="migrate" onclick="switchSvc('migrate')">Migrate</button>
+    <button class="svc-tab" data-svc="manage" onclick="switchSvc('manage')">Manage</button>
+    <button class="svc-tab" data-svc="bundle" onclick="switchSvc('bundle')">Bundle</button>
+  </div>
+</div>
 
 <div class="card">
-  <p class="sec">Migration details</p>
-  <div class="g2" style="margin-bottom:12px">
-    <div class="field">
-      <span class="lbl">Migration type <span style="color:var(--hint)">[B55]</span></span>
-      <select id="migType" onchange="onMigChange()">
-        <option value="content">Content</option>
-        <option value="email">Email</option>
-        <option value="messaging">Messaging (Slack)</option>
-      </select>
+  <p class="sec" id="secLabel">Migration details <span class="sec-badge migrate" id="svcBadge">Migrate</span></p>
+
+  <div class="g2" id="topRow">
+    <div class="field" id="migTypeField">
+      <span class="lbl">Migration type</span>
+      <select id="migType" onchange="onMigChange()"></select>
     </div>
-    <div class="field">
+    <div class="field" id="regionField">
       <span class="lbl">Customer location</span>
       <select id="region" onchange="calc()">
-        <option value="r1">Region 1 — US, Canada, UK</option>
-        <option value="r2">Region 2 — AUS, NZ, EU (×0.8)</option>
-        <option value="r3">Region 3 — Rest of World (×0.65)</option>
+        <option value="1">Region 1 — US, Canada, UK (x1.0)</option>
+        <option value="0.8">Region 2 — AUS, NZ, EU (x0.8)</option>
+        <option value="0.65">Region 3 — Rest of World (x0.65)</option>
       </select>
     </div>
   </div>
-  <div class="g2" style="margin-bottom:12px">
+
+  <div class="g2">
     <div class="field">
-      <span class="lbl">Number of users <span style="color:var(--hint)">[B51]</span></span>
-      <input type="number" id="users" value="200" min="1" oninput="calc()">
+      <span class="lbl">Number of users <span style="color:var(--hint);font-size:11px">[B51]</span></span>
+      <input type="number" id="users" value="250" min="1" oninput="calc()">
     </div>
     <div class="field" id="dataRow">
-      <span class="lbl">Data size GB <span style="color:var(--hint)">[B56]</span></span>
-      <input type="number" id="dataGB" value="120000" min="0" oninput="calc()">
+      <span class="lbl">Data size in GB <span style="color:var(--hint);font-size:11px">[B56]</span></span>
+      <input type="number" id="dataGB" value="7700" min="0" oninput="calc()">
     </div>
   </div>
-  <div class="g3">
+
+  <div class="g3" id="instanceRow">
     <div class="field">
-      <span class="lbl">Instance type <span style="color:var(--hint)">[B52]</span></span>
+      <span class="lbl">Instance type <span style="color:var(--hint);font-size:11px">[B52]</span></span>
       <select id="instType" onchange="calc()">
-        <option value="0">Shared ($0)</option>
-        <option value="500">Small ($500)</option>
-        <option value="1000" selected>Standard ($1,000)</option>
+        <option value="0">Shared / SaaS ($0)</option>
+        <option value="500" selected>Small ($500)</option>
+        <option value="1000">Standard ($1,000)</option>
         <option value="2000">Large ($2,000)</option>
-        <option value="5000">Extra Large ($5,000)</option>
+        <option value="5000">Extra Large / Bare Metal ($5,000)</option>
       </select>
     </div>
     <div class="field">
-      <span class="lbl">No. of instances <span style="color:var(--hint)">[B53]</span></span>
+      <span class="lbl">No. of instances <span style="color:var(--hint);font-size:11px">[B53]</span></span>
       <input type="number" id="instCount" value="1" min="0" oninput="calc()">
     </div>
     <div class="field">
-      <span class="lbl">Duration months <span style="color:var(--hint)">[B54]</span></span>
-      <input type="number" id="months" value="1" min="1" oninput="calc()">
+      <span class="lbl">Duration (months) <span style="color:var(--hint);font-size:11px">[B54]</span></span>
+      <input type="number" id="months" value="4" min="1" oninput="calc()">
+    </div>
+  </div>
+
+  <div class="g2" id="manageRow" style="display:none">
+    <div class="field">
+      <span class="lbl">Migration data size (GB) <span style="color:var(--hint);font-size:11px">[B56 — sets $/GB rate]</span></span>
+      <input type="number" id="mgmtB56GB" value="7700" min="0" oninput="calc()">
+    </div>
+    <div class="field">
+      <span class="lbl">Managed content data (GB) <span style="color:var(--hint);font-size:11px">[E100 — data volume]</span></span>
+      <input type="number" id="mgmtDataGB" value="191" min="0" oninput="calc()">
     </div>
   </div>
 </div>
 
 <div class="card">
-  <p class="sec">Estimated cost — all 4 plans</p>
-  <div id="planGrid" class="pgrid"></div>
-  <hr class="divider">
-  <div id="metricsGrid" class="mets"></div>
+  <p class="sec">Pricing plans <span class="sec-badge migrate" id="resultsBadge">Migrate</span></p>
+  <div class="pgrid c2 fade" id="planGrid"></div>
+  <div class="divider"></div>
+  <div class="mets" id="metricsGrid"></div>
   <div id="notes"></div>
-  <button class="toggle-btn" onclick="toggleTrace()">Show formula trace ▾</button>
+  <button class="tbtn" onclick="toggleTrace()">Show formula trace v</button>
   <div id="traceBox" style="display:none"></div>
 </div>
 
-<footer id="footer"></footer>
+<footer id="footer">CloudFuze Pricing Calculator · 2026 — Exact COST ESTIMATOR formulas</footer>
 </div>
 
 <script>
-/* ══════════════════════════════════════════════════════════════════════
-   LOOKUP TABLES — extracted directly from Excel COST ESTIMATOR sheet
-   ══════════════════════════════════════════════════════════════════════ */
+/* =========================================================
+   LOOKUP TABLES — exact from COST ESTIMATOR sheet
+   ========================================================= */
 
-// Col V(maxUsers), W(basicRate), X(tier) — rows 3-13
-// K2 formula: IF(B51<=V3,W3, IF(B51<=V4,W4, ...))  → basic user rate
-// K4 formula: IF(B51<=V3,X3, ...)                   → user tier number
-// M17 formula: =(M2*0.6+M2)/B51 = baseUserRate * 1.6
-const USER_TIERS = [
-  {max:25,   rate:25,  tier:1},
-  {max:50,   rate:20,  tier:1},
-  {max:100,  rate:18,  tier:2},
-  {max:250,  rate:16,  tier:2},
-  {max:500,  rate:14,  tier:3},
-  {max:1000, rate:12.5,tier:4},
-  {max:1500, rate:11,  tier:5},
-  {max:2000, rate:9,   tier:6},
-  {max:5000, rate:8,   tier:7},
-  {max:10000,rate:7.5, tier:8},
-  {max:30000,rate:7,   tier:10},
+/* User cost lookup — V3:X13 columns
+   K2 = IF(B51<=V3,W3, IF(B51<=V4,W4, ...))
+   K4 = IF(B51<=V3,X3, IF(B51<=V4,X4, ...)) */
+var USER_TABLE = [
+  {max:25,    rate:25,   tier:1},
+  {max:50,    rate:20,   tier:1},
+  {max:100,   rate:18,   tier:2},
+  {max:250,   rate:16,   tier:2},
+  {max:500,   rate:14,   tier:3},
+  {max:1000,  rate:12.5, tier:4},
+  {max:1500,  rate:11,   tier:5},
+  {max:2000,  rate:9,    tier:6},
+  {max:5000,  rate:8,    tier:7},
+  {max:10000, rate:7.5,  tier:8},
+  {max:30000, rate:7,    tier:10}
 ];
 
-// Col Q(maxGB), R(basicRate), S(tier) — rows 3-13
-// K3 formula: IF(B56<=Q3,R3, ...)  → basic data rate
-// K5 formula: IF(B56<=Q3,S3, ...)  → data tier number
-const DATA_TIERS = [
-  {max:500,     rate:1,    tier:1},
-  {max:2500,    rate:0.8,  tier:2},
-  {max:5000,    rate:0.7,  tier:3},
-  {max:10000,   rate:0.6,  tier:4},
-  {max:20000,   rate:0.5,  tier:5},
-  {max:50000,   rate:0.45, tier:6},
-  {max:100000,  rate:0.4,  tier:7},
-  {max:500000,  rate:0.35, tier:9},
-  {max:1000000, rate:0.32, tier:10},
-  {max:2000000, rate:0.28, tier:11},
-  {max:3000001, rate:0.25, tier:11},
+/* Data cost lookup — Q3:S13 columns
+   K3 = IF(B56<=Q3,R3, IF(B56<=Q4,R4, ...))
+   K5 = IF(B56<=Q3,S3, IF(B56<=Q4,S4, ...)) */
+var DATA_TABLE = [
+  {max:500,      rate:1.0,  tier:1},
+  {max:2500,     rate:0.8,  tier:2},
+  {max:5000,     rate:0.7,  tier:3},
+  {max:10000,    rate:0.6,  tier:4},
+  {max:20000,    rate:0.5,  tier:5},
+  {max:50000,    rate:0.45, tier:6},
+  {max:100000,   rate:0.4,  tier:7},
+  {max:500000,   rate:0.35, tier:9},
+  {max:1000000,  rate:0.32, tier:10},
+  {max:2000000,  rate:0.28, tier:11},
+  {max:3000001,  rate:0.25, tier:11}
 ];
 
-// Col Z(tier), AC(cost) — rows 3-13
-// K6 formula: lookup MAX(userTier,dataTier) in Z col → AC col
-const MANAGED_TABLE = {1:300,2:600,3:1500,4:2250,5:4500,6:9000,7:12000,8:15000,9:18750,10:22500,11:30000};
+/* Managed migration cost — Z3:AC13 columns
+   K6 = MAX(K4, K5) → lookup MANAGED_TABLE */
+var MANAGED_TABLE = {
+  1:300, 2:600, 3:1500, 4:2250, 5:4500,
+  6:9000, 7:12000, 8:15000, 9:18750, 10:22500, 11:30000
+};
 
-// Manage bundle user addon — Col H(maxUsers), I(rate) rows 18-24
-// K11 formula: IF(B51<=H18,I18, IF(B51<=H19,I19, ...))
-const BUNDLE_USER_ADDON = [
-  {max:50,   rate:38},
-  {max:200,  rate:23},
-  {max:500,  rate:15},
-  {max:1000, rate:11},
-  {max:1500, rate:9.5},
-  {max:3000, rate:8},
-  {max:5000, rate:6.5},
+/* Messaging/Email managed migration — AO4:AR13 columns
+   O38 = basicHrs lookup → S38 = O38*users/4 → W38 = MAX(S38,400) [Basic managed]
+   Q38 = advHrs lookup   → U38 = Q38*users/4 → Y38 = MAX(U38,800) [Standard managed]
+   Note: basicHrs is null for users>50000 (not applicable at that scale) */
+var MSG_TABLE = [
+  {max:100,   basicHrs:18, stdHrs:22, advHrs:34},
+  {max:250,   basicHrs:15, stdHrs:20, advHrs:32},
+  {max:500,   basicHrs:12, stdHrs:18, advHrs:30},
+  {max:1000,  basicHrs:10, stdHrs:15, advHrs:28},
+  {max:2500,  basicHrs:8,  stdHrs:12, advHrs:24},
+  {max:5000,  basicHrs:6,  stdHrs:10, advHrs:18},
+  {max:10000, basicHrs:4,  stdHrs:8,  advHrs:12},
+  {max:25000, basicHrs:3,  stdHrs:6,  advHrs:10},
+  {max:50000, basicHrs:null, stdHrs:4, advHrs:8}
 ];
 
-// K13 formula: IF(B56<=Q3,AB19, IF(B56<=Q4,AB20, ...)) — manage bundle data rate
-// Col AB rows 19-29 (data Content Sprawl rates)
-const BUNDLE_DATA_TABLE = [
-  {max:500,     rate:0.16},
-  {max:2500,    rate:0.13},
-  {max:5000,    rate:0.11667},
-  {max:10000,   rate:0.1},
-  {max:20000,   rate:0.08333},
-  {max:50000,   rate:0.075},
-  {max:100000,  rate:0.06667},
-  {max:500000,  rate:0.05833},
-  {max:1000000, rate:0.05333},
-  {max:2000000, rate:0.04667},
-  {max:3000001, rate:0.04167},
+/* Bundle user addon — H18:I24 columns
+   K11 = IF(B51<=H18,I18, IF(B51<=H19,I19, ...)) */
+var BUNDLE_USER_ADDON = [
+  {max:50,   addon:38},
+  {max:200,  addon:23},
+  {max:500,  addon:15},
+  {max:1000, addon:11},
+  {max:1500, addon:9.5},
+  {max:3000, addon:8},
+  {max:5000, addon:6.5}
 ];
 
-// Messaging/Email managed: O38,Q38 lookup (AO=maxUsers, AP=basic, AR=advanced)
-// W38 = max(400, O38*users/4), Y38 = max(800, Q38*users/4)
-const MSG_USER_RATES = [
-  {max:100,  basic:18, advanced:34},
-  {max:250,  basic:15, advanced:32},
-  {max:500,  basic:12, advanced:30},
-  {max:1000, basic:10, advanced:28},
-  {max:2500, basic:8,  advanced:24},
-  {max:5000, basic:6,  advanced:18},
-  {max:10000,basic:4,  advanced:12},
-  {max:25000,basic:3,  advanced:10},
-  {max:50000,basic:null,advanced:8},
+/* Bundle data addon — AB19:AB29 columns, indexed by Q3:Q13 boundaries
+   K13 = IF(B56<=Q3,AB19, IF(B56<=Q4,AB20, ...)) */
+var BUNDLE_DATA_ADDON = [
+  {max:500,      addon:0.16},
+  {max:2500,     addon:0.13},
+  {max:5000,     addon:0.11667},
+  {max:10000,    addon:0.1},
+  {max:20000,    addon:0.08333},
+  {max:50000,    addon:0.075},
+  {max:100000,   addon:0.06667},
+  {max:500000,   addon:0.05833},
+  {max:1000000,  addon:0.05333},
+  {max:2000000,  addon:0.04667},
+  {max:3000001,  addon:0.04167}
 ];
 
-// Instance costs — L36:L39
-const INST_COSTS = {0:0, 500:500, 1000:1000, 2000:2000, 5000:5000};
+/* Manage Standalone user cost — C19:E22 table */
+function manageUserCost(u) {
+  if (u <= 0)    return 0;
+  if (u <= 50)   return 2499;
+  if (u <= 200)  return 5999;
+  if (u <= 500)  return 9999;
+  if (u <= 5000) return 20 * u;
+  return 'CUSTOM';
+}
 
-// Region multipliers
-const R_MULT = {r1:1.0, r2:0.8, r3:0.65};
+/* Region multipliers */
+var RMULT = {'1':1.0, '0.8':0.8, '0.65':0.65};
 
-/* ══════════════════════════════════════════════════════════════════════
+/* =========================================================
    LOOKUP FUNCTIONS
-   ══════════════════════════════════════════════════════════════════════ */
+   ========================================================= */
+
 function lookupUser(u) {
-  for(const t of USER_TIERS) if(u<=t.max) return t;
-  return USER_TIERS[USER_TIERS.length-1];
+  for (var i = 0; i < USER_TABLE.length; i++) {
+    if (u <= USER_TABLE[i].max) return USER_TABLE[i];
+  }
+  return USER_TABLE[USER_TABLE.length - 1];
 }
+
 function lookupData(gb) {
-  if(gb===0) return {rate:0,tier:0};
-  for(const t of DATA_TIERS) if(gb<=t.max) return t;
-  return DATA_TIERS[DATA_TIERS.length-1];
+  if (!gb) return {rate:0, tier:0};
+  for (var i = 0; i < DATA_TABLE.length; i++) {
+    if (gb <= DATA_TABLE[i].max) return DATA_TABLE[i];
+  }
+  return DATA_TABLE[DATA_TABLE.length - 1];
 }
+
+function lookupMsg(u) {
+  for (var i = 0; i < MSG_TABLE.length; i++) {
+    if (u <= MSG_TABLE[i].max) return MSG_TABLE[i];
+  }
+  return MSG_TABLE[MSG_TABLE.length - 1];
+}
+
 function lookupBundleUserAddon(u) {
-  for(const t of BUNDLE_USER_ADDON) if(u<=t.max) return t.rate;
+  for (var i = 0; i < BUNDLE_USER_ADDON.length; i++) {
+    if (u <= BUNDLE_USER_ADDON[i].max) return BUNDLE_USER_ADDON[i].addon;
+  }
   return 6.5;
 }
-function lookupBundleData(gb) {
-  if(gb===0) return 0;
-  for(const t of BUNDLE_DATA_TABLE) if(gb<=t.max) return t.rate;
-  return BUNDLE_DATA_TABLE[BUNDLE_DATA_TABLE.length-1].rate;
+
+function lookupBundleDataAddon(gb) {
+  if (!gb) return 0;
+  for (var i = 0; i < BUNDLE_DATA_ADDON.length; i++) {
+    if (gb <= BUNDLE_DATA_ADDON[i].max) return BUNDLE_DATA_ADDON[i].addon;
+  }
+  return BUNDLE_DATA_ADDON[BUNDLE_DATA_ADDON.length - 1].addon;
 }
-function lookupMsgRates(u) {
-  for(const t of MSG_USER_RATES) if(u<=t.max) return t;
-  return MSG_USER_RATES[MSG_USER_RATES.length-1];
-}
 
-/* ══════════════════════════════════════════════════════════════════════
-   CORE CALCULATION — mirrors Excel formulas exactly
-   ══════════════════════════════════════════════════════════════════════ */
-function calcAll(inputs) {
-  const {users, dataGB, instBase, instCount, months, migType, rMult} = inputs;
+/* =========================================================
+   CORE CALCULATIONS
+   ========================================================= */
 
-  // ── User lookup (K2 formula) ──────────────────────────────────────────
-  const uTier   = lookupUser(users);
-  const baseUser = uTier.rate;   // K2 result
-  const userTierN = uTier.tier;  // K4 result
+function calcMigrateBundle(users, dataGB, instCost, instCount, months, migType, rMult) {
+  var uRow    = lookupUser(users);
+  var K2_rate = uRow.rate;
+  var K4_tier = uRow.tier;
+  var M2      = K2_rate * users;
 
-  // ── User rates by plan (K17, L17, M17 formulas) ──────────────────────
-  // K17 = (M2*0.2+M2)/B51 = baseUser*1.2
-  // L17 = (M2*0.4+M2)/B51 = baseUser*1.4  (not used in output)
-  // M17 = (M2*0.6+M2)/B51 = baseUser*1.6
-  const K17 = baseUser * 1.2;  // Migrate Basic user rate
-  const M17 = baseUser * 1.6;  // Migrate Standard user rate
+  /* K17 = M2*1.2/users → Migrate Basic per-user rate  */
+  /* M17 = M2*1.6/users → Migrate Standard per-user rate */
+  var K17 = M2 * 1.2 / users;
+  var M17 = M2 * 1.6 / users;
 
-  // ── Data lookup (K3 formula) ──────────────────────────────────────────
-  const dTier   = lookupData(dataGB);
-  const baseData = dTier.rate;    // K3 result
-  const dataTierN = dTier.tier;   // K5 result
+  /* K9=K17*0.85, K14=M17*0.85
+     K11 = bundle user addon (varies by user count — NOT fixed)
+     D63 = K9+K11, E63 = K14+K11 */
+  var K9  = K17 * 0.85;
+  var K14 = M17 * 0.85;
+  var K11 = lookupBundleUserAddon(users);
+  var D63 = K9  + K11;
+  var E63 = K14 + K11;
 
-  // ── Data rates by plan (K18, L18, M18 formulas) ──────────────────────
-  // K18 = base data rate (same tier lookup)
-  // M18 = ((M3*0.8)+M3)/B56 = baseData*1.8
-  const K18 = baseData;          // Migrate Basic data rate
-  const M18 = baseData * 1.8;    // Migrate Standard data rate
+  var dRow    = lookupData(dataGB);
+  var K3_rate = dRow.rate;
+  var K5_tier = dRow.tier;
 
-  // ── Managed migration (K6 formula) ───────────────────────────────────
-  // K6 = IF(Self-Service, 1, MAX(userTier, dataTier)) → lookup MANAGED_TABLE
-  const mgdTier = Math.max(userTierN, dataTierN);
-  const K6_content = MANAGED_TABLE[mgdTier] || 30000;
+  /* K18 = K3 (Basic data rate), M18 = K3*1.8 (Standard data rate)
+     K13 = bundle data addon per GB
+     D64 = K18+K13, E64 = M18+K13 */
+  var K18 = K3_rate;
+  var M18 = K3_rate * 1.8;
+  var K13 = lookupBundleDataAddon(dataGB);
 
-  // ── Bundle addons ────────────────────────────────────────────────────
-  // K11 = manage bundle user rate
-  // K13 = manage bundle data rate
-  // K9 = K17 - 0.15*K17 = K17*0.85
-  // K14 = M17 - 0.15*M17 = M17*0.85
-  const K11 = lookupBundleUserAddon(users);
-  const K13 = migType==='content' ? lookupBundleData(dataGB) : 0;
-  const K9  = K17 * 0.85;   // discounted migrate basic user rate
-  const K14 = M17 * 0.85;   // discounted migrate standard user rate
+  var K6_tier = Math.max(K4_tier, K5_tier);
+  if (K6_tier < 1) K6_tier = 1;
+  var K21 = MANAGED_TABLE[K6_tier] || 30000;
 
-  // ── Per-user/GB rates for output (B63,C63,D63,E63) ──────────────────
-  // B63=K17, C63=M17, D63=K9+K11, E63=K14+K11
-  // B64=K18 (if Content else 0), C64=M18, D64=K13+K18, E64=M18+K13
-  const B63 = K17;
-  const C63 = M17;
-  const D63 = K9 + K11;
-  const E63 = K14 + K11;
-  const B64 = migType==='content' ? K18 : 0;
-  const C64 = migType==='content' ? M18 : 0;
-  const D64 = migType==='content' ? K13 + K18 : 0;
-  const E64 = migType==='content' ? M18 + K13 : 0;
+  /* Messaging/Email managed: W38, Y38
+     basicHrs can be null for very large user counts — use || 0 guard */
+  var mRow     = lookupMsg(users);
+  var basicHrs = mRow.basicHrs || 0;
+  var advHrs   = mRow.advHrs   || 0;
+  var W38 = Math.max(basicHrs * users / 4, 400);
+  var Y38 = Math.max(advHrs   * users / 4, 800);
 
-  // ── Managed cost for Email/Messaging (W38, Y38 formulas) ─────────────
-  // O38 = lookup basic msg rate by users; Q38 = advanced rate
-  // S38 = O38*users/4;  W38 = max(400, S38)
-  // U38 = Q38*users/4;  Y38 = max(800, U38)
-  const msgRates = lookupMsgRates(users);
-  const W38 = Math.max(400, (msgRates.basic||0) * users / 4);
-  const Y38 = Math.max(800, (msgRates.advanced||0) * users / 4);
+  var isContent = (migType === 'content');
+  var B68 = isContent ? K21 : W38;
+  var C68 = isContent ? K21 : Y38;
 
-  // ── Managed cost by plan (B68, C68) ──────────────────────────────────
-  // B68 = IF(B55=Content, K21, W38)   K21=K6 (managed content)
-  // C68 = IF(B55=Content, M21, Y38)   M21=K6 (same for all plans in content)
-  const B68 = migType==='content' ? K6_content : W38;
-  const C68 = migType==='content' ? K6_content : Y38;
-  // D68=B68, E68=C68 (bundle uses same managed as migrate)
+  var B69 = instCost * instCount * months;
 
-  // ── Instance cost (B69 formula) ──────────────────────────────────────
-  // B69 = instCostPerUnit * B53 * B54
-  const instUnit = INST_COSTS[instBase] || 0;
-  const B69 = instUnit * instCount * months;
+  var B64 = isContent ? K18          : 0;
+  var C64 = isContent ? M18          : 0;
+  var D64 = isContent ? (K18 + K13)  : 0;
+  var E64 = isContent ? (M18 + K13)  : 0;
 
-  // ── Totals per plan (B70 = B66+B67+B68+B69) ─────────────────────────
-  const B66 = B63 * users;  // user cost
-  const C66 = C63 * users;
-  const D66 = D63 * users;
-  const E66 = E63 * users;
+  var userB = K17 * users;
+  var userC = M17 * users;
+  var userD = D63 * users;
+  var userE = E63 * users;
+  var dataB = B64 * dataGB;
+  var dataC = C64 * dataGB;
+  var dataD = D64 * dataGB;
+  var dataE = E64 * dataGB;
 
-  const B67 = B64 * dataGB;  // data cost
-  const C67 = C64 * dataGB;
-  const D67 = D64 * dataGB;
-  const E67 = E64 * dataGB;
-
-  // Region multipliers (applied to all components)
-  const applyR = (v) => v * rMult;
-
+  var r = rMult;
   return {
-    // Per-unit rates
-    B63,C63,D63,E63,B64,C64,D64,E64,
-    // Component costs (pre-region)
-    B66,C66,D66,E66,
-    B67,C67,D67,E67,
-    B68,C68,D68:B68,E68:C68,
-    B69,
-    // Tier info
-    baseUser,baseData,userTierN,dataTierN,mgdTier,K11,K13,K6_content,W38,Y38,
-    // Region-applied totals
-    r_B66:applyR(B66), r_C66:applyR(C66), r_D66:applyR(D66), r_E66:applyR(E66),
-    r_B67:applyR(B67), r_C67:applyR(C67), r_D67:applyR(D67), r_E67:applyR(E67),
-    r_B68:applyR(B68), r_C68:applyR(C68), r_D68:applyR(B68), r_E68:applyR(C68),
-    r_B69:applyR(B69),
-    r_total_B: applyR(B66)+applyR(B67)+applyR(B68)+applyR(B69),
-    r_total_C: applyR(C66)+applyR(C67)+applyR(C68)+applyR(B69),
-    r_total_D: applyR(D66)+applyR(D67)+applyR(B68)+applyR(B69),
-    r_total_E: applyR(E66)+applyR(E67)+applyR(C68)+applyR(B69),
+    K17:K17, M17:M17, D63:D63, E63:E63, K11:K11, K9:K9, K14:K14,
+    K18:K18, M18:M18, D64:D64, E64:E64, K13:K13,
+    K6_tier:K6_tier, K21:K21, B68:B68, C68:C68,
+    B69:B69,
+    K2_rate:K2_rate, K3_rate:K3_rate, K4_tier:K4_tier, K5_tier:K5_tier,
+    basicHrs:basicHrs, advHrs:advHrs, W38:W38, Y38:Y38,
+    isContent:isContent,
+    r_userB:userB*r, r_userC:userC*r, r_userD:userD*r, r_userE:userE*r,
+    r_dataB:dataB*r, r_dataC:dataC*r, r_dataD:dataD*r, r_dataE:dataE*r,
+    r_mgdB:B68*r,    r_mgdC:C68*r,    r_mgdD:B68*r,    r_mgdE:C68*r,
+    r_inst:B69*r,
+    r_totalB:(userB+dataB+B68+B69)*r,
+    r_totalC:(userC+dataC+C68+B69)*r,
+    r_totalD:(userD+dataD+B68+B69)*r,
+    r_totalE:(userE+dataE+C68+B69)*r
   };
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   UI RENDERING
-   ══════════════════════════════════════════════════════════════════════ */
-function fmt(n){return '$'+Math.round(n).toLocaleString()}
-function fmtD(n,d=4){return n===0?'$0':'$'+n.toFixed(d)}
-
-function makeCard(cls,pop,type,name,total,rows,isMig){
-  const badgeCls=isMig?'bm':'bb';
-  const popLabel=isMig?'Most popular':'Most value';
-  let h=`<div class="pc ${cls}${pop?' '+pop:''}">`;
-  if(pop) h+=`<div class="badge ${badgeCls}">${popLabel}</div>`;
-  h+=`<div class="ptype ${isMig?'m':'b'}">${type}</div>`;
-  h+=`<div class="pname">${name}</div>`;
-  h+=`<div class="ptotal">${fmt(total)}</div>`;
-  for(const [lbl,val,sub] of rows){
-    h+=`<div class="pr"><span>${lbl}</span><span>${fmt(val)}</span></div>`;
-    if(sub) h+=`<div class="psub">${sub}</div>`;
-  }
-  return h+'</div>';
+function calcManage(users, b56GB, e100GB) {
+  var B102 = manageUserCost(users);
+  var isCustom = (B102 === 'CUSTOM');
+  /* B100 = IF(E100=0, 0, K13) — K13 lookup uses migration data size B56 */
+  var B100 = e100GB > 0 ? lookupBundleDataAddon(b56GB) : 0;
+  var B99  = isCustom ? null : B102 / users;
+  var B103 = isCustom ? null : B100 * e100GB;
+  var B104 = isCustom ? 'CUSTOM' : B102 + B103;
+  return {B99:B99, B100:B100, B102:B102, B103:B103, B104:B104, isCustom:isCustom};
 }
 
-let lastTrace='';
-function toggleTrace(){
-  const box=document.getElementById('traceBox');
-  const btn=document.querySelector('.toggle-btn');
-  if(box.style.display==='none'){
-    box.style.display='block';
-    box.innerHTML=lastTrace;
-    btn.textContent='Hide formula trace ▴';
-  } else {
-    box.style.display='none';
-    btn.textContent='Show formula trace ▾';
+/* =========================================================
+   UI HELPERS
+   ========================================================= */
+
+var SVC = {
+  migrate: {
+    label:'Migrate',
+    types:[
+      {v:'content',   l:'Content migration (files, folders, data)'},
+      {v:'email',     l:'Email migration'},
+      {v:'messaging', l:'Messaging / chat migration'}
+    ],
+    showInst:true, showMgmt:false
+  },
+  manage: {
+    label:'Manage',
+    types:[{v:'content', l:'Content management (standalone)'}],
+    showInst:false, showMgmt:true
+  },
+  bundle: {
+    label:'Bundle',
+    types:[
+      {v:'content',   l:'Content migration (files, folders, data)'},
+      {v:'email',     l:'Email migration'},
+      {v:'messaging', l:'Messaging / chat migration'}
+    ],
+    showInst:true, showMgmt:false
   }
+};
+
+var currentSvc = 'migrate';
+var lastTrace  = '';
+
+function $(id){ return document.getElementById(id); }
+function fmt(n){ return (typeof n === 'string') ? n : '$' + Math.round(n).toLocaleString(); }
+function fmtR(n, d){ return (n === null || n === undefined) ? 'N/A' : '$' + (+n).toFixed(d); }
+
+function switchSvc(svc) {
+  currentSvc = svc;
+  document.querySelectorAll('.svc-tab').forEach(function(t){
+    t.className = 'svc-tab';
+    if (t.getAttribute('data-svc') === svc) t.classList.add('active-' + svc);
+  });
+  ['svcBadge','resultsBadge'].forEach(function(id){
+    var el = $(id);
+    el.className = 'sec-badge ' + svc;
+    el.textContent = SVC[svc].label;
+  });
+  var sel = $('migType'), prev = sel.value;
+  sel.innerHTML = SVC[svc].types.map(function(t){
+    return '<option value="' + t.v + '">' + t.l + '</option>';
+  }).join('');
+  SVC[svc].types.forEach(function(t){ if (t.v === prev) sel.value = prev; });
+  var labels = {migrate:'Migration details', manage:'Management details', bundle:'Bundle details'};
+  $('secLabel').childNodes[0].nodeValue = labels[svc] + ' ';
+  $('instanceRow').style.display = SVC[svc].showInst ? '' : 'none';
+  $('manageRow').style.display   = SVC[svc].showMgmt ? '' : 'none';
+  $('regionField').style.display  = (svc === 'manage') ? 'none' : '';
+  $('migTypeField').style.display = (svc === 'manage') ? 'none' : '';
+  $('dataRow').style.display      = (svc === 'manage') ? 'none' : '';
+  onMigChange();
 }
 
-function onMigChange(){
-  const m=document.getElementById('migType').value;
-  document.getElementById('dataRow').style.display=(m==='content')?'':'none';
+function onMigChange() {
+  var m = $('migType').value;
+  if (currentSvc !== 'manage') {
+    $('dataRow').style.display = (m === 'content') ? '' : 'none';
+  }
   calc();
 }
 
-function calc(){
-  const migType =document.getElementById('migType').value;
-  const region  =document.getElementById('region').value;
-  const users   =Math.max(1,parseInt(document.getElementById('users').value)||1);
-  const dataGB  =Math.max(0,parseInt(document.getElementById('dataGB').value)||0);
-  const instBase=parseInt(document.getElementById('instType').value)||0;
-  const instCount=Math.max(0,parseInt(document.getElementById('instCount').value)||0);
-  const months  =Math.max(1,parseInt(document.getElementById('months').value)||1);
-  const rMult   =R_MULT[region];
-
-  const v=calcAll({users,dataGB,instBase,instCount,months,migType,rMult});
-  const rS=rMult<1?` × ${rMult}`:'';
-  const migLabel=migType==='content'?'Content':migType==='email'?'Email':'Messaging';
-
-  const showData=migType==='content';
-  const instDesc=instBase>0?`$${instBase} × ${instCount} inst × ${months}mo${rS}`:'';
-
-  const cards=[
-    {cls:'m',pop:'pop-m',type:migLabel,name:'Basic',total:v.r_total_B,rows:[
-      ['User cost',v.r_B66,`${users} × $${v.B63.toFixed(2)}/user [K17=base×1.2]${rS}`],
-      ...(showData?[['Data cost',v.r_B67,`${dataGB.toLocaleString()} GB × $${v.B64.toFixed(4)}/GB [K18]${rS}`]]:[]),
-      ['Managed migration',v.r_B68,migType==='content'?`Tier ${v.mgdTier} [K6=MAX(${v.userTierN},${v.dataTierN})] → MANAGED_TABLE${rS}`:`W38=max(400, ${(lookupMsgRates(users).basic||0)}×${users}/4)${rS}`],
-      ...(v.r_B69>0?[['Instance cost',v.r_B69,instDesc]]:[]),
-    ],isMig:true},
-    {cls:'m',pop:'',type:migLabel,name:'Standard',total:v.r_total_C,rows:[
-      ['User cost',v.r_C66,`${users} × $${v.C63.toFixed(2)}/user [M17=base×1.6]${rS}`],
-      ...(showData?[['Data cost',v.r_C67,`${dataGB.toLocaleString()} GB × $${v.C64.toFixed(4)}/GB [M18=base×1.8]${rS}`]]:[]),
-      ['Managed migration',v.r_C68,migType==='content'?`Tier ${v.mgdTier} → MANAGED_TABLE${rS}`:`Y38=max(800, ${(lookupMsgRates(users).advanced||0)}×${users}/4)${rS}`],
-      ...(v.r_B69>0?[['Instance cost',v.r_B69,instDesc]]:[]),
-    ],isMig:true},
-    {cls:'b',pop:'pop-b',type:'Bundle',name:'Basic',total:v.r_total_D,rows:[
-      ['User cost',v.r_D66,`${users} × $${v.D63.toFixed(2)}/user [K9+K11=(K17×0.85)+${v.K11}]${rS}`],
-      ...(showData?[['Data cost',v.r_D67,`${dataGB.toLocaleString()} GB × $${v.D64.toFixed(5)}/GB [K18+K13]${rS}`]]:[]),
-      ['Managed migration',v.r_D68,migType==='content'?`Tier ${v.mgdTier} → MANAGED_TABLE${rS}`:`W38${rS}`],
-      ...(v.r_B69>0?[['Instance cost',v.r_B69,instDesc]]:[]),
-    ],isMig:false},
-    {cls:'b',pop:'',type:'Bundle',name:'Standard',total:v.r_total_E,rows:[
-      ['User cost',v.r_E66,`${users} × $${v.E63.toFixed(2)}/user [K14+K11=(M17×0.85)+${v.K11}]${rS}`],
-      ...(showData?[['Data cost',v.r_E67,`${dataGB.toLocaleString()} GB × $${v.E64.toFixed(5)}/GB [M18+K13]${rS}`]]:[]),
-      ['Managed migration',v.r_E68,migType==='content'?`Tier ${v.mgdTier} → MANAGED_TABLE${rS}`:`Y38${rS}`],
-      ...(v.r_B69>0?[['Instance cost',v.r_B69,instDesc]]:[]),
-    ],isMig:false},
-  ];
-
-  document.getElementById('planGrid').innerHTML=
-    cards.map(c=>makeCard(c.cls,c.pop,c.type,c.name,c.total,c.rows,c.isMig)).join('');
-
-  document.getElementById('metricsGrid').innerHTML=`
-    <div class="met"><div class="met-l">Base user rate [K2] (${users} users)</div><div class="met-v">$${v.baseUser}/user</div></div>
-    ${showData?`<div class="met"><div class="met-l">Base data rate [K3] (${dataGB.toLocaleString()} GB)</div><div class="met-v">$${v.baseData}/GB · tier ${v.dataTierN}</div></div>`
-    :`<div class="met"><div class="met-l">Managed (Basic/Standard)</div><div class="met-v">${fmt(v.r_B68)} / ${fmt(v.r_C68)}</div></div>`}
-    <div class="met"><div class="met-l">Bundle user addon [K11]</div><div class="met-v">$${v.K11}/user</div></div>
-    <div class="met"><div class="met-l">Region multiplier</div><div class="met-v">${(rMult*100).toFixed(0)}%</div></div>`;
-
-  let notes='';
-  if(region==='r2') notes+=`<p class="note">Region 2: all components × 0.8</p>`;
-  if(region==='r3') notes+=`<p class="note">Region 3: all components × 0.65</p>`;
-  document.getElementById('notes').innerHTML=notes;
-
-  // Formula trace
-  lastTrace=`
-  <div class="trace">
-    <div class="trace-title">Step-by-step formula trace</div>
-    <b>INPUTS:</b> users=${users}, dataGB=${dataGB}, migType=${migType}, region=${region}, instBase=${instBase}, instCount=${instCount}, months=${months}<br>
-    <br><b>STEP 1 — User rate lookup (K2 formula):</b><br>
-    &nbsp;IF(${users}≤V3=25,W3…) → base user rate = <span class="hl">$${v.baseUser}</span>, user tier = ${v.userTierN}<br>
-    <br><b>STEP 2 — Plan user rates (K17, M17 formulas):</b><br>
-    &nbsp;K17 = (M2×0.2+M2)/B51 = baseUser×1.2 = ${v.baseUser}×1.2 = <span class="hl">$${v.B63.toFixed(4)}</span><br>
-    &nbsp;M17 = (M2×0.6+M2)/B51 = baseUser×1.6 = ${v.baseUser}×1.6 = <span class="hl">$${v.C63.toFixed(4)}</span><br>
-    &nbsp;Bundle Basic [D63=K9+K11]: K17×0.85+K11 = ${v.B63.toFixed(2)}×0.85+${v.K11} = <span class="hl">$${v.D63.toFixed(4)}</span><br>
-    &nbsp;Bundle Std  [E63=K14+K11]: M17×0.85+K11 = ${v.C63.toFixed(2)}×0.85+${v.K11} = <span class="hl">$${v.E63.toFixed(4)}</span><br>
-    ${showData?`
-    <br><b>STEP 3 — Data rate lookup (K3 formula):</b><br>
-    &nbsp;IF(${dataGB}≤Q10=500000,R10…) → base data rate = <span class="hl">$${v.baseData}</span>, data tier = ${v.dataTierN}<br>
-    <br><b>STEP 4 — Plan data rates (K18, M18 formulas):</b><br>
-    &nbsp;K18 = base data rate = <span class="hl">$${v.B64.toFixed(5)}</span><br>
-    &nbsp;M18 = (M3×0.8+M3)/B56 = baseData×1.8 = ${v.baseData}×1.8 = <span class="hl">$${v.C64.toFixed(5)}</span><br>
-    &nbsp;K13 (bundle data addon) = <span class="hl">$${v.K13.toFixed(5)}</span><br>
-    &nbsp;Bundle Basic [D64=K13+K18]: ${v.K13.toFixed(5)}+${v.B64.toFixed(5)} = <span class="hl">$${v.D64.toFixed(5)}</span><br>
-    &nbsp;Bundle Std  [E64=M18+K13]: ${v.C64.toFixed(5)}+${v.K13.toFixed(5)} = <span class="hl">$${v.E64.toFixed(5)}</span><br>
-    <br><b>STEP 5 — Managed migration (K6 formula):</b><br>
-    &nbsp;K6 = MAX(userTier=${v.userTierN}, dataTier=${v.dataTierN}) = ${v.mgdTier} → MANAGED_TABLE[${v.mgdTier}] = <span class="hl">${fmt(v.B68)}</span><br>`:`
-    <br><b>STEP 3 — Messaging/Email managed (W38, Y38 formulas):</b><br>
-    &nbsp;O38 (basic rate for ${users} users) = ${lookupMsgRates(users).basic}<br>
-    &nbsp;W38 = max(400, O38×${users}/4) = max(400, ${lookupMsgRates(users).basic*users/4}) = <span class="hl">${fmt(v.B68)}</span><br>
-    &nbsp;Q38 (advanced rate for ${users} users) = ${lookupMsgRates(users).advanced}<br>
-    &nbsp;Y38 = max(800, Q38×${users}/4) = max(800, ${lookupMsgRates(users).advanced*users/4}) = <span class="hl">${fmt(v.C68)}</span><br>`}
-    <br><b>STEP 6 — Instance cost (B69 formula):</b><br>
-    &nbsp;B69 = instCost[${instBase}] × B53[${instCount}] × B54[${months}] = <span class="hl">${fmt(v.B69)}</span> (pre-region)<br>
-    <br><b>STEP 7 — Apply region multiplier (${(rMult*100).toFixed(0)}%):</b><br>
-    &nbsp;All components × ${rMult}<br>
-    <br><b>FINAL TOTALS:</b><br>
-    &nbsp;Migrate Basic:    ${fmt(v.r_B66)} + ${fmt(v.r_B67)} + ${fmt(v.r_B68)} + ${fmt(v.r_B69)} = <span class="hl">${fmt(v.r_total_B)}</span><br>
-    &nbsp;Migrate Standard: ${fmt(v.r_C66)} + ${fmt(v.r_C67)} + ${fmt(v.r_C68)} + ${fmt(v.r_B69)} = <span class="hl">${fmt(v.r_total_C)}</span><br>
-    &nbsp;Bundle Basic:     ${fmt(v.r_D66)} + ${fmt(v.r_D67)} + ${fmt(v.r_D68)} + ${fmt(v.r_B69)} = <span class="hl">${fmt(v.r_total_D)}</span><br>
-    &nbsp;Bundle Standard:  ${fmt(v.r_E66)} + ${fmt(v.r_E67)} + ${fmt(v.r_E68)} + ${fmt(v.r_B69)} = <span class="hl">${fmt(v.r_total_E)}</span>
-  </div>`;
-
-  if(document.getElementById('traceBox').style.display==='block'){
-    document.getElementById('traceBox').innerHTML=lastTrace;
-  }
-
-  const verifyMap={
-    content:'✓ Content 200u·120kGB·Std·R1: Basic=$65,590 | Std=$100,470 | Bun-B=$76,614 | Bun-S=$111,302',
-    email:  '✓ Email 200u·Std·R1: Basic=$5,590 | Std=$7,720 | Bun-B=$9,614 | Bun-S=$11,552',
-    messaging:'✓ Messaging 200u·Std·R1: Basic=$5,590 | Std=$7,720 | Bun-B=$9,614 | Bun-S=$11,552',
-  };
-  document.getElementById('footer').textContent='Verified against Excel: '+verifyMap[migType];
+function card(svc, pop, type, name, total, rows) {
+  var labels = {migrate:'Most popular', manage:'Best value', bundle:'Most value'};
+  var h = '<div class="pc s-' + svc + (pop ? ' p-' + svc : '') + ' fade">';
+  if (pop) h += '<div class="cbadge ' + svc + '">' + labels[svc] + '</div>';
+  h += '<div class="ptype ' + svc + '">' + type + '</div>';
+  h += '<div class="pname">' + name + '</div>';
+  h += '<div class="ptotal">' + fmt(total) + '</div>';
+  rows.forEach(function(r){
+    h += '<div class="pr"><span>' + r[0] + '</span><span>' + fmt(r[1]) + '</span></div>';
+    if (r[2]) h += '<div class="psub">' + r[2] + '</div>';
+  });
+  return h + '</div>';
 }
 
-onMigChange();
+function metrics(items) {
+  return items.map(function(m){
+    return '<div class="met"><div class="met-l">' + m[0] + '</div><div class="met-v">' + m[1] + '</div></div>';
+  }).join('');
+}
+
+function toggleTrace() {
+  var box = $('traceBox'), btn = document.querySelector('.tbtn');
+  if (box.style.display === 'none') {
+    box.style.display = 'block';
+    box.innerHTML = lastTrace;
+    btn.textContent = 'Hide formula trace ^';
+  } else {
+    box.style.display = 'none';
+    btn.textContent = 'Show formula trace v';
+  }
+}
+
+/* =========================================================
+   MAIN CALC
+   ========================================================= */
+
+function calc() {
+  var mig      = $('migType').value;
+  var rMult    = parseFloat($('region').value) || 1;
+  var users    = Math.max(1, parseInt($('users').value)     || 1);
+  var dataGB   = Math.max(0, parseInt($('dataGB').value)    || 0);
+  var instCost = parseInt($('instType').value)              || 0;
+  var instCnt  = Math.max(0, parseInt($('instCount').value) || 0);
+  var months   = Math.max(1, parseInt($('months').value)    || 1);
+  var rLabel   = rMult < 1 ? ' x' + rMult : '';
+  var pg       = $('planGrid');
+
+  /* ── MANAGE ── */
+  if (currentSvc === 'manage') {
+    var mgb56 = Math.max(0, parseInt($('mgmtB56GB').value)  || 0);
+    var mgb   = Math.max(0, parseInt($('mgmtDataGB').value) || 0);
+    var v     = calcManage(users, mgb56, mgb);
+    pg.className = 'pgrid c1 fade';
+    var rows = [
+      ['Per user cost (yearly)',   v.isCustom ? 0 : (v.B99  || 0), 'Table lookup / ' + users + ' users'],
+      ['Total user cost (yearly)', v.isCustom ? 0 : v.B102,        'Standalone user table [C19:E22]'],
+      ['Data cost (yearly)',       v.isCustom ? 0 : (v.B103 || 0), '$' + v.B100.toFixed(4) + '/GB x ' + mgb + ' GB  (rate tier from ' + mgb56.toLocaleString() + 'GB)'],
+      ['Yearly total',             v.isCustom ? 0 : v.B104,        'User cost + data cost']
+    ];
+    pg.innerHTML = card('manage', true, 'Manage', 'Standalone', v.isCustom ? 0 : v.B104, rows);
+    $('metricsGrid').innerHTML = metrics([
+      ['User cost / yr',  v.isCustom ? 'CUSTOM' : fmt(v.B102)],
+      ['Per user / yr',   fmtR(v.B99, 2)],
+      ['K13 rate [B56=' + mgb56.toLocaleString() + 'GB]', '$' + v.B100.toFixed(4) + '/GB'],
+      ['Yearly total',    v.isCustom ? 'CUSTOM' : fmt(v.B104)]
+    ]);
+    lastTrace =
+      '<div class="trace"><div class="trace-title">Manage Standalone — exact Excel formulas</div>' +
+      '<b>E99 (users):</b> ' + users + '<br>' +
+      '<b>K12 → B102:</b> <span class="hl-t">' + (v.isCustom ? 'CUSTOM (>5000 users)' : fmt(v.B102)) + '</span>/yr<br>' +
+      '<b>B99 = B102/E99:</b> ' + fmtR(v.B99, 3) + '/user/yr<br>' +
+      '<b>B56 (migration data):</b> ' + mgb56.toLocaleString() + ' GB → K13 = $' + v.B100.toFixed(4) + '/GB<br>' +
+      '<b>B100 = IF(E100=0,0,K13) = $' + v.B100.toFixed(4) + '/GB</b><br>' +
+      '<b>B103 = B100 × E100 = $' + v.B100.toFixed(4) + ' × ' + mgb + ' = <span class="hl-t">' + (v.isCustom ? 'N/A' : fmt(v.B103)) + '</span></b><br>' +
+      '<b>B104 = B102+B103 = TOTAL: <span class="hl-t">' + (v.isCustom ? 'CUSTOM' : fmt(v.B104)) + '</span></b>' +
+      '</div>';
+    $('notes').innerHTML = '<p class="note">The $/GB rate is set by <b>Migration data size [B56]</b> via K13 lookup, then applied to <b>Managed content data [E100]</b> — exact Excel formula: B100=K13(B56), B103=B100×E100.</p>';
+    $('footer').textContent = 'CloudFuze 2026 — Manage Standalone';
+    if ($('traceBox').style.display === 'block') $('traceBox').innerHTML = lastTrace;
+    return;
+  }
+
+  /* ── MIGRATE + BUNDLE ── */
+  var v    = calcMigrateBundle(users, dataGB, instCost, instCnt, months, mig, rMult);
+  var isC  = v.isContent;
+  var desc = mig === 'content' ? 'Content' : mig === 'email' ? 'Email' : 'Messaging';
+  var iDesc = instCost > 0 ? '$' + instCost + 'x' + instCnt + 'x' + months + 'mo' + rLabel : '';
+
+  if (currentSvc === 'migrate') {
+    pg.className = 'pgrid c2 fade';
+
+    var basicRows = [['User cost', v.r_userB, users + 'x$' + v.K17.toFixed(2) + '/user (M2x1.2/users)' + rLabel]];
+    if (isC) basicRows.push(['Data cost', v.r_dataB, dataGB.toLocaleString() + ' GB x $' + v.K18.toFixed(2) + '/GB' + rLabel]);
+    basicRows.push(['Managed migration', v.r_mgdB, isC ? 'Tier ' + v.K6_tier + ' = ' + fmt(v.K21) + rLabel : 'W38=max(400, basicHrs×users/4)' + rLabel]);
+    if (v.r_inst > 0) basicRows.push(['Instance cost', v.r_inst, iDesc]);
+
+    var stdRows = [['User cost', v.r_userC, users + 'x$' + v.M17.toFixed(2) + '/user (M2x1.6/users)' + rLabel]];
+    if (isC) stdRows.push(['Data cost', v.r_dataC, dataGB.toLocaleString() + ' GB x $' + v.M18.toFixed(2) + '/GB (x1.8)' + rLabel]);
+    stdRows.push(['Managed migration', v.r_mgdC, isC ? 'Tier ' + v.K6_tier + ' = ' + fmt(v.K21) + rLabel : 'Y38=max(800, advHrs×users/4)' + rLabel]);
+    if (v.r_inst > 0) stdRows.push(['Instance cost', v.r_inst, iDesc]);
+
+    pg.innerHTML =
+      card('migrate', true,  desc, 'Basic',    v.r_totalB, basicRows) +
+      card('migrate', false, desc, 'Standard',  v.r_totalC, stdRows);
+
+    $('metricsGrid').innerHTML = metrics([
+      ['User rate (' + users + 'u)', '$' + v.K2_rate + '/user → $' + v.K17.toFixed(2) + ' basic'],
+      isC ? ['Data rate (' + dataGB + 'GB)', '$' + v.K18.toFixed(2) + '/GB → $' + v.M18.toFixed(2) + ' std']
+          : ['Msg managed Basic/Std', fmt(v.r_mgdB) + ' / ' + fmt(v.r_mgdC)],
+      ['Managed tier', 'max(' + v.K4_tier + ',' + v.K5_tier + ') = tier ' + v.K6_tier + ' = ' + fmt(v.K21)],
+      ['Region', (rMult * 100).toFixed(0) + '%']
+    ]);
+
+    lastTrace =
+      '<div class="trace"><div class="trace-title">Migrate — exact COST ESTIMATOR formulas</div>' +
+      '<b>K2 = ' + v.K2_rate + '/user</b> (' + users + ' users), <b>M2 = ' + v.K2_rate + 'x' + users + ' = ' + (v.K2_rate * users) + '</b><br>' +
+      '<b>K17 = M2x1.2/B51 = Basic per user:</b> <span class="hl">$' + v.K17.toFixed(2) + '</span><br>' +
+      '<b>M17 = M2x1.6/B51 = Standard per user:</b> <span class="hl">$' + v.M17.toFixed(2) + '</span><br>' +
+      (isC
+        ? '<b>K3=K18=$' + v.K18.toFixed(2) + '/GB</b> (' + dataGB + 'GB, tier ' + v.K5_tier + ')<br>' +
+          '<b>M18=K3x1.8=$' + v.M18.toFixed(2) + '/GB</b> (Standard data rate)<br>'
+        : '<b>basicHrs=' + v.basicHrs + ', W38=MAX(' + v.basicHrs + 'x' + users + '/4, 400)=<span class="hl">' + fmt(v.B68) + '</span></b> (Basic managed)<br>' +
+          '<b>advHrs=' + v.advHrs + ', Y38=MAX(' + v.advHrs + 'x' + users + '/4, 800)=<span class="hl">' + fmt(v.C68) + '</span></b> (Standard managed)<br>') +
+      '<b>K6_tier=MAX(K4=' + v.K4_tier + ',K5=' + v.K5_tier + ')=' + v.K6_tier + '</b> → M6=<span class="hl">' + fmt(v.K21) + '</span><br>' +
+      '<b>B69=instance:</b> $' + instCost + 'x' + instCnt + 'x' + months + '=<span class="hl">' + fmt(v.B69) + '</span><br>' +
+      '<b>Basic total:</b> ' + fmt(v.r_userB) + '+' + fmt(v.r_dataB || 0) + '+' + fmt(v.r_mgdB) + '+' + fmt(v.r_inst) + '=<span class="hl">' + fmt(v.r_totalB) + '</span><br>' +
+      '<b>Standard total:</b> ' + fmt(v.r_userC) + '+' + fmt(v.r_dataC || 0) + '+' + fmt(v.r_mgdC) + '+' + fmt(v.r_inst) + '=<span class="hl">' + fmt(v.r_totalC) + '</span>' +
+      '</div>';
+
+    $('notes').innerHTML = rMult < 1 ? '<p class="note">Region multiplier ' + rMult + ' applied to all components.</p>' : '';
+    $('footer').textContent = 'CloudFuze 2026 — Migrate | Verified: 250u Messaging Small x1 x4mo R1: Basic=$7,738 Std=$10,400';
+
+  } else {
+    /* ── BUNDLE ── */
+    pg.className = 'pgrid c2 fade';
+
+    /* FIX: K11 is dynamic (varies by user count) — was incorrectly hardcoded as 15 */
+    var bBasicRows = [['User cost', v.r_userD, users + 'x$' + v.D63.toFixed(2) + '/user (K17x0.85+' + v.K11 + ')' + rLabel]];
+    if (isC) bBasicRows.push(['Data cost', v.r_dataD, dataGB.toLocaleString() + ' GB x $' + v.D64.toFixed(4) + '/GB' + rLabel]);
+    bBasicRows.push(['Managed migration', v.r_mgdD, isC ? 'Tier ' + v.K6_tier + rLabel : 'W38' + rLabel]);
+    if (v.r_inst > 0) bBasicRows.push(['Instance cost', v.r_inst, iDesc]);
+
+    /* FIX: K11 is dynamic (varies by user count) — was incorrectly hardcoded as 15 */
+    var bStdRows = [['User cost', v.r_userE, users + 'x$' + v.E63.toFixed(2) + '/user (M17x0.85+' + v.K11 + ')' + rLabel]];
+    if (isC) bStdRows.push(['Data cost', v.r_dataE, dataGB.toLocaleString() + ' GB x $' + v.E64.toFixed(4) + '/GB' + rLabel]);
+    bStdRows.push(['Managed migration', v.r_mgdE, isC ? 'Tier ' + v.K6_tier + rLabel : 'Y38' + rLabel]);
+    if (v.r_inst > 0) bStdRows.push(['Instance cost', v.r_inst, iDesc]);
+
+    pg.innerHTML =
+      card('bundle', true,  'Bundle', 'Basic',    v.r_totalD, bBasicRows) +
+      card('bundle', false, 'Bundle', 'Standard',  v.r_totalE, bStdRows);
+
+    $('metricsGrid').innerHTML = metrics([
+      ['Bundle Basic per user',  '$' + v.D63.toFixed(2) + ' (K17x0.85+K11=' + v.K11 + ')'],
+      ['Bundle Std per user',    '$' + v.E63.toFixed(2) + ' (M17x0.85+K11=' + v.K11 + ')'],
+      isC ? ['Data add-on K13', '$' + v.K13.toFixed(5) + '/GB'] : ['Managed Basic/Std', fmt(v.r_mgdD) + '/' + fmt(v.r_mgdE)],
+      ['Region', (rMult * 100).toFixed(0) + '%']
+    ]);
+
+    lastTrace =
+      '<div class="trace"><div class="trace-title">Bundle — exact COST ESTIMATOR formulas</div>' +
+      '<b>K9=K17x0.85=' + v.K9.toFixed(2) + '</b>, <b>K11=' + v.K11 + ' (user addon for ' + users + 'u)</b><br>' +
+      '<b>D63=K9+K11=' + v.D63.toFixed(2) + '</b> Bundle Basic per user<br>' +
+      '<b>K14=M17x0.85=' + v.K14.toFixed(2) + '</b>, <b>E63=K14+K11=' + v.E63.toFixed(2) + '</b> Bundle Std per user<br>' +
+      (isC
+        ? '<b>K13=' + v.K13.toFixed(5) + '/GB</b> (bundle data addon from AB table for ' + dataGB + 'GB)<br>' +
+          '<b>D64=K18+K13=' + v.K18.toFixed(2) + '+' + v.K13.toFixed(5) + '=' + v.D64.toFixed(5) + '/GB</b> (Bundle Basic data)<br>' +
+          '<b>E64=M18+K13=' + v.M18.toFixed(2) + '+' + v.K13.toFixed(5) + '=' + v.E64.toFixed(5) + '/GB</b> (Bundle Std data)<br>'
+        : '') +
+      '<b>Bundle Basic total:</b> <span class="hl">' + fmt(v.r_totalD) + '</span><br>' +
+      '<b>Bundle Std total:</b> <span class="hl">' + fmt(v.r_totalE) + '</span>' +
+      '</div>';
+
+    $('notes').innerHTML = rMult < 1 ? '<p class="note">Region multiplier ' + rMult + ' applied to all components.</p>' : '';
+    $('footer').textContent = 'CloudFuze 2026 — Bundle | Verified: 250u Messaging R1: Basic=$10,768 Std=$13,190';
+  }
+
+  if ($('traceBox').style.display === 'block') $('traceBox').innerHTML = lastTrace;
+}
+
+switchSvc('migrate');
 </script>
 </body>
 </html>

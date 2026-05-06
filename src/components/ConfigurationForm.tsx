@@ -51,7 +51,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     messages: 1,
     combination: '',
     messagingConfig: undefined,
-    contentConfig: undefined
+    contentConfig: undefined,
+    // New: Service plan + Customer Location (region multiplier)
+    servicePlan: 'Migrate',
+    customerLocation: '1'
   });
 
   // Contact information state - start with undefined so fields can fall back to dealData initially
@@ -1119,11 +1122,33 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
     
     // Validation
+
+    // Manage Standalone has its own input set (manageUsers / manageDataGB) and
+    // does NOT use migrationType / combination / numberOfUsers / instance / duration
+    // / dataSizeGB. Validate manageUsers only, then skip the rest.
+    if (config.servicePlan === 'Manage') {
+      const mu = config.manageUsers;
+      if (mu === undefined || mu === null || mu <= 0) {
+        alert('Please enter the number of users for the Manage plan');
+        return;
+      }
+      // manageDataGB = 0 is valid (no data cost). No further checks needed.
+      console.log('✅ Manage validation passed, submitting configuration');
+      onSubmit();
+      setTimeout(() => {
+        const pricingSection = document.getElementById('pricing-comparison');
+        if (pricingSection) {
+          pricingSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+      return;
+    }
+
     if (!config.migrationType) {
       alert('Please select a migration type');
       return;
     }
-    
+
     // Multi combination validation
     if (config.migrationType === 'Multi combination') {
       // Require a combination to be selected (e.g. Original Multi combination)
@@ -1627,57 +1652,84 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 </div>
                 Choose one
               </label>
-              {/* Two options: Migration Type or Timeline Projection */}
-              <div className="flex gap-2 p-1.5 bg-slate-100 rounded-xl mb-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMigrationOrTimeline('migration');
-                    setTimelineProjectionCategory('');
-                    setConfig(prev => ({ ...prev, timelineProjection: '' }));
-                    onConfigurationChange({ ...config, timelineProjection: '' });
-                  }}
-                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                    migrationOrTimeline === 'migration'
-                      ? 'bg-white text-slate-900 shadow-md border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-800'
-                  }`}
-                >
-                  Migration Type
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMigrationOrTimeline('timeline');
-                    setTimelineProjectionCategory('');
-                    const newConfig = { ...config, migrationType: '' as any, combination: '' };
-                    setConfig(newConfig);
-                    setCombination('');
-                    onConfigurationChange(newConfig);
-                    try {
-                      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+              {/* Service plan tabs (Migrate / Manage / Bundle) + Timeline Projection */}
+              {(() => {
+                const activePlan = config.servicePlan || 'Migrate';
+                const onMigration = migrationOrTimeline === 'migration';
+
+                const selectServicePlan = (plan: 'Migrate' | 'Manage' | 'Bundle') => {
+                  setMigrationOrTimeline('migration');
+                  setTimelineProjectionCategory('');
+                  // Switching away from Migrate clears migrationType/combination since
+                  // Manage/Bundle don't carry combination-based migration types.
+                  const newConfig: ConfigurationData = {
+                    ...config,
+                    servicePlan: plan,
+                    timelineProjection: '',
+                    ...(plan !== 'Migrate' ? { migrationType: '' as any, combination: '' } : {})
+                  };
+                  setConfig(newConfig);
+                  if (plan !== 'Migrate') setCombination('');
+                  onConfigurationChange(newConfig);
+                  try {
+                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                    const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                    if (plan !== 'Migrate') {
                       navState.migrationType = '';
                       navState.combination = '';
-                      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
-                  }}
-                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                    migrationOrTimeline === 'timeline'
-                      ? 'bg-white text-slate-900 shadow-md border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-800'
-                  }`}
-                >
-                  Timeline Projection
-                </button>
-              </div>
-              {/* Show Migration Type dropdown */}
-              {migrationOrTimeline === 'migration' && (
+                    }
+                    sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                  } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                };
+
+                const selectTimeline = () => {
+                  setMigrationOrTimeline('timeline');
+                  setTimelineProjectionCategory('');
+                  const newConfig = { ...config, migrationType: '' as any, combination: '' };
+                  setConfig(newConfig);
+                  setCombination('');
+                  onConfigurationChange(newConfig);
+                  try {
+                    sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                    const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                    navState.migrationType = '';
+                    navState.combination = '';
+                    sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                  } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                };
+
+                const tabBtn = (label: string, isActive: boolean, onClick: () => void) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={onClick}
+                    className={`flex-1 px-3 py-3 rounded-lg font-medium transition-all duration-200 text-sm ${
+                      isActive
+                        ? 'bg-white text-slate-900 shadow-md border border-slate-200'
+                        : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+
+                return (
+                  <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 rounded-xl mb-4">
+                    {tabBtn('Migrate', onMigration && activePlan === 'Migrate', () => selectServicePlan('Migrate'))}
+                    {tabBtn('Manage',  onMigration && activePlan === 'Manage',  () => selectServicePlan('Manage'))}
+                    {tabBtn('Bundle',  onMigration && activePlan === 'Bundle',  () => selectServicePlan('Bundle'))}
+                    {tabBtn('Timeline Projection', migrationOrTimeline === 'timeline', selectTimeline)}
+                  </div>
+                );
+              })()}
+
+              {/* Migrate: full migration type dropdown (all combinations live here) */}
+              {migrationOrTimeline === 'migration' && (config.servicePlan || 'Migrate') === 'Migrate' && (
                 <select
                   value={config.migrationType}
                   onChange={(e) => {
                     const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
-                    const newConfig = { ...config, migrationType: newMigrationType, combination: '', timelineProjection: '' };
+                    const newConfig = { ...config, migrationType: newMigrationType, combination: '', timelineProjection: '', servicePlan: 'Migrate' as const };
                     setConfig(newConfig);
                     setCombination('');
                     onConfigurationChange(newConfig);
@@ -1698,6 +1750,61 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <option value="Multi combination">Multi combination</option>
                   <option value="Overage Agreement">Overage</option>
                 </select>
+              )}
+
+              {/* Manage Standalone — collects E99 (manageUsers) and E100 (manageDataGB).
+                  These are intentionally separate from B51/B56 (Migrate inputs). */}
+              {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (
+                <div className="rounded-xl border-2 border-slate-200 bg-white px-6 py-6">
+                  <p className="text-sm font-semibold text-slate-800 mb-4">Manage plan inputs</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-2">
+                        Number of Users <span className="text-gray-400 font-normal">[E99]</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.manageUsers ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          handleChange('manageUsers', v === '' ? 0 : (parseInt(v) || 0));
+                        }}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
+                        placeholder="Enter number of users"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-2">
+                        Content data size in GB <span className="text-gray-400 font-normal">[E100]</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={config.manageDataGB ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          handleChange('manageDataGB', v === '' ? 0 : (parseInt(v) || 0));
+                        }}
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
+                        placeholder="0 is valid (no data cost)"
+                        autoComplete="off"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Bundle placeholder — Bundle reuses Migrate inputs (B51/B56) */}
+              {migrationOrTimeline === 'migration' && config.servicePlan === 'Bundle' && (
+                <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center">
+                  <p className="text-sm font-semibold text-slate-700 mb-1">Bundle plan selected</p>
+                  <p className="text-xs text-slate-500">
+                    Migration type and combination selection are not required for the Bundle plan.
+                  </p>
+                </div>
               )}
               {/* When Timeline Projection: show option to select Content, Messaging, or Email projection */}
               {migrationOrTimeline === 'timeline' && (
@@ -2165,6 +2272,34 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 // Don't filter exhibit list by a single global tier selection.
                 selectedTier={null}
               />
+            </div>
+          )}
+
+          {/* Common Customer Location (Region) — Multi combination shared field */}
+          {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
+            <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-xl shadow-md border-2 border-sky-200 p-6 mb-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-sky-500 rounded-full flex items-center justify-center shadow-lg">
+                  <Sparkles className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-base font-bold text-gray-900 mb-1">
+                    Customer Location
+                  </label>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Region multiplier applied to all combinations in this multi-migration.
+                  </p>
+                  <select
+                    value={config.customerLocation || '1'}
+                    onChange={(e) => handleChange('customerLocation', e.target.value as '1' | '0.8' | '0.65')}
+                    className="w-full max-w-md px-4 py-3 border-2 border-sky-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all bg-white text-base font-medium shadow-sm hover:border-sky-400"
+                  >
+                    <option value="1">Region 1 — US, Canada, UK (x1.0)</option>
+                    <option value="0.8">Region 2 — AUS, NZ, EU (x0.8)</option>
+                    <option value="0.65">Region 3 — Rest of World (x0.65)</option>
+                  </select>
+                </div>
+              </div>
             </div>
           )}
 
@@ -3254,7 +3389,53 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
                 <p className="text-gray-600">Configure your {config.migrationType.toLowerCase()} migration requirements</p>
               </div>
-              
+
+              {/* Service plan tabs (Migrate / Manage / Bundle) — all combinations live under Migrate */}
+              <div className="flex justify-center mb-6">
+                <div className="inline-flex bg-gray-100 rounded-xl p-1 shadow-inner">
+                  {(['Migrate', 'Manage', 'Bundle'] as const).map((plan) => {
+                    const active = (config.servicePlan || 'Migrate') === plan;
+                    const activeClasses =
+                      plan === 'Migrate' ? 'bg-blue-50 text-blue-700 shadow' :
+                      plan === 'Manage'  ? 'bg-teal-50 text-teal-700 shadow' :
+                                           'bg-purple-50 text-purple-700 shadow';
+                    return (
+                      <button
+                        key={plan}
+                        type="button"
+                        onClick={() => handleChange('servicePlan', plan)}
+                        className={`px-6 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
+                          active ? activeClasses : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {plan}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Customer Location (region multiplier) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
+                <div className="group">
+                  <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-sky-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                      <Sparkles className="w-4 h-4 text-white" />
+                    </div>
+                    Customer Location
+                  </label>
+                  <select
+                    value={config.customerLocation || '1'}
+                    onChange={(e) => handleChange('customerLocation', e.target.value as '1' | '0.8' | '0.65')}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                  >
+                    <option value="1">Region 1 — US, Canada, UK (x1.0)</option>
+                    <option value="0.8">Region 2 — AUS, NZ, EU (x0.8)</option>
+                    <option value="0.65">Region 3 — Rest of World (x0.65)</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Number of Users/Mailboxes - HIDE for overage agreement */}
             {config.combination !== 'overage-agreement' && (

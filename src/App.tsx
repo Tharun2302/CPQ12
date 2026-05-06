@@ -1206,11 +1206,15 @@ function App() {
       // Only reset pricing state if core configuration fields have changed
       // Don't reset for date-only changes
       // CRITICAL FIX: Allow overage agreement and multi combination even with 0 users
-      const hasCoreConfig = configuration.migrationType && (
-        configuration.numberOfUsers > 0 || 
-        configuration.combination === 'overage-agreement' ||
-        configuration.migrationType === 'Multi combination'
-      );
+      // Manage Standalone uses manageUsers (E99) — not numberOfUsers/migrationType
+      const isManage = configuration.servicePlan === 'Manage';
+      const hasCoreConfig = isManage
+        ? (configuration.manageUsers ?? 0) > 0
+        : configuration.migrationType && (
+            configuration.numberOfUsers > 0 ||
+            configuration.combination === 'overage-agreement' ||
+            configuration.migrationType === 'Multi combination'
+          );
       
       if (hasCoreConfig) {
         console.log('🔄 Recalculating pricing for existing configuration');

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PricingCalculation, ConfigurationData, PricingTier } from '../types/pricing';
-import { formatCurrency, PRICING_TIERS, calculateCombinationPricing } from '../utils/pricing';
+import { formatCurrency, PRICING_TIERS, calculateCombinationPricing, getManageDataRatePerGB } from '../utils/pricing';
 
 interface PricingComparisonProps {
   calculations: PricingCalculation[];
@@ -206,10 +206,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     };
   }, []);
 
-  // Business rule: if users > 25,000 show ONLY the Advanced plan
-  const enforceAdvancedOnly = (configuration?.numberOfUsers || 0) > 25000;
-
-  // Filter plans based on migration type
+  // Filter plans: only Basic and Standard are shown (Advanced is retained in PRICING_TIERS
+  // for any backend templates still referencing it, but never surfaced in the UI).
   const filteredCalculations = calculations.filter(calc => {
     // Debug logging for slack-to-google-chat
     if (configuration?.combination === 'slack-to-google-chat') {
@@ -220,116 +218,24 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
         combination: configuration.combination
       });
     }
-    
+
     // For overage agreement, show only ONE plan (first available)
     if (configuration?.combination === 'overage-agreement') {
       return calc === calculations[0];
     }
-    
-    if (enforceAdvancedOnly) {
-      return calc.tier.name === 'Advanced';
+
+    // Manage Standalone: tier-agnostic, show only ONE plan card
+    if (configuration?.servicePlan === 'Manage') {
+      return calc === calculations[0];
     }
-    
-    // Filter plans based on combination value (works for Content, Multi combination, and Messaging)
-    const combination = configuration?.combination;
-    
-    // Define which combinations should hide Basic plan
-    const hideBasicPlan = combination === 'dropbox-to-sharepoint' || 
-                          combination === 'dropbox-to-onedrive' ||
-                          combination === 'dropbox-to-google' ||
-                          combination === 'dropbox-to-microsoft' ||
-                          combination === 'dropbox-to-box' ||
-                          combination === 'dropbox-to-egnyte' ||
-                          combination === 'box-to-box' ||
-                          combination === 'box-to-dropbox' ||
-                          combination === 'box-to-google-mydrive' ||
-                          combination === 'box-to-google-sharedrive' ||
-                          combination === 'box-to-sharepoint' ||
-                          combination === 'box-to-onedrive' ||
-                          combination === 'box-to-microsoft' ||
-                          combination === 'box-to-google' ||
-                          combination === 'google-sharedrive-to-egnyte' ||
-                          combination === 'google-sharedrive-to-google-sharedrive' ||
-                          combination === 'google-sharedrive-to-onedrive' ||
-                          combination === 'google-sharedrive-to-sharepoint' ||
-                          combination === 'google-mydrive-to-dropbox' ||
-                          combination === 'google-mydrive-to-egnyte' ||
-                          combination === 'google-mydrive-to-onedrive' ||
-                          combination === 'google-mydrive-to-sharepoint' ||
-                          combination === 'google-mydrive-to-google-sharedrive' ||
-                          combination === 'google-mydrive-to-google-mydrive' ||
-                          combination === 'onedrive-to-onedrive' ||
-                          combination === 'onedrive-to-google-mydrive' ||
-                          combination === 'sharepoint-online-to-egnyte' ||
-                          combination === 'sharefile-to-google-mydrive' ||
-                          combination === 'sharefile-to-google-sharedrive' ||
-                          combination === 'sharefile-to-onedrive' ||
-                          combination === 'sharefile-to-sharepoint' ||
-                          combination === 'sharefile-to-sharefile' ||
-                          combination === 'egnyte-to-google-sharedrive' ||
-                          combination === 'egnyte-to-sharepoint-online' ||
-                          combination === 'egnyte-to-google-mydrive' ||
-                          combination === 'egnyte-to-onedrive' ||
-                          combination === 'nfs-to-google' ||
-                          combination === 'egnyte-to-google' ||
-                          combination === 'egnyte-to-microsoft' ||
-                          combination === 'nfs-to-microsoft';
-    
-    // Hide Standard plan for specific combinations (only Basic and Advanced available)
-    const hideStandardPlan = combination === 'box-to-aws-s3';
-    
-    // Hide Basic plan for specific combinations
-    if (hideBasicPlan && calc.tier.name === 'Basic') {
-      return false;
-    }
-    
-    // Hide Standard plan for specific combinations
-    if (hideStandardPlan && calc.tier.name === 'Standard') {
-      return false;
-    }
-    
-    // CRITICAL: Only show plans that have corresponding templates in the database
-    // Skip this check for Multi combination so Basic/Standard/Advanced plan selection is always visible
-    // (multi-combination uses a single/original template; plan is chosen at quote time)
-    if (configuration?.migrationType !== 'Multi combination' && templates && templates.length > 0 && combination) {
-      const tierName = calc.tier.name.toLowerCase();
-      const combinationLower = combination.toLowerCase();
-      
-      // Check if a template exists for this plan type and combination
-      const templateExists = templates.some(t => {
-        const templatePlanType = (t?.planType || '').toLowerCase();
-        const templateCombination = (t?.combination || '').toLowerCase();
-        
-        // Match plan type (handle "std" as "standard")
-        const planMatches = templatePlanType === tierName || 
-                          (tierName === 'standard' && (templatePlanType === 'std' || templatePlanType === 'standard'));
-        
-        // Match combination
-        const comboMatches = templateCombination === combinationLower;
-        
-        return planMatches && comboMatches;
-      });
-      
-      if (!templateExists) {
-        // Debug logging
-        if (configuration?.combination === 'slack-to-teams' || configuration?.combination === 'slack-to-google-chat') {
-          console.log('🔍 PricingComparison: Hiding plan - no template found:', {
-            tier: calc.tier.name,
-            combination: combination,
-            availableTemplates: templates.filter(t => {
-              const tc = (t?.combination || '').toLowerCase();
-              return tc === combinationLower;
-            }).map(t => ({ name: t.name, planType: t.planType, combination: t.combination }))
-          });
-        }
-        return false; // Don't show plan if no template exists
-      }
-    }
-    
-    // If templates check passed (or no templates available), show the plan
-    // Show all valid plans (Basic, Standard, Advanced) for all combinations
-    // Note: Template check above ensures only plans with templates are shown
-    return calc.tier.name === 'Basic' || calc.tier.name === 'Standard' || calc.tier.name === 'Advanced';
+
+    // Hard rule: never show Advanced
+    if (calc.tier.name === 'Advanced') return false;
+
+    // Show only Basic and Standard for every combination — combination-specific
+    // hideBasicPlan / hideStandardPlan rules and the per-template-existence guard
+    // were removed so Basic + Standard always appear for the selected combination.
+    return calc.tier.name === 'Basic' || calc.tier.name === 'Standard';
   });
   
   // Debug logging after filtering
@@ -511,12 +417,21 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     Overage Agreement
                   </h3>
+                ) : configuration?.servicePlan === 'Manage' ? (
+                  <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
+                    Manage Standalone
+                  </h3>
                 ) : (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     {calc.tier.name}
                   </h3>
                 )}
-                {discountInfo.hasDiscount ? (
+                {calc.status === 'custom' ? (
+                  <div>
+                    <div className="text-3xl font-bold mb-2 text-amber-700">Custom</div>
+                    <div className="text-sm text-gray-600 font-medium">Contact sales for a quote</div>
+                  </div>
+                ) : discountInfo.hasDiscount ? (
                   <div>
                     <div className="text-2xl text-gray-500 line-through mb-1">
                       {formatCurrency(discountInfo.originalPrice)}
@@ -859,6 +774,62 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       <span className="font-bold text-2xl text-purple-900">{formatCurrency(planTotal)}</span>
                     </div>
                   </>
+                ) : configuration?.servicePlan === 'Manage' ? (
+                  calc.status === 'custom' ? (
+                    <>
+                      <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-6 text-center">
+                        <p className="text-base font-bold text-amber-900 mb-2">Custom pricing</p>
+                        <p className="text-sm text-amber-800 mb-4">
+                          {calc.message || 'Contact sales for >5000 users'}
+                        </p>
+                        <a
+                          href="mailto:sales@cloudfuze.com"
+                          className="inline-block bg-amber-600 hover:bg-amber-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
+                        >
+                          Contact Sales
+                        </a>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 mb-4">
+                        <p className="text-sm text-teal-800 font-medium text-center">
+                          🛠 Manage Standalone — yearly subscription (K12 user slab + K13 data rate)
+                        </p>
+                      </div>
+                      {/* B99 — Per User Cost (Yearly) = totalUserCost / manageUsers */}
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">Per User Cost (Yearly):</span>
+                        <span className="font-bold text-gray-900">
+                          {(configuration?.manageUsers ?? 0) > 0
+                            ? `${formatCurrency(calc.userCost / (configuration!.manageUsers as number))}/user`
+                            : 'N/A'}
+                        </span>
+                      </div>
+                      {/* B100 — Per GB rate (K13) */}
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">Per GB Cost (K13):</span>
+                        <span className="font-bold text-gray-900">
+                          ${getManageDataRatePerGB(configuration?.manageDataGB ?? 0).toFixed(4)}/GB
+                        </span>
+                      </div>
+                      {/* B102 — Total user cost */}
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">Total User Cost:</span>
+                        <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
+                      </div>
+                      {/* B103 — Data cost */}
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">Data Cost:</span>
+                        <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
+                      </div>
+                      {/* B104 — Total */}
+                      <div className="flex justify-between items-center text-sm bg-teal-50 border border-teal-200 rounded-lg p-4">
+                        <span className="text-gray-900 font-bold">TOTAL COST:</span>
+                        <span className="font-bold text-2xl text-teal-700">{formatCurrency(calc.totalCost)}</span>
+                      </div>
+                    </>
+                  )
                 ) : configuration?.combination === 'overage-agreement' ? (
                   <>
                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
@@ -920,16 +891,31 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
 
               <button
-                onClick={() => onSelectTier(calc)}
-                className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group ${
-                  configuration?.combination === 'overage-agreement'
-                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
-                } text-white`}
+                onClick={() => {
+                  if (calc.status === 'custom') return;
+                  onSelectTier(calc);
+                }}
+                disabled={calc.status === 'custom'}
+                className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 ${
+                  calc.status === 'custom'
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group text-white ' +
+                      (configuration?.combination === 'overage-agreement'
+                        ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700')
+                }`}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                {calc.status !== 'custom' && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                )}
                 <span className="relative flex items-center justify-center gap-2">
-                  {configuration?.combination === 'overage-agreement' ? 'Select Overage Agreement' : `Select ${calc.tier.name}`}
+                  {calc.status === 'custom'
+                    ? 'Custom — Contact Sales'
+                    : configuration?.combination === 'overage-agreement'
+                    ? 'Select Overage Agreement'
+                    : configuration?.servicePlan === 'Manage'
+                    ? 'Select Manage Standalone'
+                    : `Select ${calc.tier.name}`}
                 </span>
               </button>
               

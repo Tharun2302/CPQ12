@@ -44,8 +44,9 @@ export const PRICING_TIERS: PricingTier[] = [
   {
     id: 'standard',
     name: 'Standard',
-    perUserCost: 35.0,
-    perGBCost: 1.50,
+    // Aligned with COST ESTIMATOR — Migrate(Standard): $40/user, $1.80/GB
+    perUserCost: 40.0,
+    perGBCost: 1.80,
     managedMigrationCost: 300,
     instanceCost: 500,
     userLimits: { from: 1, to: Infinity },
@@ -77,6 +78,154 @@ export const PRICING_TIERS: PricingTier[] = [
     ]
   }
 ];
+
+/* =========================================================
+   BUNDLE PRICING ADD-ONS (from COST ESTIMATOR)
+   K11 — manage user addon per user (H18:I24)
+   K13 — bundle data addon per GB (AB19:AB29)
+   Bundle Basic per user  D63 = K17 × 0.85 + K11
+   Bundle Std   per user  E63 = M17 × 0.85 + K11
+   Bundle Basic per GB    D64 = K18 + K13
+   Bundle Std   per GB    E64 = M18 + K13
+   ========================================================= */
+const BUNDLE_USER_ADDON: { max: number; addon: number }[] = [
+  { max: 50,   addon: 38   },
+  { max: 200,  addon: 23   },
+  { max: 500,  addon: 15   },
+  { max: 1000, addon: 11   },
+  { max: 1500, addon: 9.5  },
+  { max: 3000, addon: 8    },
+  { max: 5000, addon: 6.5  }
+];
+
+const BUNDLE_DATA_ADDON: { max: number; addon: number }[] = [
+  { max: 500,     addon: 0.16    },
+  { max: 2500,    addon: 0.13    },
+  { max: 5000,    addon: 0.11667 },
+  { max: 10000,   addon: 0.1     },
+  { max: 20000,   addon: 0.08333 },
+  { max: 50000,   addon: 0.075   },
+  { max: 100000,  addon: 0.06667 },
+  { max: 500000,  addon: 0.05833 },
+  { max: 1000000, addon: 0.05333 },
+  { max: 2000000, addon: 0.04667 },
+  { max: 3000001, addon: 0.04167 }
+];
+
+function lookupBundleUserAddon(users: number): number {
+  for (let i = 0; i < BUNDLE_USER_ADDON.length; i++) {
+    if (users <= BUNDLE_USER_ADDON[i].max) return BUNDLE_USER_ADDON[i].addon;
+  }
+  return 6.5;
+}
+
+function lookupBundleDataAddon(gb: number): number {
+  if (!gb) return 0;
+  for (let i = 0; i < BUNDLE_DATA_ADDON.length; i++) {
+    if (gb <= BUNDLE_DATA_ADDON[i].max) return BUNDLE_DATA_ADDON[i].addon;
+  }
+  return BUNDLE_DATA_ADDON[BUNDLE_DATA_ADDON.length - 1].addon;
+}
+
+function isBundle(config: ConfigurationData): boolean {
+  return config.servicePlan === 'Bundle';
+}
+
+/* =========================================================
+   MANAGE STANDALONE — slab + K13 lookup
+   COST ESTIMATOR — calcManage:
+     B102 = manageUserCost(E99)            — slab from C19:E22
+     B100 = K13(E100)  if E100 > 0 else 0  — reuses BUNDLE_DATA_ADDON
+     B103 = B100 × E100                    — managed data cost
+     B104 = B102 + B103                    — pre-region total
+   This implementation differs only in that the K13 rate is driven by E100
+   directly (single dataGB input) rather than B56, per current spec.
+   ========================================================= */
+export function manageUserCost(users: number): number | 'CUSTOM' {
+  // CloudFuze 2026 Pricing Sheet — COST ESTIMATOR K12 (Manage Standalone slab):
+  //   0–50       → $2,499
+  //   51–200     → $5,999
+  //   201–500    → $9,999
+  //   501–5,000  → $20 × users
+  //   5,001+     → CUSTOM
+  if (users <= 0) return 0;
+  if (users <= 50) return 2499;
+  if (users <= 200) return 5999;
+  if (users <= 500) return 9999;
+  if (users <= 5000) return 20 * users;
+  return 'CUSTOM';
+}
+
+// Manage Standalone — fixed per-GB rate.
+// Excel's K13 formula reads B56 (Migrate data input, typically in the 501–2,500
+// GB range), which always lands on the AB20 tier of $0.13/GB. To produce the
+// same output Excel shows to customers, Manage uses this fixed rate rather than
+// a slab lookup driven by manageDataGB.
+export const MANAGE_STANDALONE_DATA_RATE = 0.13;
+export function getManageDataRatePerGB(_dataGB: number): number {
+  return MANAGE_STANDALONE_DATA_RATE;
+}
+
+function calculateManagePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
+  const users = config.manageUsers ?? 0;
+  const dataGB = config.manageDataGB ?? 0;
+
+  const userCostRaw = manageUserCost(users);
+
+  if (userCostRaw === 'CUSTOM') {
+    return {
+      userCost: 0,
+      dataCost: 0,
+      migrationCost: 0,
+      instanceCost: 0,
+      totalCost: 0,
+      tier,
+      status: 'custom',
+      message: 'Contact sales for >5000 users'
+    };
+  }
+
+  const dataCostRaw = dataGB > 0 ? getManageDataRatePerGB(dataGB) * dataGB : 0;
+
+  const regionMult = getRegionMultiplier(config);
+  const rUser = userCostRaw * regionMult;
+  const rData = dataCostRaw * regionMult;
+  let totalCost = rUser + rData;
+
+  const MINIMUM_TOTAL = 2500;
+  let adjustedUserCost = rUser;
+  if (totalCost < MINIMUM_TOTAL) {
+    const deficit = MINIMUM_TOTAL - totalCost;
+    adjustedUserCost = rUser + deficit;
+    totalCost = MINIMUM_TOTAL;
+  }
+
+  const result: PricingCalculation = {
+    userCost: adjustedUserCost,
+    dataCost: rData,
+    migrationCost: 0,
+    instanceCost: 0,
+    totalCost,
+    tier
+  };
+  assertPricingInvariant(result.userCost, result.dataCost, result.migrationCost, result.instanceCost, result.totalCost);
+  return result;
+}
+
+/* =========================================================
+   REGION MULTIPLIER (Customer Location)
+   Region 1 — US/Canada/UK     × 1.0
+   Region 2 — AUS/NZ/EU        × 0.8
+   Region 3 — Rest of World    × 0.65
+   Applied to user, data, managed-migration, and instance
+   costs (matches COST ESTIMATOR REGION 2/3 columns).
+   ========================================================= */
+function getRegionMultiplier(config: ConfigurationData): number {
+  const v = config.customerLocation;
+  if (v === '0.8') return 0.8;
+  if (v === '0.65') return 0.65;
+  return 1;
+}
 
 // Helper function to calculate Messaging pricing (extracted for reuse in Multi combination)
 function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
@@ -134,16 +283,6 @@ function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier)
     ]
   };
 
-  const getPerUserCostForPlan = (userCount: number, planKey: 'basic' | 'standard' | 'advanced'): number => {
-    const lookupArray = perUserCostLookupByPlan[planKey];
-    for (let i = 0; i < lookupArray.length; i++) {
-      if (userCount <= lookupArray[i].threshold) {
-        return lookupArray[i].value;
-      }
-    }
-    return lookupArray[lookupArray.length - 1].value;
-  };
-
   const getManagedMigrationLookupValue = (userCount: number, planKey: 'basic' | 'standard' | 'advanced'): number => {
     const lookupArray = perUserCostLookupByPlan[planKey];
     for (let i = 0; i < lookupArray.length; i++) {
@@ -155,32 +294,84 @@ function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier)
   };
 
   const planKey = tier.name.toLowerCase() as 'basic' | 'standard' | 'advanced';
-  const perUserRate = getPerUserCostForPlan(config.numberOfUsers, planKey);
+
+  // Per-user rate — aligned with COST ESTIMATOR formula used across all migration types:
+  //   K2 = lookup(users) in main USER_TABLE (V3:X13)
+  //   K17 = K2 × 1.2  → Basic per user
+  //   M17 = K2 × 1.6  → Standard per user
+  // (CPQ previously used the messaging-hours table for per-user rate, which produced
+  //  incorrect totals vs. Excel — fixed.)
+  const vwLookup = [
+    { threshold: 25, value: 25 },
+    { threshold: 50, value: 20 },
+    { threshold: 100, value: 18 },
+    { threshold: 250, value: 16 },
+    { threshold: 500, value: 14 },
+    { threshold: 1000, value: 12.5 },
+    { threshold: 1500, value: 11 },
+    { threshold: 2000, value: 9 },
+    { threshold: 5000, value: 8 },
+    { threshold: 10000, value: 7.5 },
+    { threshold: 50000, value: 7 },
+    { threshold: Infinity, value: 7 }
+  ];
+  const k2Rate = (() => {
+    for (let i = 0; i < vwLookup.length; i++) {
+      if (config.numberOfUsers <= vwLookup[i].threshold) return vwLookup[i].value;
+    }
+    return vwLookup[vwLookup.length - 1].value;
+  })();
+  const userMultiplier = planKey === 'basic' ? 1.2 : 1.6;
+  // Migrate per-user (K17 = K2 × 1.2, M17 = K2 × 1.6).
+  // Bundle per-user: Migrate × 0.85 + K11 add-on.
+  const migratePerUser = k2Rate * userMultiplier;
+  const perUserRate = isBundle(config)
+    ? (migratePerUser * 0.85) + lookupBundleUserAddon(config.numberOfUsers)
+    : migratePerUser;
   const userCost = perUserRate * config.numberOfUsers;
+
+  // Data cost = 0 for messaging (Excel B64=0 when migType≠Content)
   const dataCost = 0;
+
   const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
-  const lookupValue = getManagedMigrationLookupValue(config.numberOfUsers, planKey);
+
+  // Managed migration — Excel formula:
+  //   Basic    W38 = MAX(basicHrs × users / 4, 400)
+  //   Standard Y38 = MAX(advHrs   × users / 4, 800)
+  // The plan-specific hours table (basicHrs / advHrs) lives in `perUserCostLookupByPlan`.
+  // Bundle uses the same managed-migration formula as Migrate.
+  const mgmtLookupKey: 'basic' | 'standard' | 'advanced' =
+    planKey === 'standard' ? 'advanced' : planKey;
+  const lookupValue = getManagedMigrationLookupValue(config.numberOfUsers, mgmtLookupKey);
   const s38 = (lookupValue * config.numberOfUsers) / 4;
-  const floor = planKey === 'advanced' ? 800 : (planKey === 'standard' ? 600 : 400);
+  const floor = planKey === 'basic' ? 400 : 800;
   const migrationCost = Math.max(floor, s38);
-  let totalCost = userCost + dataCost + instanceCost + migrationCost;
-  
+
+  // Apply Region multiplier (Customer Location) to every cost component
+  // BEFORE the minimum check, so the $2,500 floor is in customer-facing dollars.
+  const regionMult = getRegionMultiplier(config);
+  const rUser = userCost * regionMult;
+  const rData = dataCost * regionMult;
+  const rMgd  = migrationCost * regionMult;
+  const rInst = instanceCost * regionMult;
+  let totalCost = rUser + rData + rMgd + rInst;
+
   // Skip minimum for Multi combination (minimum will be applied to overall total)
   const isMultiCombination = config.combination?.startsWith('multi-combination-');
   const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = userCost;
-  
+  let adjustedUserCost = rUser;
+
   if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
     const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = userCost + deficit;
+    adjustedUserCost = rUser + deficit;
     totalCost = MINIMUM_TOTAL;
   }
 
   const result = {
     userCost: adjustedUserCost,
-    dataCost,
-    migrationCost,
-    instanceCost,
+    dataCost: rData,
+    migrationCost: rMgd,
+    instanceCost: rInst,
     totalCost,
     tier
   };
@@ -292,26 +483,28 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
   const planKey = tier.name.toLowerCase() as 'basic' | 'standard' | 'advanced';
   const k2Value = lookupValue(config.numberOfUsers, vwLookup);
 
-  let userCostPerUser: number;
-  if (planKey === 'basic') {
-    userCostPerUser = k2Value * 1.2;
-  } else if (planKey === 'standard') {
-    userCostPerUser = k2Value * 1.4;
-  } else {
-    userCostPerUser = k2Value * 1.6;
-  }
+  // Aligned with COST ESTIMATOR Migrate columns:
+  //   Basic    — k2 × 1.2 (M2/B51 × 1.2)
+  //   Standard — k2 × 1.6 (matches Excel Migrate Standard)
+  //   Advanced — k2 × 1.6 (legacy tier, hidden in UI)
+  // Bundle per-user (D63/E63 in COST ESTIMATOR):
+  //   = Migrate per-user × 0.85 + K11 add-on
+  const migrateUserMultiplier = planKey === 'basic' ? 1.2 : 1.6;
+  const migratePerUser = k2Value * migrateUserMultiplier;
+  const userCostPerUser = isBundle(config)
+    ? (migratePerUser * 0.85) + lookupBundleUserAddon(config.numberOfUsers)
+    : migratePerUser;
   const userCost = userCostPerUser * config.numberOfUsers;
 
   const k3Value = lookupValue(config.dataSizeGB, qrLookup);
 
-  let perGBCost: number;
-  if (planKey === 'basic') {
-    perGBCost = k3Value;
-  } else if (planKey === 'standard') {
-    perGBCost = k3Value * 1.5;
-  } else {
-    perGBCost = k3Value * 1.8;
-  }
+  // Per-GB rate (Migrate): Basic = K3 × 1.0, Standard/Advanced = K3 × 1.8.
+  // Bundle per-GB (D64/E64): Migrate per-GB + K13 add-on.
+  const migrateGBMultiplier = planKey === 'basic' ? 1.0 : 1.8;
+  const migratePerGB = k3Value * migrateGBMultiplier;
+  const perGBCost = isBundle(config)
+    ? migratePerGB + lookupBundleDataAddon(config.dataSizeGB)
+    : migratePerGB;
   const dataCost = perGBCost * config.dataSizeGB;
 
   const k4Value = lookupValue(config.numberOfUsers, vxLookup);
@@ -321,24 +514,32 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
   const migrationCost = tierCostEntry ? tierCostEntry.cost : 300;
   const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
 
-  let totalCost = userCost + dataCost + instanceCost + migrationCost;
-  
+  // Apply Region multiplier (Customer Location) to every cost component
+  // BEFORE the minimum check, so the $2,500 floor is in customer-facing dollars.
+  // Matches HTML/Excel: total = (user + data + managed + instance) × r
+  const regionMult = getRegionMultiplier(config);
+  const rUser = userCost * regionMult;
+  const rData = dataCost * regionMult;
+  const rMgd  = migrationCost * regionMult;
+  const rInst = instanceCost * regionMult;
+  let totalCost = rUser + rData + rMgd + rInst;
+
   // Skip minimum for Multi combination (minimum will be applied to overall total)
   const isMultiCombination = config.combination?.startsWith('multi-combination-');
   const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = userCost;
-  
+  let adjustedUserCost = rUser;
+
   if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
     const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = userCost + deficit;
+    adjustedUserCost = rUser + deficit;
     totalCost = MINIMUM_TOTAL;
   }
 
   const contentResult = {
     userCost: adjustedUserCost,
-    dataCost,
-    migrationCost,
-    instanceCost,
+    dataCost: rData,
+    migrationCost: rMgd,
+    instanceCost: rInst,
     totalCost,
     tier
   };
@@ -414,64 +615,86 @@ function calculateEmailPricing(config: ConfigurationData, tier: PricingTier): Pr
   };
 
   const planKey = tier.name.toLowerCase() as 'basic' | 'standard' | 'advanced';
-  
-  // Per user cost: $15 if < 500 users, $20 if >= 500 users (same for all plans)
-  const perUserCost = config.numberOfUsers < 500 ? 15 : 20;
+
+  // Per-user rate — aligned with COST ESTIMATOR (same K2 × multiplier formula
+  // used by Content/Messaging in the standalone calculator):
+  //   K2     = lookup(users) in main USER_TABLE (V3:X13)
+  //   K17    = K2 × 1.2  → Basic per user
+  //   M17    = K2 × 1.6  → Standard per user
+  // (CPQ previously hardcoded $15 / $20 per user, which produced incorrect totals
+  //  vs. Excel — fixed.)
+  const vwLookup = [
+    { threshold: 25, value: 25 },
+    { threshold: 50, value: 20 },
+    { threshold: 100, value: 18 },
+    { threshold: 250, value: 16 },
+    { threshold: 500, value: 14 },
+    { threshold: 1000, value: 12.5 },
+    { threshold: 1500, value: 11 },
+    { threshold: 2000, value: 9 },
+    { threshold: 5000, value: 8 },
+    { threshold: 10000, value: 7.5 },
+    { threshold: 50000, value: 7 },
+    { threshold: Infinity, value: 7 }
+  ];
+  const k2Rate = (() => {
+    for (let i = 0; i < vwLookup.length; i++) {
+      if (config.numberOfUsers <= vwLookup[i].threshold) return vwLookup[i].value;
+    }
+    return vwLookup[vwLookup.length - 1].value;
+  })();
+  const userMultiplier = planKey === 'basic' ? 1.2 : 1.6;
+  // Migrate per-user (K17 = K2 × 1.2, M17 = K2 × 1.6).
+  // Bundle per-user: Migrate × 0.85 + K11 add-on.
+  const migratePerUser = k2Rate * userMultiplier;
+  const perUserCost = isBundle(config)
+    ? (migratePerUser * 0.85) + lookupBundleUserAddon(config.numberOfUsers)
+    : migratePerUser;
   const userCost = perUserCost * config.numberOfUsers;
-  
-  // Data cost = 0 (always)
+
+  // Data cost = 0 (Email never accrues data cost — Excel B64=0 when migType≠Content)
   const dataCost = 0;
-  
-  // Managed migration cost: Uses Messaging lookup tables with floors
-  const lookupValue = getManagedMigrationLookupValue(config.numberOfUsers, planKey);
+
+  // Managed migration — Excel formula:
+  //   Basic    W38 = MAX(basicHrs × users / 4, 400)
+  //   Standard Y38 = MAX(advHrs   × users / 4, 800)
+  // Bundle uses the same managed-migration formula as Migrate.
+  const mgmtLookupKey: 'basic' | 'standard' | 'advanced' =
+    planKey === 'standard' ? 'advanced' : planKey;
+  const lookupValue = getManagedMigrationLookupValue(config.numberOfUsers, mgmtLookupKey);
   const s38 = (lookupValue * config.numberOfUsers) / 4;
-  const floor = planKey === 'advanced' ? 800 : (planKey === 'standard' ? 600 : 400);
+  const floor = planKey === 'basic' ? 400 : 800;
   const migrationCost = Math.max(floor, s38);
   
   // Instance cost
   const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
-  
-  // Total cost
-  let totalCost = userCost + dataCost + instanceCost + migrationCost;
-  
+
+  // Apply Region multiplier (Customer Location) to every cost component
+  // BEFORE the minimum check, so the $2,500 floor is in customer-facing dollars.
+  // Matches HTML/Excel: total = (user + data + managed + instance) × r
+  const regionMult = getRegionMultiplier(config);
+  const rUser = userCost * regionMult;
+  const rData = dataCost * regionMult;
+  const rMgd  = migrationCost * regionMult;
+  const rInst = instanceCost * regionMult;
+  let totalCost = rUser + rData + rMgd + rInst;
+
   // Skip minimum for Multi combination (minimum will be applied to overall total)
   const isMultiCombination = config.combination?.startsWith('multi-combination-');
-  // Apply $2500 minimum by adjusting user cost only
   const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = userCost;
-  
+  let adjustedUserCost = rUser;
+
   if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
     const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = userCost + deficit;
+    adjustedUserCost = rUser + deficit;
     totalCost = MINIMUM_TOTAL;
-    
-    console.log('💰 Applied $2500 minimum to Email plan:', {
-      plan: tier.name,
-      originalTotal: userCost + dataCost + instanceCost + migrationCost,
-      originalUserCost: userCost,
-      deficit,
-      adjustedUserCost,
-      finalTotal: MINIMUM_TOTAL,
-      unchangedCosts: { dataCost, migrationCost, instanceCost }
-    });
   }
-
-  console.log('📊 Email Migration Calculation:', {
-    tier: tier.name,
-    perUserCost,
-    numberOfUsers: config.numberOfUsers,
-    userCost: adjustedUserCost,
-    dataCost,
-    migrationCost,
-    instanceCost,
-    totalCost
-  });
 
   const emailResult = {
     userCost: adjustedUserCost,
-    dataCost,
-    migrationCost,
-    instanceCost,
+    dataCost: rData,
+    migrationCost: rMgd,
+    instanceCost: rInst,
     totalCost,
     tier
   };
@@ -502,6 +725,11 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     return baseCost * duration;
   };
 
+  // MANAGE STANDALONE: independent of migrationType — uses K12 slab + K13 data rate
+  if (config.servicePlan === 'Manage') {
+    return calculateManagePricing(config, tier);
+  }
+
   // MULTI COMBINATION: Calculate Messaging + Content (+ Email) separately, then sum
   // Accept all Multi combination (any combination value); run when migration type is Multi combination
   if (config.migrationType === 'Multi combination') {
@@ -520,7 +748,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
           migrationType: 'Messaging',
           dataSizeGB: 0,
           messages: exCfg.messages,
-          combination: 'multi-combination-messaging'
+          combination: 'multi-combination-messaging',
+          servicePlan: config.servicePlan,
+          customerLocation: config.customerLocation
         };
         const result = calculateMessagingPricing(msgConfig, tier);
         return { combinationName: exCfg.exhibitName, numberOfUsers: exCfg.numberOfUsers, ...result };
@@ -564,7 +794,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
         migrationType: 'Messaging',
         dataSizeGB: 0,
         messages: config.messagingConfig.messages,
-        combination: 'multi-combination-messaging'
+        combination: 'multi-combination-messaging',
+        servicePlan: config.servicePlan,
+        customerLocation: config.customerLocation
       };
       
       const msgResult = calculateMessagingPricing(msgConfig, tier);
@@ -592,7 +824,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
           migrationType: 'Content',
           dataSizeGB: exCfg.dataSizeGB,
           messages: 0,
-          combination: 'multi-combination-content'
+          combination: 'multi-combination-content',
+          servicePlan: config.servicePlan,
+          customerLocation: config.customerLocation
         };
         const result = calculateContentPricing(contentConfigData, tier);
         return { combinationName: exCfg.exhibitName, numberOfUsers: exCfg.numberOfUsers, ...result };
@@ -636,7 +870,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
         migrationType: 'Content',
         dataSizeGB: config.contentConfig.dataSizeGB,
         messages: 0,
-        combination: 'multi-combination-content'
+        combination: 'multi-combination-content',
+        servicePlan: config.servicePlan,
+        customerLocation: config.customerLocation
       };
       
       const contentResult = calculateContentPricing(contentConfigData, tier);
@@ -664,7 +900,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
           migrationType: 'Email',
           dataSizeGB: 0,
           messages: exCfg.messages,
-          combination: 'multi-combination-email'
+          combination: 'multi-combination-email',
+          servicePlan: config.servicePlan,
+          customerLocation: config.customerLocation
         };
         const result = calculateEmailPricing(emailConfigData, tier);
         return { combinationName: exCfg.exhibitName, numberOfUsers: exCfg.numberOfUsers, ...result };
@@ -873,7 +1111,9 @@ export function calculateCombinationPricing(
       migrationType: 'Messaging',
       dataSizeGB: 0,
       messages: msgConfigFromArray.messages || 0,
-      combination: 'multi-combination-messaging'
+      combination: 'multi-combination-messaging',
+      servicePlan: config.servicePlan,
+      customerLocation: config.customerLocation
     } : {
       // Use config directly if it's already a single config object (from ConfigurationForm)
       numberOfUsers: config.numberOfUsers || 0,
@@ -883,7 +1123,9 @@ export function calculateCombinationPricing(
       migrationType: 'Messaging',
       dataSizeGB: 0,
       messages: config.messages || 0,
-      combination: 'multi-combination-messaging'
+      combination: 'multi-combination-messaging',
+      servicePlan: config.servicePlan,
+      customerLocation: config.customerLocation
     };
     result = calculateMessagingPricing(msgConfig, tier);
     return {
@@ -906,7 +1148,9 @@ export function calculateCombinationPricing(
       migrationType: 'Content',
       dataSizeGB: contentConfigFromArray.dataSizeGB || 0,
       messages: 0,
-      combination: 'multi-combination-content'
+      combination: 'multi-combination-content',
+      servicePlan: config.servicePlan,
+      customerLocation: config.customerLocation
     } : {
       // Use config directly if it's already a single config object (from ConfigurationForm)
       numberOfUsers: config.numberOfUsers || 0,
@@ -916,7 +1160,9 @@ export function calculateCombinationPricing(
       migrationType: 'Content',
       dataSizeGB: config.dataSizeGB || 0,
       messages: 0,
-      combination: 'multi-combination-content'
+      combination: 'multi-combination-content',
+      servicePlan: config.servicePlan,
+      customerLocation: config.customerLocation
     };
     result = calculateContentPricing(contentConfig, tier);
     return {
@@ -940,7 +1186,9 @@ export function calculateCombinationPricing(
       migrationType: 'Email',
       dataSizeGB: 0,
       messages: emailConfigFromArray.messages || 0,
-      combination: 'multi-combination-email'
+      combination: 'multi-combination-email',
+      servicePlan: config.servicePlan,
+      customerLocation: config.customerLocation
     } : {
       // Use config directly if it's already a single config object (from ConfigurationForm)
       numberOfUsers: config.numberOfUsers || 0,
@@ -950,7 +1198,9 @@ export function calculateCombinationPricing(
       migrationType: 'Email',
       dataSizeGB: 0,
       messages: config.messages || 0,
-      combination: 'multi-combination-email'
+      combination: 'multi-combination-email',
+      servicePlan: config.servicePlan,
+      customerLocation: config.customerLocation
     };
     result = calculateEmailPricing(emailConfig, tier);
     return {
