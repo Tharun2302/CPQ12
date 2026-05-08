@@ -597,7 +597,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
       <!-- Footer with CloudFuze Contact Information -->
       <div style="text-align: center; padding: 20px; background-color: #f9fafb; border-top: 1px solid #e5e7eb;">
                         <p style="color: #6b7280; font-size: 12px; margin: 5px 0;">CloudFuze, Inc.</p>
-                <p style="color: #6b7280; font-size: 12px; margin: 5px 0;">2500 Regency Parkway, Cary, NC 27518</p>
+                <p style="color: #6b7280; font-size: 12px; margin: 5px 0;">600 Park Offices Dr, suite#LL-52 Durham, NC 27709</p>
                 <p style="color: #1e40af; font-size: 12px; margin: 5px 0;">https://www.cloudfuze.com/</p>
                 <p style="color: #6b7280; font-size: 12px; margin: 5px 0;">Phone: +1 252-558-9019</p>
                 <p style="color: #1e40af; font-size: 12px; margin: 5px 0;">Email: sales@cloudfuze.com</p>

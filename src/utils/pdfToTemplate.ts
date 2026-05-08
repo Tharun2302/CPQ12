@@ -378,7 +378,7 @@ export const convertToTemplateBlocks = (content: ExtractedContent): ContentBlock
               CloudFuze, Inc.
             </p>
             <p style="margin: 5px 0; font-size: 14px; color: #6b7280;">
-              2500 Regency Parkway, Cary, NC 27518
+              600 Park Offices Dr, suite#LL-52 Durham, NC 27709
             </p>
             <p style="margin: 5px 0; font-size: 14px; color: #1e40af;">
               https://www.cloudfuze.com/
