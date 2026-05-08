@@ -1718,18 +1718,20 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     {tabBtn('Migrate', onMigration && activePlan === 'Migrate', () => selectServicePlan('Migrate'))}
                     {tabBtn('Manage',  onMigration && activePlan === 'Manage',  () => selectServicePlan('Manage'))}
                     {tabBtn('Bundle',  onMigration && activePlan === 'Bundle',  () => selectServicePlan('Bundle'))}
-                    {tabBtn('Timeline Projection', migrationOrTimeline === 'timeline', selectTimeline)}
                   </div>
                 );
               })()}
 
-              {/* Migrate: full migration type dropdown (all combinations live here) */}
-              {migrationOrTimeline === 'migration' && (config.servicePlan || 'Migrate') === 'Migrate' && (
+              {/* Migrate / Bundle: full migration type dropdown (all combinations live here) */}
+              {migrationOrTimeline === 'migration' && (
+                (config.servicePlan || 'Migrate') === 'Migrate' || config.servicePlan === 'Bundle'
+              ) && (
                 <select
                   value={config.migrationType}
                   onChange={(e) => {
                     const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
-                    const newConfig = { ...config, migrationType: newMigrationType, combination: '', timelineProjection: '', servicePlan: 'Migrate' as const };
+                    const preservedServicePlan = config.servicePlan === 'Bundle' ? 'Bundle' : 'Migrate';
+                    const newConfig = { ...config, migrationType: newMigrationType, combination: '', timelineProjection: '', servicePlan: preservedServicePlan as 'Migrate' | 'Bundle' };
                     setConfig(newConfig);
                     setCombination('');
                     onConfigurationChange(newConfig);
@@ -1797,15 +1799,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </div>
                 </div>
               )}
-              {/* Bundle placeholder — Bundle reuses Migrate inputs (B51/B56) */}
-              {migrationOrTimeline === 'migration' && config.servicePlan === 'Bundle' && (
-                <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center">
-                  <p className="text-sm font-semibold text-slate-700 mb-1">Bundle plan selected</p>
-                  <p className="text-xs text-slate-500">
-                    Migration type and combination selection are not required for the Bundle plan.
-                  </p>
-                </div>
-              )}
+              {/* Bundle: inputs are rendered in the Project Configuration panel below */}
               {/* When Timeline Projection: show option to select Content, Messaging, or Email projection */}
               {migrationOrTimeline === 'timeline' && (
                 <div className="mt-4">
@@ -3387,33 +3381,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>
-                <p className="text-gray-600">Configure your {config.migrationType.toLowerCase()} migration requirements</p>
+                <p className="text-gray-600">Configure your {config.migrationType.toLowerCase()} {config.servicePlan === 'Bundle' ? 'bundle' : 'migration'} requirements</p>
               </div>
 
-              {/* Service plan tabs (Migrate / Manage / Bundle) — all combinations live under Migrate */}
-              <div className="flex justify-center mb-6">
-                <div className="inline-flex bg-gray-100 rounded-xl p-1 shadow-inner">
-                  {(['Migrate', 'Manage', 'Bundle'] as const).map((plan) => {
-                    const active = (config.servicePlan || 'Migrate') === plan;
-                    const activeClasses =
-                      plan === 'Migrate' ? 'bg-blue-50 text-blue-700 shadow' :
-                      plan === 'Manage'  ? 'bg-teal-50 text-teal-700 shadow' :
-                                           'bg-purple-50 text-purple-700 shadow';
-                    return (
-                      <button
-                        key={plan}
-                        type="button"
-                        onClick={() => handleChange('servicePlan', plan)}
-                        className={`px-6 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
-                          active ? activeClasses : 'text-gray-600 hover:text-gray-900'
-                        }`}
-                      >
-                        {plan}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Service plan tabs removed — plan is selected from the top "Choose one" tab */}
 
               {/* Customer Location (region multiplier) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">

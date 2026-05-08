@@ -1206,7 +1206,9 @@ function App() {
       // Only reset pricing state if core configuration fields have changed
       // Don't reset for date-only changes
       // CRITICAL FIX: Allow overage agreement and multi combination even with 0 users
-      // Manage Standalone uses manageUsers (E99) — not numberOfUsers/migrationType
+      // Manage Standalone uses manageUsers (E99) — not numberOfUsers/migrationType.
+      // Bundle reuses the Migrate flow (migrationType is required), so the standard
+      // numberOfUsers / overage / multi-combination check applies.
       const isManage = configuration.servicePlan === 'Manage';
       const hasCoreConfig = isManage
         ? (configuration.manageUsers ?? 0) > 0

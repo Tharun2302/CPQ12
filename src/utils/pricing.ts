@@ -730,6 +730,9 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
     return calculateManagePricing(config, tier);
   }
 
+  // Bundle plan reuses the Migrate flow (migrationType is selected from the same dropdown);
+  // the Bundle premium is applied inside the per-type pricing functions via isBundle().
+
   // MULTI COMBINATION: Calculate Messaging + Content (+ Email) separately, then sum
   // Accept all Multi combination (any combination value); run when migration type is Multi combination
   if (config.migrationType === 'Multi combination') {
