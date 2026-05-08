@@ -967,7 +967,7 @@ const drawQuoteContentOnPage = async (
     color: rgb(0.4, 0.4, 0.4),
   });
   
-  page.drawText(sanitizeText('2500 Regency Parkway, Cary, NC 27518'), {
+  page.drawText(sanitizeText('600 Park Offices Dr, suite#LL-52 Durham, NC 27709'), {
     x: 50,
     y: footerY - 45,
     size: 10,
@@ -1924,7 +1924,7 @@ export const createTemplatePreviewHTML = async (
           <!-- Footer with CloudFuze Contact Information - Template Format -->
           <div class="mt-8 pt-6 border-t border-gray-200">
             <div class="text-center mb-4">
-              <p class="text-sm text-gray-600 mb-1">2500 Regency Parkway, Cary, NC 27518</p>
+              <p class="text-sm text-gray-600 mb-1">600 Park Offices Dr, suite#LL-52 Durham, NC 27709</p>
               <p class="text-sm text-gray-600 mb-1">https://www.cloudfuze.com/</p>
               <p class="text-sm text-gray-600 mb-1">+1 252-558-9019</p>
               <p class="text-sm text-gray-600 mb-1">sales@cloudfuze.com | support@cloudfuze.com</p>
@@ -3123,7 +3123,7 @@ const replacePlaceholdersInExistingPage = async (
 
   // Professional footer matching the reference image exactly
   // Contact information section - properly positioned
-  const contactInfo1 = sanitizeText('CloudFuze, Inc. | 2500 Regency Parkway, Cary, NC 27518 | https://www.cloudfuze.com/');
+  const contactInfo1 = sanitizeText('CloudFuze, Inc. | 600 Park Offices Dr, suite#LL-52 Durham, NC 27709 | https://www.cloudfuze.com/');
   const contactInfo1Width = helveticaFont.widthOfTextAtSize(contactInfo1, 10);
   page.drawText(contactInfo1, {
     x: (pageWidth - contactInfo1Width) / 2,
@@ -3340,7 +3340,7 @@ const createExactCloudFuzeTemplate = (filename: string): string => {
       <!-- Footer - EXACTLY as in your image -->
       <div style="border-top: 3px solid #e9ecef; padding-top: 25px; text-align: center; background: linear-gradient(135deg, #f8f9fa, #ffffff); border-radius: 12px; padding: 25px;">
         <p style="color: #495057; font-size: 14px; margin-bottom: 8px; font-weight: 500;">
-          <strong>CloudFuze, Inc.</strong> | 2500 Regency Parkway, Cary, NC 27518 | https://www.cloudfuze.com/
+          <strong>CloudFuze, Inc.</strong> | 600 Park Offices Dr, suite#LL-52 Durham, NC 27709 | https://www.cloudfuze.com/
         </p>
         <p style="color: #6c757d; font-size: 13px; margin-bottom: 8px;">
           Phone: +1 252-558-9019 | Email: sales@cloudfuze.com | support@cloudfuze.com

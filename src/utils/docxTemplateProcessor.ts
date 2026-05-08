@@ -989,15 +989,48 @@ export class DocxTemplateProcessor {
           // This handles cases where tokens weren't replaced properly
           const originalXml = documentXml;
           documentXml = documentXml.replace(/undefined/gi, '');
-          
+
           // Also remove any remaining {{}} tokens that weren't replaced
           documentXml = documentXml.replace(/\{\{[^}]+\}\}/g, '');
+
+          // Address update (local override) — rewrite legacy CloudFuze address
+          // baked into existing .docx templates so we don't have to repackage
+          // 99 binary templates. Safe no-op when the legacy text isn't present.
+          documentXml = documentXml
+            .replace(/2500 Regency Parkway, Cary, NC 27518/g, '600 Park Offices Dr, suite#LL-52 Durham, NC 27709')
+            .replace(/2500 Regency Parkway/g, '600 Park Offices Dr, suite#LL-52')
+            .replace(/Cary, NC 27518/g, 'Durham, NC 27709');
           
           if (documentXml !== originalXml) {
             this.setZipFile(zipAfter, xmlPath, documentXml);
             console.log('✅ Removed "undefined" strings and unreplaced tokens from document');
           }
-          
+
+          // Address update (local override) — also rewrite the legacy CloudFuze
+          // address inside header*.xml / footer*.xml parts. The page footer in
+          // a .docx is stored in word/footer1.xml (etc.), not document.xml, so
+          // the body replacement above doesn't touch it.
+          try {
+            const allFiles = Object.keys(zipAfter.files || {});
+            const headerFooterPaths = allFiles.filter(p =>
+              /^word\/(header|footer)\d*\.xml$/i.test(p)
+            );
+            for (const partPath of headerFooterPaths) {
+              const partXml = this.getZipFileText(zipAfter, partPath);
+              if (!partXml) continue;
+              const updated = partXml
+                .replace(/2500 Regency Parkway, Cary, NC 27518/g, '600 Park Offices Dr, suite#LL-52 Durham, NC 27709')
+                .replace(/2500 Regency Parkway/g, '600 Park Offices Dr, suite#LL-52')
+                .replace(/Cary, NC 27518/g, 'Durham, NC 27709');
+              if (updated !== partXml) {
+                this.setZipFile(zipAfter, partPath, updated);
+                console.log(`✅ Updated CloudFuze address in ${partPath}`);
+              }
+            }
+          } catch (addrErr) {
+            console.warn('⚠️ Address rewrite in header/footer XML skipped:', addrErr);
+          }
+
           // CRITICAL: Check if company name tokens are still present
           const remainingCompanyTokens = finalCleanText.match(/\{\{[^}]*[Cc]ompany[^}]*\}\}/g);
           if (remainingCompanyTokens) {

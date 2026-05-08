@@ -138,9 +138,21 @@ const EsignTrackingPage: React.FC = () => {
     }
   };
 
-  const handlePreview = () => {
+  const handlePreview = async () => {
     if (!documentId) return;
-    window.open(`${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`, '_blank', 'noopener,noreferrer');
+    const fileUrl = `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1`;
+    // Pre-flight HEAD so we don't open a new tab that just shows raw JSON when
+    // the underlying PDF is missing from storage (FILE_MISSING case).
+    try {
+      const head = await fetch(fileUrl, { method: 'HEAD', credentials: 'include' });
+      if (head.status === 404) {
+        alert('This document could not be loaded. The PDF file is missing from storage. Please re-upload the document and resend for signature, or contact your administrator.');
+        return;
+      }
+    } catch {
+      // Network error — fall through and let the new tab attempt the load.
+    }
+    window.open(fileUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleExtendExpiry = async () => {
