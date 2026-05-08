@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
-import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star, FileText, BookOpen } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star, FileText, BookOpen, CheckCircle2 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 import {
@@ -233,6 +233,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
   const [sendingApproval, setSendingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
+  const [sendSuccessModal, setSendSuccessModal] = useState<{ open: boolean; recipients: string[] }>({ open: false, recipients: [] });
   const [sending, setSending] = useState(false);
   const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => getSavedRecipients());
   const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => getSavedGroups());
@@ -843,6 +844,8 @@ const EsignPlaceFieldsPage: React.FC = () => {
         const sendData = await sendRes.json();
         if (sendData.success) {
           setSendForSignatureResult(formatSendForSignatureSuccessMessage(sendData));
+          const sentTo = Array.isArray(sendData.emails_sent_to) ? sendData.emails_sent_to : [];
+          setSendSuccessModal({ open: true, recipients: sentTo });
         } else {
           setSendForSignatureResult(sendData.error || 'Failed to send.');
         }
@@ -949,6 +952,50 @@ const EsignPlaceFieldsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden w-full">
+      {sendSuccessModal.open && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setSendSuccessModal({ open: false, recipients: [] })}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="send-success-title"
+          >
+            <div className="px-6 pt-6 pb-2 flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h2 id="send-success-title" className="text-lg font-semibold text-slate-900">
+                Signature request sent successfully.
+              </h2>
+              {sendSuccessModal.recipients.length > 0 && (
+                <p className="mt-2 text-sm text-slate-600">
+                  Notified {sendSuccessModal.recipients.length} recipient{sendSuccessModal.recipients.length === 1 ? '' : 's'}:
+                </p>
+              )}
+              {sendSuccessModal.recipients.length > 0 && (
+                <ul className="mt-1 text-sm text-slate-700 break-words">
+                  {sendSuccessModal.recipients.map((email) => (
+                    <li key={email}>{email}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="px-6 pt-4 pb-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setSendSuccessModal({ open: false, recipients: [] })}
+                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 text-white px-6 py-2.5 text-sm font-semibold hover:bg-indigo-700 shadow-md hover:shadow-lg transition-shadow"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {editingGroup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setEditingGroup(null)}>
           <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>

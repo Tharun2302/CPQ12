@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
-import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle } from 'lucide-react';
+import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle, ArrowRight, ArrowLeft, CheckCircle2, Sparkles } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
 
-const PDF_SCALE = 1.5;
+const PDF_SCALE = 2.0;
 
 type FieldType = 'signature' | 'name' | 'title' | 'date' | 'text';
 
@@ -80,6 +80,29 @@ function nameTitleInputSizeChars(value: string, fieldType: FieldType): number {
   const len = (value || '').length;
   const min = fieldType === 'title' ? 16 : 14;
   return Math.max(min, Math.min(96, len + 3));
+}
+
+/** Field is part of the signer's guided navigation list (not creator-prefilled). */
+function isSignerEditableField(f: SignatureField): boolean {
+  if (f.type === 'signature') return true;
+  return !isEsignTextPrefilled(f);
+}
+
+/** Whether a navigable field has been satisfied by the signer. */
+function isSignerFieldFilled(f: SignatureField, value: string | undefined): boolean {
+  if (f.type === 'signature') return !!value;
+  return String(value ?? '').trim().length > 0;
+}
+
+function fieldNavLabel(t: FieldType): string {
+  switch (t) {
+    case 'signature': return 'signature';
+    case 'name': return 'name';
+    case 'title': return 'title';
+    case 'date': return 'date';
+    case 'text': return 'text';
+    default: return 'field';
+  }
 }
 
 /** Blocks submit/save/approve when any name, title, or date field is empty (creator-prefilled read-only fields are skipped). */
@@ -170,6 +193,103 @@ const EsignSignPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const reviewerFieldValuesJsonRef = useRef<string | null>(null);
+
+  // Guided field navigation (signer flow only): auto-highlight the first pending field,
+  // auto-scroll to it, advance as the signer fills each one.
+  const [activeFieldIdx, setActiveFieldIdx] = useState<number | null>(null);
+  const initialActiveSetRef = useRef(false);
+
+  const navigableIdxList = useMemo(
+    () =>
+      fields
+        .map((f, i) => ({ f, i }))
+        .filter(({ f }) => isSignerEditableField(f))
+        .map(({ i }) => i),
+    [fields]
+  );
+  const pendingIdxList = useMemo(
+    () => navigableIdxList.filter((i) => !isSignerFieldFilled(fields[i], fieldValues[i])),
+    [navigableIdxList, fields, fieldValues]
+  );
+  const totalNavigable = navigableIdxList.length;
+  const remainingCount = pendingIdxList.length;
+  const completedCount = totalNavigable - remainingCount;
+  const allFieldsDone = totalNavigable > 0 && remainingCount === 0;
+  const activePosition =
+    activeFieldIdx != null ? navigableIdxList.indexOf(activeFieldIdx) + 1 : 0;
+  const isUntouched = remainingCount === totalNavigable && totalNavigable > 0;
+
+  /** Pick the first pending field as active when fields first load (signer flow only). */
+  useEffect(() => {
+    if (recipientRole !== 'signer') return;
+    if (fields.length === 0) return;
+    if (initialActiveSetRef.current) return;
+    initialActiveSetRef.current = true;
+    if (pendingIdxList.length > 0) {
+      setActiveFieldIdx(pendingIdxList[0]);
+    } else {
+      setActiveFieldIdx(null);
+    }
+  }, [fields, pendingIdxList, recipientRole]);
+
+  /** Auto-advance: when the active field becomes filled, jump to the next pending field. */
+  useEffect(() => {
+    if (recipientRole !== 'signer') return;
+    if (activeFieldIdx == null) return;
+    const f = fields[activeFieldIdx];
+    if (!f) return;
+    if (!isSignerFieldFilled(f, fieldValues[activeFieldIdx])) return;
+    const navPos = navigableIdxList.indexOf(activeFieldIdx);
+    const after = navigableIdxList
+      .slice(navPos + 1)
+      .find((i) => !isSignerFieldFilled(fields[i], fieldValues[i]));
+    if (after != null) {
+      setActiveFieldIdx(after);
+    } else if (pendingIdxList.length > 0) {
+      setActiveFieldIdx(pendingIdxList[0]);
+    } else {
+      setActiveFieldIdx(null);
+    }
+  }, [fieldValues, activeFieldIdx, fields, navigableIdxList, pendingIdxList, recipientRole]);
+
+  /** Smooth-scroll to the active field whenever it changes. */
+  useEffect(() => {
+    if (activeFieldIdx == null) return;
+    const id = `esign-field-${activeFieldIdx}`;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }
+    });
+  }, [activeFieldIdx]);
+
+  const goToNextField = () => {
+    if (navigableIdxList.length === 0) return;
+    const startPos = activeFieldIdx == null ? -1 : navigableIdxList.indexOf(activeFieldIdx);
+    for (let step = 1; step <= navigableIdxList.length; step++) {
+      const pos = (startPos + step) % navigableIdxList.length;
+      const idx = navigableIdxList[pos];
+      if (!isSignerFieldFilled(fields[idx], fieldValues[idx])) {
+        setActiveFieldIdx(idx);
+        return;
+      }
+    }
+    setActiveFieldIdx(null);
+  };
+
+  const goToPrevField = () => {
+    if (navigableIdxList.length === 0) return;
+    const startPos = activeFieldIdx == null ? 0 : navigableIdxList.indexOf(activeFieldIdx);
+    for (let step = 1; step <= navigableIdxList.length; step++) {
+      const pos = (startPos - step + navigableIdxList.length) % navigableIdxList.length;
+      const idx = navigableIdxList[pos];
+      if (!isSignerFieldFilled(fields[idx], fieldValues[idx])) {
+        setActiveFieldIdx(idx);
+        return;
+      }
+    }
+  };
 
   useEffect(() => {
     if (recipientRole !== 'reviewer') return;
@@ -1559,7 +1679,36 @@ const EsignSignPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-4 px-2 sm:py-8 sm:px-4">
+    <div
+      className="min-h-screen bg-slate-50 py-4 px-2 sm:py-8 sm:px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] sm:pb-8"
+    >
+      <style>{`
+        @keyframes esignActiveFieldPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.55), 0 0 0 6px rgba(99, 102, 241, 0.0); }
+          50% { box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.20), 0 0 0 10px rgba(99, 102, 241, 0.10); }
+        }
+        .esign-active-field {
+          animation: esignActiveFieldPulse 1.6s ease-in-out infinite;
+          background-color: rgba(238, 242, 255, 0.55);
+          transition: background-color 200ms ease;
+        }
+        .esign-completed-field {
+          opacity: 0.65;
+          transition: opacity 200ms ease;
+        }
+        .esign-completed-field:hover { opacity: 1; }
+        @keyframes esignSubmitReadyPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+          50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+        }
+        .esign-submit-ready {
+          background-color: #059669 !important;
+          animation: esignSubmitReadyPulse 1.6s ease-in-out infinite;
+        }
+        .esign-submit-ready:hover {
+          background-color: #047857 !important;
+        }
+      `}</style>
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="bg-indigo-600 px-4 py-3 sm:px-6 sm:py-4">
@@ -1568,10 +1717,98 @@ const EsignSignPage: React.FC = () => {
           </div>
 
           <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
-            {renderForwardRequestPanel()}
+            {/* Forward panel intentionally hidden in the signing flow — forwarding is only available
+                on the pre-approval screen (before the signer clicks Approve & Sign). */}
+            {recipientRole !== 'signer' && renderForwardRequestPanel()}
             {fields.length === 0 && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 {error || 'No signature fields are assigned to you for this document. Ask the sender to assign fields to your recipient in Place Fields, then resend the link.'}
+              </div>
+            )}
+            {/* Guided field navigation (signer only) */}
+            {recipientRole === 'signer' && totalNavigable > 0 && (
+              <div
+                className={`sticky top-0 z-20 -mx-3 sm:-mx-6 px-3 sm:px-6 py-3 backdrop-blur-md border-b ${
+                  allFieldsDone
+                    ? 'bg-emerald-50/90 border-emerald-200'
+                    : 'bg-white/90 border-slate-200'
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {allFieldsDone ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    ) : isUntouched ? (
+                      <Sparkles className="w-5 h-5 text-indigo-600 shrink-0" />
+                    ) : (
+                      <ArrowRight className="w-5 h-5 text-indigo-600 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p
+                        className={`text-sm font-semibold ${
+                          allFieldsDone ? 'text-emerald-800' : 'text-slate-900'
+                        }`}
+                      >
+                        {allFieldsDone
+                          ? 'All required fields completed. Ready to submit.'
+                          : isUntouched
+                          ? 'Start here'
+                          : `Next required field${
+                              activeFieldIdx != null && fields[activeFieldIdx]
+                                ? `: ${fieldNavLabel(fields[activeFieldIdx].type)}`
+                                : ''
+                            }`}
+                      </p>
+                      {!allFieldsDone && (
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          Field {activePosition} of {totalNavigable} · {remainingCount} remaining
+                        </p>
+                      )}
+                      {allFieldsDone && (
+                        <p className="text-xs text-emerald-700 mt-0.5">
+                          {totalNavigable} of {totalNavigable} complete
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {!allFieldsDone && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div
+                        className="hidden sm:block h-1.5 w-32 rounded-full bg-slate-200 overflow-hidden"
+                        aria-hidden="true"
+                      >
+                        <div
+                          className="h-full bg-indigo-500 transition-all duration-300"
+                          style={{
+                            width: `${
+                              totalNavigable > 0
+                                ? Math.round((completedCount / totalNavigable) * 100)
+                                : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={goToPrevField}
+                        disabled={remainingCount <= 1}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label="Previous required field"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Prev</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={goToNextField}
+                        className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-700 shadow-sm"
+                      >
+                        <span>Next</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             {/* PDF with all pages in one scrollable view - same logic as Place Fields */}
@@ -1606,10 +1843,17 @@ const EsignSignPage: React.FC = () => {
                               ? !!fieldVal
                               : String(fieldVal ?? '').trim().length > 0;
                             const isImageDataUrl = typeof fieldVal === 'string' && fieldVal.startsWith('data:image');
+                            const isActiveField =
+                              recipientRole === 'signer' && globalIdx === activeFieldIdx;
+                            const isCompletedNavField =
+                              recipientRole === 'signer' &&
+                              isSignerEditableField(f) &&
+                              hasValue;
                             return (
                               <div
                                 key={f._id?.toString() ?? `field-${globalIdx}`}
-                                className={`absolute flex items-center pointer-events-auto ${growNt ? 'justify-start overflow-visible z-[2]' : 'justify-center overflow-hidden'}`}
+                                id={`esign-field-${globalIdx}`}
+                                className={`absolute flex items-center pointer-events-auto ${growNt ? 'justify-start overflow-visible z-[2]' : 'justify-center overflow-hidden'} ${isActiveField ? 'esign-active-field rounded ring-2 ring-indigo-500/80 ring-offset-1 z-[3]' : ''} ${isCompletedNavField && !isActiveField ? 'esign-completed-field' : ''}`}
                                 style={{
                                   ...baseSt,
                                   minHeight: 24,
@@ -1918,57 +2162,130 @@ const EsignSignPage: React.FC = () => {
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setFieldValues(getInitialFieldValues(fields));
-                  clearSignature();
-                  setSelectedSignatureFieldIndex(null);
-                }}
-                disabled={submitting}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Pencil className="h-5 w-5" />
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting || fields.length === 0}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Submitting…
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-5 w-5" />
-                    Submit
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDownload(doc?.file_name)}
-                disabled={downloading}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {downloading ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Downloading…
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-5 w-5" />
-                    Download
-                  </>
-                )}
-              </button>
-            </div>
+            {(() => {
+              const signerIncomplete = recipientRole === 'signer' && remainingCount > 0;
+              const submitDisabled = submitting || fields.length === 0 || signerIncomplete;
+              const submitReady =
+                recipientRole === 'signer' && totalNavigable > 0 && allFieldsDone && !submitting;
+              const handleEdit = () => {
+                setFieldValues(getInitialFieldValues(fields));
+                clearSignature();
+                setSelectedSignatureFieldIndex(null);
+                if (recipientRole === 'signer') {
+                  initialActiveSetRef.current = false;
+                  setActiveFieldIdx(null);
+                }
+              };
+              return (
+                <>
+                  <div className="hidden sm:flex sm:flex-row gap-3">
+                    <button
+                      type="button"
+                      onClick={handleEdit}
+                      disabled={submitting}
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Pencil className="h-5 w-5" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={submitDisabled}
+                      className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        submitReady ? 'esign-submit-ready' : ''
+                      }`}
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          Submitting…
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-5 w-5" />
+                          Submit
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(doc?.file_name)}
+                      disabled={downloading}
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {downloading ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          Downloading…
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-5 w-5" />
+                          Download
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Mobile sticky bottom action bar */}
+                  <div
+                    className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-4px_16px_rgba(15,23,42,0.08)]"
+                    style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+                  >
+                    {recipientRole === 'signer' && totalNavigable > 0 && (
+                      <div
+                        className={`px-4 pt-2 pb-1 text-xs font-medium ${
+                          allFieldsDone ? 'text-emerald-700' : 'text-slate-600'
+                        }`}
+                      >
+                        {allFieldsDone
+                          ? 'All required fields completed. Ready to submit.'
+                          : `${remainingCount} of ${totalNavigable} field${
+                              totalNavigable === 1 ? '' : 's'
+                            } remaining`}
+                      </div>
+                    )}
+                    <div className="px-3 py-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleEdit}
+                        disabled={submitting}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border-2 border-slate-300 text-slate-700 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={submitDisabled}
+                        className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          submitReady ? 'esign-submit-ready' : ''
+                        }`}
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Submitting…
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4" />
+                            Submit
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    {submitDisabled && !submitting && signerIncomplete && (
+                      <p className="px-4 pb-2 text-[11px] text-slate-500">
+                        Complete all required fields to continue
+                      </p>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
