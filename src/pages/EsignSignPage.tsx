@@ -1530,7 +1530,7 @@ const EsignSignPage: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center py-3 px-2 gap-3">
+            <div className="flex flex-col items-center py-3 px-2 gap-3 w-full max-w-4xl mx-auto">
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <div key={pageNum} data-page={pageNum} className="flex flex-col items-center w-full">
                   <span className="text-[10px] font-medium text-slate-500 mb-1">Page {pageNum} of {totalPages}</span>
@@ -1821,7 +1821,7 @@ const EsignSignPage: React.FC = () => {
                   <div
                     key={pageNum}
                     data-page={pageNum}
-                    className="flex flex-col items-center py-4 first:pt-4 last:pb-4"
+                    className="flex flex-col items-center py-4 first:pt-4 last:pb-4 w-full max-w-4xl mx-auto px-2"
                   >
                     <span className="text-xs font-medium text-slate-500 mb-2">Page {pageNum} of {totalPages}</span>
                     <div className="rounded-lg overflow-hidden shadow-sm w-full max-w-full">

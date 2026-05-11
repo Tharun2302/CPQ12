@@ -955,7 +955,10 @@ const EsignPlaceFieldsPage: React.FC = () => {
       {sendSuccessModal.open && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
-          onClick={() => setSendSuccessModal({ open: false, recipients: [] })}
+          onClick={() => {
+            setSendSuccessModal({ open: false, recipients: [] });
+            if (documentId) navigate(`/esign/${documentId}/status`);
+          }}
         >
           <div
             className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md flex flex-col"
@@ -987,7 +990,10 @@ const EsignPlaceFieldsPage: React.FC = () => {
             <div className="px-6 pt-4 pb-6 flex justify-center">
               <button
                 type="button"
-                onClick={() => setSendSuccessModal({ open: false, recipients: [] })}
+                onClick={() => {
+            setSendSuccessModal({ open: false, recipients: [] });
+            if (documentId) navigate(`/esign/${documentId}/status`);
+          }}
                 className="inline-flex items-center justify-center rounded-xl bg-indigo-600 text-white px-6 py-2.5 text-sm font-semibold hover:bg-indigo-700 shadow-md hover:shadow-lg transition-shadow"
               >
                 Done

@@ -126,10 +126,10 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
       const parent = wrapperRef.current?.parentElement;
       if (!parent) return;
       const availableWidth = parent.clientWidth;
-      if (availableWidth > 0 && dimensions.width > availableWidth) {
+      if (availableWidth > 0) {
+        // Fit to container in BOTH directions: shrink on narrow screens, grow on wide
+        // ones so we never leave large empty gutters next to the page.
         setMobileScale(availableWidth / dimensions.width);
-      } else {
-        setMobileScale(1);
       }
     };
     updateMobileScale();
@@ -154,7 +154,6 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
       className={`${className}`}
       style={{
         width: '100%',
-        maxWidth: dimensions?.width ?? '100%',
         height: scaledHeight,
         minHeight: 200,
         overflow: 'hidden',
@@ -166,7 +165,7 @@ const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
         style={{
           width: dimensions?.width ?? '100%',
           height: dimensions?.height ?? 600,
-          transform: mobileScale < 1 ? `scale(${mobileScale})` : undefined,
+          transform: mobileScale !== 1 ? `scale(${mobileScale})` : undefined,
           transformOrigin: 'top left',
         }}
       >
