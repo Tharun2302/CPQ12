@@ -3467,6 +3467,461 @@ app.delete('/api/documents/:id', async (req, res) => {
 // DOCX TO PDF CONVERSION
 // ============================================
 
+/**
+ * Pre-process a DOCX buffer so LibreOffice's `--convert-to pdf:writer_pdf_Export`
+ * faithfully renders top-of-page floating image layouts (logos pinned to
+ * top-left and top-right).
+ *
+ * Why: LibreOffice's PDF filter drops Word's `<wp:anchor>` absolute page
+ * positions (`<wp:positionH relativeFrom="page">`) and falls back to inline
+ * rendering on the host paragraph — two side-by-side floating images stack
+ * vertically and center on the page. The fix is to transform paragraphs with
+ * 2+ floating-image anchors (or 2+ adjacent paragraphs each with one anchor)
+ * into a 1×N borderless table whose cells host the images inline. LibreOffice
+ * renders inline-in-cell images perfectly, so the layout is preserved.
+ *
+ * For the Multi Combination template specifically, the logos live in
+ * `word/header1.xml` and the XML has Microsoft listed first, CloudFuze
+ * second, but Word displays them at posOffset=5372100 (right) and
+ * posOffset=723900 (left). We sort anchors by horizontal posOffset before
+ * building cells so the leftmost image ends up in the leftmost cell.
+ *
+ * Safe: if anything fails, returns the original buffer unmodified.
+ */
+function preprocessDocxForLibreOffice(buffer) {
+  try {
+    const PizZip = require('pizzip');
+    const zip = new PizZip(buffer);
+
+    let anyTransformed = false;
+    const targets = Object.keys(zip.files).filter((name) =>
+      name === 'word/document.xml' || /^word\/header\d*\.xml$/i.test(name)
+    );
+    console.log(`📐 DOCX preprocessor v3 scanning: ${targets.join(', ') || '(none)'}`);
+
+    for (const xmlPath of targets) {
+      const file = zip.file(xmlPath);
+      if (!file) continue;
+      const original = file.asText();
+      const totalAnchors = (original.match(/<wp:anchor\b/g) || []).length;
+      const totalInline = (original.match(/<wp:inline\b/g) || []).length;
+      const isHeader = /^word\/header\d+\.xml$/i.test(xmlPath);
+      console.log(`📐   ${xmlPath}: ${totalAnchors} <wp:anchor> + ${totalInline} <wp:inline> image(s)${isHeader ? ' [header]' : ''}`);
+
+      let updated = transformParagraphsWithFloatingImages(original);
+      // Headers commonly host logos as separate centered inline-image paragraphs.
+      // Group those into a side-by-side table too (safe because headers are
+      // overwhelmingly used for logos/branding, not body content layout).
+      if (isHeader) {
+        updated = transformHeaderInlineImageParagraphs(updated);
+        // Also replace existing header tables that contain inline images —
+        // LibreOffice sometimes can't render multi-column tables in headers
+        // and falls back to rendering cells as standalone centered paragraphs
+        // (stacked). A clean borderless 1×N table avoids that quirk.
+        updated = transformHeaderTablesWithImages(updated);
+      }
+
+      // Body: keep the "Important Payment Notes" section together on its own
+      // page so its heading never orphans at the bottom of the previous page.
+      if (xmlPath === 'word/document.xml') {
+        updated = injectPageBreakBeforeSection(updated, 'Important Payment Notes');
+      }
+
+      if (updated !== original) {
+        zip.file(xmlPath, updated);
+        anyTransformed = true;
+        console.log(`📐   ${xmlPath}: preprocessor transforms applied`);
+      } else if (totalAnchors > 0 || totalInline > 0) {
+        console.log(`📐   ${xmlPath}: images present but no transform pattern matched`);
+      }
+    }
+
+    if (!anyTransformed) return buffer;
+    return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+  } catch (err) {
+    console.warn('⚠️ DOCX preprocessor skipped (falling back to original):', err.message);
+    return buffer;
+  }
+}
+
+/**
+ * Find paragraphs containing floating-image anchors and groups of adjacent
+ * single-anchor paragraphs. When a group has 2+ total anchors, replace it
+ * with a 1×N borderless table whose cells host the same images inline.
+ * Anchors are sorted by horizontal page position before being placed in
+ * cells (leftmost → leftmost cell).
+ */
+function transformParagraphsWithFloatingImages(xml) {
+  const anchorRunRegex =
+    /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:anchor\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:anchor>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
+  const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+
+  const paragraphs = [];
+  let m;
+  while ((m = paragraphRegex.exec(xml)) !== null) {
+    const fullParagraph = m[0];
+    const anchorRuns = fullParagraph.match(anchorRunRegex) || [];
+    paragraphs.push({
+      fullParagraph,
+      start: m.index,
+      end: m.index + fullParagraph.length,
+      anchorRuns,
+    });
+  }
+
+  // Group consecutive (whitespace-separated) paragraphs that contain anchors.
+  const groups = [];
+  let current = null;
+  for (const p of paragraphs) {
+    if (p.anchorRuns.length === 0) {
+      if (current) { groups.push(current); current = null; }
+      continue;
+    }
+    const adjacent = current && /^\s*$/.test(xml.substring(current.end, p.start));
+    if (adjacent) {
+      current.paragraphs.push(p);
+      current.end = p.end;
+      current.totalAnchors += p.anchorRuns.length;
+    } else {
+      if (current) groups.push(current);
+      current = { start: p.start, end: p.end, paragraphs: [p], totalAnchors: p.anchorRuns.length };
+    }
+  }
+  if (current) groups.push(current);
+
+  const transformable = groups.filter((g) => g.totalAnchors >= 2);
+  if (transformable.length === 0) return xml;
+
+  let result = xml;
+  for (let i = transformable.length - 1; i >= 0; i--) {
+    const group = transformable[i];
+    const allAnchorRuns = group.paragraphs.flatMap((p) => p.anchorRuns);
+
+    // Sort by horizontal page position so leftmost image goes into leftmost cell.
+    // The XML may list anchors in any order; we want visual order on the page.
+    const sortedRuns = [...allAnchorRuns].sort((a, b) => {
+      const ax = extractPositionH(a);
+      const bx = extractPositionH(b);
+      return ax - bx;
+    });
+
+    const tableXml = buildLogoTableXml(sortedRuns);
+    if (!tableXml) continue;
+
+    const cleanedParagraphs = group.paragraphs.map((p) => {
+      let out = p.fullParagraph;
+      for (const run of p.anchorRuns) out = out.replace(run, '');
+      return out;
+    });
+
+    const replacement = tableXml + cleanedParagraphs.join('');
+    result = result.substring(0, group.start) + replacement + result.substring(group.end);
+  }
+
+  return result;
+}
+
+/** Extract the horizontal page offset from a `<wp:anchor>` run (EMUs). 0 if missing. */
+function extractPositionH(anchorRun) {
+  const m = anchorRun.match(/<wp:positionH\b[^>]*>[\s\S]*?<wp:posOffset>(-?\d+)<\/wp:posOffset>[\s\S]*?<\/wp:positionH>/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * Insert `<w:pageBreakBefore/>` into the `<w:pPr>` of any paragraph whose text
+ * content matches the given section heading (case-sensitive, exact substring).
+ * This forces the paragraph (and the section that follows it) to start on a
+ * fresh page, avoiding orphaned headings at the bottom of the previous page.
+ *
+ * Safe:
+ *  - Idempotent (skips paragraphs that already have <w:pageBreakBefore/>)
+ *  - Only matches paragraphs whose visible text contains the heading
+ *  - Returns the input unchanged if no matching paragraph is found
+ */
+function injectPageBreakBeforeSection(xml, sectionHeading) {
+  if (!sectionHeading) return xml;
+  const paragraphRegex = /<w:p\b([^>]*)>([\s\S]*?)<\/w:p>/g;
+  let matched = 0;
+
+  const result = xml.replace(paragraphRegex, (full, attrs, inner) => {
+    // Extract visible text content of the paragraph (concatenate all <w:t>…</w:t>).
+    const textParts = inner.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
+    const text = textParts.map((t) => t.replace(/<[^>]+>/g, '')).join('');
+    if (!text.includes(sectionHeading)) return full;
+
+    // Idempotent: leave alone if a page break is already configured.
+    if (/<w:pageBreakBefore\b/.test(inner)) return full;
+
+    matched++;
+    const existingPPr = inner.match(/<w:pPr\b[^>]*>([\s\S]*?)<\/w:pPr>/);
+    let newInner;
+    if (existingPPr) {
+      const augmented = '<w:pPr>' + '<w:pageBreakBefore/>' + existingPPr[1] + '</w:pPr>';
+      newInner = inner.replace(existingPPr[0], augmented);
+    } else {
+      newInner = '<w:pPr><w:pageBreakBefore/></w:pPr>' + inner;
+    }
+    return `<w:p${attrs}>${newInner}</w:p>`;
+  });
+
+  if (matched > 0) {
+    console.log(`📐   inserted <w:pageBreakBefore/> into ${matched} paragraph(s) matching "${sectionHeading}"`);
+  }
+  return result;
+}
+
+/**
+ * Header-specific: find any existing table that contains 2+ inline images
+ * (one per cell) and replace it with a clean 1×N borderless table. LibreOffice
+ * has a documented quirk where it sometimes drops the row of a table in a
+ * header and renders the cells as standalone centered paragraphs (stacked).
+ * Replacing with a simple borderless table avoids that quirk.
+ *
+ * Runs AFTER the inline-paragraph transformation, so anything already wrapped
+ * by this preprocessor is left alone.
+ */
+function transformHeaderTablesWithImages(xml) {
+  const inlineImageRunRegex =
+    /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:inline\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:inline>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
+  // Match top-level tables only (don't try to handle nested tables — rare in headers).
+  const tableRegex = /<w:tbl>[\s\S]*?<\/w:tbl>/g;
+
+  return xml.replace(tableRegex, (tableXml) => {
+    const inlineRuns = tableXml.match(inlineImageRunRegex) || [];
+    if (inlineRuns.length < 2) return tableXml; // leave alone
+
+    // Skip if this is already a borderless table that we (the preprocessor)
+    // produced — identified by all 6 borders being w:val="nil" and a fixed
+    // layout. Avoids double-processing.
+    const allBordersNil = (tableXml.match(/w:val="nil"/g) || []).length >= 6;
+    const ourFixedLayout = /tblLayout w:type="fixed"/.test(tableXml) &&
+                          /tblInd w:w="0" w:type="dxa"/.test(tableXml);
+    if (allBordersNil && ourFixedLayout) return tableXml;
+
+    const replacement = buildInlineLogoTableXml(inlineRuns);
+    return replacement || tableXml;
+  });
+}
+
+/**
+ * Header-specific: groups "image-only" paragraphs (paragraphs containing exactly one
+ * `<wp:inline>` image and no visible text) that are near each other (separated only by
+ * truly empty paragraphs) into a single 1×N borderless table. This fixes the common
+ * pattern where Word stacks two centered logos in separate paragraphs — LibreOffice
+ * renders them stacked, but we want side-by-side.
+ *
+ * Conservative criteria to avoid false positives:
+ *  - Only image-ONLY paragraphs are eligible (no other text content)
+ *  - Intervening paragraphs in the group must be truly empty (no text, no images)
+ *  - At least 2 image-only paragraphs are needed
+ */
+function transformHeaderInlineImageParagraphs(xml) {
+  const inlineImageRunRegex =
+    /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:inline\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:inline>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
+  const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+
+  // Classify each paragraph: 'image' (image-only, no visible text),
+  // 'empty' (no images, no visible text), or 'other'.
+  const paragraphs = [];
+  let m;
+  while ((m = paragraphRegex.exec(xml)) !== null) {
+    const full = m[0];
+    const inlineRuns = full.match(inlineImageRunRegex) || [];
+    const hasAnchor = /<wp:anchor\b/.test(full);
+    // Strip XML tags and check whether any visible text remains.
+    const textContent = full.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+
+    let kind;
+    if (hasAnchor) {
+      kind = 'other'; // leave anchored content to the other transform
+    } else if (inlineRuns.length === 1 && textContent.length === 0) {
+      kind = 'image';
+    } else if (inlineRuns.length === 0 && textContent.length === 0) {
+      kind = 'empty';
+    } else {
+      kind = 'other';
+    }
+
+    paragraphs.push({
+      full,
+      start: m.index,
+      end: m.index + full.length,
+      kind,
+      inlineRun: inlineRuns[0] || null,
+    });
+  }
+
+  // Walk paragraphs forming groups of image-only paragraphs. A group can include
+  // 'empty' paragraphs between images, but is broken by any 'other' paragraph.
+  const groups = [];
+  let current = null;
+  for (const p of paragraphs) {
+    if (p.kind === 'image') {
+      if (!current) current = { paragraphs: [p], start: p.start, end: p.end };
+      else { current.paragraphs.push(p); current.end = p.end; }
+    } else if (p.kind === 'empty' && current) {
+      // Extend the group's end so when we replace, intervening empty paragraphs
+      // get swallowed by the replacement too. Keeps spacing tight.
+      current.end = p.end;
+    } else {
+      // 'other' or 'empty' with no current group → flush
+      if (current) {
+        const imgCount = current.paragraphs.length;
+        if (imgCount >= 2) groups.push(current);
+        current = null;
+      }
+    }
+  }
+  if (current && current.paragraphs.length >= 2) groups.push(current);
+
+  if (groups.length === 0) return xml;
+
+  // Apply replacements in reverse order so earlier indices stay valid.
+  let result = xml;
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const g = groups[i];
+    const runs = g.paragraphs.map((p) => p.inlineRun).filter(Boolean);
+    if (runs.length < 2) continue;
+    const tableXml = buildInlineLogoTableXml(runs);
+    if (!tableXml) continue;
+    result = result.substring(0, g.start) + tableXml + result.substring(g.end);
+  }
+  return result;
+}
+
+/**
+ * Like `buildLogoTableXml` but accepts runs that already wrap `<wp:inline>` images
+ * (rather than `<wp:anchor>`). Reuses the same fixed-layout / zero-indent / borderless
+ * table structure so LibreOffice renders the images side-by-side at the page edges.
+ */
+function buildInlineLogoTableXml(inlineRuns) {
+  if (!inlineRuns || inlineRuns.length < 2) return null;
+  const cellDxaWidth = Math.floor(9360 / inlineRuns.length);
+
+  const cells = [];
+  for (let i = 0; i < inlineRuns.length; i++) {
+    const align = i === 0
+      ? 'left'
+      : i === inlineRuns.length - 1
+        ? 'right'
+        : 'center';
+
+    cells.push(
+      '<w:tc>' +
+        '<w:tcPr>' +
+          `<w:tcW w:w="${cellDxaWidth}" w:type="dxa"/>` +
+          '<w:tcBorders>' +
+            '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+            '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '</w:tcBorders>' +
+          '<w:vAlign w:val="center"/>' +
+        '</w:tcPr>' +
+        '<w:p>' +
+          `<w:pPr><w:jc w:val="${align}"/></w:pPr>` +
+          inlineRuns[i] +
+        '</w:p>' +
+      '</w:tc>'
+    );
+  }
+
+  const gridCols = cells.map(() => `<w:gridCol w:w="${cellDxaWidth}"/>`).join('');
+  return (
+    '<w:tbl>' +
+      '<w:tblPr>' +
+        `<w:tblW w:w="${cellDxaWidth * inlineRuns.length}" w:type="dxa"/>` +
+        '<w:tblInd w:w="0" w:type="dxa"/>' +
+        '<w:tblBorders>' +
+          '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+          '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '<w:insideH w:val="nil"/><w:insideV w:val="nil"/>' +
+        '</w:tblBorders>' +
+        '<w:tblLayout w:type="fixed"/>' +
+      '</w:tblPr>' +
+      `<w:tblGrid>${gridCols}</w:tblGrid>` +
+      `<w:tr>${cells.join('')}</w:tr>` +
+    '</w:tbl>'
+  );
+}
+
+/**
+ * Build the borderless 1×N table XML for the given list of anchor-image runs.
+ * Returns null if any anchor's required substructure is missing.
+ */
+function buildLogoTableXml(anchorRuns) {
+  if (!anchorRuns || anchorRuns.length < 2) return null;
+
+  const cellPctWidth = Math.floor(5000 / anchorRuns.length); // /5000 = 100%
+  const cellDxaWidth = Math.floor(9360 / anchorRuns.length); // ~6.5" content area
+
+  const cells = [];
+  for (let i = 0; i < anchorRuns.length; i++) {
+    const run = anchorRuns[i];
+    const extentMatch = run.match(/<wp:extent\b[^>]*\/>/);
+    const docPrMatch = run.match(/<wp:docPr\b[\s\S]*?(?:\/>|<\/wp:docPr>)/);
+    const cNvGfpMatch = run.match(/<wp:cNvGraphicFramePr\b[\s\S]*?(?:\/>|<\/wp:cNvGraphicFramePr>)/);
+    const graphicMatch = run.match(/<a:graphic\b[\s\S]*?<\/a:graphic>/);
+    if (!extentMatch || !docPrMatch || !graphicMatch) return null;
+
+    const cNvGfp = cNvGfpMatch ? cNvGfpMatch[0] : '<wp:cNvGraphicFramePr/>';
+
+    const inlineRun =
+      '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+        extentMatch[0] +
+        '<wp:effectExtent l="0" t="0" r="0" b="0"/>' +
+        docPrMatch[0] +
+        cNvGfp +
+        graphicMatch[0] +
+      '</wp:inline></w:drawing></w:r>';
+
+    // First cell left-aligned (hugs left margin), last right-aligned (hugs right margin),
+    // middles centered. With equal-width cells spanning full content width, this puts
+    // the leftmost logo flush left and the rightmost flush right.
+    const align = i === 0
+      ? 'left'
+      : i === anchorRuns.length - 1
+        ? 'right'
+        : 'center';
+
+    cells.push(
+      '<w:tc>' +
+        '<w:tcPr>' +
+          `<w:tcW w:w="${cellDxaWidth}" w:type="dxa"/>` +
+          '<w:tcBorders>' +
+            '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+            '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '</w:tcBorders>' +
+          '<w:vAlign w:val="center"/>' +
+        '</w:tcPr>' +
+        '<w:p>' +
+          `<w:pPr><w:jc w:val="${align}"/></w:pPr>` +
+          inlineRun +
+        '</w:p>' +
+      '</w:tc>'
+    );
+  }
+
+  const gridCols = cells.map(() => `<w:gridCol w:w="${cellDxaWidth}"/>`).join('');
+
+  // Fixed layout + explicit dxa widths + zero indent.
+  // LibreOffice 25.x reliably honors fixed-layout dxa widths (it sometimes ignores pct widths).
+  return (
+    '<w:tbl>' +
+      '<w:tblPr>' +
+        `<w:tblW w:w="${cellDxaWidth * anchorRuns.length}" w:type="dxa"/>` +
+        '<w:tblInd w:w="0" w:type="dxa"/>' +
+        '<w:tblBorders>' +
+          '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+          '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '<w:insideH w:val="nil"/><w:insideV w:val="nil"/>' +
+        '</w:tblBorders>' +
+        '<w:tblLayout w:type="fixed"/>' +
+      '</w:tblPr>' +
+      `<w:tblGrid>${gridCols}</w:tblGrid>` +
+      `<w:tr>${cells.join('')}</w:tr>` +
+    '</w:tbl>'
+  );
+}
+
 // Convert DOCX to PDF using multiple fallback methods
 app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => {
   // Set longer timeout for conversion
@@ -3481,6 +3936,17 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
     console.log('🔄 Starting DOCX to PDF conversion...');
     console.log('📄 File size:', req.file.size, 'bytes');
     console.log('📄 File type:', req.file.mimetype);
+
+    // Pre-process DOCX so LibreOffice's PDF filter preserves top-of-page floating
+    // image layouts (logos pinned to left/right edges). The backend template DOCX
+    // on disk and in MongoDB is NOT modified — this only mutates the in-memory
+    // buffer for this single conversion.
+    const originalBufferSize = req.file.buffer.length;
+    req.file.buffer = preprocessDocxForLibreOffice(req.file.buffer);
+    if (req.file.buffer.length !== originalBufferSize) {
+      console.log('📐 DOCX pre-processed for LibreOffice (size:',
+        originalBufferSize, '→', req.file.buffer.length, 'bytes)');
+    }
 
     const hasFatalLibreOfficeStderr = (stderrText) => {
       const s = String(stderrText || '').toLowerCase();
@@ -9353,6 +9819,7 @@ async function startServer() {
 
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📐 DOCX preprocessor v3 loaded (sorts anchors by horizontal page position before tabling)`);
       console.log(`📊 Database available: ${databaseAvailable}`);
       console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
       const appBase = process.env.APP_BASE_URL || 'http://localhost:5173';
