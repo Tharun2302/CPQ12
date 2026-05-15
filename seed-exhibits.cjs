@@ -290,8 +290,8 @@ async function seedDefaultExhibits(db) {
     },
     // ShareFile to Google Shared Drive exhibits
     {
-      name: 'ShareFile to Google SharedDrive Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in ShareFile to Google SharedDrive Advanced Plan migration',
+      name: 'ShareFile to Google SharedDrive Standard Plan - Standard Included',
+      description: 'Documentation for features included in ShareFile to Google SharedDrive Standard Plan migration',
       fileName: 'ShareFile to Google SharedDrive Advanced Plan - Advanced Included.docx',
       legacyFileNames: [
         'sharefile-to-google-sharedrive-advanced-plan-included.docx'
@@ -300,11 +300,11 @@ async function seedDefaultExhibits(db) {
       category: 'content',
       isRequired: false,
       displayOrder: 1,
-      keywords: ['sharefile', 'google', 'sharedrive', 'advanced', 'included', 'features']
+      keywords: ['sharefile', 'google', 'sharedrive', 'standard', 'included', 'features']
     },
     {
-      name: 'ShareFile to Google SharedDrive Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in ShareFile to Google SharedDrive Advanced Plan migration',
+      name: 'ShareFile to Google SharedDrive Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in ShareFile to Google SharedDrive Standard Plan migration',
       fileName: 'ShareFile to Google SharedDrive Advanced Plan - Advanced Not Included.docx',
       legacyFileNames: [
         'sharefile-to-google-sharedrive-advanced-plan-notincluded.docx'
@@ -313,74 +313,74 @@ async function seedDefaultExhibits(db) {
       category: 'content',
       isRequired: false,
       displayOrder: 2,
-      keywords: ['sharefile', 'google', 'sharedrive', 'advanced', 'not included', 'features', 'limitations']
+      keywords: ['sharefile', 'google', 'sharedrive', 'standard', 'not included', 'features', 'limitations']
     },
     // ShareFile to Google SharedDrive (Standard) exhibits
     {
-      name: 'ShareFile to Google SharedDrive Standard Plan - Standard Included',
-      description: 'Documentation for features included in ShareFile to Google SharedDrive Standard Plan migration',
+      name: 'ShareFile to Google SharedDrive Basic Plan - Basic Included',
+      description: 'Documentation for features included in ShareFile to Google SharedDrive Basic Plan migration',
       fileName: 'ShareFile to Google SharedDrive Standard Plan - Standard Included.docx',
       combinations: ['sharefile-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 3,
-      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'ShareFile to Google SharedDrive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in ShareFile to Google SharedDrive Standard Plan migration',
+      name: 'ShareFile to Google SharedDrive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in ShareFile to Google SharedDrive Basic Plan migration',
       fileName: 'ShareFile to Google SharedDrive Standard Plan - Standard Not Included.docx',
       combinations: ['sharefile-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 4,
-      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // ShareFile to Google Drive (MyDrive & Shared Drive) - merged Standard exhibits
     {
-      name: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include',
-      description: 'Documentation for features included in ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan migration',
+      name: 'ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Include',
+      description: 'Documentation for features included in ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan migration',
       fileName: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include.docx',
       combinations: ['sharefile-to-google-mydrive', 'sharefile-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 3,
-      keywords: ['sharefile', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan migration',
+      name: 'ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan migration',
       fileName: 'ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx',
       combinations: ['sharefile-to-google-mydrive', 'sharefile-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 4,
-      keywords: ['sharefile', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // ShareFile to Google MyDrive exhibits (Standard + Advanced)
     {
-      name: 'ShareFile to Google MyDrive Standard Plan - Standard Included',
-      description: 'Documentation for features included in ShareFile to Google MyDrive Standard Plan migration',
+      name: 'ShareFile to Google MyDrive Basic Plan - Basic Included',
+      description: 'Documentation for features included in ShareFile to Google MyDrive Basic Plan migration',
       fileName: 'ShareFile to Google MyDrive Standard Plan - Standard Included.docx',
       combinations: ['sharefile-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 5,
-      keywords: ['sharefile', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'mydrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'ShareFile to Google MyDrive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in ShareFile to Google MyDrive Standard Plan migration',
+      name: 'ShareFile to Google MyDrive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in ShareFile to Google MyDrive Basic Plan migration',
       fileName: 'ShareFile to Google MyDrive Standard Plan - Standard Not Included.docx',
       combinations: ['sharefile-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 6,
-      keywords: ['sharefile', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'mydrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
-      name: 'ShareFile to Google MyDrive Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in ShareFile to Google MyDrive Advanced Plan migration',
+      name: 'ShareFile to Google MyDrive Standard Plan - Standard Included',
+      description: 'Documentation for features included in ShareFile to Google MyDrive Standard Plan migration',
       fileName: 'ShareFile to Google MyDrive Advanced Plan - Advanced Included.docx',
       legacyFileNames: [
         'ShareFile to Google MyDrive Advanced Plan - Advanced Include.docx'
@@ -389,11 +389,11 @@ async function seedDefaultExhibits(db) {
       category: 'content',
       isRequired: false,
       displayOrder: 7,
-      keywords: ['sharefile', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'ShareFile to Google MyDrive Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in ShareFile to Google MyDrive Advanced Plan migration',
+      name: 'ShareFile to Google MyDrive Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in ShareFile to Google MyDrive Standard Plan migration',
       fileName: 'ShareFile to Google MyDrive Advanced Plan - Advanced Not Included.docx',
       legacyFileNames: [
         'ShareFile to Google MyDrive Advanced Plan - Advanced Not Include.docx'
@@ -402,133 +402,133 @@ async function seedDefaultExhibits(db) {
       category: 'content',
       isRequired: false,
       displayOrder: 8,
-      keywords: ['sharefile', 'google', 'mydrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharefile', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Google Drive (MyDrive & Shared Drive) - merged Advanced exhibits
     {
-      name: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan migration',
+      name: 'Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan migration',
       fileName: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx',
       combinations: ['dropbox-to-mydrive', 'dropbox-to-google-sharedrive', 'dropbox-to-google', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 5,
-      keywords: ['dropbox', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan migration',
+      name: 'Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan migration',
       fileName: 'Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx',
       combinations: ['dropbox-to-mydrive', 'dropbox-to-google-sharedrive', 'dropbox-to-google', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 6,
-      keywords: ['dropbox', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'drive', 'mydrive', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Google MyDrive (Standard) exhibits
     {
-      name: 'Dropbox to Google MyDrive Standard Plan - Standard Include',
-      description: 'Documentation for features included in Dropbox to Google MyDrive Standard Plan migration',
+      name: 'Dropbox to Google MyDrive Basic Plan - Basic Include',
+      description: 'Documentation for features included in Dropbox to Google MyDrive Basic Plan migration',
       fileName: 'Dropbox to Google MyDrive Standard Plan - Standard Include.docx',
       combinations: ['dropbox-to-google-mydrive', 'dropbox-to-mydrive'],
       category: 'content',
       isRequired: false,
       displayOrder: 7,
-      keywords: ['dropbox', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'mydrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to Google MyDrive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in Dropbox to Google MyDrive Standard Plan migration',
+      name: 'Dropbox to Google MyDrive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in Dropbox to Google MyDrive Basic Plan migration',
       fileName: 'Dropbox to Google MyDrive Standard Plan - Standard Not Included.docx',
       combinations: ['dropbox-to-google-mydrive', 'dropbox-to-mydrive'],
       category: 'content',
       isRequired: false,
       displayOrder: 8,
-      keywords: ['dropbox', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'mydrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Google Shared Drive (Standard) exhibits
     {
-      name: 'Dropbox to Google Shared Drive Standard Plan - Standard Include',
-      description: 'Documentation for features included in Dropbox to Google Shared Drive Standard Plan migration',
+      name: 'Dropbox to Google Shared Drive Basic Plan - Basic Include',
+      description: 'Documentation for features included in Dropbox to Google Shared Drive Basic Plan migration',
       fileName: 'Dropbox to Google Shared Drive Standard Plan - Standard Include.docx',
       combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 3,
-      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to Google Shared Drive Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in Dropbox to Google Shared Drive Standard Plan migration',
+      name: 'Dropbox to Google Shared Drive Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Dropbox to Google Shared Drive Basic Plan migration',
       fileName: 'Dropbox to Google Shared Drive Standard Plan - Standard Not Include.docx',
       combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 4,
-      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Google Shared Drive (Advanced) exhibits
     {
-      name: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Dropbox to Google Shared Drive Advanced Plan migration',
+      name: 'Dropbox to Google Shared Drive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to Google Shared Drive Standard Plan migration',
       fileName: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Include.docx',
       combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 5,
-      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Dropbox to Google Shared Drive Advanced Plan migration',
+      name: 'Dropbox to Google Shared Drive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to Google Shared Drive Standard Plan migration',
       fileName: 'Dropbox to Google Shared Drive Advanced Plan - Advanced Not Include.docx',
       combinations: ['dropbox-to-google', 'dropbox-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 6,
-      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Box (Advanced) exhibits
     {
-      name: 'Dropbox to Box Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Dropbox to Box Advanced Plan migration',
+      name: 'Dropbox to Box Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to Box Standard Plan migration',
       fileName: 'Dropbox to Box Advanced Plan - Included Features.docx',
       combinations: ['dropbox-to-box', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 3,
-      keywords: ['dropbox', 'box', 'advanced', 'included', 'features', 'content', 'migration']
-    },
-    {
-      name: 'Dropbox to Box Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Dropbox to Box Advanced Plan migration',
-      fileName: 'Dropbox to Box Advanced Plan - Not Included Features.docx',
-      combinations: ['dropbox-to-box', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 4,
-      keywords: ['dropbox', 'box', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
-    },
-    // Dropbox to Box (Standard) exhibits
-    {
-      name: 'Dropbox to Box Standard Plan - Standard Include',
-      description: 'Documentation for features included in Dropbox to Box Standard Plan migration',
-      fileName: 'Dropbox to Box Standard Plan - Standard Include.docx',
-      combinations: ['dropbox-to-box', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 5,
       keywords: ['dropbox', 'box', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
       name: 'Dropbox to Box Standard Plan - Standard Not Include',
       description: 'Documentation for features not included in Dropbox to Box Standard Plan migration',
+      fileName: 'Dropbox to Box Advanced Plan - Not Included Features.docx',
+      combinations: ['dropbox-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 4,
+      keywords: ['dropbox', 'box', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to Box (Standard) exhibits
+    {
+      name: 'Dropbox to Box Basic Plan - Basic Include',
+      description: 'Documentation for features included in Dropbox to Box Basic Plan migration',
+      fileName: 'Dropbox to Box Standard Plan - Standard Include.docx',
+      combinations: ['dropbox-to-box', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 5,
+      keywords: ['dropbox', 'box', 'basic', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to Box Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Dropbox to Box Basic Plan migration',
       fileName: 'Dropbox to Box Standard Plan - Standard Not Include.docx',
       combinations: ['dropbox-to-box', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 6,
-      keywords: ['dropbox', 'box', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'box', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Box to Box (Advanced) exhibits
     {
@@ -553,288 +553,288 @@ async function seedDefaultExhibits(db) {
     },
     // Box to Dropbox (Standard) exhibits
     {
-      name: 'Box to Dropbox Standard Plan - Standard Include',
-      description: 'Documentation for features included in Box to Dropbox Standard Plan migration',
+      name: 'Box to Dropbox Basic Plan - Basic Include',
+      description: 'Documentation for features included in Box to Dropbox Basic Plan migration',
       fileName: 'Box to Dropbox Standard Plan - Standard Include.docx',
       combinations: ['box-to-dropbox', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 9,
-      keywords: ['box', 'dropbox', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['box', 'dropbox', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Box to Dropbox Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in Box to Dropbox Standard Plan migration',
+      name: 'Box to Dropbox Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Box to Dropbox Basic Plan migration',
       fileName: 'Box to Dropbox Standard Plan - Standard Not Include.docx',
       combinations: ['box-to-dropbox', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 10,
-      keywords: ['box', 'dropbox', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['box', 'dropbox', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Box to Dropbox (Advanced) exhibits
     {
-      name: 'Box to Dropbox Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Box to Dropbox Advanced Plan migration',
+      name: 'Box to Dropbox Standard Plan - Standard Include',
+      description: 'Documentation for features included in Box to Dropbox Standard Plan migration',
       fileName: 'Box to Dropbox Advanced Plan - Advanced Include.docx',
       combinations: ['box-to-dropbox', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 11,
-      keywords: ['box', 'dropbox', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['box', 'dropbox', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Box to Dropbox Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Box to Dropbox Advanced Plan migration',
+      name: 'Box to Dropbox Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Box to Dropbox Standard Plan migration',
       fileName: 'Box to Dropbox Advanced Plan - Advanced Not Include.docx',
       combinations: ['box-to-dropbox', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 12,
-      keywords: ['box', 'dropbox', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['box', 'dropbox', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Box to ShareFile (Advanced) exhibits
     {
-      name: 'Box to ShareFile Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Box to ShareFile Advanced Plan migration',
+      name: 'Box to ShareFile Standard Plan - Standard Include',
+      description: 'Documentation for features included in Box to ShareFile Standard Plan migration',
       fileName: 'Box to ShareFile Advanced Plan - Advanced Include.docx',
       combinations: ['box-to-sharefile', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 13,
-      keywords: ['box', 'sharefile', 'advanced', 'included', 'features', 'content', 'migration']
-    },
-    {
-      name: 'Box to ShareFile Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Box to ShareFile Advanced Plan migration',
-      fileName: 'Box to ShareFile Advanced Plan - Advanced Not Include.docx',
-      combinations: ['box-to-sharefile', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 14,
-      keywords: ['box', 'sharefile', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
-    },
-    // Box to ShareFile (Standard) exhibits
-    {
-      name: 'Box to ShareFile Standard Plan - Standard Include',
-      description: 'Documentation for features included in Box to ShareFile Standard Plan migration',
-      fileName: 'Box to ShareFile Standard Plan - Standard Include.docx',
-      combinations: ['box-to-sharefile', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 15,
       keywords: ['box', 'sharefile', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
       name: 'Box to ShareFile Standard Plan - Standard Not Include',
       description: 'Documentation for features not included in Box to ShareFile Standard Plan migration',
+      fileName: 'Box to ShareFile Advanced Plan - Advanced Not Include.docx',
+      combinations: ['box-to-sharefile', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 14,
+      keywords: ['box', 'sharefile', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Box to ShareFile (Standard) exhibits
+    {
+      name: 'Box to ShareFile Basic Plan - Basic Include',
+      description: 'Documentation for features included in Box to ShareFile Basic Plan migration',
+      fileName: 'Box to ShareFile Standard Plan - Standard Include.docx',
+      combinations: ['box-to-sharefile', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 15,
+      keywords: ['box', 'sharefile', 'basic', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Box to ShareFile Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Box to ShareFile Basic Plan migration',
       fileName: 'Box to ShareFile Standard Plan - Standard Not Include.docx',
       combinations: ['box-to-sharefile', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 16,
-      keywords: ['box', 'sharefile', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['box', 'sharefile', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Box to Google MyDrive (Standard) exhibits
     {
-      name: 'Box to Google MyDrive Standard Plan - Standard Include',
-      description: 'Documentation for features included in Box to Google MyDrive Standard Plan migration',
+      name: 'Box to Google MyDrive Basic Plan - Basic Include',
+      description: 'Documentation for features included in Box to Google MyDrive Basic Plan migration',
       fileName: 'Box to Google MyDrive Standard Plan - Standard Include.docx',
       combinations: ['box-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 17,
-      keywords: ['box', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['box', 'google', 'mydrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Box to Google MyDrive Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in Box to Google MyDrive Standard Plan migration',
+      name: 'Box to Google MyDrive Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Box to Google MyDrive Basic Plan migration',
       fileName: 'Box to Google MyDrive Standard Plan - Standard Not Include.docx',
       combinations: ['box-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 18,
-      keywords: ['box', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['box', 'google', 'mydrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Box to Google MyDrive (Advanced) exhibits
     {
-      name: 'Box to Google MyDrive Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Box to Google MyDrive Advanced Plan migration',
+      name: 'Box to Google MyDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Box to Google MyDrive Standard Plan migration',
       fileName: 'Box to Google MyDrive Advanced Plan - Advanced Include.docx',
       combinations: ['box-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 19,
-      keywords: ['box', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['box', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     // Dropbox to OneDrive (Standard) exhibits
     {
-      name: 'Dropbox to OneDrive Standard Plan - Standard Include',
-      description: 'Documentation for features included in Dropbox to OneDrive Standard Plan migration',
+      name: 'Dropbox to OneDrive Basic Plan - Basic Include',
+      description: 'Documentation for features included in Dropbox to OneDrive Basic Plan migration',
       fileName: 'Dropbox to OneDrive Standard Plan - Standard Include.docx',
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 20,
-      keywords: ['dropbox', 'onedrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'onedrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to OneDrive Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in Dropbox to OneDrive Standard Plan migration',
+      name: 'Dropbox to OneDrive Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Dropbox to OneDrive Basic Plan migration',
       fileName: 'Dropbox to OneDrive Standard Plan - Standard Not Include.docx',
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 21,
-      keywords: ['dropbox', 'onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'onedrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to OneDrive (Advanced) exhibits
     {
-      name: 'Dropbox to OneDrive Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Dropbox to OneDrive Advanced Plan migration',
+      name: 'Dropbox to OneDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to OneDrive Standard Plan migration',
       fileName: 'Dropbox to OneDrive Advanced Plan - Advanced Include.docx',
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 22,
-      keywords: ['dropbox', 'onedrive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'onedrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to OneDrive Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Dropbox to OneDrive Advanced Plan migration',
+      name: 'Dropbox to OneDrive Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to OneDrive Standard Plan migration',
       fileName: 'Dropbox to OneDrive Advanced Plan - Advanced Not Include.docx',
       combinations: ['dropbox-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 23,
-      keywords: ['dropbox', 'onedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'onedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Egnyte (Standard) exhibits
     {
-      name: 'Dropbox to Egnyte Standard Plan - Standard Include',
-      description: 'Documentation for features included in Dropbox to Egnyte Standard Plan migration',
+      name: 'Dropbox to Egnyte Basic Plan - Basic Include',
+      description: 'Documentation for features included in Dropbox to Egnyte Basic Plan migration',
       fileName: 'Dropbox to Egnyte Standard Plan - Standard Include.docx',
       combinations: ['dropbox-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 7,
-      keywords: ['dropbox', 'egnyte', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'egnyte', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to Egnyte Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in Dropbox to Egnyte Standard Plan migration',
+      name: 'Dropbox to Egnyte Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Dropbox to Egnyte Basic Plan migration',
       fileName: 'Dropbox to Egnyte Standard Plan - Standard Not Include.docx',
       combinations: ['dropbox-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 8,
-      keywords: ['dropbox', 'egnyte', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'egnyte', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to Egnyte (Advanced) exhibits
     {
-      name: 'Dropbox to Egnyte Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Dropbox to Egnyte Advanced Plan migration',
+      name: 'Dropbox to Egnyte Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to Egnyte Standard Plan migration',
       fileName: 'Dropbox to Egnyte Advanced Plan - Advanced Include.docx',
       combinations: ['dropbox-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 9,
-      keywords: ['dropbox', 'egnyte', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'egnyte', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to Egnyte Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Dropbox to Egnyte Advanced Plan migration',
+      name: 'Dropbox to Egnyte Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to Egnyte Standard Plan migration',
       fileName: 'Dropbox to Egnyte Advanced Plan - Advanced Not Include.docx',
       combinations: ['dropbox-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 10,
-      keywords: ['dropbox', 'egnyte', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'egnyte', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to MyDrive (Advanced) exhibits
     {
-      name: 'Dropbox to MyDrive Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Dropbox to MyDrive Advanced Plan migration',
+      name: 'Dropbox to MyDrive Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to MyDrive Standard Plan migration',
       fileName: 'Dropbox to MyDrive Advanced Plan - Advanced Include.docx',
       combinations: ['dropbox-to-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 11,
-      keywords: ['dropbox', 'mydrive', 'google', 'advanced', 'included', 'features', 'content', 'migration']
-    },
-    {
-      name: 'Dropbox to MyDrive Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Dropbox to MyDrive Advanced Plan migration',
-      fileName: 'Dropbox to MyDrive Advanced Plan - Advanced Not Include.docx',
-      combinations: ['dropbox-to-mydrive', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 12,
-      keywords: ['dropbox', 'mydrive', 'google', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
-    },
-    // Dropbox to MyDrive (Standard) exhibits
-    {
-      name: 'Dropbox to MyDrive Standard Plan - Standard Include',
-      description: 'Documentation for features included in Dropbox to MyDrive Standard Plan migration',
-      fileName: 'Dropbox to MyDrive Standard Plan - Standard Include.docx',
-      combinations: ['dropbox-to-mydrive', 'all'],
-      category: 'content',
-      isRequired: false,
-      displayOrder: 13,
       keywords: ['dropbox', 'mydrive', 'google', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
       name: 'Dropbox to MyDrive Standard Plan - Standard Not Include',
       description: 'Documentation for features not included in Dropbox to MyDrive Standard Plan migration',
+      fileName: 'Dropbox to MyDrive Advanced Plan - Advanced Not Include.docx',
+      combinations: ['dropbox-to-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 12,
+      keywords: ['dropbox', 'mydrive', 'google', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+    },
+    // Dropbox to MyDrive (Standard) exhibits
+    {
+      name: 'Dropbox to MyDrive Basic Plan - Basic Include',
+      description: 'Documentation for features included in Dropbox to MyDrive Basic Plan migration',
+      fileName: 'Dropbox to MyDrive Standard Plan - Standard Include.docx',
+      combinations: ['dropbox-to-mydrive', 'all'],
+      category: 'content',
+      isRequired: false,
+      displayOrder: 13,
+      keywords: ['dropbox', 'mydrive', 'google', 'basic', 'included', 'features', 'content', 'migration']
+    },
+    {
+      name: 'Dropbox to MyDrive Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Dropbox to MyDrive Basic Plan migration',
       fileName: 'Dropbox to MyDrive Standard Plan - Standard Not Include.docx',
       combinations: ['dropbox-to-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 14,
-      keywords: ['dropbox', 'mydrive', 'google', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'mydrive', 'google', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to SharePoint Online (Standard) exhibits
     {
-      name: 'Dropbox to SharePoint Online Standard Plan - Standard Include',
-      description: 'Documentation for features included in Dropbox to SharePoint Online Standard Plan migration',
+      name: 'Dropbox to SharePoint Online Basic Plan - Basic Include',
+      description: 'Documentation for features included in Dropbox to SharePoint Online Basic Plan migration',
       fileName: 'Dropbox to SharePoint Online Standard Plan - Standard Include.docx',
       // Use existing SharePoint combination key; name clarifies "Online" for the exhibit folder.
       combinations: ['dropbox-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 15,
-      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to SharePoint Online Standard Plan - Standard Not Include',
-      description: 'Documentation for features not included in Dropbox to SharePoint Online Standard Plan migration',
+      name: 'Dropbox to SharePoint Online Basic Plan - Basic Not Include',
+      description: 'Documentation for features not included in Dropbox to SharePoint Online Basic Plan migration',
       fileName: 'Dropbox to SharePoint Online Standard Plan - Standard Not Include.docx',
       combinations: ['dropbox-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 16,
-      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Dropbox to SharePoint Online (Advanced) exhibits
     {
-      name: 'Dropbox to SharePoint Online Advanced Plan - Advanced Include',
-      description: 'Documentation for features included in Dropbox to SharePoint Online Advanced Plan migration',
+      name: 'Dropbox to SharePoint Online Standard Plan - Standard Include',
+      description: 'Documentation for features included in Dropbox to SharePoint Online Standard Plan migration',
       fileName: 'Dropbox to SharePoint Online Advanced Plan - Advanced Include.docx',
       combinations: ['dropbox-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 17,
-      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Dropbox to SharePoint Online Advanced Plan - Advanced Not Include',
-      description: 'Documentation for features not included in Dropbox to SharePoint Online Advanced Plan migration',
+      name: 'Dropbox to SharePoint Online Standard Plan - Standard Not Include',
+      description: 'Documentation for features not included in Dropbox to SharePoint Online Standard Plan migration',
       fileName: 'Dropbox to SharePoint Online Advanced Plan - Advanced Not Include.docx',
       combinations: ['dropbox-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 18,
-      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['dropbox', 'sharepoint', 'sharepoint online', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Egnyte to SharePoint (Standard) exhibits
     {
@@ -860,24 +860,24 @@ async function seedDefaultExhibits(db) {
     },
     // Egnyte to Microsoft (Standard & Advanced) exhibits
     {
-      name: 'Egnyte to Microsoft Standard Exhibit',
-      description: 'Standard exhibit for Egnyte to Microsoft (OneDrive/SharePoint) migration',
+      name: 'Egnyte to Microsoft Basic Exhibit',
+      description: 'Basic exhibit for Egnyte to Microsoft (OneDrive/SharePoint) migration',
       fileName: 'egnyte-to-microsoft-standard.docx',
       combinations: ['egnyte-to-microsoft', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 21,
-      keywords: ['egnyte', 'microsoft', 'onedrive', 'sharepoint', 'standard', 'content', 'migration']
+      keywords: ['egnyte', 'microsoft', 'onedrive', 'sharepoint', 'basic', 'content', 'migration']
     },
     {
-      name: 'Egnyte to Microsoft Advanced Exhibit',
-      description: 'Advanced exhibit for Egnyte to Microsoft (OneDrive/SharePoint) migration',
+      name: 'Egnyte to Microsoft Standard Exhibit',
+      description: 'Standard exhibit for Egnyte to Microsoft (OneDrive/SharePoint) migration',
       fileName: 'egnyte-to-microsoft-advanced.docx',
       combinations: ['egnyte-to-microsoft', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 22,
-      keywords: ['egnyte', 'microsoft', 'onedrive', 'sharepoint', 'advanced', 'content', 'migration']
+      keywords: ['egnyte', 'microsoft', 'onedrive', 'sharepoint', 'standard', 'content', 'migration']
     },
     // OneDrive to OneDrive exhibits
     {
@@ -965,290 +965,290 @@ async function seedDefaultExhibits(db) {
     },
     // Google Shared Drive to Google Shared Drive exhibits (Standard + Advanced)
     {
-      name: 'Google Shared Drive to Google Shared Drive Standard Plan - Standard Included',
-      description: 'Documentation for features included in Google Shared Drive to Google Shared Drive Standard Plan migration',
+      name: 'Google Shared Drive to Google Shared Drive Basic Plan - Basic Included',
+      description: 'Documentation for features included in Google Shared Drive to Google Shared Drive Basic Plan migration',
       fileName: 'Google Shared Drive to Google Shared Drive Standard Plan - Standard Included.docx',
       combinations: ['google-sharedrive-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 8,
-      keywords: ['google', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to Google Shared Drive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to Google Shared Drive Standard Plan migration',
+      name: 'Google Shared Drive to Google Shared Drive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to Google Shared Drive Basic Plan migration',
       fileName: 'Google Shared Drive to Google Shared Drive Standard Plan - Standard Not Included.docx',
       combinations: ['google-sharedrive-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 9,
-      keywords: ['google', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in Google Shared Drive to Google Shared Drive Advanced Plan migration',
+      name: 'Google Shared Drive to Google Shared Drive Standard Plan - Standard Included',
+      description: 'Documentation for features included in Google Shared Drive to Google Shared Drive Standard Plan migration',
       fileName: 'Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Included.docx',
       combinations: ['google-sharedrive-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 10,
-      keywords: ['google', 'shared drive', 'sharedrive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to Google Shared Drive Advanced Plan migration',
+      name: 'Google Shared Drive to Google Shared Drive Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to Google Shared Drive Standard Plan migration',
       fileName: 'Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Not Included.docx',
       combinations: ['google-sharedrive-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 11,
-      keywords: ['google', 'shared drive', 'sharedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Google Shared Drive to SharePoint Online exhibits (Standard + Advanced)
     {
-      name: 'Google Shared Drive to SharePoint Online Standard Plan - Standard Included',
-      description: 'Documentation for features included in Google Shared Drive to SharePoint Online Standard Plan migration',
+      name: 'Google Shared Drive to SharePoint Online Basic Plan - Basic Included',
+      description: 'Documentation for features included in Google Shared Drive to SharePoint Online Basic Plan migration',
       fileName: 'Google Shared Drive to SharePoint Online Standard Plan - Standard Included.docx',
       combinations: ['google-sharedrive-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 12,
-      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to SharePoint Online Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to SharePoint Online Standard Plan migration',
+      name: 'Google Shared Drive to SharePoint Online Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to SharePoint Online Basic Plan migration',
       fileName: 'Google Shared Drive to SharePoint Online Standard Plan - Standard Not Included.docx',
       combinations: ['google-sharedrive-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 13,
-      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to SharePoint Online Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in Google Shared Drive to SharePoint Online Advanced Plan migration',
+      name: 'Google Shared Drive to SharePoint Online Standard Plan - Standard Included',
+      description: 'Documentation for features included in Google Shared Drive to SharePoint Online Standard Plan migration',
       fileName: 'Google Shared Drive to SharePoint Online Advanced Plan - Advanced Included.docx',
       combinations: ['google-sharedrive-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 14,
-      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to SharePoint Online Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to SharePoint Online Advanced Plan migration',
+      name: 'Google Shared Drive to SharePoint Online Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to SharePoint Online Standard Plan migration',
       fileName: 'Google Shared Drive to SharePoint Online Advanced Plan - Advanced Not Included.docx',
       combinations: ['google-sharedrive-to-sharepoint', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 15,
-      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'sharepoint', 'sharepoint online', 'microsoft', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Google Shared Drive to Egnyte exhibits (Standard + Advanced)
     {
-      name: 'Google Shared Drive to Egnyte Standard Plan - Standard Included',
-      description: 'Documentation for features included in Google Shared Drive to Egnyte Standard Plan migration',
+      name: 'Google Shared Drive to Egnyte Basic Plan - Basic Included',
+      description: 'Documentation for features included in Google Shared Drive to Egnyte Basic Plan migration',
       fileName: 'Google Shared Drive to Egnyte Standard Plan - Standard Included.docx',
       combinations: ['google-sharedrive-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 16,
-      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to Egnyte Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to Egnyte Standard Plan migration',
+      name: 'Google Shared Drive to Egnyte Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to Egnyte Basic Plan migration',
       fileName: 'Google Shared Drive to Egnyte Standard Plan - Standard Not Included.docx',
       combinations: ['google-sharedrive-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 17,
-      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to Egnyte Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in Google Shared Drive to Egnyte Advanced Plan migration',
+      name: 'Google Shared Drive to Egnyte Standard Plan - Standard Included',
+      description: 'Documentation for features included in Google Shared Drive to Egnyte Standard Plan migration',
       fileName: 'Google Shared Drive to Egnyte Advanced Plan - Advanced Included.docx',
       combinations: ['google-sharedrive-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 18,
-      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to Egnyte Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to Egnyte Advanced Plan migration',
+      name: 'Google Shared Drive to Egnyte Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to Egnyte Standard Plan migration',
       fileName: 'Google Shared Drive to Egnyte Advanced Plan - Advanced Not Included.docx',
       combinations: ['google-sharedrive-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 19,
-      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'egnyte', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // Google Shared Drive to OneDrive exhibits (Standard + Advanced)
     {
-      name: 'Google Shared Drive to OneDrive Standard Plan - Standard Included',
-      description: 'Documentation for features included in Google Shared Drive to OneDrive Standard Plan migration',
+      name: 'Google Shared Drive to OneDrive Basic Plan - Basic Included',
+      description: 'Documentation for features included in Google Shared Drive to OneDrive Basic Plan migration',
       fileName: 'Google Shared Drive to OneDrive Standard Plan - Standard Included.docx',
       combinations: ['google-sharedrive-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 20,
-      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to OneDrive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to OneDrive Standard Plan migration',
+      name: 'Google Shared Drive to OneDrive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to OneDrive Basic Plan migration',
       fileName: 'Google Shared Drive to OneDrive Standard Plan - Standard Not Included.docx',
       combinations: ['google-sharedrive-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 21,
-      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to OneDrive Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in Google Shared Drive to OneDrive Advanced Plan migration',
+      name: 'Google Shared Drive to OneDrive Standard Plan - Standard Included',
+      description: 'Documentation for features included in Google Shared Drive to OneDrive Standard Plan migration',
       fileName: 'Google Shared Drive to OneDrive Advanced Plan - Advanced Included.docx',
       combinations: ['google-sharedrive-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 22,
-      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'Google Shared Drive to OneDrive Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in Google Shared Drive to OneDrive Advanced Plan migration',
+      name: 'Google Shared Drive to OneDrive Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in Google Shared Drive to OneDrive Standard Plan migration',
       fileName: 'Google Shared Drive to OneDrive Advanced Plan - Advanced Not Included.docx',
       combinations: ['google-sharedrive-to-onedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 23,
-      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['google', 'shared drive', 'sharedrive', 'onedrive', 'microsoft', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // SharePoint Online to Google Shared Drive exhibits (Standard + Advanced)
     {
-      name: 'SharePoint to Google Shared Drive Standard Plan - Standard Included',
-      description: 'Documentation for features included in SharePoint Online to Google Shared Drive Standard Plan migration',
+      name: 'SharePoint to Google Shared Drive Basic Plan - Basic Included',
+      description: 'Documentation for features included in SharePoint Online to Google Shared Drive Basic Plan migration',
       fileName: 'SharePoint to Google Shared Drive Standard Plan - Standard Included.docx',
       combinations: ['sharepoint-online-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 24,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'SharePoint to Google Shared Drive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in SharePoint Online to Google Shared Drive Standard Plan migration',
+      name: 'SharePoint to Google Shared Drive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in SharePoint Online to Google Shared Drive Basic Plan migration',
       fileName: 'SharePoint to Google Shared Drive Standard Plan - Standard Not Included.docx',
       combinations: ['sharepoint-online-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 25,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
-      name: 'SharePoint to Google Shared Drive Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in SharePoint Online to Google Shared Drive Advanced Plan migration',
+      name: 'SharePoint to Google Shared Drive Standard Plan - Standard Included',
+      description: 'Documentation for features included in SharePoint Online to Google Shared Drive Standard Plan migration',
       fileName: 'SharePoint to Google Shared Drive Advanced Plan - Advanced Included.docx',
       combinations: ['sharepoint-online-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 26,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'SharePoint to Google Shared Drive Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in SharePoint Online to Google Shared Drive Advanced Plan migration',
+      name: 'SharePoint to Google Shared Drive Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in SharePoint Online to Google Shared Drive Standard Plan migration',
       fileName: 'SharePoint to Google Shared Drive Advanced Plan - Advanced Not Included.docx',
       combinations: ['sharepoint-online-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 27,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'shared drive', 'sharedrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // SharePoint Online to Google MyDrive exhibits (Standard + Advanced)
     {
-      name: 'SharePoint to Google MyDrive Standard Plan - Standard Included',
-      description: 'Documentation for features included in SharePoint Online to Google MyDrive Standard Plan migration',
+      name: 'SharePoint to Google MyDrive Basic Plan - Basic Included',
+      description: 'Documentation for features included in SharePoint Online to Google MyDrive Basic Plan migration',
       fileName: 'SharePoint to Google MyDrive Standard Plan - Standard Included.docx',
       combinations: ['sharepoint-online-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 28,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'SharePoint to Google MyDrive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in SharePoint Online to Google MyDrive Standard Plan migration',
+      name: 'SharePoint to Google MyDrive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in SharePoint Online to Google MyDrive Basic Plan migration',
       fileName: 'SharePoint to Google MyDrive Standard Plan - Standard Not Included.docx',
       combinations: ['sharepoint-online-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 29,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'basic', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     {
-      name: 'SharePoint to Google MyDrive Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in SharePoint Online to Google MyDrive Advanced Plan migration',
+      name: 'SharePoint to Google MyDrive Standard Plan - Standard Included',
+      description: 'Documentation for features included in SharePoint Online to Google MyDrive Standard Plan migration',
       fileName: 'SharePoint to Google MyDrive Advanced Plan - Advanced Included.docx',
       combinations: ['sharepoint-online-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 30,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'advanced', 'included', 'features', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'standard', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'SharePoint to Google MyDrive Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in SharePoint Online to Google MyDrive Advanced Plan migration',
+      name: 'SharePoint to Google MyDrive Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in SharePoint Online to Google MyDrive Standard Plan migration',
       fileName: 'SharePoint to Google MyDrive Advanced Plan - Advanced Not Included.docx',
       combinations: ['sharepoint-online-to-google-mydrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 31,
-      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration']
+      keywords: ['sharepoint', 'sharepoint online', 'google', 'mydrive', 'standard', 'not included', 'features', 'limitations', 'content', 'migration']
     },
     // SharePoint Online to Egnyte exhibits (Standard + Advanced)
     {
-      name: 'SharePoint to Egnyte Standard Plan - Standard Included',
-      description: 'Documentation for features included in SharePoint Online to Egnyte Standard Plan migration',
+      name: 'SharePoint to Egnyte Basic Plan - Basic Included',
+      description: 'Documentation for features included in SharePoint Online to Egnyte Basic Plan migration',
       fileName: 'SharePoint to Egnyte Standard Plan - Standard Included.docx',
       combinations: ['sharepoint-online-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 32,
-      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'standard', 'included', 'features', 'content', 'migration', 'microsoft']
+      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'basic', 'included', 'features', 'content', 'migration', 'microsoft']
     },
     {
-      name: 'SharePoint to Egnyte Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in SharePoint Online to Egnyte Standard Plan migration',
+      name: 'SharePoint to Egnyte Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in SharePoint Online to Egnyte Basic Plan migration',
       fileName: 'SharePoint to Egnyte Standard Plan - Standard Not Included.docx',
       combinations: ['sharepoint-online-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 33,
-      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'standard', 'not included', 'features', 'limitations', 'content', 'migration', 'microsoft']
+      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'basic', 'not included', 'features', 'limitations', 'content', 'migration', 'microsoft']
     },
     {
-      name: 'SharePoint to Egnyte Advanced Plan - Advanced Included',
-      description: 'Documentation for features included in SharePoint Online to Egnyte Advanced Plan migration',
+      name: 'SharePoint to Egnyte Standard Plan - Standard Included',
+      description: 'Documentation for features included in SharePoint Online to Egnyte Standard Plan migration',
       fileName: 'SharePoint to Egnyte Advanced Plan - Advanced Included.docx',
       combinations: ['sharepoint-online-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 34,
-      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'advanced', 'included', 'features', 'content', 'migration', 'microsoft']
+      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'standard', 'included', 'features', 'content', 'migration', 'microsoft']
     },
     {
-      name: 'SharePoint to Egnyte Advanced Plan - Advanced Not Included',
-      description: 'Documentation for features not included in SharePoint Online to Egnyte Advanced Plan migration',
+      name: 'SharePoint to Egnyte Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in SharePoint Online to Egnyte Standard Plan migration',
       fileName: 'SharePoint to Egnyte Advanced Plan - Advanced Not Included.docx',
       combinations: ['sharepoint-online-to-egnyte', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 35,
-      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'advanced', 'not included', 'features', 'limitations', 'content', 'migration', 'microsoft']
+      keywords: ['sharepoint', 'sharepoint online', 'egnyte', 'standard', 'not included', 'features', 'limitations', 'content', 'migration', 'microsoft']
     },
     // General exhibits (available for all combinations)
     {

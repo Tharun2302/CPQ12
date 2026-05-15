@@ -2119,9 +2119,15 @@ Quote ID: ${quoteData.id}
               };
 
               const getNormalizedBaseCombination = (ex: any): string => {
-                const primary = ex?.combinations?.[0];
-                if (!primary || primary === 'all') return '';
-                let base = String(primary).toLowerCase();
+                // Pick the LONGEST non-"all" combination key — handles exhibits tagged
+                // with both a short form and a more specific form (e.g. dropbox-to-google
+                // AND dropbox-to-google-sharedrive). See getBaseCombination above for the
+                // same fix.
+                const candidates = (ex?.combinations || []).filter((c: any) => c && c !== 'all');
+                if (candidates.length === 0) return '';
+                const primary = candidates.reduce((longest: string, c: string) =>
+                  (String(c).length > longest.length ? String(c) : longest), String(candidates[0]));
+                let base = primary.toLowerCase();
                 // Strip common suffixes (may be missing on some legacy uploads)
                 base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
                 base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
@@ -5357,9 +5363,17 @@ Total Price: {{total price}}`;
 
               // Helper: extract base combination from exhibit (e.g. "slack-to-teams" from "slack-to-teams-include-basic")
               const getBaseCombination = (ex: any): string => {
-                const primary = ex?.combinations?.[0];
-                if (!primary || primary === 'all') return '';
-                let base = String(primary).toLowerCase();
+                // Some exhibits carry both a short combination key (e.g. "dropbox-to-google")
+                // and a more specific one (e.g. "dropbox-to-google-sharedrive") in the same
+                // combinations array. Picking combinations[0] would yield the short form,
+                // which renders as a truncated display name ("Dropbox To Google" instead of
+                // "Dropbox To Google Shared Drive"). Pick the LONGEST non-"all" entry so
+                // the most specific combination wins.
+                const candidates = (ex?.combinations || []).filter((c: any) => c && c !== 'all');
+                if (candidates.length === 0) return '';
+                const primary = candidates.reduce((longest: string, c: string) =>
+                  (String(c).length > longest.length ? String(c) : longest), String(candidates[0]));
+                let base = primary.toLowerCase();
                 // Remove plan type suffixes (including "std" as abbreviation for "standard")
                 base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
                 base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
@@ -5788,15 +5802,31 @@ Total Price: {{total price}}`;
 
               // If no configs (e.g. single migration type), fall back to one row per exhibit but group by base combination
               if (configRows.length === 0 && exhibitIds.length > 0) {
+                // Strip plan/include suffix from an exhibit name to get a human-readable
+                // display name. Used as the preferred source for the row's display name —
+                // it's properly spaced and authored (vs the kebab-case combination key,
+                // which would render "Dropbox To Google Sharedrive" as one word).
+                const stripPlanSuffix = (n: string): string => {
+                  if (!n) return '';
+                  let s = n;
+                  s = s.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Standard|Advanced|Basic|Premium|Enterprise)\s+(Include|Not\s+Include|Included|Not\s+Included)(\s+Features?)?$/i, '');
+                  s = s.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Included|Not\s+Included)\s+Features?$/i, '');
+                  s = s.replace(/\s+-\s*(Included|Not\s+Included|Include|Not\s+Include)(\s+Features?)?$/i, '');
+                  return s.replace(/\s+/g, ' ').trim();
+                };
                 const byComboKey = new Map<string, { category: string; displayName: string; exhibit: any }>();
                 for (const exhibitId of exhibitIds) {
                   const exhibit = allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId);
                   if (!exhibit) continue;
                   const category = (exhibit.category || 'content').toLowerCase();
                   const baseCombo = getBaseCombination(exhibit);
-                  const displayName = baseCombo
-                    ? baseCombo.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-                    : (exhibit.name || '').trim();
+                  // Prefer the suffix-stripped exhibit name (human-authored, properly spaced).
+                  // Fall back to title-casing the baseCombo key only if no usable name exists.
+                  const nameStripped = stripPlanSuffix(exhibit.name || '');
+                  const displayName = nameStripped
+                    || (baseCombo
+                          ? baseCombo.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+                          : (exhibit.name || '').trim());
                   if (!displayName) continue;
                   const key = `${category}|${(baseCombo || displayName).toLowerCase()}`;
                   if (!byComboKey.has(key)) byComboKey.set(key, { category, displayName, exhibit });

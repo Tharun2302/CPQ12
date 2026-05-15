@@ -18,6 +18,7 @@ import {
   normalizeEsignTextFont,
 } from '../utils/esignTextFieldStyle';
 import { shouldAutoStartPlaceFieldsTour, startEsignPlaceFieldsTour } from '../utils/esignTour';
+import { lookupRecipient } from '../config/recipientDirectory';
 
 const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
 const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
@@ -766,6 +767,15 @@ const EsignPlaceFieldsPage: React.FC = () => {
       if (ft === 'signature' && sel && getRecipientEffectiveAction(sel) === 'reviewer') {
         return;
       }
+      // For directory-listed recipients, auto-prefill Name/Title at drop time.
+      // The signer sees these as read-only labels (matches existing prefilled-text UX).
+      const directoryEntry = sel ? lookupRecipient(sel.email) : null;
+      const directoryPrefill: { prefill?: string } = (() => {
+        if (!directoryEntry) return {};
+        if (ft === 'name') return { prefill: directoryEntry.name };
+        if (ft === 'title') return { prefill: directoryEntry.title };
+        return {};
+      })();
       const newField: PlacedField = {
         id: uuidv4(),
         type: ft,
@@ -774,6 +784,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
         ...(ft === 'text'
           ? { prefill: '', text_color: ESIGN_DEFAULT_TEXT_COLOR, text_font: 'helvetica' as EsignTextFontId }
           : {}),
+        ...directoryPrefill,
         x: coords.x,
         y: coords.y,
         width: coords.width,
@@ -936,6 +947,30 @@ const EsignPlaceFieldsPage: React.FC = () => {
   };
 
   const getFieldLabel = (type: FieldType) => FIELD_DEFS.find((d) => d.type === type)?.label ?? type;
+
+  /**
+   * Decide what text to render inside a placed Name/Title/Signature/Date box on the
+   * Place Fields canvas. Resolution order:
+   *   1. Field's own `prefill` (set at drop time via the recipient directory)
+   *   2. Live lookup of the bound recipient's email in the directory — Name/Title
+   *      fall back to their mapped value (handles fields placed BEFORE the
+   *      directory had an entry, and shows dynamic updates on re-render)
+   *   3. Generic field-type label ("Signature", "Date", etc.)
+   * Signature and Date intentionally keep their generic labels — they're
+   * placeholders the signer will fill in, not static text.
+   */
+  const getPlacedFieldDisplay = (f: PlacedField): string => {
+    if (f.prefill && f.prefill.trim()) return f.prefill;
+    const recipient = f.recipient_id
+      ? recipients.find((r) => r.id === f.recipient_id)
+      : null;
+    const directoryEntry = recipient ? lookupRecipient(recipient.email) : null;
+    if (directoryEntry) {
+      if (f.type === 'name') return directoryEntry.name;
+      if (f.type === 'title') return directoryEntry.title;
+    }
+    return getFieldLabel(f.type);
+  };
 
   const selectedRecipientForPlacement = selectedRecipientId ? recipients.find((r) => r.id === selectedRecipientId) : null;
   const placingFieldsForReviewer = selectedRecipientForPlacement
@@ -1285,7 +1320,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                   </div>
                                 ) : (
                                   <>
-                                    {getFieldLabel(f.type)}
+                                    {getPlacedFieldDisplay(f)}
                                     <span
                                       className="ml-1 text-xs opacity-0 group-hover:opacity-100"
                                       onClick={(e: React.MouseEvent) => {
@@ -1370,7 +1405,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 </div>
                               ) : (
                                 <>
-                                  {getFieldLabel(f.type)}
+                                  {getPlacedFieldDisplay(f)}
                                   <span
                                     className="ml-1 text-xs opacity-0 group-hover:opacity-100"
                                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeField(f.id); }}
@@ -1522,7 +1557,24 @@ const EsignPlaceFieldsPage: React.FC = () => {
               </div>
               <div className="mt-2 pt-2 border-t border-slate-200">
                 <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
-                <input type="email" value={newRecipient.email} onChange={(e) => { setNewRecipient((p) => ({ ...p, email: e.target.value })); setRecipientError(null); }} placeholder="Email" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
+                <input
+                  type="email"
+                  value={newRecipient.email}
+                  onChange={(e) => {
+                    const email = e.target.value;
+                    setNewRecipient((p) => {
+                      // Auto-fill the Name input only if the user hasn't typed one
+                      // themselves yet. This avoids clobbering manual entries while
+                      // still saving keystrokes for known recipients.
+                      const entry = lookupRecipient(email);
+                      const nextName = entry && !p.name.trim() ? entry.name : p.name;
+                      return { ...p, email, name: nextName };
+                    });
+                    setRecipientError(null);
+                  }}
+                  placeholder="Email"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5"
+                />
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-xs text-slate-600">Role:</span>
                   <select

@@ -1680,7 +1680,7 @@ const EsignSignPage: React.FC = () => {
 
   return (
     <div
-      className="min-h-screen bg-slate-50 py-4 px-2 sm:py-8 sm:px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] sm:pb-8"
+      className="min-h-screen bg-slate-50 py-4 px-2 sm:py-8 sm:px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] sm:pb-32"
     >
       <style>{`
         @keyframes esignActiveFieldPulse {
@@ -1743,7 +1743,26 @@ const EsignSignPage: React.FC = () => {
                     ) : (
                       <ArrowRight className="w-5 h-5 text-indigo-600 shrink-0" />
                     )}
-                    <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={goToNextField}
+                      disabled={allFieldsDone || navigableIdxList.length === 0}
+                      className="min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 transition-colors hover:bg-slate-100/70 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+                      aria-label={
+                        allFieldsDone
+                          ? 'All required fields complete'
+                          : isUntouched
+                          ? 'Jump to the first required field'
+                          : 'Jump to the next required field'
+                      }
+                      title={
+                        allFieldsDone
+                          ? undefined
+                          : isUntouched
+                          ? 'Click to start signing'
+                          : 'Jump to the next required field'
+                      }
+                    >
                       <p
                         className={`text-sm font-semibold ${
                           allFieldsDone ? 'text-emerald-800' : 'text-slate-900'
@@ -1769,7 +1788,7 @@ const EsignSignPage: React.FC = () => {
                           {totalNavigable} of {totalNavigable} complete
                         </p>
                       )}
-                    </div>
+                    </button>
                   </div>
                   {!allFieldsDone && (
                     <div className="flex items-center gap-2 shrink-0">
@@ -2178,54 +2197,59 @@ const EsignSignPage: React.FC = () => {
               };
               return (
                 <>
-                  <div className="hidden sm:flex sm:flex-row gap-3">
-                    <button
-                      type="button"
-                      onClick={handleEdit}
-                      disabled={submitting}
-                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Pencil className="h-5 w-5" />
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSubmit}
-                      disabled={submitDisabled}
-                      className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed ${
-                        submitReady ? 'esign-submit-ready' : ''
-                      }`}
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          Submitting…
-                        </>
-                      ) : (
-                        <>
-                          <Check className="h-5 w-5" />
-                          Submit
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDownload(doc?.file_name)}
-                      disabled={downloading}
-                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {downloading ? (
-                        <>
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          Downloading…
-                        </>
-                      ) : (
-                        <>
-                          <Download className="h-5 w-5" />
-                          Download
-                        </>
-                      )}
-                    </button>
+                  {/* Desktop sticky action bar — pinned to viewport bottom so Edit / Submit /
+                      Download remain reachable without scrolling through the entire agreement.
+                      Mobile uses its own sticky bar below. */}
+                  <div className="hidden sm:block fixed bottom-0 left-0 right-0 z-[1000] border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-4px_16px_rgba(15,23,42,0.08)]">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-row gap-3">
+                      <button
+                        type="button"
+                        onClick={handleEdit}
+                        disabled={submitting}
+                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Pencil className="h-5 w-5" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={submitDisabled}
+                        className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          submitReady ? 'esign-submit-ready' : ''
+                        }`}
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            Submitting…
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-5 w-5" />
+                            Submit
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(doc?.file_name)}
+                        disabled={downloading}
+                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {downloading ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            Downloading…
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-5 w-5" />
+                            Download
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Mobile sticky bottom action bar */}
