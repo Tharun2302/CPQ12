@@ -8085,8 +8085,9 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
 app.get('/api/esign/documents', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — list view doesn't need them.
     const docs = await db.collection('esign_documents')
-      .find({})
+      .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
       .sort({ created_at: -1 })
       .toArray();
     res.json({
@@ -8109,8 +8110,9 @@ app.get('/api/esign/documents', async (req, res) => {
 app.get('/api/esign/agreement-status', async (req, res) => {
   try {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — dashboard reads metadata only.
     const docs = await db.collection('esign_documents')
-      .find({})
+      .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
       .sort({ created_at: -1 })
       .toArray();
     const docIds = docs.map((d) => d._id);
