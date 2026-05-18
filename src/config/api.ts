@@ -102,6 +102,14 @@ export const API_ENDPOINTS = {
   
   // Convert
   CONVERT_DOCX_TO_PDF: '/api/convert/docx-to-pdf',
+  CONVERT_HTML_TO_PDF: '/api/convert/html-to-pdf',
+  CONVERT_HTML_TO_DOCX_PDF: '/api/convert/html-to-docx-pdf',
+  AGREEMENT_PATCH_AND_PDF: '/api/agreements/patch-and-pdf',
+
+  // OnlyOffice integration
+  ONLYOFFICE_START_SESSION: '/api/onlyoffice/start-session',
+  ONLYOFFICE_RESULT: (sessionId: string) => `/api/onlyoffice/result/${sessionId}`,
+  ONLYOFFICE_FORCE_SAVE: (sessionId: string) => `/api/onlyoffice/force-save/${sessionId}`,
 };
 
 // Debug info (only in development)

@@ -3941,11 +3941,18 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
     // image layouts (logos pinned to left/right edges). The backend template DOCX
     // on disk and in MongoDB is NOT modified — this only mutates the in-memory
     // buffer for this single conversion.
-    const originalBufferSize = req.file.buffer.length;
-    req.file.buffer = preprocessDocxForLibreOffice(req.file.buffer);
-    if (req.file.buffer.length !== originalBufferSize) {
-      console.log('📐 DOCX pre-processed for LibreOffice (size:',
-        originalBufferSize, '→', req.file.buffer.length, 'bytes)');
+    // Skip preprocessing when ?skipPreprocess=true is passed — OnlyOffice-edited DOCX has a different
+    // internal structure that the preprocessor can corrupt (results in "source file could not be loaded").
+    const skipPreprocess = req.query.skipPreprocess === 'true' || req.query.skipPreprocess === '1';
+    if (skipPreprocess) {
+      console.log('⏭️  Skipping DOCX preprocessor (skipPreprocess=true)');
+    } else {
+      const originalBufferSize = req.file.buffer.length;
+      req.file.buffer = preprocessDocxForLibreOffice(req.file.buffer);
+      if (req.file.buffer.length !== originalBufferSize) {
+        console.log('📐 DOCX pre-processed for LibreOffice (size:',
+          originalBufferSize, '→', req.file.buffer.length, 'bytes)');
+      }
     }
 
     const hasFatalLibreOfficeStderr = (stderrText) => {
@@ -4012,14 +4019,28 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       ];
       console.log('📄 LibreOffice args:', conversionArgs);
 
+      // Use a MINIMAL clean env — npm sets npm_*, NODE_*, INIT_CWD vars that can confuse LibreOffice's
+      // bundled Python interpreter (we've observed Node-spawned soffice fail with
+      // "Error: source file could not be loaded" while PowerShell-launched soffice with the SAME args
+      // succeeds). Pass only the absolute minimum the OS needs.
+      const sofficeEnv = isWindows
+        ? {
+            PATH: `${sofficeCwd};${process.env.SystemRoot || 'C:\\Windows'}\\system32;${process.env.SystemRoot || 'C:\\Windows'}`,
+            SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+            TEMP: process.env.TEMP || process.env.TMP || tmpDir,
+            TMP: process.env.TMP || process.env.TEMP || tmpDir,
+            USERPROFILE: process.env.USERPROFILE || '',
+            APPDATA: process.env.APPDATA || '',
+            LOCALAPPDATA: process.env.LOCALAPPDATA || '',
+            HOMEDRIVE: process.env.HOMEDRIVE || 'C:',
+            HOMEPATH: process.env.HOMEPATH || '',
+          }
+        : { PATH: process.env.PATH || '' };
+
       const conversion = spawn(sofficeCmd, conversionArgs, {
         stdio: 'pipe',
         cwd: sofficeCwd,
-        env: {
-          ...process.env,
-          // Help LibreOffice find its bundled DLLs on Windows when launched from Node
-          PATH: isWindows ? `${sofficeCwd};${process.env.PATH || ''}` : (process.env.PATH || '')
-        }
+        env: sofficeEnv
       });
       
       let stdout = '';
@@ -4296,6 +4317,579 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
     console.error('❌ DOCX->PDF conversion error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Convert HTML to a true (text-based) PDF using puppeteer/headless Chrome.
+// Used by the "Edit Agreement" flow so saved edits become a real PDF (selectable text, sharper),
+// instead of a rasterized html2canvas screenshot.
+app.post('/api/convert/html-to-pdf', express.json({ limit: '20mb' }), async (req, res) => {
+  req.setTimeout(60000);
+  res.setTimeout(60000);
+  try {
+    const html = req.body && typeof req.body.html === 'string' ? req.body.html : '';
+    if (!html.trim()) {
+      return res.status(400).json({ success: false, error: 'No HTML content provided' });
+    }
+    const inlineCss = req.body && typeof req.body.css === 'string' ? req.body.css : '';
+
+    let puppeteer;
+    try {
+      puppeteer = require('puppeteer');
+    } catch (e) {
+      console.error('❌ puppeteer not installed:', e.message);
+      return res.status(500).json({ success: false, error: 'puppeteer not available on server' });
+    }
+
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #000; line-height: 1.5; }
+  table { border-collapse: collapse; width: 100%; }
+  table, th, td { border: 1px solid #000; }
+  th, td { padding: 6px 8px; vertical-align: top; }
+  img { max-width: 100%; height: auto; }
+  p { margin: 0 0 6px 0; }
+
+  /* --- Override docx-preview's fixed page wrappers so the A4 page rules win ---
+     docx-preview emits <section class="docx" style="width:794px; padding:...">
+     plus header/footer absolute boxes. Those collide with puppeteer's @page rules
+     and cause empty header bars / wrong margins. Flatten everything to flow.   */
+  .docx-wrapper { background: #fff !important; padding: 0 !important; }
+  .docx-wrapper > section.docx,
+  section.docx {
+    width: auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    page-break-after: auto !important;
+  }
+  section.docx > header,
+  section.docx > footer { display: none !important; }
+  .docx p, .docx div { line-height: 1.5; }
+  ${inlineCss}
+</style>
+</head><body>${html}</body></html>`;
+
+    const browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: '18mm', right: '16mm', bottom: '18mm', left: '16mm' },
+      });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="agreement-edited.pdf"');
+      res.send(pdfBuffer);
+    } finally {
+      await browser.close().catch(() => {});
+    }
+  } catch (error) {
+    console.error('❌ HTML->PDF conversion error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Patch the ORIGINAL generated DOCX with text-only replacements, then convert to PDF.
+// This preserves 100% of Word formatting because we never reconstruct the DOCX — we only
+// substitute changed text inside the existing word/document.xml.
+//
+// Body: multipart form with:
+//   - file: original DOCX (the generated agreement)
+//   - replacements: JSON array of { from: string, to: string }
+//
+// Returns JSON: { success, pdfBase64, docxBase64, replacedCount }
+app.post('/api/agreements/patch-and-pdf', upload.single('file'), async (req, res) => {
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+  try {
+    if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+      return res.status(400).json({ success: false, error: 'No original DOCX provided' });
+    }
+    let replacements = [];
+    try {
+      replacements = JSON.parse(req.body.replacements || '[]');
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid replacements JSON: ' + e.message });
+    }
+    if (!Array.isArray(replacements)) {
+      return res.status(400).json({ success: false, error: 'replacements must be an array' });
+    }
+
+    const PizZip = require('pizzip');
+    let zip;
+    try {
+      zip = new PizZip(req.file.buffer);
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Could not read DOCX (not a valid zip): ' + e.message });
+    }
+
+    // Patch any XML file inside the DOCX that holds text — main body, headers, footers.
+    const xmlFiles = Object.keys(zip.files).filter((name) =>
+      /^word\/(document|header\d*|footer\d*)\.xml$/i.test(name),
+    );
+    if (xmlFiles.length === 0) {
+      return res.status(400).json({ success: false, error: 'DOCX has no word/document.xml' });
+    }
+
+    let totalReplaced = 0;
+    let totalSkipped = 0;
+
+    // Safer strategy: never touch <w:r>/<w:p> structure. For each replacement, look for a SINGLE
+    // <w:t> element whose decoded text contains the "from" string, and substitute "to" in place.
+    // Multi-run text (where the user's "from" string is split across multiple styled runs) is
+    // SKIPPED — those edits won't be applied here, but the DOCX layout stays 100% intact.
+    const escapeXmlText = (s) =>
+      String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const decodeXmlText = (s) =>
+      String(s)
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'");
+    const normWs = (s) => s.replace(/\s+/g, ' ').trim();
+
+    for (const fileName of xmlFiles) {
+      let xml = zip.files[fileName].asText();
+
+      for (const repl of replacements) {
+        if (!repl || typeof repl.from !== 'string' || typeof repl.to !== 'string') continue;
+        const fromNorm = normWs(repl.from);
+        const toNorm = repl.to;
+        if (!fromNorm) continue;
+
+        // Strategy 1: try to find a SINGLE <w:t> whose text contains fromNorm.
+        const tRegex = /<w:t(\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
+        let match;
+        let matchedRange = null;
+        while ((match = tRegex.exec(xml)) !== null) {
+          const decoded = decodeXmlText(match[2]);
+          const normDecoded = normWs(decoded);
+          if (!normDecoded) continue;
+          if (normDecoded === fromNorm || normDecoded.includes(fromNorm)) {
+            matchedRange = {
+              fullStart: match.index,
+              fullEnd: match.index + match[0].length,
+              attrs: match[1] || ' xml:space="preserve"',
+              decoded,
+            };
+            break;
+          }
+        }
+
+        if (matchedRange) {
+          const tolerant = matchedRange.decoded.replace(/\s+/g, ' ');
+          let newDecoded;
+          if (normWs(tolerant) === fromNorm) {
+            newDecoded = toNorm;
+          } else {
+            const idx = tolerant.indexOf(fromNorm);
+            if (idx < 0) { totalSkipped++; continue; }
+            newDecoded = tolerant.slice(0, idx) + toNorm + tolerant.slice(idx + fromNorm.length);
+          }
+          const newElement = `<w:t${matchedRange.attrs}>${escapeXmlText(newDecoded)}</w:t>`;
+          xml = xml.slice(0, matchedRange.fullStart) + newElement + xml.slice(matchedRange.fullEnd);
+          totalReplaced++;
+          continue;
+        }
+
+        // Strategy 2: text is split across multiple <w:t> in one paragraph. Find a <w:p> whose joined
+        // <w:t> text contains fromNorm. Then write toNorm into the run that contains the START of the match
+        // and clear the remaining matched-region chars from subsequent runs (keep their tags intact so we
+        // never alter <w:r>/<w:p> structure — only the textual content of existing <w:t> elements).
+        const pRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+        let pMatch;
+        let didMultiRun = false;
+        while ((pMatch = pRegex.exec(xml)) !== null) {
+          const paragraph = pMatch[0];
+          if (/<w:drawing\b|<w:pict\b|<w:object\b/.test(paragraph)) continue;
+
+          // collect <w:t> positions within the paragraph
+          const localRegex = /<w:t(\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
+          const runs = [];
+          let rm;
+          while ((rm = localRegex.exec(paragraph)) !== null) {
+            runs.push({
+              localStart: rm.index,
+              openTag: rm[0].slice(0, rm[0].indexOf('>') + 1),
+              closeTag: '</w:t>',
+              innerStart: rm.index + rm[0].indexOf('>') + 1,
+              innerEnd: rm.index + rm[0].length - '</w:t>'.length,
+              attrs: rm[1] || ' xml:space="preserve"',
+              decoded: decodeXmlText(rm[2]),
+            });
+          }
+          if (runs.length < 2) continue;
+
+          const joined = runs.map((r) => r.decoded).join('');
+          const joinedNorm = normWs(joined);
+          if (!joinedNorm.includes(fromNorm)) continue;
+
+          // Find character span in joined string
+          const joinedSpaceless = joined.replace(/\s+/g, ' ');
+          const startInJoined = joinedSpaceless.indexOf(fromNorm);
+          if (startInJoined < 0) continue;
+          const endInJoined = startInJoined + fromNorm.length;
+
+          // Map joined indices back to per-run inner-text indices
+          let cursor = 0;
+          let newParagraph = paragraph;
+          // Iterate runs from last to first so localStart indices stay valid
+          for (let i = runs.length - 1; i >= 0; i--) {
+            const r = runs[i];
+            const runText = r.decoded.replace(/\s+/g, ' ');
+            const runStart = (() => {
+              let acc = 0;
+              for (let j = 0; j < i; j++) acc += runs[j].decoded.replace(/\s+/g, ' ').length;
+              return acc;
+            })();
+            const runEnd = runStart + runText.length;
+
+            // Compute overlap of this run with [startInJoined, endInJoined)
+            const overlapStart = Math.max(runStart, startInJoined);
+            const overlapEnd = Math.min(runEnd, endInJoined);
+            if (overlapEnd <= overlapStart) continue; // no overlap — leave run alone
+
+            const localOverlapStart = overlapStart - runStart;
+            const localOverlapEnd = overlapEnd - runStart;
+            let newRunText;
+            if (runStart <= startInJoined && startInJoined < runEnd) {
+              // This run holds the START of the match — insert "to" here, then keep any tail after match
+              const before = runText.slice(0, localOverlapStart);
+              const after = runText.slice(localOverlapEnd);
+              newRunText = before + toNorm + after;
+            } else {
+              // Run is fully or partially inside the match (not the start) — delete the overlapping chars
+              newRunText = runText.slice(0, localOverlapStart) + runText.slice(localOverlapEnd);
+            }
+            const newInner = escapeXmlText(newRunText);
+            const before = newParagraph.slice(0, r.innerStart);
+            const after = newParagraph.slice(r.innerEnd);
+            newParagraph = before + newInner + after;
+          }
+
+          if (newParagraph !== paragraph) {
+            xml = xml.slice(0, pMatch.index) + newParagraph + xml.slice(pMatch.index + paragraph.length);
+            totalReplaced++;
+            didMultiRun = true;
+            break;
+          }
+        }
+
+        if (!didMultiRun) totalSkipped++;
+      }
+
+      zip.file(fileName, xml);
+    }
+    console.log(`🔧 patch: applied ${totalReplaced}, skipped ${totalSkipped} (text split across styled runs).`);
+
+    let patchedDocx = zip.generate({ type: 'nodebuffer' });
+
+    // CRITICAL: same preprocessing the Generate Agreement flow applies before LibreOffice conversion.
+    // Without it, floating logos (anchored to top-left/right of page) collapse into stacked inline images
+    // when LibreOffice renders the PDF.
+    try {
+      patchedDocx = preprocessDocxForLibreOffice(patchedDocx);
+    } catch (preErr) {
+      console.warn('⚠️ preprocessDocxForLibreOffice failed on patched DOCX, continuing without it:', preErr.message);
+    }
+
+    // Convert patched DOCX → PDF using the same LibreOffice path as html-to-docx-pdf.
+    let pdfBuffer = null;
+    if (libre && typeof libre.convertAsync === 'function') {
+      try {
+        pdfBuffer = await libre.convertAsync(patchedDocx, '.pdf', undefined);
+      } catch (e) {
+        console.warn('⚠️ libreoffice-convert failed, will try direct spawn:', e.message);
+      }
+    }
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      try {
+        const os = require('os');
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpq-patch-'));
+        const inputPath = path.join(tmpDir, `${uuidv4()}.docx`);
+        fs.writeFileSync(inputPath, patchedDocx);
+        const isWindows = os.platform() === 'win32';
+        let sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
+        if (isWindows && !process.env.SOFFICE_PATH) {
+          try {
+            const candidateCom = sofficeCmd.replace(/soffice\.exe$/i, 'soffice.com');
+            if (fs.existsSync(candidateCom)) sofficeCmd = candidateCom;
+          } catch {}
+        }
+        const sofficeCwd = isWindows ? path.dirname(sofficeCmd) : process.cwd();
+        const loProfileDir = path.join(tmpDir, 'lo-profile');
+        try { fs.mkdirSync(loProfileDir, { recursive: true }); } catch {}
+        const toFileUri = (p) => {
+          const norm = p.replace(/\\/g, '/');
+          return norm.match(/^[A-Za-z]:\//) ? `file:///${norm}` : `file://${norm}`;
+        };
+        const conversion = spawn(sofficeCmd, [
+          '--headless', '--nologo', '--nolockcheck', '--nofirststartwizard', '--norestore',
+          `-env:UserInstallation=${toFileUri(loProfileDir)}`,
+          '--convert-to', 'pdf:writer_pdf_Export',
+          '--outdir', tmpDir,
+          inputPath,
+        ], {
+          stdio: 'pipe',
+          cwd: sofficeCwd,
+          env: { ...process.env, PATH: isWindows ? `${sofficeCwd};${process.env.PATH || ''}` : (process.env.PATH || '') },
+        });
+        let stderr = '';
+        conversion.stderr.on('data', (d) => { stderr += d.toString(); });
+        const pdfPath = await new Promise((resolve, reject) => {
+          conversion.on('close', (code) => {
+            const expected = inputPath.replace(/\.docx$/i, '.pdf');
+            if (fs.existsSync(expected) && fs.statSync(expected).size > 0) return resolve(expected);
+            try {
+              const pdfs = fs.readdirSync(tmpDir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+              if (pdfs.length > 0) {
+                const p2 = path.join(tmpDir, pdfs[0]);
+                if (fs.statSync(p2).size > 0) return resolve(p2);
+              }
+            } catch {}
+            reject(new Error(`LibreOffice produced no PDF (exit ${code}): ${stderr}`));
+          });
+          conversion.on('error', reject);
+        });
+        pdfBuffer = fs.readFileSync(pdfPath);
+        try { fs.unlinkSync(inputPath); } catch {}
+        try { fs.unlinkSync(pdfPath); } catch {}
+        try { fs.rmSync(loProfileDir, { recursive: true, force: true }); } catch {}
+        try { fs.rmdirSync(tmpDir); } catch {}
+      } catch (spawnErr) {
+        return res.status(500).json({ success: false, error: 'LibreOffice conversion failed: ' + spawnErr.message });
+      }
+    }
+
+    return res.json({
+      success: true,
+      replacedCount: totalReplaced,
+      skippedCount: totalSkipped,
+      pdfBase64: Buffer.from(pdfBuffer).toString('base64'),
+      docxBase64: Buffer.from(patchedDocx).toString('base64'),
+    });
+  } catch (error) {
+    console.error('❌ patch-and-pdf error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─── OnlyOffice Document Server integration ───────────────────────────────────
+// Lets users edit the agreement DOCX in a real Word-style editor (full ribbon, tables, images)
+// and saves the edited file back. Layout is preserved 100% because OnlyOffice round-trips the
+// actual DOCX bytes — no HTML conversion in between.
+//
+// Flow:
+//   1. Frontend POSTs the original DOCX to /api/onlyoffice/start-session.
+//      Backend stores it under a sessionId and returns editor config + iframe URL.
+//   2. Frontend opens OnlyOffice editor (api.js) with that config in an iframe.
+//   3. OnlyOffice's server GETs /api/onlyoffice/file/:sessionId to fetch the DOCX.
+//   4. User edits in the browser. When they click Save / close, OnlyOffice POSTs
+//      a status payload to /api/onlyoffice/callback/:sessionId. Status 2 = saved.
+//   5. Backend downloads the edited DOCX from OnlyOffice's URL, stores it under sessionId,
+//      converts to PDF via LibreOffice.
+//   6. Frontend polls /api/onlyoffice/result/:sessionId until the edited file is ready,
+//      then swaps it into processedAgreement / originalDocxAgreement.
+
+const onlyofficeSessions = new Map(); // sessionId → { origDocx, editedDocx, editedPdf, status, callbackUrl }
+
+const ONLYOFFICE_INTERNAL_URL = process.env.ONLYOFFICE_INTERNAL_URL || 'http://localhost:3003';
+// Public-facing URL the browser uses to load OnlyOffice's api.js (usually same host:port).
+const ONLYOFFICE_PUBLIC_URL = process.env.ONLYOFFICE_PUBLIC_URL || 'http://localhost:3003';
+// Backend URL OnlyOffice container uses to call back into this server.
+// In Docker Desktop, host.docker.internal resolves to the host machine.
+const BACKEND_CALLBACK_URL = process.env.BACKEND_CALLBACK_URL || 'http://host.docker.internal:3001';
+
+app.post('/api/onlyoffice/start-session', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+      return res.status(400).json({ success: false, error: 'No DOCX file provided' });
+    }
+    const sessionId = uuidv4();
+    onlyofficeSessions.set(sessionId, {
+      origDocx: req.file.buffer,
+      editedDocx: null,
+      editedPdf: null,
+      status: 'editing',
+      createdAt: Date.now(),
+    });
+
+    // Clean up old sessions (>2 hours)
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [id, s] of onlyofficeSessions.entries()) {
+      if (s.createdAt < cutoff) onlyofficeSessions.delete(id);
+    }
+
+    const fileUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/file/${sessionId}`;
+    const callbackUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/callback/${sessionId}`;
+
+    res.json({
+      success: true,
+      sessionId,
+      editorUrl: ONLYOFFICE_PUBLIC_URL,
+      config: {
+        documentType: 'word',
+        document: {
+          fileType: 'docx',
+          key: sessionId, // unique per edit session
+          title: 'agreement.docx',
+          url: fileUrl,
+        },
+        editorConfig: {
+          callbackUrl,
+          lang: 'en',
+          mode: 'edit',
+          user: { id: 'user-1', name: 'User' },
+          customization: { autosave: true, forcesave: true, compactToolbar: false },
+        },
+      },
+    });
+  } catch (e) {
+    console.error('❌ onlyoffice start-session error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// OnlyOffice server fetches the DOCX from here.
+app.get('/api/onlyoffice/file/:sessionId', (req, res) => {
+  const s = onlyofficeSessions.get(req.params.sessionId);
+  if (!s) return res.status(404).send('Session not found');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', 'attachment; filename="agreement.docx"');
+  res.send(s.origDocx);
+});
+
+// OnlyOffice server POSTs save events here.
+// Status codes per OnlyOffice docs:
+//   0 = no document with the key (error)
+//   1 = document is being edited
+//   2 = document is ready for saving
+//   3 = document saving error has occurred
+//   4 = document closed with no changes
+//   6 = document is being edited, but the current document state is saved (forcesave)
+//   7 = error has occurred while force-saving the document
+app.post('/api/onlyoffice/callback/:sessionId', express.json({ limit: '50mb' }), async (req, res) => {
+  const sessionId = req.params.sessionId;
+  const s = onlyofficeSessions.get(sessionId);
+  if (!s) return res.status(404).json({ error: 1 });
+  try {
+    const body = req.body || {};
+    console.log(`📥 onlyoffice callback [${sessionId}]: status=${body.status}, url=${body.url ? 'present' : 'absent'}`);
+    if (body.status === 2 || body.status === 6) {
+      // Saved — download the edited DOCX from the URL OnlyOffice provides.
+      if (body.url) {
+        const axiosInst = axios.create({ responseType: 'arraybuffer', timeout: 60000 });
+        const editedResp = await axiosInst.get(body.url);
+        const editedDocx = Buffer.from(editedResp.data);
+        s.editedDocx = editedDocx;
+        s.status = 'saved';
+        console.log(`✅ onlyoffice [${sessionId}] downloaded edited DOCX, size: ${editedDocx.length}`);
+
+        // Debug: write the raw OnlyOffice-saved DOCX to disk so we can inspect what OnlyOffice actually produced
+        // (before LibreOffice conversion). Lets us tell whether layout drift comes from OnlyOffice or LibreOffice.
+        try {
+          const debugDir = path.join(__dirname, 'onlyoffice-debug');
+          if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
+          const debugPath = path.join(debugDir, `${sessionId}-onlyoffice-output.docx`);
+          fs.writeFileSync(debugPath, editedDocx);
+          console.log(`🔍 raw OnlyOffice output written to: ${debugPath}`);
+        } catch (e) {
+          console.warn('⚠️ could not write debug DOCX:', e.message);
+        }
+
+        // Convert to PDF by reusing the existing /api/convert/docx-to-pdf endpoint via internal HTTP.
+        // That endpoint already has the full LibreOffice fallback chain that works for Generate Agreement,
+        // including Gotenberg, libreoffice-convert, and multiple soffice attempts. No need to re-implement.
+        try {
+          const FormData = require('form-data');
+          const fd = new FormData();
+          fd.append('file', editedDocx, {
+            filename: 'agreement-edited.docx',
+            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          });
+
+          const conversionResp = await axios.post(
+            `http://127.0.0.1:${PORT}/api/convert/docx-to-pdf?skipPreprocess=true`,
+            fd,
+            {
+              headers: fd.getHeaders(),
+              responseType: 'arraybuffer',
+              timeout: 120000,
+              maxContentLength: Infinity,
+              maxBodyLength: Infinity,
+            },
+          );
+          s.editedPdf = Buffer.from(conversionResp.data);
+          s.status = 'ready';
+          console.log(`✅ onlyoffice [${sessionId}] PDF rendered via /api/convert/docx-to-pdf, size: ${s.editedPdf.length}`);
+        } catch (pdfErr) {
+          const respData = pdfErr?.response?.data;
+          const errMsg = respData
+            ? (Buffer.isBuffer(respData) ? Buffer.from(respData).toString('utf8').slice(0, 500) : String(respData).slice(0, 500))
+            : pdfErr.message;
+          console.error(`❌ onlyoffice [${sessionId}] PDF conversion failed:`, errMsg);
+          s.status = 'pdf-failed';
+        }
+      }
+    } else if (body.status === 4) {
+      s.status = 'no-changes';
+    } else if (body.status === 3 || body.status === 7) {
+      s.status = 'editor-error';
+    }
+    res.json({ error: 0 });
+  } catch (e) {
+    console.error(`❌ onlyoffice callback [${sessionId}] error:`, e);
+    res.json({ error: 1 });
+  }
+});
+
+// Trigger OnlyOffice to force-save the document. Without this, OnlyOffice only POSTs the saved file
+// when the user closes the browser tab. We call this when the user clicks "Done" in the modal so the
+// callback fires synchronously.
+app.post('/api/onlyoffice/force-save/:sessionId', async (req, res) => {
+  const sessionId = req.params.sessionId;
+  if (!onlyofficeSessions.has(sessionId)) {
+    return res.status(404).json({ success: false, error: 'Session not found' });
+  }
+  try {
+    const commandUrl = `${ONLYOFFICE_INTERNAL_URL}/coauthoring/CommandService.ashx`;
+    const resp = await axios.post(
+      commandUrl,
+      { c: 'forcesave', key: sessionId },
+      { timeout: 15000, headers: { 'Content-Type': 'application/json' } },
+    );
+    console.log(`📤 forcesave [${sessionId}] →`, resp.data);
+    res.json({ success: true, response: resp.data });
+  } catch (e) {
+    console.error(`❌ forcesave [${sessionId}] error:`, e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Frontend polls this to find out when the edited DOCX + PDF are ready.
+app.get('/api/onlyoffice/result/:sessionId', (req, res) => {
+  const s = onlyofficeSessions.get(req.params.sessionId);
+  if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
+  if (s.status !== 'ready') {
+    return res.json({ success: true, status: s.status });
+  }
+  res.json({
+    success: true,
+    status: 'ready',
+    pdfBase64: Buffer.from(s.editedPdf).toString('base64'),
+    docxBase64: Buffer.from(s.editedDocx).toString('base64'),
+  });
 });
 
 // Test DOCX to PDF conversion capabilities

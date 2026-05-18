@@ -29,12 +29,13 @@ import html2canvas from 'html2canvas';
 import { downloadAndSavePDF } from '../utils/pdfProcessor';
 import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
-import { BACKEND_URL } from '../config/api';
+import { BACKEND_URL, API_ENDPOINTS } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 import { getCurrentUser } from '../utils/authUtils';
 import CustomDatePicker from './CustomDatePicker';
+import OnlyOfficeEditor from './OnlyOfficeEditor';
 // EmailJS import removed - now using server-side email with attachment support
 
 // Date formatting helper for mm/dd/yyyy format
@@ -712,6 +713,25 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSavingAgreementToMongo, setIsSavingAgreementToMongo] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Inline-edit agreement state — user can tweak the generated agreement before sending for approval
+  const [isEditingAgreement, setIsEditingAgreement] = useState(false);
+  const [editableAgreementHtml, setEditableAgreementHtml] = useState<string>('');
+  const [isSavingAgreementEdits, setIsSavingAgreementEdits] = useState(false);
+  const editableAgreementRef = useRef<HTMLDivElement | null>(null);
+  // Snapshot of the last-saved edited HTML, so re-opening Edit after Save Changes works without the original DOCX.
+  const [lastEditedAgreementHtml, setLastEditedAgreementHtml] = useState<string>('');
+  // Original paragraph text snapshot (taken when Edit is opened). Used to diff against the user's edits
+  // so we can patch the original DOCX in place (preserving all Word formatting).
+  const [originalParagraphTexts, setOriginalParagraphTexts] = useState<string[]>([]);
+
+  // OnlyOffice editor state — real Word-style editor that preserves 100% format on save.
+  const [showOnlyOfficeEditor, setShowOnlyOfficeEditor] = useState(false);
+  const [onlyOfficeSessionId, setOnlyOfficeSessionId] = useState<string | null>(null);
+  const [onlyOfficeEditorUrl, setOnlyOfficeEditorUrl] = useState<string>('');
+  const [onlyOfficeConfig, setOnlyOfficeConfig] = useState<any>(null);
+  const [isStartingOnlyOffice, setIsStartingOnlyOffice] = useState(false);
+  const [isFinalizingOnlyOffice, setIsFinalizingOnlyOffice] = useState(false);
 
   // Approval workflow state
   const { createWorkflow, workflows } = useApprovalWorkflows();
@@ -3793,6 +3813,431 @@ Total Price: {{total price}}`;
         console.error('Error creating inline preview:', error);
         alert('Error creating document preview. Please try downloading the file instead.');
       }
+    }
+  };
+
+  // Open the OnlyOffice editor: uploads the original DOCX to the backend (creates a session),
+  // then renders the OnlyOffice editor in a modal. Saving in OnlyOffice writes the edited DOCX
+  // back to our backend via the callback URL, which then converts it to PDF.
+  const handleOpenOnlyOffice = async () => {
+    const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const docxSource =
+      originalDocxAgreement && originalDocxAgreement.size > 0
+        ? originalDocxAgreement
+        : processedAgreement && processedAgreement.type === DOCX_TYPE
+          ? processedAgreement
+          : null;
+    if (!docxSource) {
+      alert('OnlyOffice editing requires the original Word document. Regenerate the agreement, then click Edit.');
+      return;
+    }
+    setIsStartingOnlyOffice(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', new File([docxSource], 'agreement.docx', { type: DOCX_TYPE }));
+      const resp = await fetch(`${BACKEND_URL || ''}${API_ENDPOINTS.ONLYOFFICE_START_SESSION}`, {
+        method: 'POST',
+        body: fd,
+      });
+      if (!resp.ok) throw new Error(`start-session failed: ${resp.status}`);
+      const data = await resp.json();
+      if (!data?.success) throw new Error(data?.error || 'start-session returned failure');
+      setOnlyOfficeSessionId(data.sessionId);
+      setOnlyOfficeEditorUrl(data.editorUrl);
+      setOnlyOfficeConfig(data.config);
+      setShowOnlyOfficeEditor(true);
+    } catch (e) {
+      console.error('❌ Failed to start OnlyOffice session:', e);
+      alert(
+        'Could not open the Word editor. Make sure OnlyOffice is running:\n\n  docker compose --profile onlyoffice up -d\n\nThen try again.',
+      );
+    } finally {
+      setIsStartingOnlyOffice(false);
+    }
+  };
+
+  // After the user clicks Save in OnlyOffice, poll the backend until the edited DOCX + PDF are ready.
+  const handleFinalizeOnlyOffice = async () => {
+    if (!onlyOfficeSessionId) return;
+    setIsFinalizingOnlyOffice(true);
+    try {
+      // 1. Trigger OnlyOffice to force-save the document so the callback fires immediately.
+      try {
+        await fetch(
+          `${BACKEND_URL || ''}${API_ENDPOINTS.ONLYOFFICE_FORCE_SAVE(onlyOfficeSessionId)}`,
+          { method: 'POST' },
+        );
+      } catch (fsErr) {
+        console.warn('⚠️ force-save request failed (will still poll for any auto-saved version):', fsErr);
+      }
+
+      const endpoint = `${BACKEND_URL || ''}${API_ENDPOINTS.ONLYOFFICE_RESULT(onlyOfficeSessionId)}`;
+      // Poll up to ~30s for OnlyOffice to flush + convert.
+      const start = Date.now();
+      let data: any = null;
+      while (Date.now() - start < 30000) {
+        const resp = await fetch(endpoint);
+        if (resp.ok) {
+          data = await resp.json();
+          if (data?.status === 'ready' && data.pdfBase64) break;
+          if (data?.status === 'no-changes') break;
+          if (data?.status === 'editor-error' || data?.status === 'pdf-failed') break;
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (data?.status === 'ready' && data.pdfBase64) {
+        const pdfBytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
+        const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const docxBytes = data.docxBase64
+          ? Uint8Array.from(atob(data.docxBase64), (c) => c.charCodeAt(0))
+          : null;
+        const docxBlob = docxBytes
+          ? new Blob([docxBytes], {
+              type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            })
+          : null;
+
+        setProcessedAgreement(pdfBlob);
+        setCachedPdfAgreement(pdfBlob);
+        if (docxBlob) setOriginalDocxAgreement(docxBlob);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        const url = URL.createObjectURL(pdfBlob);
+        setPreviewUrl(url);
+        setAgreementPreviewIsPdf(true);
+        setShowInlinePreview(true);
+        setShowOnlyOfficeEditor(false);
+        setOnlyOfficeSessionId(null);
+        setOnlyOfficeConfig(null);
+        console.log('✅ OnlyOffice edits applied — preview updated.');
+      } else if (data?.status === 'no-changes') {
+        setShowOnlyOfficeEditor(false);
+        setOnlyOfficeSessionId(null);
+        setOnlyOfficeConfig(null);
+        console.log('ℹ️ OnlyOffice closed with no changes.');
+      } else {
+        alert(
+          'Saving the edited document timed out. Click Save in the editor first, then try Done again. If the issue persists, check the backend logs.',
+        );
+      }
+    } catch (e) {
+      console.error('❌ Failed to finalize OnlyOffice session:', e);
+      alert('Could not retrieve the edited document. Check backend logs.');
+    } finally {
+      setIsFinalizingOnlyOffice(false);
+    }
+  };
+
+  // Enter edit mode: convert the generated agreement to HTML and let the user tweak it before approval.
+  const handleStartEditAgreement = async () => {
+    if (!processedAgreement) {
+      alert('Generate the agreement first, then edit.');
+      return;
+    }
+    try {
+      // Highest priority: HTML the user already saved in a previous edit — keeps their changes across multiple Edit clicks.
+      if (lastEditedAgreementHtml && lastEditedAgreementHtml.trim().length > 0) {
+        setEditableAgreementHtml(lastEditedAgreementHtml);
+        setIsEditingAgreement(true);
+        setShowInlinePreview(false);
+        return;
+      }
+
+      // Prefer the original DOCX (richer formatting). Fall back to processedAgreement if it's a DOCX too.
+      const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const docxSource: Blob | null =
+        originalDocxAgreement && originalDocxAgreement.size > 0
+          ? originalDocxAgreement
+          : processedAgreement.type === DOCX_TYPE
+            ? processedAgreement
+            : null;
+
+      let html = '';
+
+      if (docxSource) {
+        // Render with docx-preview into an off-screen host to capture rich HTML + inline styles (tables, fonts, etc.)
+        try {
+          ensureDocxPreviewStylesInjected();
+          // @ts-ignore - resolved at runtime
+          const { renderAsync } = await import('docx-preview');
+          const arrayBuffer = await docxSource.arrayBuffer();
+
+          const host = document.createElement('div');
+          host.style.position = 'fixed';
+          host.style.left = '-10000px';
+          host.style.top = '0';
+          host.style.width = '794px';
+          host.style.background = '#ffffff';
+          document.body.appendChild(host);
+
+          await renderAsync(arrayBuffer, host as HTMLElement, undefined, {
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            className: 'docx',
+            debug: false,
+          } as any);
+
+          html = host.innerHTML;
+          document.body.removeChild(host);
+        } catch (renderErr) {
+          console.warn('docx-preview render for edit failed, falling back to mammoth.', renderErr);
+        }
+
+        // Fallback: mammoth with a generous styleMap (preserves tables, headings, bold, etc.)
+        if (!html) {
+          const mammoth = await import('mammoth');
+          const arrayBuffer = await docxSource.arrayBuffer();
+          const result = await mammoth.convertToHtml(
+            {
+              arrayBuffer,
+              styleMap: [
+                "table => table.docx-table",
+                "tr => tr.docx-row",
+                "td => td.docx-cell",
+                "th => th.docx-header",
+                "p[style-name='Heading 1'] => h1.heading-1",
+                "p[style-name='Heading 2'] => h2.heading-2",
+                "p[style-name='Heading 3'] => h3.heading-3",
+                "r[style-name='Strong'] => strong",
+                "r[style-name='Emphasis'] => em",
+              ],
+              convertImage: mammoth.images.imgElement(function (image: any) {
+                return image.read('base64').then(function (imageBuffer: string) {
+                  return { src: 'data:' + image.contentType + ';base64,' + imageBuffer };
+                });
+              }),
+            } as any,
+          );
+          html = result.value || '';
+        }
+      } else if (
+        previewContainerRef.current &&
+        previewContainerRef.current.innerHTML &&
+        previewContainerRef.current.innerHTML.trim().length > 0
+      ) {
+        // PDF source + no DOCX available — use whatever HTML the on-screen preview already rendered.
+        html = previewContainerRef.current.innerHTML;
+      } else {
+        // Last-resort: render the DOCX preview off-screen so the user still has something rich to edit.
+        try {
+          ensureDocxPreviewStylesInjected();
+          // @ts-ignore
+          const { renderAsync } = await import('docx-preview');
+          const blobToRender = processedAgreement;
+          const arrayBuffer = await blobToRender.arrayBuffer();
+          const host = document.createElement('div');
+          host.style.position = 'fixed';
+          host.style.left = '-10000px';
+          host.style.top = '0';
+          host.style.width = '794px';
+          host.style.background = '#ffffff';
+          document.body.appendChild(host);
+          await renderAsync(arrayBuffer, host as HTMLElement, undefined, {
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            className: 'docx',
+            debug: false,
+          } as any);
+          html = host.innerHTML;
+          document.body.removeChild(host);
+        } catch {
+          // ignore — handled below
+        }
+        if (!html) {
+          alert(
+            'Could not load this agreement for inline editing. Try regenerating the agreement and editing before sending for approval.',
+          );
+          return;
+        }
+      }
+
+      setEditableAgreementHtml(html);
+      setIsEditingAgreement(true);
+      setShowInlinePreview(false);
+
+      // Snapshot the paragraph-level text so on Save we can diff against the user's edits
+      // and patch only the changed lines into the original DOCX (preserving all formatting).
+      // Wait a tick for the editable container to render, then read it.
+      setTimeout(() => {
+        const node = editableAgreementRef.current;
+        if (!node) return;
+        const texts = extractParagraphTexts(node);
+        setOriginalParagraphTexts(texts);
+        console.log(`📝 Captured ${texts.length} original paragraph snapshots for diffing.`);
+      }, 50);
+    } catch (err) {
+      console.error('❌ Failed to enter edit mode:', err);
+      alert('Could not load the agreement for editing.');
+    }
+  };
+
+  // Read paragraph-level text from the rendered DOM in document order.
+  // We treat each <p>, <li>, table cell (<td>/<th>), and <div> with direct text as one logical paragraph.
+  // This pairs 1:1 with the DOCX's <w:p> elements for diffing.
+  const extractParagraphTexts = (root: HTMLElement): string[] => {
+    const blocks = root.querySelectorAll('p, li, td, th, h1, h2, h3, h4, h5, h6');
+    const out: string[] = [];
+    blocks.forEach((el) => {
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text) out.push(text);
+    });
+    return out;
+  };
+
+  // Capture edits, regenerate a PDF from the edited HTML, and feed it back into the existing preview / approval flow.
+  // Primary path: POST to /api/convert/html-to-pdf — puppeteer renders a true PDF with selectable text.
+  // Fallback: client-side html2canvas + jsPDF (rasterized) so the feature still works if the backend is unreachable.
+  const handleSaveAgreementEdits = async () => {
+    const node = editableAgreementRef.current;
+    if (!node) return;
+    setIsSavingAgreementEdits(true);
+    try {
+      const editedHtml = node.innerHTML;
+      setEditableAgreementHtml(editedHtml);
+
+      let pdfBlob: Blob | null = null;
+      let docxBlob: Blob | null = null;
+
+      // PRIMARY: patch the ORIGINAL DOCX with only the text changes the user made.
+      // Preserves 100% of Word formatting because we never reconstruct the DOCX.
+      // Requires: originalDocxAgreement (the as-generated DOCX) + a captured snapshot of original paragraph text.
+      if (originalDocxAgreement && originalDocxAgreement.size > 0 && originalParagraphTexts.length > 0) {
+        try {
+          const newTexts = extractParagraphTexts(node);
+
+          // Set-based diff: contentEditable shuffles paragraph counts (inserts <div>/<br>),
+          // so index-based pairing produces spurious "changes". Instead:
+          //   1. Anything present in BOTH snapshots = unchanged, ignore.
+          //   2. "removed" = originals not in new set.
+          //   3. "added"   = new not in original set.
+          //   4. Pair removed↔added by best-similarity (shared prefix length).
+          const origSet = new Set(originalParagraphTexts);
+          const newSet = new Set(newTexts);
+          const removed = originalParagraphTexts.filter((t) => !newSet.has(t));
+          const added = newTexts.filter((t) => !origSet.has(t));
+
+          const sharedPrefixLen = (a: string, b: string) => {
+            const n = Math.min(a.length, b.length);
+            let i = 0;
+            while (i < n && a[i] === b[i]) i++;
+            return i;
+          };
+
+          const replacements: Array<{ from: string; to: string }> = [];
+          const usedAdded = new Set<number>();
+          for (const fromText of removed) {
+            // Find the best-matching "added" paragraph for this removed one.
+            let bestIdx = -1;
+            let bestScore = -1;
+            for (let j = 0; j < added.length; j++) {
+              if (usedAdded.has(j)) continue;
+              const score = sharedPrefixLen(fromText, added[j]);
+              if (score > bestScore && score >= Math.min(8, Math.floor(fromText.length * 0.3))) {
+                bestScore = score;
+                bestIdx = j;
+              }
+            }
+            if (bestIdx >= 0) {
+              replacements.push({ from: fromText, to: added[bestIdx] });
+              usedAdded.add(bestIdx);
+            }
+          }
+          console.log(`📝 Diff: ${removed.length} removed, ${added.length} added → ${replacements.length} replacement(s) queued.`);
+
+          if (replacements.length === 0) {
+            // No textual change — reuse the existing PDF (no need to regenerate).
+            console.log('ℹ️ No textual changes detected; preserving original PDF.');
+            pdfBlob = (cachedPdfAgreement && cachedPdfAgreement.size > 0)
+              ? cachedPdfAgreement
+              : processedAgreement;
+            docxBlob = originalDocxAgreement;
+          } else {
+            const fd = new FormData();
+            fd.append(
+              'file',
+              new File([originalDocxAgreement], 'original.docx', {
+                type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              }),
+            );
+            fd.append('replacements', JSON.stringify(replacements));
+
+            const endpoint = `${BACKEND_URL || ''}${API_ENDPOINTS.AGREEMENT_PATCH_AND_PDF}`;
+            const resp = await fetch(endpoint, { method: 'POST', body: fd });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data?.success && data.pdfBase64) {
+                const pdfBytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
+                pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+                if (data.docxBase64) {
+                  const docxBytes = Uint8Array.from(atob(data.docxBase64), (c) => c.charCodeAt(0));
+                  docxBlob = new Blob([docxBytes], {
+                    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  });
+                }
+                console.log(`✅ Saved via DOCX patch (${data.replacedCount}/${replacements.length} replacements applied).`);
+                if (data.replacedCount < replacements.length) {
+                  console.warn(
+                    `⚠️ ${replacements.length - data.replacedCount} replacement(s) could not be matched — text may have been split across styled runs.`,
+                  );
+                }
+              } else {
+                console.warn('⚠️ patch-and-pdf returned no PDF; will try puppeteer fallback.', data?.error);
+              }
+            } else {
+              console.warn('⚠️ patch-and-pdf endpoint failed:', resp.status, await resp.text().catch(() => ''));
+            }
+          }
+        } catch (patchErr) {
+          console.warn('⚠️ DOCX patch path errored; will try puppeteer fallback.', patchErr);
+        }
+      } else {
+        console.log('ℹ️ Skipping DOCX patch (no original DOCX or no paragraph snapshot).');
+      }
+
+      // If the DOCX patch path couldn't produce a PDF (e.g. no original DOCX, or all replacements
+      // failed to match), preserve the ORIGINAL agreement so the layout (logos, tables, anchors) stays intact.
+      // We intentionally do NOT fall back to puppeteer or html2canvas here — those rebuild the document
+      // from HTML and shift logo positioning.
+      if (!pdfBlob) {
+        console.warn('⚠️ DOCX patch path did not produce a PDF — keeping original agreement unchanged.');
+        alert(
+          'Your edits could not be applied while preserving the original Word formatting (the changed text may be styled or split across multiple runs in the source DOCX). The original agreement is preserved. Try editing simpler, contiguous plain text.',
+        );
+        setIsSavingAgreementEdits(false);
+        return;
+      }
+
+      // Replace the active agreement with the edited PDF so approval / email / download all pick it up.
+      setProcessedAgreement(pdfBlob);
+      setCachedPdfAgreement(pdfBlob);
+      // If the patch / html-to-docx-pdf path returned a DOCX, swap it in so "Download Word" reflects edits
+      // AND a subsequent Edit click re-diffs against the latest version.
+      if (docxBlob) {
+        setOriginalDocxAgreement(docxBlob);
+      }
+      setLastEditedAgreementHtml(editedHtml);
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      const url = URL.createObjectURL(pdfBlob);
+      setPreviewUrl(url);
+      setAgreementPreviewIsPdf(true);
+      setShowInlinePreview(true);
+      setIsEditingAgreement(false);
+    } catch (err) {
+      console.error('❌ Failed to save agreement edits:', err);
+      alert('Could not save your changes. Please try again.');
+    } finally {
+      setIsSavingAgreementEdits(false);
+    }
+  };
+
+  const handleCancelAgreementEdits = () => {
+    setIsEditingAgreement(false);
+    setEditableAgreementHtml('');
+    // Restore the previous preview (PDF iframe stays in state, just re-show it)
+    if (processedAgreement) {
+      setShowInlinePreview(true);
     }
   };
 
@@ -9309,7 +9754,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 ) : (
                   <>
                     <FileText className="w-5 h-5" />
-                    Preview Agreement
+                    Generate Agreement
                     <Sparkles className="w-5 h-5" />
                   </>
                 )}
@@ -9572,6 +10017,16 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         📄 PDF
                       </button>
                       <button
+                        onClick={handleOpenOnlyOffice}
+                        disabled={!processedAgreement || isDownloadBlocked || isStartingOnlyOffice}
+                        className={`text-white bg-white/15 border border-white/40 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-md hover:bg-white/25 transition-colors flex items-center gap-1 ${
+                          !processedAgreement || isDownloadBlocked || isStartingOnlyOffice ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Open in Word-style editor'}
+                      >
+                        {isStartingOnlyOffice ? '⏳ Opening…' : '✏️ Edit'}
+                      </button>
+                      <button
                         onClick={() => setShowApprovalModal(true)}
                         disabled={isStartingWorkflow}
                         className="text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40 transition-all duration-300"
@@ -9631,6 +10086,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       // Reset inline preview when closing agreement modal
                       setShowInlinePreview(false);
                       setAgreementPreviewIsPdf(false);
+                      setIsEditingAgreement(false);
+                      setEditableAgreementHtml('');
+                      setLastEditedAgreementHtml('');
+                      setOriginalParagraphTexts([]);
                       if (previewUrl) {
                         URL.revokeObjectURL(previewUrl);
                         setPreviewUrl(null);
@@ -9673,10 +10132,25 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   </div>
                   <div
                     className={`flex-1 min-h-0 overflow-hidden flex flex-col overscroll-contain ${
-                      previewUrl ? 'bg-[#525659]' : 'bg-white overflow-y-auto overflow-x-hidden'
+                      previewUrl && !isEditingAgreement ? 'bg-[#525659]' : 'bg-white overflow-y-auto overflow-x-hidden'
                     }`}
                   >
-                    {showInlinePreview ? (
+                    {isEditingAgreement ? (
+                      <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-gray-100">
+                        <div className="max-w-[900px] mx-auto">
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 mb-4 text-sm text-amber-800">
+                            ✏️ Editing mode — make your changes below, then click <strong>Save Changes</strong> to update the preview.
+                          </div>
+                          <div
+                            ref={editableAgreementRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            dangerouslySetInnerHTML={{ __html: editableAgreementHtml }}
+                            className="docx-preview-content bg-white border border-gray-300 rounded-lg p-2 min-h-[600px] focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                        </div>
+                      </div>
+                    ) : showInlinePreview ? (
                       previewUrl ? (
                         <div className="flex-1 min-h-0 w-full relative min-w-0">
                           <iframe
@@ -9768,6 +10242,48 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 {!isFullscreen && !showAgreementPreview && (
                   <div className="bg-white border-t border-gray-200 p-2 flex-shrink-0">
                   <div className="flex gap-2 justify-center flex-wrap">
+                    {isEditingAgreement ? (
+                      <>
+                        <button
+                          onClick={handleSaveAgreementEdits}
+                          disabled={isSavingAgreementEdits}
+                          className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                            isSavingAgreementEdits
+                              ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
+                          }`}
+                        >
+                          {isSavingAgreementEdits ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Saving...
+                            </>
+                          ) : (
+                            <>💾 Save Changes</>
+                          )}
+                        </button>
+                        <button
+                          onClick={handleCancelAgreementEdits}
+                          disabled={isSavingAgreementEdits}
+                          className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-lg hover:from-gray-600 hover:to-gray-700 transition-all duration-200 font-semibold text-xs shadow-lg"
+                        >
+                          ↩️ Cancel
+                        </button>
+                      </>
+                    ) : (
+                    <>
+                    <button
+                      onClick={handleStartEditAgreement}
+                      disabled={!processedAgreement || isDownloadBlocked}
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                        !processedAgreement || isDownloadBlocked
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700'
+                      }`}
+                      title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Edit the agreement before sending for approval'}
+                    >
+                      ✏️ Edit Agreement
+                    </button>
                     {/* Download Word button */}
                     <button
                       onClick={handleDownloadAgreement}
@@ -9858,6 +10374,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         👁️ View Document
                       </button>
                     )}
+                    </>
+                    )}
                     <button
                       onClick={() => {
                         setShowAgreementPreview(false);
@@ -9866,6 +10384,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         setShowInlinePreview(false);
                         setAgreementPreviewIsPdf(false);
                         setIsFullscreen(false);
+                        setIsEditingAgreement(false);
+                        setEditableAgreementHtml('');
+                        setLastEditedAgreementHtml('');
                         if (previewUrl) {
                           URL.revokeObjectURL(previewUrl);
                           setPreviewUrl(null);
@@ -9887,6 +10408,58 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         )}
 
         {/* Approval Workflow Modal */}
+        {/* OnlyOffice Word-style editor modal */}
+        {showOnlyOfficeEditor && onlyOfficeConfig && (
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[60]" role="dialog" aria-modal="true">
+            <div className="bg-white rounded-lg w-[96vw] h-[94vh] shadow-2xl flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-blue-700 to-indigo-700 text-white">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">✏️ Editing agreement (Word editor)</span>
+                  <span className="text-xs text-blue-200">Click <strong>File → Save</strong> in the editor, then click <strong>Done</strong> on the right.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleFinalizeOnlyOffice}
+                    disabled={isFinalizingOnlyOffice}
+                    className={`px-4 py-1.5 rounded-md text-xs font-semibold border ${
+                      isFinalizingOnlyOffice
+                        ? 'bg-white/20 border-white/30 text-white/70 cursor-not-allowed'
+                        : 'bg-white text-blue-700 border-white hover:bg-blue-50'
+                    }`}
+                    title="Apply your edits and close the editor"
+                  >
+                    {isFinalizingOnlyOffice ? '⏳ Saving…' : '✅ Done'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!isFinalizingOnlyOffice) {
+                        setShowOnlyOfficeEditor(false);
+                        setOnlyOfficeSessionId(null);
+                        setOnlyOfficeConfig(null);
+                      }
+                    }}
+                    disabled={isFinalizingOnlyOffice}
+                    className="px-3 py-1.5 rounded-md text-xs font-semibold bg-white/10 border border-white/30 hover:bg-white/20"
+                    title="Close editor without applying"
+                  >
+                    ✖ Close
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0">
+                <OnlyOfficeEditor
+                  editorUrl={onlyOfficeEditorUrl}
+                  config={onlyOfficeConfig}
+                  onError={(msg) => {
+                    console.error('OnlyOffice error:', msg);
+                    alert('Editor error: ' + msg);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {showApprovalModal && (
           <div
             className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
