@@ -1634,7 +1634,10 @@ Quote ID: ${quoteData.id}
 
         const companyName = (configureContactInfo?.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Your Company');
         const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '' || companyName === 'Demo Company Inc.') ? 'Your Company' : companyName;
-        const userCount = configuration?.numberOfUsers || 1;
+        // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+        const userCount = configuration?.servicePlan === 'Manage'
+          ? (configuration?.manageUsers || 1)
+          : (configuration?.numberOfUsers || 1);
         const userCost = calculation?.userCost ?? safeCalculation.userCost;
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
         const totalCost = getEffectiveTotalCost(configuration, calculation || safeCalculation);
@@ -2004,11 +2007,31 @@ Quote ID: ${quoteData.id}
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Effective Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
-          
+
+          // Service term tokens (Manage Plan SaaS Agreement)
+          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{service_end_date}}': (() => {
+            const start = configuration?.startDate;
+            if (!start) return 'N/A';
+            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
+            if (!months) return 'N/A';
+            try {
+              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+              if (isNaN(d.getTime())) return 'N/A';
+              d.setMonth(d.getMonth() + months);
+              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+            } catch { return 'N/A'; }
+          })(),
+          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
+            ? '3-Month Free Trial'
+            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
           '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -2584,7 +2607,13 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
     const placeholderMappings = {
       '{{Company Name}}': quote.company || 'Company Name',
       '{{migration type}}': quote.configuration.migrationType,
-      '{{userscount}}': quote.configuration.numberOfUsers.toString(),
+      // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+      '{{userscount}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
+      '{{users_count}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
       '{{price_migration}}': formatCurrency(safeCalculation.migrationCost),
       '{{price_data}}': formatCurrency((safeCalculation.userCost || 0) + (safeCalculation.dataCost || 0)),
       // Use effective duration (handles Multi combination + nested configs)
@@ -2611,7 +2640,10 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
           const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
           return formatCurrency(Math.max(msgPerUser, contentPerUser));
         }
-        return formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1));
+        const perUserUsers = quote.configuration.servicePlan === 'Manage'
+          ? (quote.configuration.manageUsers || 1)
+          : (quote.configuration.numberOfUsers || 1);
+        return formatCurrency((safeCalculation.userCost || 0) / (perUserUsers || 1));
       })(),
       // Email agreements do not have a GB/data-size concept; keep it empty in templates.
       '{{data_size}}': '',
@@ -2669,7 +2701,9 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       
       // Additional mappings for compatibility
       '{{company_name}}': quote.company || 'Company Name',
-      '{{users}}': quote.configuration.numberOfUsers.toString(),
+      '{{users}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
       '{{migration_type}}': quote.configuration.migrationType,
       '{{prices}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
       '{{migration_price}}': formatCurrency(safeCalculation.migrationCost),
@@ -2684,7 +2718,30 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         '{{instance_cost}}': formatCurrency(safeCalculation.instanceCost),
         '{{discount}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
         '{{discount_percent}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-        '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost)
+        '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
+
+        // Service term tokens (Manage Plan SaaS Agreement)
+        '{{service_start_date}}': quote.configuration?.startDate ? formatDateMMDDYYYY(quote.configuration.startDate) : 'N/A',
+        '{{service_end_date}}': (() => {
+          const start = quote.configuration?.startDate;
+          if (!start) return 'N/A';
+          const months = quote.configuration?.servicePlan === 'Manage'
+            ? 3
+            : (getEffectiveDurationMonths(quote.configuration) || 0);
+          if (!months) return 'N/A';
+          try {
+            const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+            if (isNaN(d.getTime())) return 'N/A';
+            d.setMonth(d.getMonth() + months);
+            return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+          } catch { return 'N/A'; }
+        })(),
+        '{{service_term_label}}': quote.configuration?.servicePlan === 'Manage'
+          ? '3-Month Free Trial'
+          : (() => {
+              const m = getEffectiveDurationMonths(quote.configuration) || 0;
+              return `${m}-Month${m === 1 ? '' : 's'}`;
+            })()
     };
 
     // Create sample template text with placeholders - matches CloudFuze template
@@ -4069,6 +4126,11 @@ Total Price: {{total price}}`;
           dataSizeGB: finalConfiguration.dataSizeGB,
           startDate: finalConfiguration.startDate,
           endDate: finalConfiguration.endDate,
+          // Manage Standalone fields (E99 / E100) — required for {{users_count}} and {{per_user_cost}}
+          servicePlan: finalConfiguration.servicePlan,
+          manageUsers: finalConfiguration.manageUsers,
+          manageDataGB: finalConfiguration.manageDataGB,
+          combination: finalConfiguration.combination,
           // IMPORTANT: preserve nested configs for Multi combination
           messagingConfig: finalConfiguration.messagingConfig,
           contentConfig: finalConfiguration.contentConfig,
@@ -4273,7 +4335,10 @@ Total Price: {{total price}}`;
           finalCompanyName = 'Demo Company Inc.';
         }
         console.log('  Final finalCompanyName:', finalCompanyName);
-        const userCount = quoteData.configuration?.numberOfUsers || 1;
+        // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+        const userCount = quoteData.configuration?.servicePlan === 'Manage'
+          ? (quoteData.configuration?.manageUsers || 1)
+          : (quoteData.configuration?.numberOfUsers || 1);
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
         // Apply $2,500 minimum to total cost for agreement generation (overage: use actual total)
@@ -4891,11 +4956,31 @@ Total Price: {{total price}}`;
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Effective Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
-          
+
+          // Service term tokens (Manage Plan SaaS Agreement)
+          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{service_end_date}}': (() => {
+            const start = configuration?.startDate;
+            if (!start) return 'N/A';
+            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
+            if (!months) return 'N/A';
+            try {
+              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+              if (isNaN(d.getTime())) return 'N/A';
+              d.setMonth(d.getMonth() + months);
+              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+            } catch { return 'N/A'; }
+          })(),
+          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
+            ? '3-Month Free Trial'
+            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
           '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',

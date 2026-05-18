@@ -30,6 +30,11 @@ export interface DocxTemplateData {
   '{{duration_months}}'?: string;
   '{{date}}'?: string;
   '{{Effective Date}}'?: string;
+
+  // Service term tokens (Manage Plan SaaS Agreement)
+  '{{service_start_date}}'?: string;
+  '{{service_end_date}}'?: string;
+  '{{service_term_label}}'?: string;
   
   // Payment terms tokens
   '{{payment_terms}}'?: string;
@@ -2464,6 +2469,11 @@ export class DocxTemplateProcessor {
       '{{Payment_Terms}}': paymentTerms,
       '{{paymentTerms}}': paymentTerms,
       
+      // Service term tokens (Manage Plan SaaS Agreement — pass through from QuoteGenerator)
+      '{{service_start_date}}': (data as any)['{{service_start_date}}'] || (startDate ? this.formatDateMMDDYYYY(startDate) : 'N/A'),
+      '{{service_end_date}}': (data as any)['{{service_end_date}}'] || (endDate ? this.formatDateMMDDYYYY(endDate) : 'N/A'),
+      '{{service_term_label}}': (data as any)['{{service_term_label}}'] || '',
+
       // Project date variations - formatted as mm/dd/yyyy
       '{{Start_date}}': this.formatDateMMDDYYYY(startDate),
       '{{start_date}}': this.formatDateMMDDYYYY(startDate),

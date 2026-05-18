@@ -1155,6 +1155,18 @@ async function seedDefaultTemplates(db) {
       planType: 'multi',
       keywords: ['multi', 'combination', 'universal', 'all']
     },
+    // MANAGE STANDALONE — SaaS agreement for the Manage service plan (3-month free trial).
+    // Matched by autoSelectTemplateForPlan when config.servicePlan === 'Manage' (see App.tsx).
+    {
+      name: 'Manage Plan – SaaS Agreement (3-Month Free Trial)',
+      description: 'SaaS agreement for Manage Standalone plan with a 3-month free trial',
+      fileName: 'manage-plan-saas-agreement.docx',
+      isDefault: false,
+      category: 'manage',
+      combination: 'manage-standalone',
+      planType: 'manage',
+      keywords: ['manage', 'standalone', 'saas', 'trial']
+    },
     // Add more Multi combination templates by duplicating the block below and changing name/fileName.
     // Place the DOCX file in backend-templates/ and run: POST /api/templates/reseed
     // {
