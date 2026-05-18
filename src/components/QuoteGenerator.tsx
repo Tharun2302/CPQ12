@@ -2147,6 +2147,22 @@ Quote ID: ${quoteData.id}
                   const second = parts.slice(half).join('-');
                   if (first === second) base = first;
                 }
+
+                // Mirror ExhibitSelector.extractBaseCombination alias rules so the merge
+                // expansion treats UI-grouped exhibits as one combination.
+                if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                  base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  base === 'box-to-google-mydrive-shareddrive' ||
+                  base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  base === 'box-to-google-sharedrive' ||
+                  base.startsWith('box-to-google-sharedrive-') ||
+                  base === 'box-to-google-mydrive-sharedrive' ||
+                  base.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  base = 'box-to-google-mydrive';
+                }
                 return base;
               };
 
@@ -4101,11 +4117,19 @@ Total Price: {{total price}}`;
       const fetchLatestTemplateFile = async (): Promise<File | null> => {
         try {
           if (!selectedTemplate?.id) return null;
-          const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
-            cache: 'no-store'
-          });
-          if (!fr.ok) {
-            console.warn(`⚠️ Template fetch failed with status ${fr.status}: ${fr.statusText}`);
+          // Retry once on transient 5xx (MongoDB Atlas can momentarily fail individual ops
+          // right after backend start or during brief network/replica blips).
+          let fr: Response | null = null;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
+              cache: 'no-store'
+            });
+            if (fr.ok || fr.status < 500) break;
+            console.warn(`⚠️ Template fetch attempt ${attempt + 1} returned ${fr.status}; retrying...`);
+            await new Promise(r => setTimeout(r, 600));
+          }
+          if (!fr || !fr.ok) {
+            console.warn(`⚠️ Template fetch failed with status ${fr?.status}: ${fr?.statusText}`);
             return null;
           }
           
@@ -4176,6 +4200,12 @@ Total Price: {{total price}}`;
 
       // Validate that we have a template file
       if (!templateFileForAgreement) {
+        if (selectedTemplate?.id) {
+          throw new Error(
+            `Couldn't load template "${selectedTemplate.name || selectedTemplate.id}" from the server. ` +
+            `The backend may be momentarily unavailable — please try again in a few seconds.`
+          );
+        }
         throw new Error('No template file available. Please select a template and try again.');
       }
 
@@ -5378,6 +5408,24 @@ Total Price: {{total price}}`;
                 base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
                 base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
                 base = base.replace(/-+$/, '').trim();
+                // Mirror ExhibitSelector.extractBaseCombination alias rules: merge
+                // "dropbox-to-mydrive" into "dropbox-to-google-mydrive" and collapse the
+                // box-to-google sharedrive variants. Without this, exhibits the UI groups
+                // into one folder end up with different base keys here, which produces
+                // duplicate rows / embedded exhibits in the generated agreement.
+                if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                  base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  base === 'box-to-google-mydrive-shareddrive' ||
+                  base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  base === 'box-to-google-sharedrive' ||
+                  base.startsWith('box-to-google-sharedrive-') ||
+                  base === 'box-to-google-mydrive-sharedrive' ||
+                  base.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  base = 'box-to-google-mydrive';
+                }
                 return base;
               };
               // Helper: get plan from exhibit (Basic/Standard/Advanced)
@@ -5439,7 +5487,7 @@ Total Price: {{total price}}`;
               // Helper to normalize combination name (same logic as ConfigurationForm extractCombinationName)
               const normalizeCombinationName = (name: string): string => {
                 let normalized = String(name).trim();
-                
+
                 // Remove common suffixes like:
                 // - " Standard Plan - Included Features"
                 // - " Advanced Plan - Included Features"
@@ -5451,25 +5499,46 @@ Total Price: {{total price}}`;
                   /\s+-\s*Not\s+Included\s+Features$/i,
                   /\s+-\s*.*$/i,
                 ];
-                
+
                 let cleaned = normalized;
                 for (const pattern of patterns) {
                   cleaned = cleaned.replace(pattern, '');
                 }
-                
+
                 // Also handle dash-separated format (e.g., "slack-to-teams")
                 cleaned = cleaned.toLowerCase()
                   .replace(/-(basic|standard|advanced|premium|enterprise)$/, '')
                   .replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '')
                   .replace(/-+$/, '')
                   .trim();
-                
+
                 return cleaned || normalized.toLowerCase();
               };
-              
+
               // Helper: keys in expansion loop use getBaseCombination format (dashes, e.g. "slack-to-teams")
+              // Apply the same alias rewrites as getBaseCombination so config-derived keys match
+              // the exhibit-derived keys (otherwise a config named "Dropbox To Mydrive" would build
+              // key 'dropbox-to-mydrive' but the corresponding exhibit's getBaseCombination returns
+              // 'dropbox-to-google-mydrive', and the expansion check would miss it).
+              const applyDashedAliases = (key: string): string => {
+                let k = key;
+                if (k === 'dropbox-to-mydrive' || k.startsWith('dropbox-to-mydrive-')) {
+                  k = k.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  k === 'box-to-google-mydrive-shareddrive' ||
+                  k.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  k === 'box-to-google-sharedrive' ||
+                  k.startsWith('box-to-google-sharedrive-') ||
+                  k === 'box-to-google-mydrive-sharedrive' ||
+                  k.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  k = 'box-to-google-mydrive';
+                }
+                return k;
+              };
               const toDashedKey = (category: string, normalized: string) =>
-                `${category}|${normalized.replace(/\s+/g, '-').toLowerCase()}`;
+                `${category}|${applyDashedAliases(normalized.replace(/\s+/g, '-').toLowerCase())}`;
               
               // Extract from messagingConfigs - add key in SAME format as getBaseCombination (dashes) so expansion matches
               (cfgAny.messagingConfigs || []).forEach((c: any) => {
@@ -5702,7 +5771,13 @@ Total Price: {{total price}}`;
                   const deduplicatedMergeIds = new Set<string>();
                   const seenExhibitKeys = new Map<string, string>(); // key -> exhibitId
                   
-                  // First, process existing expanded IDs and build seen keys
+                  // First, process existing expanded IDs and build seen keys.
+                  // IMPORTANT: also dedup WITHIN this initial list — after combination
+                  // aliasing (e.g. dropbox-to-mydrive → dropbox-to-google-mydrive), two
+                  // distinct exhibits (e.g. "Dropbox to Google MyDrive Basic Plan - Basic Include"
+                  // and the legacy "Dropbox to MyDrive Basic Plan - Basic Include") collapse
+                  // to the same uniqueKey, and both would otherwise be embedded in the
+                  // generated agreement.
                   for (const id of expandedExhibitIdsForMerge) {
                     const exhibit = allExhibits.find((e: any) => (e?._id ?? '').toString() === id);
                     if (exhibit) {
@@ -5711,6 +5786,15 @@ Total Price: {{total price}}`;
                       const includeType = (exhibit.includeType || (exhibit.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toLowerCase();
                       const category = (exhibit.category || 'content').toLowerCase();
                       const uniqueKey = `${category}|${baseCombo}|${plan}|${includeType}`;
+                      if (seenExhibitKeys.has(uniqueKey)) {
+                        console.warn('⚠️ Skipping duplicate exhibit in expanded merge list:', {
+                          duplicateId: id,
+                          keptId: seenExhibitKeys.get(uniqueKey),
+                          name: exhibit.name,
+                          key: uniqueKey
+                        });
+                        continue;
+                      }
                       seenExhibitKeys.set(uniqueKey, id);
                       deduplicatedMergeIds.add(id);
                     } else {
@@ -7413,7 +7497,7 @@ Total Price: {{total price}}`;
         console.log('🔍 Running comprehensive template diagnostic...');
         const { TemplateDiagnostic } = await import('../utils/templateDiagnostic');
         const diagnostic = await TemplateDiagnostic.diagnoseTemplate(
-          selectedTemplate.file,
+          templateFileForAgreement,
           templateData
         );
         
@@ -7575,8 +7659,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             };
 
             const getNormalizedBaseCombination = (ex: any): string => {
-              const primary = ex?.combinations?.[0];
-              if (!primary || primary === 'all') return '';
+              // Prefer the LONGEST non-"all" combination so exhibits tagged with both a
+              // short form (e.g. 'dropbox-to-mydrive') and a more specific one
+              // ('dropbox-to-google-mydrive') resolve to the specific key. Falling back
+              // to combinations[0] (the previous behaviour) caused two exhibits in the
+              // same UI folder to dedup under different keys and both got embedded.
+              const candidates = (ex?.combinations || []).filter((c: any) => c && c !== 'all');
+              if (candidates.length === 0) return '';
+              const primary = candidates.reduce((longest: string, c: string) =>
+                (String(c).length > longest.length ? String(c) : longest), String(candidates[0]));
               let base = String(primary).toLowerCase();
               base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
               base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
@@ -7592,6 +7683,23 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 const first = parts.slice(0, half).join('-');
                 const second = parts.slice(half).join('-');
                 if (first === second) base = first;
+              }
+              // Mirror ExhibitSelector.extractBaseCombination alias rules so legacy
+              // "dropbox-to-mydrive" exhibits collapse onto "dropbox-to-google-mydrive"
+              // (same UI folder). Without this, the dedup key below would differ and
+              // both the legacy and the specific exhibit would be embedded.
+              if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+              }
+              if (
+                base === 'box-to-google-mydrive-shareddrive' ||
+                base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                base === 'box-to-google-sharedrive' ||
+                base.startsWith('box-to-google-sharedrive-') ||
+                base === 'box-to-google-mydrive-sharedrive' ||
+                base.startsWith('box-to-google-mydrive-sharedrive-')
+              ) {
+                base = 'box-to-google-mydrive';
               }
               return base;
             };

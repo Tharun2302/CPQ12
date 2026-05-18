@@ -201,6 +201,29 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 .trim();
             };
 
+            // Mirror of ExhibitSelector.extractBaseCombination alias rules so that
+            // selecting one UI folder produces one combination key here. Without these,
+            // exhibits in the same UI group whose combinations[0] differs (e.g.
+            // 'dropbox-to-mydrive' vs 'dropbox-to-google-mydrive') would produce two
+            // separate configs and thus duplicate agreement rows / exhibit documents.
+            const applyCombinationAliases = (input: string): string => {
+              let base = (input || '').toLowerCase();
+              if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+              }
+              if (
+                base === 'box-to-google-mydrive-shareddrive' ||
+                base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                base === 'box-to-google-sharedrive' ||
+                base.startsWith('box-to-google-sharedrive-') ||
+                base === 'box-to-google-mydrive-sharedrive' ||
+                base.startsWith('box-to-google-mydrive-sharedrive-')
+              ) {
+                base = 'box-to-google-mydrive';
+              }
+              return base;
+            };
+
             // Helper function to extract base combination from exhibit
             // Priority: Use combinations field (base combination), fallback to name extraction
             const extractCombinationName = (exhibit: any): string => {
@@ -209,10 +232,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const primaryCombination = exhibit.combinations[0];
                 if (primaryCombination && primaryCombination !== 'all') {
                   // Extract base combination (remove include/notinclude and plan type suffixes)
-                  const base = primaryCombination
+                  let base = primaryCombination
                     .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '')
                     .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, ''); // Run twice to catch both
-                  
+                  // Apply UI-folder alias rules so exhibits in the same UI group resolve to the same key.
+                  base = applyCombinationAliases(base);
+
                   if (base && base !== 'all' && base.length >= 3) {
                     const baseKey = normalizeBaseCombinationKey(base);
                     const label = baseKeyToDisplayLabel(baseKey);

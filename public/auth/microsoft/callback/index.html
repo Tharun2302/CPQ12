@@ -176,11 +176,19 @@
               console.error('❌ This means Microsoft Graph API call failed');
               document.getElementById('status').textContent = 'Using fallback user data...';
               
-              // Fallback to mock user if real API fails
+              // Fallback to mock user if real API fails. Derive a friendly name
+              // from the email local-part so the sidebar doesn't show the literal
+              // "Microsoft" placeholder.
+              const fallbackEmail = 'user@microsoft.com';
+              const fallbackName = (fallbackEmail.split('@')[0] || '')
+                .split(/[._\-+]+/)
+                .filter(Boolean)
+                .map(function(p){ return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(); })
+                .join(' ') || 'User';
               const fallbackUser = {
                 id: 'microsoft_' + Date.now(),
-                name: 'Microsoft User (Fallback)',
-                email: 'user@microsoft.com',
+                name: fallbackName,
+                email: fallbackEmail,
                 accessToken: 'fallback_token_' + Date.now(),
                 provider: 'microsoft',
                 createdAt: new Date().toISOString()

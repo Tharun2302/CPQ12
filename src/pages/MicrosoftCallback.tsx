@@ -247,11 +247,20 @@ const MicrosoftCallback: React.FC = () => {
             return;
           }
           
-          // Fallback to mock user if real API fails (only for cloudfuze.com domain)
+          // Fallback to mock user if real API fails (only for cloudfuze.com domain).
+          // Derive a friendly name from the email so the sidebar doesn't render the
+          // literal "Microsoft" placeholder.
+          const fallbackEmail = 'user@cloudfuze.com';
+          const fallbackName = fallbackEmail
+            .split('@')[0]
+            .split(/[._\-+]+/)
+            .filter(Boolean)
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            .join(' ') || 'User';
           const fallbackUser = {
             id: 'microsoft_' + Date.now(),
-            name: 'Microsoft User (Fallback)',
-            email: 'user@cloudfuze.com',
+            name: fallbackName,
+            email: fallbackEmail,
             accessToken: 'fallback_token_' + Date.now(),
             provider: 'microsoft',
             createdAt: new Date().toISOString()

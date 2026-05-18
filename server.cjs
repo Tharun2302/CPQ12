@@ -3720,12 +3720,38 @@ function transformHeaderInlineImageParagraphs(xml) {
     /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:inline\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:inline>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
   const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
 
+  // Pre-compute table nesting depth at each character position so we can skip
+  // paragraphs inside table cells. `transformParagraphsWithFloatingImages` may
+  // have already wrapped anchored images in a borderless table whose cells each
+  // contain one image-only <w:p>; without this guard we would group those
+  // in-cell paragraphs and splice a replacement across the </w:tc><w:tc>
+  // boundary, leaving the outer table with an unclosed cell/row/tbl and
+  // producing malformed XML that LibreOffice rejects as "Document is empty".
+  const tblTokenRegex = /<w:tbl(?![A-Za-z])|<\/w:tbl>/g;
+  const tableDepth = new Array(xml.length + 1).fill(0);
+  {
+    let depth = 0;
+    let last = 0;
+    let tk;
+    while ((tk = tblTokenRegex.exec(xml)) !== null) {
+      tableDepth.fill(depth, last, tk.index);
+      if (tk[0] === '</w:tbl>') depth = Math.max(0, depth - 1);
+      else depth += 1;
+      last = tk.index + tk[0].length;
+      tableDepth.fill(depth, tk.index, last);
+    }
+    tableDepth.fill(depth, last, xml.length + 1);
+  }
+
   // Classify each paragraph: 'image' (image-only, no visible text),
   // 'empty' (no images, no visible text), or 'other'.
   const paragraphs = [];
   let m;
   while ((m = paragraphRegex.exec(xml)) !== null) {
     const full = m[0];
+    // Skip paragraphs nested inside a table — they belong to existing cell
+    // content and must not participate in top-level grouping.
+    if (tableDepth[m.index] > 0) continue;
     const inlineRuns = full.match(inlineImageRunRegex) || [];
     const hasAnchor = /<wp:anchor\b/.test(full);
     // Strip XML tags and check whether any visible text remains.
@@ -3951,12 +3977,13 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
     const hasFatalLibreOfficeStderr = (stderrText) => {
       const s = String(stderrText || '').toLowerCase();
       // LibreOffice sometimes returns exit code 0 but prints fatal errors to stderr and produces no PDF.
+      // Note: "document is empty", "parser error", and "could not find platform independent libraries"
+      // are ALSO printed by LO 25.8 on Windows during *successful* conversions (verified manually) —
+      // they're benign Python/init noise. Don't use them as a fatal signal on their own; only the
+      // explicit document-load failure messages below are reliable indicators.
       return (
-        s.includes('document is empty') ||
         s.includes('source file could not be loaded') ||
-        s.includes('could not find platform independent libraries') ||
         s.includes('error: source file could not be loaded') ||
-        s.includes('parser error') ||
         s.includes('fatal')
       );
     };
@@ -4012,13 +4039,31 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       ];
       console.log('📄 LibreOffice args:', conversionArgs);
 
+      // On Windows, LibreOffice's bundled Python initializes during soffice startup.
+      // When spawned from Node, its sys.prefix resolution can fail and emit
+      // "Could not find platform independent libraries <prefix>" — usually harmless
+      // noise, but on some installs the failed Python init also prevents the document
+      // loaders from registering, leading to a 0-exit "Document is empty" with no PDF.
+      // Point PYTHONHOME at LO's own python-core-* dir so its Python starts cleanly.
+      let loPythonHome = '';
+      if (isWindows) {
+        try {
+          const entries = fs.readdirSync(sofficeCwd, { withFileTypes: true });
+          const pyCore = entries.find((e) => e.isDirectory() && /^python-core-/i.test(e.name));
+          if (pyCore) loPythonHome = path.join(sofficeCwd, pyCore.name);
+        } catch {}
+      }
+
       const conversion = spawn(sofficeCmd, conversionArgs, {
         stdio: 'pipe',
         cwd: sofficeCwd,
         env: {
           ...process.env,
           // Help LibreOffice find its bundled DLLs on Windows when launched from Node
-          PATH: isWindows ? `${sofficeCwd};${process.env.PATH || ''}` : (process.env.PATH || '')
+          PATH: isWindows ? `${sofficeCwd};${process.env.PATH || ''}` : (process.env.PATH || ''),
+          // Point LO's bundled Python at its own stdlib (Windows). Empty string elsewhere
+          // so a host-set PYTHONHOME/PYTHONPATH can't hijack the bundled interpreter.
+          ...(isWindows && loPythonHome ? { PYTHONHOME: loPythonHome, PYTHONPATH: '' } : {})
         }
       });
       
