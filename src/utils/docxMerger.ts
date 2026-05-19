@@ -347,6 +347,25 @@ export async function mergeDocxFiles(
 
       // Copy all children from exhibit body (except the last sectPr)
       const children = Array.from(exhibitBody.childNodes);
+
+      // Trim trailing empty / line-break-only paragraphs from the exhibit tail.
+      // Without this, an exhibit that ends in stray <w:p/> blocks or <w:br/>
+      // line-breaks combines with the merger's inserted page-break before the
+      // next group's title and produces a blank page in the output.
+      const isMeaningful = (node: Node): boolean => {
+        if (node.nodeName === 'w:tbl') return true;
+        if (node.nodeName !== 'w:p') return false;
+        const el = node as Element;
+        const textNodes = el.getElementsByTagName('w:t');
+        for (let i = 0; i < textNodes.length; i++) {
+          if ((textNodes[i].textContent || '').trim().length > 0) return true;
+        }
+        return false;
+      };
+      while (children.length > 0 && !isMeaningful(children[children.length - 1])) {
+        children.pop();
+      }
+
       let skippedFirstHeading = false;
       
       for (const child of children) {
