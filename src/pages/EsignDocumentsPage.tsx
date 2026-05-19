@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Lock } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical, BookOpen } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
@@ -90,9 +90,8 @@ const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
 
-  // Gate: eSign is only accessible after an approval workflow has been fully approved
-  const { workflows: approvalWorkflows, isLoading: approvalLoading } = useApprovalWorkflows();
-  const isEsignEnabled = approvalWorkflows.some((w) => w.status === 'approved');
+  // eSign is always accessible (no approval gating)
+  const { workflows: approvalWorkflows } = useApprovalWorkflows();
 
   /** Returns the approval status for an eSign document by matching workflow.esignDocumentId */
   const getDocApprovalStatus = (docId: string): 'approved' | 'in_progress' | 'denied' | 'pending' | null => {
@@ -367,31 +366,6 @@ const EsignDocumentsPage: React.FC = () => {
 
   const firstDraftId = documents.find((d) => d.status === 'draft')?.id;
 
-  // Block access until at least one approval workflow has been fully approved
-  if (!approvalLoading && !isEsignEnabled) {
-    return (
-      <div className="min-h-screen bg-slate-50/80 flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center bg-white rounded-2xl shadow-lg border border-slate-200 p-10">
-          <div className="flex justify-center mb-5">
-            <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
-              <Lock className="w-7 h-7 text-amber-500" />
-            </div>
-          </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Approval Required</h2>
-          <p className="text-slate-500 text-sm mb-6">
-            e-Sign is only available after an approval workflow has been fully approved. Please complete
-            the approval process first.
-          </p>
-          <button
-            onClick={() => navigate('/approval')}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Go to Approval
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-slate-50/80 py-5 sm:py-6 px-4 sm:px-6 lg:px-8">

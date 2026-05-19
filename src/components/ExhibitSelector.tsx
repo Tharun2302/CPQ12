@@ -870,9 +870,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
               <ArrowRight className="w-3.5 h-3.5 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-gray-900 mb-0.5">Search and select migration</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-0.5">Search and select combination</h3>
               <p className="text-xs text-gray-600 leading-relaxed">
-                Choose your migration type to configure the project requirements.
+                Choose your combination type to configure the project requirements.
               </p>
             </div>
           </div>
@@ -903,7 +903,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search migration types..."
+              placeholder="Search combinations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
@@ -915,7 +915,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         {selectedMigrationNames.length > 0 && (
           <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
             <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
-              Selected migration types <span className="text-blue-600 font-bold">({selectedMigrationNames.length})</span>
+              Selected combinations <span className="text-blue-600 font-bold">({selectedMigrationNames.length})</span>
             </h4>
             <div className="flex flex-wrap gap-2">
               {selectedMigrationNames.map((name) => (
@@ -929,7 +929,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                     type="button"
                     onClick={() => handleRemoveMigrationType(name)}
                     className="p-0.5 rounded hover:bg-blue-200 text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    title="Remove this migration type"
+                    title="Remove this combination"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>

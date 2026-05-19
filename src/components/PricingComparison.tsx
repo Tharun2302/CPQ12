@@ -468,7 +468,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   <>
                     <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
                       <p className="text-sm text-purple-800 font-bold text-center">
-                        🔀 Original Multi Combination Pricing Breakdown
+                        🔀 Combination Pricing Breakdown
                       </p>
                     </div>
 
