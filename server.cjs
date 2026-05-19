@@ -2401,6 +2401,7 @@ app.post('/api/combinations/seed', async (req, res) => {
       { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)', migrationType: 'Content', displayOrder: 9 }
     ];
     let inserted = 0;
+    let backfilled = 0;
     for (const d of defaults) {
       const existing = await db.collection('combinations').findOne({ value: d.value, migrationType: d.migrationType });
       if (!existing) {
@@ -2411,10 +2412,26 @@ app.post('/api/combinations/seed', async (req, res) => {
           updatedAt: new Date()
         });
         inserted++;
+      } else if (!existing.id) {
+        // Legacy row missing the `id` field — backfill so edit/delete works
+        await db.collection('combinations').updateOne(
+          { _id: existing._id },
+          { $set: { id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`, updatedAt: new Date() } }
+        );
+        backfilled++;
       }
     }
+    // Also backfill any non-default rows that are missing `id`
+    const orphans = await db.collection('combinations').find({ id: { $exists: false } }).toArray();
+    for (const o of orphans) {
+      await db.collection('combinations').updateOne(
+        { _id: o._id },
+        { $set: { id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`, updatedAt: new Date() } }
+      );
+      backfilled++;
+    }
     const total = await db.collection('combinations').countDocuments();
-    res.json({ success: true, message: `Seed complete. Inserted ${inserted} new combinations. Total: ${total}.` });
+    res.json({ success: true, message: `Seed complete. Inserted ${inserted} new combinations. Backfilled ${backfilled} missing IDs. Total: ${total}.` });
   } catch (error) {
     console.error('Error seeding combinations:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -6546,6 +6563,85 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
     res.json({ success: true, message: 'Document voided. Signing links no longer work.' });
   } catch (error) {
     console.error('❌ E-sign void document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/remind - Manually send reminder emails to all pending recipients
+app.post('/api/esign/documents/:id/remind', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can send reminders for this document' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be reminded' });
+    }
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(500).json({ success: false, error: 'Email service not configured' });
+    }
+
+    const recipients = await db.collection('esign_recipients').find({
+      document_id: docId,
+      status: 'pending',
+      email: { $exists: true, $ne: '' },
+      signing_token: { $exists: true, $ne: '' },
+    }).toArray();
+
+    if (!recipients.length) {
+      return res.status(400).json({ success: false, error: 'No pending recipients to remind' });
+    }
+
+    let sentCount = 0;
+    const errors = [];
+    for (const recipient of recipients) {
+      try {
+        if (isEsignTokenExpired(recipient)) {
+          errors.push(`${recipient.email}: signing link expired`);
+          continue;
+        }
+        const { signingUrl, inboxUrl } = getEsignRecipientUrls(recipient.signing_token);
+        const { subject, html } = buildEsignRecipientEmail(doc, recipient, signingUrl, inboxUrl, {
+          mode: 'reminder',
+          tokenExpiresAt: recipient.token_expires_at,
+        });
+        const result = await sendEmail(recipient.email, subject, html);
+        if (!result.success) {
+          errors.push(`${recipient.email}: ${result.error?.message || result.error || 'send failed'}`);
+          continue;
+        }
+        await db.collection('esign_recipients').updateOne(
+          { _id: recipient._id },
+          { $set: { expiry_reminder_sent_at: new Date() } }
+        );
+        sentCount++;
+      } catch (recErr) {
+        errors.push(`${recipient.email}: ${recErr.message}`);
+      }
+    }
+
+    try {
+      await logAudit(docId.toString(), 'manual_reminder_sent', req.body?.actor_email || req.ip || 'system', req.ip || null);
+    } catch (_) { /* non-fatal */ }
+
+    if (sentCount === 0) {
+      return res.status(500).json({ success: false, error: errors.join('; ') || 'No reminders sent' });
+    }
+    res.json({
+      success: true,
+      message: `Reminder sent to ${sentCount} recipient${sentCount === 1 ? '' : 's'}.`,
+      sent: sentCount,
+      errors: errors.length ? errors : undefined,
+    });
+  } catch (error) {
+    console.error('❌ E-sign remind error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

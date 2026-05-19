@@ -128,6 +128,31 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     return () => { cancelled = true; };
   }, []);
 
+  // Auto-select the combination for single-option migration types (Multi combination, Overage Agreement).
+  // Runs whenever migrationType changes or apiCombinations finishes loading, so it also covers
+  // existing sessions, refreshes, and the race where the API hadn't responded at click time.
+  useEffect(() => {
+    const mt = config.migrationType;
+    if ((mt !== 'Multi combination' && mt !== 'Overage Agreement') || config.combination) return;
+    const fromApi = apiCombinations.filter(c => c.migrationType === mt);
+    const fallback = mt === 'Multi combination'
+      ? [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }]
+      : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
+    const options = fromApi.length > 0 ? fromApi : fallback;
+    if (options.length !== 1) return;
+    const autoValue = options[0].value;
+    const newConfig = { ...config, combination: autoValue };
+    setConfig(newConfig);
+    setCombination(autoValue);
+    onConfigurationChange(newConfig);
+    try {
+      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+      navState.combination = autoValue;
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+  }, [config.migrationType, config.combination, apiCombinations]);
+
   const toggleSection = (sectionId: string) => {
     setCollapsedSections(prev => {
       const newSet = new Set(prev);
@@ -1738,25 +1763,35 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   onChange={(e) => {
                     const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
                     const preservedServicePlan = config.servicePlan === 'Bundle' ? 'Bundle' : 'Migrate';
-                    const newConfig = { ...config, migrationType: newMigrationType, combination: '', timelineProjection: '', servicePlan: preservedServicePlan as 'Migrate' | 'Bundle' };
+
+                    // Auto-select the combination when the migration type has exactly one option.
+                    // Applies to Multi combination and Overage Agreement (single-template types).
+                    let autoCombination = '';
+                    if (newMigrationType === 'Multi combination' || newMigrationType === 'Overage Agreement') {
+                      const fromApi = apiCombinations.filter(c => c.migrationType === newMigrationType);
+                      const fallback = newMigrationType === 'Multi combination'
+                        ? [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }]
+                        : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
+                      const options = fromApi.length > 0 ? fromApi : fallback;
+                      if (options.length === 1) autoCombination = options[0].value;
+                    }
+
+                    const newConfig = { ...config, migrationType: newMigrationType, combination: autoCombination, timelineProjection: '', servicePlan: preservedServicePlan as 'Migrate' | 'Bundle' };
                     setConfig(newConfig);
-                    setCombination('');
+                    setCombination(autoCombination);
                     onConfigurationChange(newConfig);
                     try {
                       sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
                       const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
                       navState.migrationType = newMigrationType;
-                      navState.combination = '';
+                      navState.combination = autoCombination;
                       sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
                     } catch (err) { console.warn('Could not save to sessionStorage:', err); }
                   }}
                   className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                 >
                   <option value="">Select Migration Type</option>
-                  <option value="Messaging">Messaging</option>
-                  <option value="Content">Content</option>
-                  <option value="Email">Email</option>
-                  <option value="Multi combination">Multi combination</option>
+                  <option value="Multi combination">Combination</option>
                   <option value="Overage Agreement">Overage</option>
                 </select>
               )}
@@ -2021,15 +2056,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-8">
 
-          {/* Template Selection - Show when migration type is selected (Messaging, Content, Email, Multi combination, Overage) */}
-          {config.migrationType && (
+          {/* Template Selection - shown for migration types where users must pick a combination.
+              Hidden for Multi combination and Overage Agreement since those have a single auto-selected combination. */}
+          {config.migrationType && config.migrationType !== 'Multi combination' && config.migrationType !== 'Overage Agreement' && (
             <div data-section="template-selection" className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-lg border border-purple-200 p-8">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <FileText className="w-8 h-8 text-white" />
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Select Combination</h3>
-                <p className="text-gray-600">Choose a combination for your {config.migrationType === 'Multi combination' ? 'multi combination' : config.migrationType.toLowerCase()} migration quote</p>
+                <p className="text-gray-600">Choose a combination for your {config.migrationType.toLowerCase()} migration quote</p>
               </div>
               
               <div className="max-w-md mx-auto">
@@ -2281,10 +2317,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
               {/* Common Customer Location (Region) — Multi combination shared field */}
               <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-xl shadow-md border-2 border-sky-200 p-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-sky-500 rounded-full flex items-center justify-center shadow-lg shrink-0">
-                    <Sparkles className="w-6 h-6 text-white" />
-                  </div>
+                <div className="flex items-center">
                   <div className="flex-1">
                     <label className="block text-base font-bold text-gray-900 mb-1">
                       Customer Location
@@ -2320,10 +2353,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             
             return (
               <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl shadow-md border-2 border-purple-200 p-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center shadow-lg shrink-0">
-                    <Server className="w-6 h-6 text-white" />
-                  </div>
+                <div className="flex items-center">
                   <div className="flex-1">
                     <label className="block text-base font-bold text-gray-900 mb-1">
                       Common Instance Type

@@ -449,6 +449,11 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       return 'OVERAGE AGREEMENT';
     }
 
+    // Hide "Multi" from the Multi Combination template name to match the renamed dropdown UI.
+    if (rawName.toLowerCase() === 'multi combination') {
+      return 'Combination';
+    }
+
     return rawName || 'Selected Template';
   };
 
@@ -1381,12 +1386,6 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   }
 
   const handleSendToDealDesk = async () => {
-    // Validate discount is not more than 10%
-    if (clientInfo.discount && clientInfo.discount > 10) {
-      alert('Discount cannot be more than 10%. Please adjust the discount value.');
-      return;
-    }
-    
     // Validate discount doesn't bring total below $2500
     if (clientInfo.discount && clientInfo.discount > 0) {
       const finalTotal = (calculation?.totalCost ?? safeCalculation.totalCost) * (1 - (clientInfo.discount / 100));
@@ -2475,13 +2474,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
     e.preventDefault();
     
     console.log('🔍 handleSubmit - dealData:', dealData);
-    
-    // Validate discount is not more than 10%
-    if (clientInfo.discount && clientInfo.discount > 10) {
-      alert('Discount cannot be more than 10%. Please adjust the discount value.');
-      return;
-    }
-    
+
     // Validate discount doesn't bring total below $2500
     if (clientInfo.discount && clientInfo.discount > 0) {
       const finalTotal = (calculation?.totalCost ?? safeCalculation.totalCost) * (1 - (clientInfo.discount / 100));

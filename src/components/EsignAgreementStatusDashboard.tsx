@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar } from 'lucide-react';
+import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
@@ -81,6 +81,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const [statusModalLoading, setStatusModalLoading] = useState(false);
   const [statusModalDownloading, setStatusModalDownloading] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [dateFilter, setDateFilter] = useState<{ type: 'none' } | { type: 'dateRange'; from: string; to: string }>({ type: 'none' });
@@ -335,6 +336,36 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     } finally {
       setVoidingId(null);
     }
+  };
+
+  const handleRemind = async (agreementId: string, fileName?: string) => {
+    const docLabel = fileName ? `"${fileName}"` : 'this agreement';
+    if (!window.confirm(`Send a reminder email to all pending recipients for ${docLabel}?`)) return;
+    setRemindingId(agreementId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/remind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email || '' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        alert(data.message || 'Reminder sent.');
+      } else {
+        alert(data.error || `Reminder failed${!res.ok ? ` (${res.status})` : ''}`);
+      }
+    } catch {
+      alert('Failed to send reminder.');
+    } finally {
+      setRemindingId(null);
+    }
+  };
+
+  const isCurrentUserCreator = (ag: Agreement): boolean => {
+    const me = (user?.email || '').trim().toLowerCase();
+    if (!me) return false;
+    const creator = (ag.uploaded_by || ag.creator_email || '').trim().toLowerCase();
+    return creator !== '' && creator === me;
   };
 
   const handleStatusModalPreview = () => {
@@ -651,6 +682,17 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {status === 'sent' && isCurrentUserCreator(openAgreement) && (
+                        <button
+                          type="button"
+                          onClick={() => { handleRemind(openAgreement.id, openAgreement.file_name); closeActionsMenu(); }}
+                          disabled={remindingId === openAgreement.id}
+                          className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {remindingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Bell className="h-4 w-4 shrink-0" />}
+                          Send Reminder
+                        </button>
+                      )}
                       {status === 'sent' && (
                         <button
                           type="button"
