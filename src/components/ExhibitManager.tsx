@@ -1023,9 +1023,11 @@ const ExhibitManager: React.FC = () => {
   // Filter and sort exhibits (newest first)
   const filteredExhibits = exhibits
     .filter(exhibit => {
-      const matchesSearch = exhibit.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           exhibit.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           exhibit.fileName.toLowerCase().includes(searchTerm.toLowerCase());
+      const q = (searchTerm || '').toLowerCase();
+      const matchesSearch =
+        (exhibit.name || '').toLowerCase().includes(q) ||
+        (exhibit.description || '').toLowerCase().includes(q) ||
+        (exhibit.fileName || '').toLowerCase().includes(q);
       const matchesCategory = !filterCategory || exhibit.category === filterCategory;
       return matchesSearch && matchesCategory;
     })

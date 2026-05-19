@@ -1427,13 +1427,18 @@ app.post('/api/auth/login', async (req, res) => {
     // Track daily login
     await trackDailyLogin(user.id, 'email', user.email);
 
-    // Return user without password
+    // Return user without password (with computed role + isApprovalAdmin flag)
     const { password: _, ...userWithoutPassword } = user;
+    const dbExhibitEmails = await getExhibitAdminEmailsFromDb();
+    const isExhibitAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbExhibitEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const effectiveRole = user.role || (isExhibitAdmin ? 'exhibit_admin' : 'viewer');
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
     res.json({
       success: true,
       message: 'Login successful',
-      user: userWithoutPassword,
+      user: userResponse,
       token: token
     });
   } catch (error) {
@@ -1486,7 +1491,8 @@ app.get('/api/auth/me', async (req, res) => {
     const { password: _, ...userWithoutPassword } = user;
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || (await getExhibitAdminEmailsFromDb()).some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
-    const userResponse = { ...userWithoutPassword, role: effectiveRole };
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
     res.json({
       success: true,
@@ -1560,7 +1566,8 @@ app.post('/api/auth/microsoft', async (req, res) => {
     const dbEmails = await getExhibitAdminEmailsFromDb();
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
-    const userResponse = { ...userWithoutPassword, role: effectiveRole };
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
     res.json({
       success: true,
@@ -2630,6 +2637,134 @@ app.post('/api/settings/exhibit-admins', async (req, res) => {
     res.json({ success: true, emails: updated });
   } catch (e) {
     console.error('POST exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ============================================
+// APPROVAL ADMINS — admins who can edit Team Approval Settings
+// (Mirrors exhibit_admin logic. Bootstrap with APPROVAL_ADMIN_EMAILS env or DEFAULT_APPROVAL_ADMINS.)
+// ============================================
+
+const DEFAULT_APPROVAL_ADMINS = ['bala.raviteja@cloudfuze.com', 'anush.dasari@cloudfuze.com'];
+
+function isApprovalAdminByEnv(email) {
+  const list = process.env.APPROVAL_ADMIN_EMAILS;
+  const candidates = [];
+  if (typeof list === 'string' && list.trim()) {
+    list.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean).forEach((e) => candidates.push(e));
+  }
+  DEFAULT_APPROVAL_ADMINS.forEach((e) => candidates.push(e.toLowerCase()));
+  return candidates.includes((email || '').trim().toLowerCase());
+}
+
+async function getApprovalAdminEmailsFromDb() {
+  if (!db) return [];
+  try {
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    return Array.isArray(doc?.emails) ? doc.emails : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function hasApprovalAdminAccess(user) {
+  if (!user) return false;
+  if (isApprovalAdminByEnv(user.email)) return true;
+  const dbEmails = await getApprovalAdminEmailsFromDb();
+  const normalized = (user.email || '').trim().toLowerCase();
+  return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
+}
+
+async function getApprovalAdminUser(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  if (token.split('.').length !== 3) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await db.collection('users').findOne({ id: decoded.userId });
+    if (!user) {
+      res.status(401).json({ success: false, error: 'User not found' });
+      return null;
+    }
+    if (!(await hasApprovalAdminAccess(user))) {
+      res.status(403).json({ success: false, error: 'Only approval admins can manage this list' });
+      return null;
+    }
+    return user;
+  } catch (e) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+}
+
+app.get('/api/settings/approval-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const emails = await getApprovalAdminEmailsFromDb();
+    res.json({ success: true, emails });
+  } catch (e) {
+    console.error('GET approval-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/settings/approval-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const { email } = req.body || {};
+    const trimmed = (email && String(email).trim()) || '';
+    if (!trimmed || !trimmed.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+    const normalized = trimmed.toLowerCase();
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    if (emails.map((e) => String(e).trim().toLowerCase()).includes(normalized)) {
+      return res.json({ success: true, emails, message: 'Email already in list' });
+    }
+    const updated = [...emails, trimmed];
+    await db.collection('settings').updateOne(
+      { _id: 'approval_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('POST approval-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete('/api/settings/approval-admins/:email', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const emailParam = decodeURIComponent((req.params.email || '').trim());
+    if (!emailParam) return res.status(400).json({ success: false, error: 'Email required' });
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    const normalized = emailParam.toLowerCase();
+    const updated = emails.filter((e) => String(e).trim().toLowerCase() !== normalized);
+    await db.collection('settings').updateOne(
+      { _id: 'approval_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('DELETE approval-admins error:', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
@@ -9977,13 +10112,6 @@ app.get('/api/team-approval-settings', async (req, res) => {
           DEV: [],
           DEV2: [],
         },
-        authorizedSenders: {
-          SMB: [],
-          AM: [],
-          ENT: [],
-          DEV: [],
-          DEV2: [],
-        }
       };
       return res.json({ success: true, data: defaultSettings });
     }
@@ -10004,11 +10132,15 @@ app.put('/api/team-approval-settings', async (req, res) => {
     const newSettings = req.body;
 
     // Validate structure
-    if (!newSettings.teamLeads || !newSettings.authorizedSenders) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid settings structure. Must include teamLeads and authorizedSenders.' 
+    if (!newSettings.teamLeads) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid settings structure. Must include teamLeads.'
       });
+    }
+    // Strip the deprecated authorizedSenders field if it's still being sent
+    if (newSettings.authorizedSenders) {
+      delete newSettings.authorizedSenders;
     }
 
     // Upsert (update or insert) the settings document
@@ -10045,12 +10177,11 @@ app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
     if (settings) {
       const teamSettings = {
         teamLead: settings.teamLeads?.[teamName] || '',
-        authorizedSenders: settings.authorizedSenders?.[teamName] || [],
         additionalRecipients: settings.additionalRecipients?.[teamName] || []
       };
       return res.json({ success: true, data: teamSettings });
     } else {
-      return res.json({ success: true, data: { teamLead: '', authorizedSenders: [], additionalRecipients: [] } });
+      return res.json({ success: true, data: { teamLead: '', additionalRecipients: [] } });
     }
   } catch (error) {
     console.error('❌ Error fetching team settings:', error);

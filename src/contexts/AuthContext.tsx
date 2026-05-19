@@ -82,9 +82,11 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               if (response.ok) {
                 const data = await response.json();
                 if (data.success) {
+                  // Sync the refreshed user (with isApprovalAdmin and effective role) back to localStorage
+                  localStorage.setItem('cpq_user', JSON.stringify(data.user));
                   setUser(data.user);
                   setIsAuthenticated(true);
-                  
+
                   // Identify user in Clarity (for already logged-in users)
                   identify(data.user.email, {
                     name: data.user.name,

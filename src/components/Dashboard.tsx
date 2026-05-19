@@ -15,7 +15,6 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ConfigurationData, PricingCalculation, PricingTier, Quote } from '../types/pricing';
 import { getRecommendedTier } from '../utils/pricing';
 import { FileText } from 'lucide-react';
-import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface DashboardProps {
   // All the props that were previously in App component
@@ -121,9 +120,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Check if any approval workflow has been fully approved (gates eSign access)
-  const { workflows: approvalWorkflows } = useApprovalWorkflows();
-  const isEsignEnabled = approvalWorkflows.some((w) => w.status === 'approved');
+  // eSign tabs are always accessible (no approval gating)
+  const isEsignEnabled = true;
 
   // Navigation state to track current session
   const [navigationState, setNavigationState] = React.useState({

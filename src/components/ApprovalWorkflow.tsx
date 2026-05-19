@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { FileText, Rocket, Users, FileCheck, BarChart3, Settings, X, Plus, Trash2 } from 'lucide-react';
+import { FileText, Rocket, Users, FileCheck, BarChart3, Settings, X, Plus, Trash2, Shield, UserPlus, Loader2 } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
 import { BACKEND_URL } from '../config/api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '../utils/authUtils';
+import { useAuth } from '../hooks/useAuth';
 
 interface ApprovalWorkflowProps {
   quotes?: any[];
@@ -21,6 +22,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
   const { createWorkflow } = useApprovalWorkflows();
+  const { user: authUser } = useAuth();
+  const userIsAdmin = Boolean((authUser as any)?.isApprovalAdmin);
   const [activeTab, setActiveTab] = useState('dashboard');
 
   useLayoutEffect(() => {
@@ -57,7 +60,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [teamApprovalSettings, setTeamApprovalSettings] = useState<{
     teamLeads: Record<string, string>;
     additionalRecipients: Record<string, string[]>; // Keep for backward compatibility
-    authorizedSenders: Record<string, string[]>; // People who can send approval emails to this team lead
   }>({
     teamLeads: {
       SMB: 'chitradip.saha@cloudfuze.com',
@@ -73,13 +75,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       DEV: [],
       DEV2: [],
     },
-    authorizedSenders: {
-      SMB: [],
-      AM: [],
-      ENT: [],
-      DEV: [],
-      DEV2: [],
-    }
   });
 
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -99,33 +94,28 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         const result = await response.json();
         
         if (result.success && result.data) {
-          // Migrate old data: ensure authorizedSenders and additionalRecipients exist for every team
           const teamIds = Object.keys(result.data.teamLeads || {});
-          if (!result.data.authorizedSenders) result.data.authorizedSenders = {};
           if (!result.data.additionalRecipients) result.data.additionalRecipients = {};
           teamIds.forEach((k) => {
-            if (!Array.isArray(result.data.authorizedSenders[k])) result.data.authorizedSenders[k] = [];
             if (!Array.isArray(result.data.additionalRecipients[k])) result.data.additionalRecipients[k] = [];
           });
+          delete result.data.authorizedSenders;
           setTeamApprovalSettings(result.data);
-          
-          // Also save to localStorage as backup/cache
+
           try {
             localStorage.setItem('cpq_team_approval_settings', JSON.stringify(result.data));
           } catch {}
         } else {
-          // Try loading from localStorage as fallback
           try {
             const saved = localStorage.getItem('cpq_team_approval_settings');
             if (saved) {
               const parsed = JSON.parse(saved);
               const teamIds = Object.keys(parsed.teamLeads || {});
-              if (!parsed.authorizedSenders) parsed.authorizedSenders = {};
               if (!parsed.additionalRecipients) parsed.additionalRecipients = {};
               teamIds.forEach((k) => {
-                if (!Array.isArray(parsed.authorizedSenders[k])) parsed.authorizedSenders[k] = [];
                 if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
               });
+              delete parsed.authorizedSenders;
               setTeamApprovalSettings(parsed);
             }
           } catch {}
@@ -133,19 +123,17 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       } catch (error) {
         console.error('Error loading team approval settings:', error);
         setSettingsError('Failed to load settings. Using defaults.');
-        
-        // Fallback to localStorage
+
         try {
           const saved = localStorage.getItem('cpq_team_approval_settings');
           if (saved) {
             const parsed = JSON.parse(saved);
             const teamIds = Object.keys(parsed.teamLeads || {});
-            if (!parsed.authorizedSenders) parsed.authorizedSenders = {};
             if (!parsed.additionalRecipients) parsed.additionalRecipients = {};
             teamIds.forEach((k) => {
-              if (!Array.isArray(parsed.authorizedSenders[k])) parsed.authorizedSenders[k] = [];
               if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
             });
+            delete parsed.authorizedSenders;
             setTeamApprovalSettings(parsed);
           }
         } catch {}
@@ -206,94 +194,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const currentUser = getCurrentUser();
   const loggedInUserEmail = currentUser?.email || '';
 
-  // Check if user is authorized for any team
-  const getUserAuthorizedTeam = (): string | null => {
-    if (!loggedInUserEmail) return null;
-    
-    // Check each team's authorized senders list
-    for (const [team, senders] of Object.entries(teamApprovalSettings.authorizedSenders || {})) {
-      if (Array.isArray(senders) && senders.includes(loggedInUserEmail)) {
-        return team;
-      }
-    }
-    
-    // Also check if logged-in user is a team lead
-    for (const [team, leadEmail] of Object.entries(teamApprovalSettings.teamLeads || {})) {
-      if (leadEmail === loggedInUserEmail) {
-        return team;
-      }
-    }
-    
-    return null;
-  };
-
-  // Automatic team selection logic based on logged-in user's email
-  const getAutoSelectedTeam = (amount: number = 0, clientName: string = ''): string => {
-    // If user manually selected a team, use that
-    if (useManualSelection) {
-      return manualTeamSelection;
-    }
-    
-    const authorizedTeam = getUserAuthorizedTeam();
-    
-    if (authorizedTeam) {
-      console.log(`✅ Auto-selected team ${authorizedTeam} based on logged-in user: ${loggedInUserEmail}`);
-      // Initialize manual selection to authorized team
-      if (manualTeamSelection === 'SMB') {
-        setManualTeamSelection(authorizedTeam);
-      }
-      return authorizedTeam;
-    }
-    
-    // If user is not authorized, use manual selection (defaults to SMB)
-    return manualTeamSelection;
-  };
-
-  // Handle sending authorization request to team lead
-  const handleSendAuthorizationRequest = async () => {
-    if (!requestingTeam || !loggedInUserEmail) return;
-
-    setIsSendingRequest(true);
-    try {
-      const teamLeadEmail = teamApprovalSettings.teamLeads[requestingTeam];
-      if (!teamLeadEmail) {
-        alert('Team lead email not found for this team.');
-        setIsSendingRequest(false);
-        return;
-      }
-
-      const backendUrl = BACKEND_URL || 'http://localhost:3001';
-      const response = await fetch(`${backendUrl}/api/send-authorization-request`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requesterEmail: loggedInUserEmail,
-          requesterName: currentUser?.name || loggedInUserEmail.split('@')[0],
-          teamLeadEmail: teamLeadEmail,
-          teamName: requestingTeam,
-          message: requestMessage || `Hi, I would like to request authorization to send approval workflows to the ${requestingTeam} team.`,
-        }),
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        alert(`✅ Authorization request sent to ${teamLeadEmail} for ${requestingTeam} team. The request has been saved to the database.`);
-        setShowRequestModal(false);
-        setRequestingTeam('');
-        setRequestMessage('');
-      } else {
-        alert('Failed to send request. Please try again or contact the team lead directly.');
-      }
-    } catch (error) {
-      console.error('Error sending authorization request:', error);
-      alert('Failed to send request. Please try again or contact the team lead directly.');
-    } finally {
-      setIsSendingRequest(false);
-    }
-  };
-
   // Get team approval email
   const getTeamApprovalEmail = (team: string): string => {
     const key = (team || '').toUpperCase();
@@ -319,7 +219,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     setTeamApprovalSettings((prev) => ({
       ...prev,
       teamLeads: { ...prev.teamLeads, [code]: '' },
-      authorizedSenders: { ...prev.authorizedSenders, [code]: [] },
       additionalRecipients: { ...prev.additionalRecipients, [code]: [] },
     }));
     setEditingTeam(code);
@@ -337,9 +236,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     const next = ids.find((t) => t !== editingTeam) || ids[0];
     setTeamApprovalSettings((prev) => {
       const { [editingTeam]: _lead, ...teamLeads } = prev.teamLeads || {};
-      const { [editingTeam]: _senders, ...authorizedSenders } = prev.authorizedSenders || {};
       const { [editingTeam]: _recips, ...additionalRecipients } = prev.additionalRecipients || {};
-      return { ...prev, teamLeads, authorizedSenders, additionalRecipients };
+      return { ...prev, teamLeads, additionalRecipients };
     });
     setEditingTeam(next);
     setManualTeamSelection((current) => (current === editingTeam ? next : current));
@@ -349,32 +247,101 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editingTeam, setEditingTeam] = useState<string>('SMB');
   const [newRecipientEmail, setNewRecipientEmail] = useState<string>('');
-  const [newAuthorizedSenderEmail, setNewAuthorizedSenderEmail] = useState<string>('');
   const [newTeamCode, setNewTeamCode] = useState<string>('');
   const [showAddTeamInput, setShowAddTeamInput] = useState(false);
 
-  // State for manual team selection (can override auto-selection)
+  // Team picked by the user in the Send for Approval modal
   const [manualTeamSelection, setManualTeamSelection] = useState<string>('SMB');
-  const [useManualSelection, setUseManualSelection] = useState<boolean>(false);
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestingTeam, setRequestingTeam] = useState<string>('');
-  const [requestMessage, setRequestMessage] = useState<string>('');
-  const [isSendingRequest, setIsSendingRequest] = useState(false);
 
-  // Auto-suggest logged-in user when opening settings
-  useEffect(() => {
-    if (showSettingsModal && loggedInUserEmail) {
-      // Check if logged-in user is already in authorized senders for current team
-      const currentSenders = teamApprovalSettings.authorizedSenders[editingTeam] || [];
-      const isAlreadyAdded = currentSenders.includes(loggedInUserEmail);
-      
-      // If not already added and not the team lead, suggest adding them
-      if (!isAlreadyAdded && teamApprovalSettings.teamLeads[editingTeam] !== loggedInUserEmail) {
-        // Auto-populate the input field with logged-in user's email
-        setNewAuthorizedSenderEmail(loggedInUserEmail);
+  // Approval Admins modal — manages who can edit Team Approval Settings
+  const [showApprovalAdminsModal, setShowApprovalAdminsModal] = useState(false);
+  const [approvalAdminEmails, setApprovalAdminEmails] = useState<string[]>([]);
+  const [approvalAdminLoading, setApprovalAdminLoading] = useState(false);
+  const [approvalAdminError, setApprovalAdminError] = useState<string | null>(null);
+  const [newApprovalAdminEmail, setNewApprovalAdminEmail] = useState('');
+  const [addingApprovalAdmin, setAddingApprovalAdmin] = useState(false);
+  const [removingApprovalAdmin, setRemovingApprovalAdmin] = useState<string | null>(null);
+
+  const getApprovalAdminAuthHeaders = (): Record<string, string> => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const fetchApprovalAdmins = async () => {
+    try {
+      setApprovalAdminLoading(true);
+      setApprovalAdminError(null);
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins`, { headers: getApprovalAdminAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to load admins');
+        setApprovalAdminEmails([]);
+        return;
       }
+      setApprovalAdminEmails(data.emails || []);
+    } catch {
+      setApprovalAdminError('Failed to load approval admins');
+      setApprovalAdminEmails([]);
+    } finally {
+      setApprovalAdminLoading(false);
     }
-  }, [showSettingsModal, editingTeam, loggedInUserEmail, teamApprovalSettings]);
+  };
+
+  const handleAddApprovalAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = newApprovalAdminEmail.trim();
+    if (!email || !email.includes('@')) {
+      setApprovalAdminError('Please enter a valid email');
+      return;
+    }
+    setAddingApprovalAdmin(true);
+    setApprovalAdminError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getApprovalAdminAuthHeaders() },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to add');
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+      setNewApprovalAdminEmail('');
+    } catch {
+      setApprovalAdminError('Failed to add email');
+    } finally {
+      setAddingApprovalAdmin(false);
+    }
+  };
+
+  const handleRemoveApprovalAdmin = async (email: string) => {
+    setRemovingApprovalAdmin(email);
+    setApprovalAdminError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: getApprovalAdminAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to remove');
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+    } catch {
+      setApprovalAdminError('Failed to remove email');
+    } finally {
+      setRemovingApprovalAdmin(null);
+    }
+  };
+
+  useEffect(() => {
+    if (showApprovalAdminsModal && userIsAdmin) {
+      fetchApprovalAdmins();
+    }
+  }, [showApprovalAdminsModal, loggedInUserEmail]);
 
   // Keep editingTeam and manualTeamSelection valid when team list changes (e.g. load from API)
   useEffect(() => {
@@ -586,8 +553,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         selectedDoc?.amount ??
         0;
 
-      // Get selected team (manual override or auto-selected)
-      const autoSelectedTeam = useManualSelection ? manualTeamSelection : getAutoSelectedTeam(amount, clientName);
+      // User picks the team in the Send for Approval modal — use that selection
+      const autoSelectedTeam = manualTeamSelection;
       const teamEmail = getTeamApprovalEmail(autoSelectedTeam);
       if (!teamEmail) {
         alert('Team Approval email not configured. Please configure team settings.');
@@ -706,6 +673,19 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   return (
     <div className="min-h-full bg-gradient-to-br from-slate-50 to-blue-50 w-full">
       <div className="w-full space-y-6">
+        {userIsAdmin && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowApprovalAdminsModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
+            >
+              <Shield className="w-4 h-4 text-blue-600" />
+              Approval Admins
+            </button>
+          </div>
+        )}
+
         {/* Tab Content */}
         {activeTab === 'start' && (
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200">
@@ -872,131 +852,40 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                     <Users className="w-4 h-4 text-purple-600" />
                     Team Approval Group
                   </h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowSettingsModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
-                  >
-                    <Settings className="w-3.5 h-3.5" />
-                    Edit Settings
-                  </button>
+                  {userIsAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSettingsModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                      Edit Settings
+                    </button>
+                  )}
                 </div>
                 <p className="text-xs text-gray-600 mb-4">
                   Team lead is automatically selected. Click "Edit Settings" to configure team leads and add recipients.
                 </p>
-                <div className="bg-white rounded-lg p-3 border border-purple-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      {loggedInUserEmail && (() => {
-                        const authorizedTeam = getUserAuthorizedTeam();
-                        const selectedTeam = getAutoSelectedTeam();
-                        const isAuthorized = authorizedTeam === selectedTeam;
-                        
-                        if (!authorizedTeam) {
-                          // User not authorized - show manual selection dropdown
-                          return (
-                            <div className="space-y-3">
-                              <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-2">
-                                  Select Team (You are not authorized by any team)
-                                </label>
-                                <select
-                                  value={manualTeamSelection}
-                                  onChange={(e) => setManualTeamSelection(e.target.value)}
-                                  className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                                >
-                                  {teamIds.map((team) => (
-                                    <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                                <div className="text-xs text-amber-800 font-semibold mb-1">
-                                  ⚠️ Not Authorized
-                                </div>
-                                <div className="text-xs text-amber-700 mb-2">
-                                  You are not authorized by any team leader. Select a team above or request authorization.
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setRequestingTeam(manualTeamSelection);
-                                    setShowRequestModal(true);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-xs font-semibold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                                >
-                                  Request Authorization from {manualTeamSelection} Team Lead
-                                </button>
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                Selected Team: <span className="text-purple-600 font-semibold">{selectedTeam}</span>
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                Team Lead: {getTeamApprovalEmail(selectedTeam) || 'Not configured'}
-                              </div>
-                            </div>
-                          );
-                        }
-                        
-                        // User is authorized - show normal display with option to change
-                        return (
-                          <div className="space-y-3">
-                            <div>
-                              <div className="text-sm font-semibold text-gray-900 mb-2">
-                                Selected Team: <span className="text-purple-600">{selectedTeam}</span>
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                Team Lead: {getTeamApprovalEmail(selectedTeam) || 'Not configured'}
-                              </div>
-                              <div className="text-xs text-blue-600 mt-1 font-semibold">
-                                ✓ You are authorized to send approvals to this team
-                              </div>
-                            </div>
-                            
-                            {/* Option to change team */}
-                            <div className="pt-2 border-t border-gray-200">
-                              <button
-                                type="button"
-                                onClick={() => setUseManualSelection(!useManualSelection)}
-                                className="text-xs text-purple-600 hover:text-purple-700 font-semibold"
-                              >
-                                {useManualSelection ? '✓ Using manual selection' : 'Change Team'}
-                              </button>
-                              
-                              {useManualSelection && (
-                                <div className="mt-2">
-                                  <select
-                                    value={manualTeamSelection}
-                                    onChange={(e) => {
-                                      setManualTeamSelection(e.target.value);
-                                    }}
-                                    className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                                  >
-                                    {teamIds.map((team) => (
-                                      <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
-                                    ))}
-                                  </select>
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    Selected: {manualTeamSelection} - {getTeamApprovalEmail(manualTeamSelection)}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                      
-                      {!loggedInUserEmail && (
-                        <>
-                          <div className="text-sm font-semibold text-gray-900">
-                            Selected Team: <span className="text-purple-600">{getAutoSelectedTeam()}</span>
-                          </div>
-                          <div className="text-xs text-gray-600 mt-1">
-                            Team Lead: {getTeamApprovalEmail(getAutoSelectedTeam()) || 'Not configured'}
-                          </div>
-                        </>
-                      )}
-                    </div>
+                <div className="bg-white rounded-lg p-3 border border-purple-200 space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">
+                      Select Team Lead to send this approval to
+                    </label>
+                    <select
+                      value={manualTeamSelection}
+                      onChange={(e) => setManualTeamSelection(e.target.value)}
+                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                    >
+                      {teamIds.map((team) => (
+                        <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    Selected Team: <span className="text-purple-600 font-semibold">{manualTeamSelection}</span>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    Team Lead: {getTeamApprovalEmail(manualTeamSelection) || 'Not configured'}
                   </div>
                 </div>
               </div>
@@ -1221,112 +1110,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                     )}
                   </div>
 
-                    {/* Authorized Senders - People who can send approval emails to this team lead */}
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Authorized Senders (People who can send approvals to this team lead)
-                      </label>
-                      <p className="text-xs text-gray-500 mb-3">
-                        Add people who can send approval emails to the {editingTeam} team lead. When they log in and start a workflow, their team will be automatically selected.
-                      </p>
-                      {loggedInUserEmail && (
-                        <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-xs text-blue-800">
-                            <strong>Logged in as:</strong> {loggedInUserEmail}
-                            {teamApprovalSettings.authorizedSenders[editingTeam]?.includes(loggedInUserEmail) ? (
-                              <span className="text-green-600 ml-2">✓ Already authorized - Your workflows will auto-select {editingTeam} team</span>
-                            ) : teamApprovalSettings.teamLeads[editingTeam] === loggedInUserEmail ? (
-                              <span className="text-purple-600 ml-2">(You are the team lead - no authorization needed)</span>
-                            ) : (
-                              <span className="text-blue-600 ml-2">- Click "Add" to authorize yourself to send approvals to {editingTeam} team</span>
-                            )}
-                          </p>
-                        </div>
-                      )}
-                    
-                    {/* Add New Authorized Sender */}
-                    <div className="flex gap-2 mb-3">
-                      <input
-                        type="email"
-                        value={newAuthorizedSenderEmail}
-                        onChange={(e) => setNewAuthorizedSenderEmail(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter' && newAuthorizedSenderEmail.trim()) {
-                            e.preventDefault();
-                            setTeamApprovalSettings(prev => ({
-                              ...prev,
-                              authorizedSenders: {
-                                ...prev.authorizedSenders,
-                                [editingTeam]: [
-                                  ...(prev.authorizedSenders[editingTeam] || []),
-                                  newAuthorizedSenderEmail.trim()
-                                ]
-                              }
-                            }));
-                            setNewAuthorizedSenderEmail('');
-                          }
-                        }}
-                        className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                        placeholder="authorized.sender@cloudfuze.com"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newAuthorizedSenderEmail.trim()) {
-                            setTeamApprovalSettings(prev => ({
-                              ...prev,
-                              authorizedSenders: {
-                                ...prev.authorizedSenders,
-                                [editingTeam]: [
-                                  ...(prev.authorizedSenders[editingTeam] || []),
-                                  newAuthorizedSenderEmail.trim()
-                                ]
-                              }
-                            }));
-                            setNewAuthorizedSenderEmail('');
-                          }
-                        }}
-                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add
-                      </button>
-                    </div>
-
-                    {/* Authorized Senders List */}
-                    <div className="space-y-2">
-                      {teamApprovalSettings.authorizedSenders[editingTeam]?.length > 0 ? (
-                        teamApprovalSettings.authorizedSenders[editingTeam].map((email, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between px-4 py-2 bg-gray-50 rounded-lg border border-gray-200"
-                          >
-                            <span className="text-sm text-gray-700">{email}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setTeamApprovalSettings(prev => ({
-                                  ...prev,
-                                  authorizedSenders: {
-                                    ...prev.authorizedSenders,
-                                    [editingTeam]: prev.authorizedSenders[editingTeam].filter((_, i) => i !== idx)
-                                  }
-                                }));
-                              }}
-                              className="text-red-600 hover:text-red-700 p-1 rounded transition-colors"
-                              aria-label="Remove authorized sender"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-sm text-gray-400 italic py-2">
-                          No authorized senders added yet. Add emails to allow users to automatically send approvals to this team lead.
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1355,93 +1138,87 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         </div>
       )}
 
-      {/* Authorization Request Modal */}
-      {showRequestModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
-              <div className="flex items-center gap-3">
-                <Users className="w-5 h-5 text-purple-600" />
-                <h2 className="text-lg font-extrabold text-gray-900">Request Authorization</h2>
+      {/* Approval Admins Modal */}
+      {showApprovalAdminsModal && userIsAdmin && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowApprovalAdminsModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-lg max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-blue-600" />
+                  Approval Admins
+                </h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  Users with these emails can edit Team Approval Settings and manage this list. You can also set APPROVAL_ADMIN_EMAILS in .env.
+                </p>
               </div>
               <button
-                type="button"
-                onClick={() => {
-                  setShowRequestModal(false);
-                  setRequestingTeam('');
-                  setRequestMessage('');
-                }}
-                className="inline-flex items-center justify-center h-8 w-8 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                onClick={() => setShowApprovalAdminsModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
                 aria-label="Close"
               >
-                <X className="h-4 w-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-
-            {/* Modal Content */}
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Requesting authorization for: <span className="text-purple-600">{requestingTeam} Team</span>
-                </label>
-                <p className="text-xs text-gray-600">
-                  Team Lead: {teamApprovalSettings.teamLeads[requestingTeam] || 'Not configured'}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Your Message (Optional)
-                </label>
-                <textarea
-                  value={requestMessage}
-                  onChange={(e) => setRequestMessage(e.target.value)}
-                  placeholder={`Hi, I would like to request authorization to send approval workflows to the ${requestingTeam} team.`}
-                  className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white min-h-[100px]"
-                  rows={4}
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <form onSubmit={handleAddApprovalAdmin} className="flex gap-2">
+                <input
+                  type="email"
+                  value={newApprovalAdminEmail}
+                  onChange={(e) => setNewApprovalAdminEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  disabled={addingApprovalAdmin}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  A request email will be sent to the team lead with your message.
-                </p>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowRequestModal(false);
-                  setRequestingTeam('');
-                  setRequestMessage('');
-                }}
-                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSendAuthorizationRequest}
-                disabled={isSendingRequest}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isSendingRequest ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Users className="w-4 h-4" />
-                    Send Request
-                  </>
-                )}
-              </button>
+                <button
+                  type="submit"
+                  disabled={addingApprovalAdmin || !newApprovalAdminEmail.trim()}
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {addingApprovalAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  Add
+                </button>
+              </form>
+              {approvalAdminError && (
+                <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
+                  {approvalAdminError}
+                </div>
+              )}
+              {approvalAdminLoading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                </div>
+              ) : approvalAdminEmails.length === 0 ? (
+                <p className="text-gray-500 text-xs">No approval admins in the list yet. Add an email above or use .env / DEFAULT_APPROVAL_ADMINS.</p>
+              ) : (
+                <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                  {approvalAdminEmails.map((email) => (
+                    <li key={email} className="py-2 flex items-center justify-between gap-2">
+                      <span className="text-gray-900 text-sm truncate">{email}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveApprovalAdmin(email)}
+                        disabled={removingApprovalAdmin === email}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 text-sm"
+                        title="Remove"
+                      >
+                        {removingApprovalAdmin === email ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 };
