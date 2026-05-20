@@ -7723,6 +7723,8 @@ app.post('/api/esign/signature-fields', async (req, res) => {
           text_color: tc,
           text_font: tf,
         };
+      } else if ((typeLower === 'name' || typeLower === 'title') && typeof f.prefill === 'string') {
+        textFieldExtras = { prefill: f.prefill.slice(0, 500) };
       }
       if (f.xPct != null) {
         return { ...base, ...textFieldExtras, xPct: Number(f.xPct), yPct: Number(f.yPct), widthPct: Number(f.widthPct) || 20, heightPct: Number(f.heightPct) || 4 };
@@ -8192,7 +8194,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       const f = fields[i];
       const fType = (f.type || 'signature').toLowerCase();
       let val = values[String(i)] ?? values[f._id?.toString()];
-      if (fType === 'text' && (val == null || val === '')) {
+      if ((fType === 'text' || fType === 'name' || fType === 'title') && (val == null || val === '')) {
         const p = f.prefill;
         if (typeof p === 'string' && p.length) val = p;
       }

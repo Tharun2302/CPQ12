@@ -664,6 +664,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         console.log('📋 Combination in parsed data:', parsed.combination);
         
         const merged = {
+          // Spread first so any persisted field (servicePlan, manageUsers, manageDataGB,
+          // customerLocation, timelineProjection, etc.) restores on navigation back.
+          // The explicit overrides below take precedence for fields that need type coercion or defaults.
+          ...parsed,
           numberOfUsers: typeof parsed.numberOfUsers === 'number' ? parsed.numberOfUsers : 1,
           instanceType: parsed.instanceType || 'Small',
           numberOfInstances: typeof parsed.numberOfInstances === 'number' ? parsed.numberOfInstances : 1,

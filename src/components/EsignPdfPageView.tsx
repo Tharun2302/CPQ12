@@ -37,10 +37,10 @@ export interface EsignPdfPageViewProps {
  * Structure: Page container (position: relative) > Canvas + Field Layer (position: absolute).
  * Each page has its own field layer so fields stay fixed to the page when scrolling.
  */
-const DEFAULT_FIELD_WIDTH_PT = 120;
-const DEFAULT_FIELD_HEIGHT_PT = 40;
-const DEFAULT_TEXT_FIELD_WIDTH_PT = 220;
-const DEFAULT_TEXT_FIELD_HEIGHT_PT = 72;
+const DEFAULT_FIELD_WIDTH_PT = 100;
+const DEFAULT_FIELD_HEIGHT_PT = 22;
+const DEFAULT_TEXT_FIELD_WIDTH_PT = 180;
+const DEFAULT_TEXT_FIELD_HEIGHT_PT = 36;
 
 const EsignPdfPageView: React.FC<EsignPdfPageViewProps> = ({
   pdfUrl,
