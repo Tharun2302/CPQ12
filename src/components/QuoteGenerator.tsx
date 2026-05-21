@@ -6702,7 +6702,9 @@ Total Price: {{total price}}`;
         console.log('🔍 TEMPLATE DATA DETAILED DEBUG:');
         Object.entries(templateData).forEach(([key, value]) => {
           if (value === undefined || value === null || value === '') {
-            console.error(`❌ CRITICAL: Template data ${key} is undefined/null/empty:`, value);
+            // Empty tokens for unused features (content/messaging migration mix, no discount, etc.)
+            // are auto-filled below — log at debug level only so they don't appear as errors.
+            console.debug(`Template data ${key} is empty:`, value);
           } else {
             console.log(`✅ Template data ${key}:`, value);
           }
@@ -7640,7 +7642,7 @@ Total Price: {{total price}}`;
         });
         
         if (undefinedTokens.length > 0) {
-          console.error('❌ CRITICAL: Found undefined/null/empty tokens:', undefinedTokens);
+          console.debug('Empty tokens (will be auto-filled below):', undefinedTokens);
           
           // Fix any remaining undefined values
           undefinedTokens.forEach(([key, value]) => {

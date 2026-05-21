@@ -2689,7 +2689,7 @@ export class DocxTemplateProcessor {
       );
       
       if (undefinedKeys.length > 0) {
-        console.error('❌ DOCX PROCESSOR: Found undefined/null/empty values for keys:', undefinedKeys);
+        console.debug('DOCX PROCESSOR: Empty values (will be auto-filled below):', undefinedKeys);
         
         // Replace with intelligent fallbacks
         undefinedKeys.forEach(key => {
