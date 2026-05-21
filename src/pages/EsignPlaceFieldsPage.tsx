@@ -1515,21 +1515,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                               </span>
                             </div>
                             <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                              <span className="text-[9px] text-slate-500">Role:</span>
-                              <select
-                                value={roleForDropdown}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  updateRecipientRole(r.id, v === '— None —' ? (effectiveAction) : v);
-                                }}
-                                className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
-                                title="Dashboard label in email (None = generic)"
-                              >
-                                <option value="— None —">— None —</option>
-                                <option value="Team Lead">Team Lead</option>
-                                <option value="Technical Team">Technical Team</option>
-                                <option value="Legal Team">Legal Team</option>
-                              </select>
                               <span className="text-[9px] text-slate-500">Action:</span>
                               <select
                                 value={effectiveAction}

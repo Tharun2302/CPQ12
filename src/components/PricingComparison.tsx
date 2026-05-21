@@ -312,11 +312,17 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     <div id="pricing-comparison" className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-8 backdrop-blur-sm">
       <div className="text-center mb-10">
         <h2 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-3">
-          {configuration?.combination === 'overage-agreement' ? 'Overage Agreement Pricing' : 'Choose Your Perfect Plan'}
+          {configuration?.combination === 'overage-agreement'
+            ? 'Overage Agreement Pricing'
+            : configuration?.servicePlan === 'Manage'
+            ? 'Your Manage Plan'
+            : 'Choose Your Perfect Plan'}
         </h2>
         <p className="text-gray-600 text-lg">
-          {configuration?.combination === 'overage-agreement' 
+          {configuration?.combination === 'overage-agreement'
             ? 'Instance costs only - no user or data costs apply'
+            : configuration?.servicePlan === 'Manage'
+            ? 'Review your Manage plan summary and total cost'
             : 'Compare our pricing tiers and find the best fit for your project'}
         </p>
       </div>
@@ -407,7 +413,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </h3>
                 ) : configuration?.servicePlan === 'Manage' ? (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
-                    Manage Standalone
+                    Manage
                   </h3>
                 ) : (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
@@ -780,11 +786,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     </>
                   ) : (
                     <>
-                      <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 mb-4">
-                        <p className="text-sm text-teal-800 font-medium text-center">
-                          🛠 Manage Standalone — yearly subscription (K12 user slab + K13 data rate)
-                        </p>
-                      </div>
                       {/* B99 — Per User Cost (Yearly) = totalUserCost / manageUsers */}
                       <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                         <span className="text-gray-700 font-medium">Per User Cost (Yearly):</span>
@@ -796,7 +797,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       </div>
                       {/* B100 — Per GB rate (K13) */}
                       <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                        <span className="text-gray-700 font-medium">Per GB Cost (K13):</span>
+                        <span className="text-gray-700 font-medium">Per GB Cost:</span>
                         <span className="font-bold text-gray-900">
                           ${getManageDataRatePerGB(configuration?.manageDataGB ?? 0).toFixed(4)}/GB
                         </span>
@@ -902,7 +903,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     : configuration?.combination === 'overage-agreement'
                     ? 'Select Overage Agreement'
                     : configuration?.servicePlan === 'Manage'
-                    ? 'Select Manage Standalone'
+                    ? 'Select Manage'
                     : `Select ${calc.tier.name}`}
                 </span>
               </button>

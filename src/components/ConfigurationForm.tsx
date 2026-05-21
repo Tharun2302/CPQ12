@@ -1808,7 +1808,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
-                        Number of Users <span className="text-gray-400 font-normal">[E99]</span>
+                        Number of Users
                       </label>
                       <input
                         type="number"
@@ -1826,7 +1826,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
-                        Content data size in GB <span className="text-gray-400 font-normal">[E100]</span>
+                        Content data size in GB
                       </label>
                       <input
                         type="number"

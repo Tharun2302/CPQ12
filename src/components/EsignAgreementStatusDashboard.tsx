@@ -82,6 +82,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const [statusModalDownloading, setStatusModalDownloading] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
+  const [extendingId, setExtendingId] = useState<string | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [dateFilter, setDateFilter] = useState<{ type: 'none' } | { type: 'dateRange'; from: string; to: string }>({ type: 'none' });
@@ -320,10 +321,23 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   };
 
   const handleVoid = async (agreementId: string) => {
-    if (!window.confirm('Void this agreement? Signing links will stop working. The document will stay in the list as voided.')) return;
+    const reason = window.prompt(
+      'Why are you voiding this agreement?\n\nThis comment is recorded for audit purposes. Signing links will stop working and the document will stay in the list as voided.',
+      ''
+    );
+    if (reason === null) return;
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      alert('Please enter a reason for voiding.');
+      return;
+    }
     setVoidingId(agreementId);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/void`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/void`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email || '', void_reason: trimmed }),
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         await fetchStatus();
@@ -358,6 +372,38 @@ const EsignAgreementStatusDashboard: React.FC = () => {
       alert('Failed to send reminder.');
     } finally {
       setRemindingId(null);
+    }
+  };
+
+  const handleExtendExpiry = async (agreementId: string, fileName?: string) => {
+    const docLabel = fileName ? `"${fileName}"` : 'this agreement';
+    const input = window.prompt(
+      `Extend expiry for pending recipients on ${docLabel}.\n\nHow many days from today should the new links be valid?\n(Whole number between 1 and 90)`,
+      '15'
+    );
+    if (input === null) return;
+    const days = parseInt(input.trim(), 10);
+    if (!Number.isFinite(days) || days < 1 || days > 90) {
+      alert('Please enter a whole number between 1 and 90.');
+      return;
+    }
+    setExtendingId(agreementId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${agreementId}/extend-expiry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email || '', days }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        alert(data.message || `Expiry extended by ${days} day${days === 1 ? '' : 's'} and reminder emails sent to pending recipients.`);
+      } else {
+        alert(data.error || `Extend expiry failed${!res.ok ? ` (${res.status})` : ''}`);
+      }
+    } catch {
+      alert('Failed to extend expiry.');
+    } finally {
+      setExtendingId(null);
     }
   };
 
@@ -693,7 +739,18 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                           Send Reminder
                         </button>
                       )}
-                      {status === 'sent' && (
+                      {status === 'sent' && isCurrentUserCreator(openAgreement) && (
+                        <button
+                          type="button"
+                          onClick={() => { handleExtendExpiry(openAgreement.id, openAgreement.file_name); closeActionsMenu(); }}
+                          disabled={extendingId === openAgreement.id}
+                          className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {extendingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Clock className="h-4 w-4 shrink-0" />}
+                          Extend expiry
+                        </button>
+                      )}
+                      {status === 'sent' && isCurrentUserCreator(openAgreement) && (
                         <button
                           type="button"
                           onClick={() => { handleVoid(openAgreement.id); closeActionsMenu(); }}

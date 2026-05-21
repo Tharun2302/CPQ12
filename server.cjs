@@ -5943,7 +5943,7 @@ function decryptEsignSignatureStoredDoc(doc) {
 }
 
 // Helper: log audit action
-async function logAudit(documentId, action, userEmail, ipAddress) {
+async function logAudit(documentId, action, userEmail, ipAddress, extra) {
   if (!db) return;
   try {
     await db.collection('audit_logs').insertOne({
@@ -5951,7 +5951,8 @@ async function logAudit(documentId, action, userEmail, ipAddress) {
       action,
       user_email: userEmail || 'anonymous',
       timestamp: new Date(),
-      ip_address: ipAddress || null
+      ip_address: ipAddress || null,
+      ...(extra && typeof extra === 'object' ? { metadata: extra } : {})
     });
   } catch (e) {
     console.warn('Audit log error:', e?.message);
@@ -6545,22 +6546,33 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
     if (doc.status !== 'sent') {
       return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be voided' });
     }
+    const voidReason = (req.body?.void_reason || '').toString().trim().slice(0, 1000);
+    if (!voidReason) {
+      return res.status(400).json({ success: false, error: 'A reason is required when voiding a document' });
+    }
     await db.collection('esign_recipients').updateMany(
       { document_id: docId },
       { $unset: { signing_token: '' } }
     );
     await db.collection('esign_documents').updateOne(
       { _id: docId },
-      { $set: { status: 'voided', voided_at: new Date() } }
+      {
+        $set: {
+          status: 'voided',
+          voided_at: new Date(),
+          voided_by: actorEmail || null,
+          void_reason: voidReason,
+        },
+      }
     );
     await db.collection('esign_signature_secrets').deleteMany({
       $or: [{ document_id: docId }, { document_id: docId.toString() }],
     });
     try {
-      await logAudit(docId.toString(), 'voided', req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress);
+      await logAudit(docId.toString(), 'voided', actorEmail || req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
     } catch (auditErr) { /* non-fatal */ }
-    console.log('E-sign VOID: document voided', req.params.id, doc.file_name);
-    res.json({ success: true, message: 'Document voided. Signing links no longer work.' });
+    console.log('E-sign VOID: document voided', req.params.id, doc.file_name, '|', actorEmail, '|', voidReason);
+    res.json({ success: true, message: 'Document voided. Signing links no longer work.', void_reason: voidReason });
   } catch (error) {
     console.error('❌ E-sign void document error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -7027,6 +7039,7 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
 
     const emailsSentTo = [];
     const failedRecipients = [];
+    const signingLinks = [];
     const now = new Date();
     const tokenExpiresAt = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000);
 
@@ -7067,6 +7080,13 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
         const result = await sendEmail(rec.email, subject, html);
         if (!result.success) throw result.error || new Error('Email send failed');
         emailsSentTo.push(String(rec.email).trim());
+        signingLinks.push({
+          recipient_id: rec._id.toString(),
+          name: rec.name || '',
+          email: String(rec.email).trim(),
+          signing_url: signingUrl,
+          expires_at: tokenExpiresAt,
+        });
         try {
           await logAudit(docId.toString(), 'expiry_extended', actorEmail || rec.email || 'system', req.ip || req.connection?.remoteAddress);
         } catch (_) { /* non-fatal */ }
