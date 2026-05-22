@@ -12,6 +12,17 @@ const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+
+// --- simple in-memory cache (no external deps) ---
+const _cache = {
+  exhibits:  { data: null, ts: 0 },
+  templates: { data: null, ts: 0 },
+};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+function _cacheValid(entry) { return entry.data !== null && (Date.now() - entry.ts) < CACHE_TTL_MS; }
+function _cacheClear(key)   { _cache[key].data = null; _cache[key].ts = 0; }
+// --- end cache ---
+
 let libre;
 try {
   libre = require('libreoffice-convert');
@@ -1978,7 +1989,8 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
       if (template.combination) responseTemplate.combination = template.combination;
       if (template.planType) responseTemplate.planType = template.planType;
       if (template.category) responseTemplate.category = template.category;
-      
+
+      _cacheClear('templates');
       res.json({
         success: true,
         message: 'Template uploaded successfully',
@@ -1999,11 +2011,16 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
 app.get('/api/templates', async (req, res) => {
   try {
     if (!db) {
-      return res.status(500).json({ 
-        success: false, 
+      return res.status(500).json({
+        success: false,
         error: 'Database not available',
         message: 'Cannot fetch templates without database connection'
       });
+    }
+
+    if (_cacheValid(_cache.templates)) {
+      console.log(`📄 Returning ${_cache.templates.data.length} templates from cache`);
+      return res.json({ success: true, templates: _cache.templates.data, count: _cache.templates.data.length });
     }
 
     console.log('📄 Fetching templates from database...');
@@ -2028,6 +2045,7 @@ app.get('/api/templates', async (req, res) => {
       .sort({ createdAt: -1 });
 
     const templates = await templatesCursor.toArray();
+    _cache.templates = { data: templates, ts: Date.now() };
     const queryDuration = Date.now() - queryStart;
 
     console.log(`✅ Fetched ${templates.length} templates from database (${queryDuration}ms)`);
@@ -2177,6 +2195,8 @@ app.post('/api/templates/reseed', async (req, res) => {
 
     console.log('✅ Reseed completed:', { templatesUpdated, exhibitsUpdated });
 
+    _cacheClear('templates');
+    _cacheClear('exhibits');
     return res.json({
       success: true,
       message: 'Templates/exhibits reseeded successfully',
@@ -2453,7 +2473,18 @@ app.get('/api/exhibits', async (req, res) => {
     }
 
     const { combination, category } = req.query;
-    
+
+    if (!category && _cacheValid(_cache.exhibits)) {
+      let cachedExhibits = _cache.exhibits.data;
+      if (combination) {
+        cachedExhibits = cachedExhibits.filter(e =>
+          e.combinations.includes('all') || e.combinations.includes(combination)
+        );
+      }
+      console.log(`📎 Returning ${cachedExhibits.length} exhibits from cache`);
+      return res.json({ success: true, exhibits: cachedExhibits, count: cachedExhibits.length });
+    }
+
     console.log('📎 Fetching exhibits from database...');
     console.log('   Filters:', { combination, category });
 
@@ -2474,6 +2505,8 @@ app.get('/api/exhibits', async (req, res) => {
       .sort({ displayOrder: 1, name: 1 });
 
     let exhibits = await exhibitsCursor.toArray();
+
+    if (!category) { _cache.exhibits = { data: exhibits, ts: Date.now() }; }
 
     // Filter by combination on the backend
     if (combination) {
@@ -3043,6 +3076,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
 
     console.log(`✅ Exhibit uploaded: ${exhibitDoc.name} (ID: ${result.insertedId})`);
 
+    _cacheClear('exhibits');
     res.json({
       success: true,
       message: 'Exhibit uploaded successfully',
@@ -3264,6 +3298,7 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
 
     console.log(`✅ Exhibit updated: ${id}`);
 
+    _cacheClear('exhibits');
     res.json({
       success: true,
       message: 'Exhibit updated successfully'
@@ -3327,6 +3362,7 @@ app.delete('/api/exhibits/:id', async (req, res) => {
 
     console.log(`✅ Exhibit deleted: ${id}`);
 
+    _cacheClear('exhibits');
     res.json({
       success: true,
       message: 'Exhibit deleted successfully'
@@ -4537,11 +4573,12 @@ app.delete('/api/templates/:id', async (req, res) => {
       }
 
     console.log('✅ Template deleted successfully:', id);
-      
-      res.json({
-        success: true,
-        message: 'Template deleted successfully'
-      });
+
+    _cacheClear('templates');
+    res.json({
+      success: true,
+      message: 'Template deleted successfully'
+    });
   } catch (error) {
     console.error('❌ Error deleting template:', error);
     res.status(500).json({ 
@@ -4592,11 +4629,12 @@ app.put('/api/templates/:id', async (req, res) => {
       }
 
     console.log('✅ Template updated successfully:', id);
-      
-      res.json({
-        success: true,
-        message: 'Template updated successfully'
-      });
+
+    _cacheClear('templates');
+    res.json({
+      success: true,
+      message: 'Template updated successfully'
+    });
   } catch (error) {
     console.error('❌ Error updating template:', error);
     res.status(500).json({ 
