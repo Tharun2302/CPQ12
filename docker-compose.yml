@@ -1,29 +1,26 @@
 version: '3.8'
 
-services:
-  libreoffice-converter:
-    build:
-      context: .
-      dockerfile: Dockerfile.libreoffice
-    container_name: cpq-libreoffice-converter
-    ports:
-      - "3002:3000"
-    volumes:
-      - ./temp-files:/temp
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+networks:
+  cpq-network:
+    driver: bridge
 
-  # Alternative: Use OnlyOffice Document Server (more features)
+services:
+  # PDF conversion microservice - keeps LibreOffice warm for fast conversions (1-2s vs 8-10s)
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: cpq-gotenberg
+    networks:
+      - cpq-network
+    restart: unless-stopped
+    # No public port exposed - accessed internally by app container only
+    # Default port is 3000 inside container, accessed via http://gotenberg:3000 from app
+
+  # Alternative: Use OnlyOffice Document Server (more features) - activate with: docker-compose --profile onlyoffice up
   onlyoffice:
     image: onlyoffice/documentserver:latest
     container_name: cpq-onlyoffice
+    networks:
+      - cpq-network
     environment:
       - JWT_ENABLED=false
       - DB_TYPE=postgres
@@ -45,6 +42,8 @@ services:
   postgres:
     image: postgres:13
     container_name: cpq-postgres
+    networks:
+      - cpq-network
     environment:
       - POSTGRES_DB=onlyoffice
       - POSTGRES_USER=onlyoffice
