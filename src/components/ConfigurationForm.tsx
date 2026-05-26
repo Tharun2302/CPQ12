@@ -2447,7 +2447,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   messages: messagingCfg.messages || 0,
                   dataSizeGB: 0, // Not used for messaging
                   combination: messagingCfg.exhibitName || '',
-                  migrationType: 'messaging' as any
+                  migrationType: 'messaging' as any,
+                  customerLocation: config.customerLocation
                 };
                 
                 const pricing = calculateCombinationPricing(
@@ -2731,7 +2732,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
-                          {PRICING_TIERS.map(tier => (
+                          {PRICING_TIERS.filter(t => t.id !== 'advanced').map(tier => (
                             <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
                           ))}
                         </select>
@@ -2783,7 +2784,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   duration: contentCfg.duration || 0,
                   dataSizeGB: contentCfg.dataSizeGB || 0,
                   combination: contentCfg.exhibitName || '',
-                  migrationType: 'content' as any
+                  migrationType: 'content' as any,
+                  customerLocation: config.customerLocation
                 };
                 
                 const pricing = calculateCombinationPricing(
@@ -3062,7 +3064,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         >
-                          {PRICING_TIERS.map(tier => (
+                          {PRICING_TIERS.filter(t => t.id !== 'advanced').map(tier => (
                             <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
                           ))}
                         </select>
@@ -3111,7 +3113,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   messages: 0,
                   dataSizeGB: emailCfg.dataSizeGB || 0,
                   combination: emailCfg.exhibitName || '',
-                  migrationType: 'email' as any
+                  migrationType: 'email' as any,
+                  customerLocation: config.customerLocation
                 };
                 
                 const pricing = calculateCombinationPricing(
@@ -3385,7 +3388,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                         >
-                          {PRICING_TIERS.map(tier => (
+                          {PRICING_TIERS.filter(t => t.id !== 'advanced').map(tier => (
                             <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
                           ))}
                         </select>

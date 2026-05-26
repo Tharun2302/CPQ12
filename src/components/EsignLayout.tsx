@@ -41,7 +41,7 @@ const EsignLayout: React.FC = () => {
       <main
         className={
           isListPage
-            ? 'lg:pl-64 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-10 transition-all duration-300'
+            ? 'min-w-0 w-full max-w-full box-border transition-all duration-300 lg:ml-64 lg:w-[calc(100%-16rem)] lg:max-w-[calc(100%-16rem)]'
             : 'flex flex-1 flex-col min-h-0 overflow-y-auto max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-2 sm:py-3 transition-all duration-300'
         }
       >

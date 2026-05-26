@@ -59,6 +59,24 @@ async function exchangeCodeForUserData(code: string) {
     const accessToken = tokenData.access_token;
     console.log('Token exchange successful, access token received');
 
+    // Decode ID token claims — always present in the token response.
+    // This gives us the real email even if the Graph API call below fails.
+    let emailFromIdToken = '';
+    let nameFromIdToken = '';
+    try {
+      if (tokenData.id_token) {
+        const parts = tokenData.id_token.split('.');
+        if (parts.length === 3) {
+          const claims = JSON.parse(atob(parts[1]));
+          emailFromIdToken = claims.preferred_username || claims.email || claims.upn || '';
+          nameFromIdToken = claims.name || claims.given_name || '';
+          console.log('🔍 ID token claims — email:', emailFromIdToken, 'name:', nameFromIdToken);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not decode id_token:', e);
+    }
+
     // Get user profile from Microsoft Graph
     console.log('🔍 Fetching user profile from Microsoft Graph...');
     console.log('🔑 Access token (first 20 chars):', accessToken.substring(0, 20) + '...');
@@ -96,7 +114,11 @@ async function exchangeCodeForUserData(code: string) {
         console.error('🔍 Could not decode token:', e);
       }
       
-      throw new Error(`Profile fetch failed: ${profileResponse.status} - ${errorText}`);
+      // Attach whatever we decoded from the id_token so the outer catch can use it
+      const err = new Error(`Profile fetch failed: ${profileResponse.status} - ${errorText}`) as Error & { idTokenEmail?: string; idTokenName?: string };
+      err.idTokenEmail = emailFromIdToken;
+      err.idTokenName = nameFromIdToken;
+      throw err;
     }
 
     const profile = await profileResponse.json();
@@ -247,15 +269,19 @@ const MicrosoftCallback: React.FC = () => {
             return;
           }
           
-          // Fallback to mock user if real API fails (only for cloudfuze.com domain).
-          // Derive a friendly name from the email so the sidebar doesn't render the
-          // literal "Microsoft" placeholder.
-          const fallbackEmail = 'user@cloudfuze.com';
-          const fallbackName = fallbackEmail
+          // Fallback when Graph API fails — use the real email from the ID token
+          // claims (always present in the token response) so the user is identified
+          // correctly even if Microsoft Graph is temporarily unavailable.
+          const idTokenEmail = (error as Error & { idTokenEmail?: string }).idTokenEmail || '';
+          const idTokenName = (error as Error & { idTokenName?: string }).idTokenName || '';
+          const fallbackEmail = idTokenEmail && idTokenEmail.endsWith('@cloudfuze.com')
+            ? idTokenEmail
+            : 'user@cloudfuze.com';
+          const fallbackName = idTokenName || fallbackEmail
             .split('@')[0]
             .split(/[._\-+]+/)
             .filter(Boolean)
-            .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
             .join(' ') || 'User';
           const fallbackUser = {
             id: 'microsoft_' + Date.now(),

@@ -6173,8 +6173,7 @@ app.get('/api/esign/documents/:id', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
-    if (req.query.audit === 'open') {
+    if (req.query.audit === 'open' && doc.status !== 'voided') {
       await logAudit(doc._id.toString(), 'opened', req.query.signer_email || null, req.ip || req.connection?.remoteAddress);
     }
     res.json({
@@ -6189,7 +6188,10 @@ app.get('/api/esign/documents/:id', async (req, res) => {
         created_at: doc.created_at,
         sent_at: doc.sent_at || null,
         status: doc.status,
-        signed_file_path: doc.signed_file_path
+        signed_file_path: doc.signed_file_path,
+        void_reason: doc.void_reason || null,
+        voided_by: doc.voided_by || null,
+        voided_at: doc.voided_at || null
       }
     });
   } catch (error) {
@@ -6209,7 +6211,6 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
 
     const attachment = req.query.attachment === '1' || req.query.download === '1';
     const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
