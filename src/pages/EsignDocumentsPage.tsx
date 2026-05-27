@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, ExternalLink, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Lock } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Copy, Bell } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
@@ -39,15 +39,55 @@ interface StatusModalRecipient {
   name: string;
   email: string;
   role?: string;
+  action?: string | null;
   status: string;
   order?: number;
   comment?: string | null;
+  signing_token?: string | null;
 }
 
 interface StatusModalDoc {
   id: string;
   file_name: string;
   status: string;
+  created_at?: string | null;
+  sent_at?: string | null;
+  void_reason?: string | null;
+  voided_by?: string | null;
+  voided_at?: string | null;
+}
+
+const STATUS_MODAL_AVATAR_COLORS = [
+  'bg-sky-500',
+  'bg-emerald-500',
+  'bg-amber-500',
+  'bg-violet-500',
+  'bg-rose-500',
+  'bg-cyan-500',
+  'bg-orange-500',
+  'bg-indigo-500',
+];
+
+function statusModalAvatarColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  const idx = Math.abs(hash) % STATUS_MODAL_AVATAR_COLORS.length;
+  return STATUS_MODAL_AVATAR_COLORS[idx];
+}
+
+function statusModalInitials(name: string, email: string): string {
+  const src = (name || email || '?').trim();
+  const parts = src.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0]?.slice(0, 2) || '?').toUpperCase();
+}
+
+function isStatusModalReviewer(rec: StatusModalRecipient): boolean {
+  const action = (rec.action || '').toLowerCase();
+  if (action === 'reviewer') return true;
+  if (action === 'signer') return false;
+  const role = (rec.role || '').trim();
+  return role === 'Technical Team' || role === 'Legal Team';
 }
 
 function normalizeEmail(email: string | undefined | null): string {
@@ -90,9 +130,8 @@ const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
 
-  // Gate: eSign is only accessible after an approval workflow has been fully approved
-  const { workflows: approvalWorkflows, isLoading: approvalLoading } = useApprovalWorkflows();
-  const isEsignEnabled = approvalWorkflows.some((w) => w.status === 'approved');
+  // eSign is always accessible (no approval gating)
+  const { workflows: approvalWorkflows } = useApprovalWorkflows();
 
   /** Returns the approval status for an eSign document by matching workflow.esignDocumentId */
   const getDocApprovalStatus = (docId: string): 'approved' | 'in_progress' | 'denied' | 'pending' | null => {
@@ -107,11 +146,18 @@ const EsignDocumentsPage: React.FC = () => {
   const [uploadedBy, setUploadedBy] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
+  const [copyingDocId, setCopyingDocId] = useState<string | null>(null);
+  const [remindingDocId, setRemindingDocId] = useState<string | null>(null);
+  const [remindedDocId, setRemindedDocId] = useState<string | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [statusModalId, setStatusModalId] = useState<string | null>(null);
   const [statusModalDoc, setStatusModalDoc] = useState<StatusModalDoc | null>(null);
   const [statusModalRecipients, setStatusModalRecipients] = useState<StatusModalRecipient[]>([]);
+  const [statusModalTab, setStatusModalTab] = useState<'signers' | 'reviewers'>('signers');
+  const [statusModalCopiedRecipientId, setStatusModalCopiedRecipientId] = useState<string | null>(null);
+  const [statusModalCopyingRecipientId, setStatusModalCopyingRecipientId] = useState<string | null>(null);
   const [statusModalLoading, setStatusModalLoading] = useState(false);
   const [statusModalDownloading, setStatusModalDownloading] = useState(false);
   const landingTourAutoStartedRef = useRef(false);
@@ -197,13 +243,22 @@ const EsignDocumentsPage: React.FC = () => {
   };
 
   const handleVoid = async (docId: string) => {
-    if (!window.confirm('Void this document? Signing links will stop working. The document will stay in the list as voided.')) return;
+    const reason = window.prompt(
+      'Why are you voiding this document?\n\nThis comment is recorded for audit purposes. Signing links will stop working and the document will stay in the list as voided.',
+      ''
+    );
+    if (reason === null) return;
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      alert('Please enter a reason for voiding.');
+      return;
+    }
     setVoidingId(docId);
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/void`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_email: user?.email || '' }),
+        body: JSON.stringify({ actor_email: user?.email || '', void_reason: trimmed }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
@@ -216,6 +271,69 @@ const EsignDocumentsPage: React.FC = () => {
       alert('Void failed. Check the console or try again.');
     } finally {
       setVoidingId(null);
+    }
+  };
+
+  const handleSendReminder = async (docId: string) => {
+    if (remindingDocId) return;
+    setRemindingDocId(docId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/remind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Could not send reminder.');
+        return;
+      }
+      setRemindedDocId(docId);
+      setTimeout(() => setRemindedDocId((c) => (c === docId ? null : c)), 2500);
+    } catch {
+      alert('Could not send reminder.');
+    } finally {
+      setRemindingDocId(null);
+    }
+  };
+
+  const handleCopySigningLink = async (docId: string) => {
+    if (copyingDocId) return;
+    setCopyingDocId(docId);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${docId}/recipients`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Could not fetch signing link.');
+        return;
+      }
+      const recipients = Array.isArray(data.recipients) ? data.recipients : [];
+      const target = recipients.find((r: { signing_token?: string | null; status?: string }) =>
+        r.signing_token && (r.status === 'pending' || !r.status)
+      ) || recipients.find((r: { signing_token?: string | null }) => r.signing_token);
+      if (!target?.signing_token) {
+        alert('No active signing link is available for this document.');
+        return;
+      }
+      const signingUrl = `${window.location.origin}/sign/${target.signing_token}`;
+      try {
+        await navigator.clipboard.writeText(signingUrl);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = signingUrl;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopiedDocId(docId);
+      setTimeout(() => setCopiedDocId((current) => (current === docId ? null : current)), 2000);
+    } catch {
+      alert('Could not copy signing link.');
+    } finally {
+      setCopyingDocId(null);
     }
   };
 
@@ -269,6 +387,11 @@ const EsignDocumentsPage: React.FC = () => {
           id: docData.document.id || docId,
           file_name: docData.document.file_name,
           status: docData.document.status,
+          created_at: docData.document.created_at || null,
+          sent_at: docData.document.sent_at || null,
+          void_reason: docData.document.void_reason || null,
+          voided_by: docData.document.voided_by || null,
+          voided_at: docData.document.voided_at || null,
         });
       }
       if (recData.success && Array.isArray(recData.recipients)) {
@@ -289,7 +412,37 @@ const EsignDocumentsPage: React.FC = () => {
     setStatusModalId(null);
     setStatusModalDoc(null);
     setStatusModalRecipients([]);
+    setStatusModalTab('signers');
+    setStatusModalCopiedRecipientId(null);
+    setStatusModalCopyingRecipientId(null);
   }, []);
+
+  const handleCopyRecipientLink = async (recipientId: string, signingToken: string | null | undefined) => {
+    if (!signingToken || statusModalCopyingRecipientId) return;
+    setStatusModalCopyingRecipientId(recipientId);
+    try {
+      const url = `${window.location.origin}/sign/${signingToken}`;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setStatusModalCopiedRecipientId(recipientId);
+      setTimeout(
+        () => setStatusModalCopiedRecipientId((c) => (c === recipientId ? null : c)),
+        2000
+      );
+    } finally {
+      setStatusModalCopyingRecipientId(null);
+    }
+  };
 
   const handleStatusModalDownload = async () => {
     if (!statusModalId || !statusModalDoc) return;
@@ -367,41 +520,16 @@ const EsignDocumentsPage: React.FC = () => {
 
   const firstDraftId = documents.find((d) => d.status === 'draft')?.id;
 
-  // Block access until at least one approval workflow has been fully approved
-  if (!approvalLoading && !isEsignEnabled) {
-    return (
-      <div className="min-h-screen bg-slate-50/80 flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center bg-white rounded-2xl shadow-lg border border-slate-200 p-10">
-          <div className="flex justify-center mb-5">
-            <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
-              <Lock className="w-7 h-7 text-amber-500" />
-            </div>
-          </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Approval Required</h2>
-          <p className="text-slate-500 text-sm mb-6">
-            e-Sign is only available after an approval workflow has been fully approved. Please complete
-            the approval process first.
-          </p>
-          <button
-            onClick={() => navigate('/approval')}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Go to Approval
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-slate-50/80 py-5 sm:py-6 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen bg-slate-50/80 py-5 sm:py-6 px-4 sm:px-6 lg:px-8 w-full">
+      <div className="w-full">
         <div className="mb-4 sm:mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link to="/deal" className="text-sm text-slate-500 hover:text-slate-800 mb-1.5 inline-block">
               ← Back to Deal
             </Link>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">e sign</h1>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Manual e-sign</h1>
             <p className="text-slate-500 mt-0.5 text-sm">Upload agreements and send them for signature</p>
           </div>
           <button
@@ -545,7 +673,6 @@ const EsignDocumentsPage: React.FC = () => {
                   <tr>
                     <th scope="col" className="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Document</th>
                     <th scope="col" className="px-3 sm:px-4 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Stage</th>
-                    <th scope="col" className="px-3 sm:px-4 py-2.5 text-left text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Approval</th>
                     <th scope="col" className="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
@@ -601,47 +728,8 @@ const EsignDocumentsPage: React.FC = () => {
                               })()}
                           </div>
                         </td>
-                        {/* Approval status column */}
-                        <td className="px-3 sm:px-4 py-3 align-top">
-                          {(() => {
-                            const approvalStatus = getDocApprovalStatus(doc.id);
-                            if (approvalStatus === 'approved') {
-                              return (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <Check className="w-3 h-3 shrink-0" />
-                                  Approved
-                                </span>
-                              );
-                            }
-                            if (approvalStatus === 'in_progress') {
-                              return (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                                  <Clock className="w-3 h-3 shrink-0" />
-                                  In Review
-                                </span>
-                              );
-                            }
-                            if (approvalStatus === 'pending') {
-                              return (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                  <Clock className="w-3 h-3 shrink-0" />
-                                  Pending
-                                </span>
-                              );
-                            }
-                            if (approvalStatus === 'denied') {
-                              return (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
-                                  <XCircle className="w-3 h-3 shrink-0" />
-                                  Denied
-                                </span>
-                              );
-                            }
-                            return <span className="text-xs text-slate-400">—</span>;
-                          })()}
-                        </td>
                         <td className="px-4 sm:px-5 py-3 align-top">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+                          <div className="flex flex-nowrap items-center justify-end gap-2">
                             {doc.status === 'draft' && (
                               <Link
                                 id={doc.id === firstDraftId ? 'esign-tour-place-fields' : undefined}
@@ -664,6 +752,50 @@ const EsignDocumentsPage: React.FC = () => {
                               >
                                 <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
                                 View status
+                              </button>
+                            )}
+                            {doc.status === 'sent' && isEsignDocumentForCurrentUser(doc, user?.email) && (
+                              <button
+                                type="button"
+                                onClick={() => handleSendReminder(doc.id)}
+                                disabled={remindingDocId === doc.id}
+                                title={remindedDocId === doc.id ? 'Reminder sent!' : 'Send reminder'}
+                                aria-label={remindedDocId === doc.id ? 'Reminder sent' : 'Send reminder'}
+                                className={`inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg border bg-white shrink-0 transition-colors ${
+                                  remindedDocId === doc.id
+                                    ? 'border-emerald-300 text-emerald-600'
+                                    : 'border-slate-300 text-slate-600 hover:bg-slate-50 hover:border-slate-400'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                              >
+                                {remindingDocId === doc.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : remindedDocId === doc.id ? (
+                                  <Check className="h-4 w-4" />
+                                ) : (
+                                  <Bell className="h-4 w-4" />
+                                )}
+                              </button>
+                            )}
+                            {doc.status === 'sent' && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopySigningLink(doc.id)}
+                                disabled={copyingDocId === doc.id}
+                                title={copiedDocId === doc.id ? 'Link copied!' : 'Copy signing link'}
+                                aria-label={copiedDocId === doc.id ? 'Link copied' : 'Copy signing link'}
+                                className={`inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg border bg-white shrink-0 transition-colors ${
+                                  copiedDocId === doc.id
+                                    ? 'border-emerald-300 text-emerald-600'
+                                    : 'border-slate-300 text-slate-600 hover:bg-slate-50 hover:border-slate-400'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                              >
+                                {copyingDocId === doc.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : copiedDocId === doc.id ? (
+                                  <Check className="h-4 w-4" />
+                                ) : (
+                                  <Copy className="h-4 w-4" />
+                                )}
                               </button>
                             )}
                             <div className="relative">
@@ -705,7 +837,6 @@ const EsignDocumentsPage: React.FC = () => {
           const isCreator = isEsignDocumentForCurrentUser(openDoc, user?.email);
           const st = (openDoc.status || '').toLowerCase();
           const showVoid = st === 'sent' && isCreator;
-          const showViewLink = st === 'sent';
           const showDownload = st === 'signed' || st === 'completed';
           const showDelete = (st === 'voided' && isCreator) || (st === 'draft' && isCreator);
           return createPortal(
@@ -728,19 +859,6 @@ const EsignDocumentsPage: React.FC = () => {
                   >
                     {voidingId === openDoc.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : null}
                     Void
-                  </button>
-                )}
-                {showViewLink && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigate(`/esign/${openDoc.id}/send`);
-                      closeActionsMenu();
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <ExternalLink className="h-4 w-4 shrink-0" />
-                    View Link
                   </button>
                 )}
                 {showDownload && (
@@ -787,114 +905,275 @@ const EsignDocumentsPage: React.FC = () => {
             className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-w-xl w-full max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">e sign status</h2>
-              <button type="button" onClick={closeStatusModal} className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10" aria-label="Close">
-                <XCircle className="h-6 w-6" />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              {statusModalLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
-                </div>
-              ) : statusModalDoc ? (
-                <>
-                  <p className="text-slate-700 font-medium truncate">{statusModalDoc.file_name}</p>
-                  {statusModalDoc.status === 'denied' ? (
-                    <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/90 text-white">Denied</span>
-                  ) : statusModalDoc.status === 'voided' ? (
-                    <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-200 text-slate-700">Voided</span>
-                  ) : (statusModalDoc.status === 'sent' || statusModalDoc.status === 'completed') ? (
-                    <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-100 text-indigo-800">Sent for signature</span>
-                  ) : null}
-                  <div className="mt-6">
-                    <h3 className="text-sm font-semibold text-slate-700 mb-3">Recipients</h3>
-                    <ul className="space-y-2">
-                      {statusModalRecipients.map((rec) => {
-                        const statusLabel = rec.status === 'signed' ? 'Signed' : rec.status === 'reviewed' ? 'Reviewed' : rec.status === 'denied' ? 'Denied' : 'Pending';
-                        const statusClass = rec.status === 'signed' ? 'text-emerald-600 font-medium' : rec.status === 'reviewed' ? 'text-amber-600 font-medium' : rec.status === 'denied' ? 'text-red-600 font-medium' : 'text-slate-500';
-                        return (
-                          <li key={rec.id} className="py-2 border-b border-slate-100 last:border-0">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-slate-800">
-                                {rec.name || rec.email || 'Signer'}{' '}
-                                <span className="text-slate-400">({(rec.role || 'signer').toLowerCase()})</span>
-                                {' — '}
-                                <span className={statusClass}>{statusLabel}</span>
-                              </span>
-                              {rec.status === 'signed' ? <Check className="h-5 w-5 text-emerald-600 shrink-0" /> : rec.status === 'denied' ? <XCircle className="h-5 w-5 text-red-500 shrink-0" /> : rec.status === 'reviewed' ? <Check className="h-5 w-5 text-amber-600 shrink-0" /> : <Clock className="h-5 w-5 text-amber-500 shrink-0" />}
-                            </div>
-                            {rec.comment && (
-                              <div className="mt-1.5 text-sm text-slate-600 bg-slate-50 rounded-md px-2.5 py-1.5 border border-slate-100">
-                                <span className="font-medium text-slate-500">Comment: </span>
-                                {rec.comment}
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                  {statusModalDoc.status === 'denied' && (
-                    <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 mt-4">
-                      <XCircle className="h-5 w-5 text-red-600 shrink-0" />
-                      <span className="font-medium text-red-800">This document was denied by a recipient.</span>
-                    </div>
-                  )}
-                  {statusModalDoc.status === 'voided' && (
-                    <div className="flex items-center gap-2 rounded-lg bg-slate-100 border border-slate-200 px-4 py-3 mt-4">
-                      <span className="font-medium text-slate-700">This document was voided. Signing links no longer work.</span>
-                    </div>
-                  )}
-                  {['sent', 'signed', 'denied', 'voided'].includes(statusModalDoc.status) && (
-                    <div className="mt-4 flex flex-col gap-2">
-                      <div className="flex flex-wrap gap-3">
+            {statusModalLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+              </div>
+            ) : statusModalDoc ? (
+              (() => {
+                const signers = statusModalRecipients.filter((r) => !isStatusModalReviewer(r));
+                const reviewers = statusModalRecipients.filter((r) => isStatusModalReviewer(r));
+                const signedCount = signers.filter((r) => (r.status || '').toLowerCase() === 'signed').length;
+                const docStatus = (statusModalDoc.status || '').toLowerCase();
+                const isCompleted = docStatus === 'completed' || (signers.length > 0 && signedCount === signers.length);
+                const isVoided = docStatus === 'voided';
+                const isDenied = docStatus === 'denied';
+                const sentDate = statusModalDoc.sent_at || statusModalDoc.created_at;
+
+                const statusBadge = isCompleted
+                  ? { label: 'Completed', cls: 'bg-emerald-100 text-emerald-700' }
+                  : isDenied
+                    ? { label: 'Denied', cls: 'bg-red-100 text-red-700' }
+                    : isVoided
+                      ? { label: 'Voided', cls: 'bg-slate-200 text-slate-600' }
+                      : docStatus === 'sent'
+                        ? { label: 'Sent', cls: 'bg-emerald-100 text-emerald-700' }
+                        : { label: 'Pending', cls: 'bg-amber-100 text-amber-700' };
+
+                const activeTab: 'signers' | 'reviewers' =
+                  reviewers.length === 0 ? 'signers' : statusModalTab;
+
+                const renderRow = (rec: StatusModalRecipient, index: number, kind: 'signer' | 'reviewer') => {
+                  const recStatus = (rec.status || '').toLowerCase();
+                  const isSigned = recStatus === 'signed';
+                  const isViewed = recStatus === 'reviewed';
+                  const isDeniedRow = recStatus === 'denied';
+                  const initials = statusModalInitials(rec.name, rec.email);
+                  const avatarCls = statusModalAvatarColor(rec.email || rec.name || rec.id);
+                  const totalRecipients = (kind === 'signer' ? signers : reviewers).length;
+                  const zebra = totalRecipients >= 3 && index % 2 === 1 ? 'bg-slate-50' : 'bg-white';
+                  const isCopied = statusModalCopiedRecipientId === rec.id;
+                  const isCopying = statusModalCopyingRecipientId === rec.id;
+                  const showCopy = kind === 'signer'
+                    ? !isSigned && !isDeniedRow && !!rec.signing_token
+                    : !!rec.signing_token;
+
+                  let badge: { label: string; cls: string; icon: React.ReactNode };
+                  if (kind === 'signer') {
+                    if (isSigned) badge = { label: 'Signed', cls: 'bg-emerald-100 text-emerald-700', icon: <Check className="h-3.5 w-3.5" /> };
+                    else if (isDeniedRow) badge = { label: 'Denied', cls: 'bg-red-100 text-red-700', icon: <XCircle className="h-3.5 w-3.5" /> };
+                    else badge = { label: 'Pending', cls: 'bg-amber-100 text-amber-700', icon: <Clock className="h-3.5 w-3.5" /> };
+                  } else {
+                    if (isViewed) badge = { label: 'Viewed', cls: 'bg-sky-100 text-sky-700', icon: <Eye className="h-3.5 w-3.5" /> };
+                    else badge = { label: 'Not viewed', cls: 'bg-amber-100 text-amber-700', icon: <Clock className="h-3.5 w-3.5" /> };
+                  }
+
+                  return (
+                    <div key={rec.id} className={`flex items-center gap-3 px-3 py-3 rounded-lg ${zebra}`}>
+                      <div className={`flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold shrink-0 ${avatarCls}`}>
+                        {initials}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900 truncate">{rec.name || rec.email || (kind === 'signer' ? 'Signer' : 'Reviewer')}</p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {kind === 'signer'
+                            ? `Signer ${index + 1}`
+                            : 'Reviewer · view only'}
+                          {rec.email ? ` · ${rec.email}` : ''}
+                        </p>
+                        {rec.comment && (
+                          <p className="mt-1 text-xs text-slate-600 bg-slate-100 rounded-md px-2 py-1 border border-slate-200">
+                            <span className="font-medium text-slate-500">Comment: </span>{rec.comment}
+                          </p>
+                        )}
+                      </div>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium shrink-0 ${badge.cls}`}>
+                        {badge.icon}
+                        {badge.label}
+                      </span>
+                      {showCopy && (
                         <button
                           type="button"
-                          onClick={handleStatusModalPreview}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50"
+                          onClick={() => handleCopyRecipientLink(rec.id, rec.signing_token)}
+                          disabled={isCopying}
+                          title={isCopied ? 'Link copied!' : kind === 'signer' ? 'Copy signing link' : 'Copy review link'}
+                          aria-label={isCopied ? 'Link copied' : kind === 'signer' ? 'Copy signing link' : 'Copy review link'}
+                          className={`inline-flex items-center gap-1 px-2 h-8 rounded-md border text-xs font-medium shrink-0 transition-colors ${
+                            isCopied
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
-                          <Eye className="h-5 w-5" />
-                          Preview document
+                          {isCopying ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : isCopied ? (
+                            <>
+                              <Check className="h-3.5 w-3.5" />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
                         </button>
-                      </div>
-                      {(statusModalDoc.status === 'sent' || statusModalDoc.status === 'signed') && (
-                        <p className="text-xs text-slate-500">Shows the latest PDF on file, including any signatures applied so far.</p>
                       )}
                     </div>
-                  )}
-                  {statusModalDoc.status === 'completed' && (
-                    <>
-                      <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 mt-4">
-                        <Check className="h-5 w-5 text-emerald-600 shrink-0" />
-                        <span className="font-medium text-emerald-800">Done — All recipients have signed</span>
+                  );
+                };
+
+                return (
+                  <>
+                    {/* Header */}
+                    <div className="px-6 pt-5 pb-4 border-b border-slate-200">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-base font-semibold text-slate-900 truncate">{statusModalDoc.file_name}</p>
+                          {sentDate && (
+                            <p className="text-xs text-slate-500 mt-0.5">Sent {formatEsignDateTime(sentDate)}</p>
+                          )}
+                        </div>
+                        <div className="flex items-start gap-2 shrink-0">
+                          <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium ${statusBadge.cls}`}>{statusBadge.label}</span>
+                          <button type="button" onClick={closeStatusModal} className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label="Close">
+                            <XCircle className="h-5 w-5" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-3 mt-4">
+                      {signers.length > 0 && (
+                        <div className="mt-3">
+                          <div className="flex justify-between text-xs text-slate-600 mb-1">
+                            <span>{signedCount} of {signers.length} signed</span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-emerald-500 transition-all duration-300"
+                              style={{ width: `${signers.length > 0 ? (signedCount / signers.length) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="px-6 pt-3 border-b border-slate-200 flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setStatusModalTab('signers')}
+                        className={`relative px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 ${
+                          activeTab === 'signers' ? 'text-indigo-700' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        <span>Signers</span>
+                        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{signers.length}</span>
+                        {activeTab === 'signers' && (
+                          <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-indigo-600 rounded-full" />
+                        )}
+                      </button>
+                      {reviewers.length > 0 && (
                         <button
                           type="button"
-                          onClick={handleStatusModalDownload}
-                          disabled={statusModalDownloading}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                          onClick={() => setStatusModalTab('reviewers')}
+                          className={`relative px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 ${
+                            activeTab === 'reviewers' ? 'text-indigo-700' : 'text-slate-500 hover:text-slate-700'
+                          }`}
                         >
-                          {statusModalDownloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
-                          Download signed PDF
+                          <span>Reviewers</span>
+                          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{reviewers.length}</span>
+                          {activeTab === 'reviewers' && (
+                            <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-indigo-600 rounded-full" />
+                          )}
                         </button>
-                        <button type="button" onClick={handleStatusModalPreview} className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50">
-                          <Eye className="h-5 w-5" />
-                          Preview
+                      )}
+                    </div>
+
+                    {/* Body */}
+                    <div className="px-4 py-4 overflow-y-auto flex-1 space-y-1.5">
+                      {activeTab === 'signers' ? (
+                        signers.length === 0 ? (
+                          <p className="text-sm text-slate-500 px-3 py-6 text-center">No signers on this document.</p>
+                        ) : (
+                          signers.map((rec, idx) => renderRow(rec, idx, 'signer'))
+                        )
+                      ) : reviewers.length === 0 ? (
+                        <p className="text-sm text-slate-500 px-3 py-6 text-center">No reviewers on this document.</p>
+                      ) : (
+                        reviewers.map((rec, idx) => renderRow(rec, idx, 'reviewer'))
+                      )}
+
+                      {isCompleted && (
+                        <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5">
+                          <Check className="h-4 w-4 text-emerald-600 shrink-0" />
+                          <span className="text-sm font-medium text-emerald-800">All recipients have signed. Document is complete.</span>
+                        </div>
+                      )}
+                      {isDenied && (
+                        <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2.5">
+                          <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+                          <span className="text-sm font-medium text-red-800">This document was denied by a recipient.</span>
+                        </div>
+                      )}
+                      {isVoided && (
+                        <div className="mt-3 rounded-lg bg-slate-100 border border-slate-200 px-3 py-2.5">
+                          <p className="text-sm font-medium text-slate-700">This document was voided. Signing links no longer work.</p>
+                          {statusModalDoc.void_reason && (
+                            <p className="mt-1.5 text-xs text-slate-600">
+                              <span className="font-semibold text-slate-700">Reason:</span> {statusModalDoc.void_reason}
+                            </p>
+                          )}
+                          {(statusModalDoc.voided_by || statusModalDoc.voided_at) && (
+                            <p className="mt-1 text-xs text-slate-500">
+                              {statusModalDoc.voided_by ? <>Voided by <span className="text-slate-700">{statusModalDoc.voided_by}</span></> : null}
+                              {statusModalDoc.voided_by && statusModalDoc.voided_at ? ' · ' : ''}
+                              {statusModalDoc.voided_at ? formatEsignDateTime(statusModalDoc.voided_at) : ''}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="border-t border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={handleStatusModalPreview}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50"
+                      >
+                        <Eye className="h-4 w-4" />
+                        Preview document
+                      </button>
+                      <div className="flex items-center gap-2">
+                        {isCompleted ? (
+                          <button
+                            type="button"
+                            onClick={handleStatusModalDownload}
+                            disabled={statusModalDownloading}
+                            className="inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            {statusModalDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            Download signed PDF
+                          </button>
+                        ) : docStatus === 'sent' ? (
+                          <button
+                            type="button"
+                            onClick={() => { void handleVoid(statusModalDoc.id); }}
+                            disabled={voidingId === statusModalDoc.id}
+                            className="inline-flex items-center gap-2 px-3.5 py-2 border border-red-300 text-red-700 bg-white rounded-lg text-sm font-semibold hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {voidingId === statusModalDoc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                            Void
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={closeStatusModal}
+                          className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700"
+                        >
+                          Done
                         </button>
                       </div>
-                    </>
-                  )}
-                  {statusModalDoc.status === 'sent' && statusModalRecipients.length > 0 && (
-                    <p className="text-sm text-slate-500 mt-4">Waiting for all recipients to sign.</p>
-                  )}
-                </>
-              ) : (
+                    </div>
+                  </>
+                );
+              })()
+            ) : (
+              <div className="p-6">
                 <p className="text-slate-500">Could not load status.</p>
-              )}
-            </div>
+                <div className="mt-4 flex justify-end">
+                  <button type="button" onClick={closeStatusModal} className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700">
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

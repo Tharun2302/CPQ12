@@ -1425,6 +1425,18 @@ function App() {
       return null;
     }
 
+    // PRIORITY 0.5: Manage Standalone — driven by servicePlan, not pricing tier.
+    // Tier names are Basic/Standard/Advanced, so the planType match below would never
+    // pick a Manage-tagged template. Match by planType === 'manage' instead.
+    if (config?.servicePlan === 'Manage') {
+      const manageMatch = templates.find(t => (t?.planType || '').toLowerCase() === 'manage');
+      if (manageMatch) {
+        console.log('✅ Found Manage Standalone template:', manageMatch.name);
+        return manageMatch;
+      }
+      console.log('❌ servicePlan=Manage but no template with planType=manage found');
+    }
+
     // PRIORITY 0: Special handling for OVERAGE AGREEMENT (must check BEFORE planType matching)
     if (combination === 'overage-agreement') {
       console.log('🎯 OVERAGE AGREEMENT detected - using special matching logic');

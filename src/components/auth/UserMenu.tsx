@@ -33,11 +33,32 @@ const UserMenu: React.FC = () => {
     return name ? name.charAt(0).toUpperCase() : 'U';
   };
 
-  // Get first name from full name
-  const getFirstName = (name: string) => {
-    if (!name) return '';
-    return name.split(' ')[0];
+  // Treat stored names like "Microsoft", "Microsoft User", or
+  // "Microsoft User (Fallback)" as placeholders rather than the user's
+  // real name — those come from the OAuth fallback paths.
+  const isGenericProviderName = (name?: string) => {
+    if (!name) return true;
+    const lower = name.toLowerCase().trim();
+    return lower === 'microsoft' || lower.startsWith('microsoft user');
   };
+
+  // Derive a friendly display name from an email local-part such as
+  // "Anush.Dasari@cloudfuze.com" -> "Anush Dasari".
+  const deriveNameFromEmail = (email?: string) => {
+    if (!email || !email.includes('@')) return '';
+    return email
+      .split('@')[0]
+      .split(/[._\-+]+/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const displayName =
+    (!isGenericProviderName(user.name) && user.name) ||
+    deriveNameFromEmail(user.email) ||
+    user.name ||
+    'User';
 
   return (
     <div className="relative" ref={menuRef}>
@@ -48,11 +69,11 @@ const UserMenu: React.FC = () => {
       >
         <div className="w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-md flex-shrink-0">
           <span className="text-white font-semibold text-base sm:text-lg">
-            {getInitial(user.name)}
+            {getInitial(displayName)}
           </span>
         </div>
-        <span className="hidden md:block font-medium text-sm text-gray-900">
-          {getFirstName(user.name)}
+        <span className="hidden md:block font-medium text-sm text-gray-900 truncate max-w-[140px]" title={displayName}>
+          {displayName}
         </span>
       </button>
 
@@ -73,11 +94,11 @@ const UserMenu: React.FC = () => {
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-md flex-shrink-0">
                 <span className="text-white font-semibold text-lg">
-                  {getInitial(user.name)}
+                  {getInitial(displayName)}
                 </span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 break-words">{user.name}</p>
+                <p className="text-sm font-semibold text-gray-900 break-words">{displayName}</p>
                 <p className="text-xs text-gray-600 break-words mt-1">{user.email}</p>
               </div>
             </div>

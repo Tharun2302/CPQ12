@@ -35,7 +35,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
     { id: 'configure', label: 'Configure',    icon: FileText,   path: '/configure' },
     { id: 'quote',     label: 'Quote',        icon: FileText,   path: '/quote' },
     { id: 'approval',  label: 'Approval',     icon: CheckCircle,path: '/approval' },
-    { id: 'esign',     label: 'e sign',       icon: PenLine,    path: '/esign' },
+    { id: 'esign',     label: 'Manual e-sign',       icon: PenLine,    path: '/esign' },
     { id: 'esign-tracking', label: 'e sign status', icon: BarChart3, path: '/esign-tracking' },
     { id: 'templates', label: 'Templates',    icon: Upload,     path: '/templates' },
     { id: 'exhibits',  label: 'Exhibits',     icon: FolderOpen, path: '/exhibits' },
@@ -103,7 +103,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
 
           {/* Nav Links */}
           <div className="flex-1 flex flex-col py-4 px-3 space-y-2 overflow-y-auto">
-            {tabs.map((tab) => renderTabLink(tab))}
+            {tabs.filter((t) => t.id !== 'esign' && t.id !== 'esign-tracking').map((tab) => renderTabLink(tab))}
 
             {onStartManualApproval && (
               <button
@@ -115,6 +115,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
                 <span className="leading-tight">Start Manual Approval</span>
               </button>
             )}
+
+            {(() => { const t = tabs.find((x) => x.id === 'esign'); return t ? renderTabLink(t) : null; })()}
+            {(() => { const t = tabs.find((x) => x.id === 'esign-tracking'); return t ? renderTabLink(t) : null; })()}
           </div>
 
           {/* Bottom: Help + User Menu */}
@@ -168,7 +171,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
           {isAuthenticated && isMobileMenuOpen && (
             <div className="border-t border-blue-100/50 py-4">
               <div className="flex flex-col space-y-2">
-                {tabs.map((tab) => renderTabLink(tab, true))}
+                {tabs.filter((t) => t.id !== 'esign' && t.id !== 'esign-tracking').map((tab) => renderTabLink(tab, true))}
 
                 {onStartManualApproval && (
                   <button
@@ -180,6 +183,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
                     <span className="leading-tight">Start Manual Approval</span>
                   </button>
                 )}
+
+                {(() => { const t = tabs.find((x) => x.id === 'esign'); return t ? renderTabLink(t, true) : null; })()}
+                {(() => { const t = tabs.find((x) => x.id === 'esign-tracking'); return t ? renderTabLink(t, true) : null; })()}
 
                 <button
                   type="button"

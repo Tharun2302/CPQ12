@@ -157,14 +157,23 @@ const EsignTrackingPage: React.FC = () => {
 
   const handleExtendExpiry = async () => {
     if (!documentId || !doc) return;
-    if (!window.confirm('Extend expiry for pending recipients? This will issue fresh secure links and email only the recipients who are still pending.')) return;
+    const input = window.prompt(
+      'Extend expiry for pending recipients.\n\nHow many days from today should the new links be valid?\n(Whole number between 1 and 90)',
+      '15'
+    );
+    if (input === null) return;
+    const days = parseInt(input.trim(), 10);
+    if (!Number.isFinite(days) || days < 1 || days > 90) {
+      setExtendResult('Please enter a whole number between 1 and 90.');
+      return;
+    }
     setExtendingExpiry(true);
     setExtendResult(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/extend-expiry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_email: user?.email || '' }),
+        body: JSON.stringify({ actor_email: user?.email || '', days }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {

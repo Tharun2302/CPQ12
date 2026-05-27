@@ -252,16 +252,20 @@ const EsignSignPage: React.FC = () => {
     }
   }, [fieldValues, activeFieldIdx, fields, navigableIdxList, pendingIdxList, recipientRole]);
 
-  /** Smooth-scroll to the active field whenever it changes. */
-  useEffect(() => {
-    if (activeFieldIdx == null) return;
-    const id = `esign-field-${activeFieldIdx}`;
+  const scrollToFieldIdx = (idx: number) => {
+    const id = `esign-field-${idx}`;
     requestAnimationFrame(() => {
       const el = document.getElementById(id);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
       }
     });
+  };
+
+  /** Smooth-scroll to the active field whenever it changes. */
+  useEffect(() => {
+    if (activeFieldIdx == null) return;
+    scrollToFieldIdx(activeFieldIdx);
   }, [activeFieldIdx]);
 
   const goToNextField = () => {
@@ -272,6 +276,7 @@ const EsignSignPage: React.FC = () => {
       const idx = navigableIdxList[pos];
       if (!isSignerFieldFilled(fields[idx], fieldValues[idx])) {
         setActiveFieldIdx(idx);
+        scrollToFieldIdx(idx);
         return;
       }
     }
@@ -286,6 +291,7 @@ const EsignSignPage: React.FC = () => {
       const idx = navigableIdxList[pos];
       if (!isSignerFieldFilled(fields[idx], fieldValues[idx])) {
         setActiveFieldIdx(idx);
+        scrollToFieldIdx(idx);
         return;
       }
     }

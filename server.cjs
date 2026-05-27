@@ -12,6 +12,17 @@ const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+
+// --- simple in-memory cache (no external deps) ---
+const _cache = {
+  exhibits:  { data: null, ts: 0 },
+  templates: { data: null, ts: 0 },
+};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+function _cacheValid(entry) { return entry.data !== null && (Date.now() - entry.ts) < CACHE_TTL_MS; }
+function _cacheClear(key)   { _cache[key].data = null; _cache[key].ts = 0; }
+// --- end cache ---
+
 let libre;
 try {
   libre = require('libreoffice-convert');
@@ -1427,13 +1438,18 @@ app.post('/api/auth/login', async (req, res) => {
     // Track daily login
     await trackDailyLogin(user.id, 'email', user.email);
 
-    // Return user without password
+    // Return user without password (with computed role + isApprovalAdmin flag)
     const { password: _, ...userWithoutPassword } = user;
+    const dbExhibitEmails = await getExhibitAdminEmailsFromDb();
+    const isExhibitAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbExhibitEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const effectiveRole = user.role || (isExhibitAdmin ? 'exhibit_admin' : 'viewer');
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
     res.json({
       success: true,
       message: 'Login successful',
-      user: userWithoutPassword,
+      user: userResponse,
       token: token
     });
   } catch (error) {
@@ -1486,7 +1502,8 @@ app.get('/api/auth/me', async (req, res) => {
     const { password: _, ...userWithoutPassword } = user;
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || (await getExhibitAdminEmailsFromDb()).some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
-    const userResponse = { ...userWithoutPassword, role: effectiveRole };
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
     res.json({
       success: true,
@@ -1560,7 +1577,8 @@ app.post('/api/auth/microsoft', async (req, res) => {
     const dbEmails = await getExhibitAdminEmailsFromDb();
     const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
     const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
-    const userResponse = { ...userWithoutPassword, role: effectiveRole };
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
 
     res.json({
       success: true,
@@ -1971,7 +1989,8 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
       if (template.combination) responseTemplate.combination = template.combination;
       if (template.planType) responseTemplate.planType = template.planType;
       if (template.category) responseTemplate.category = template.category;
-      
+
+      _cacheClear('templates');
       res.json({
         success: true,
         message: 'Template uploaded successfully',
@@ -1992,11 +2011,16 @@ app.post('/api/templates', upload.single('template'), async (req, res) => {
 app.get('/api/templates', async (req, res) => {
   try {
     if (!db) {
-      return res.status(500).json({ 
-        success: false, 
+      return res.status(500).json({
+        success: false,
         error: 'Database not available',
         message: 'Cannot fetch templates without database connection'
       });
+    }
+
+    if (_cacheValid(_cache.templates)) {
+      console.log(`📄 Returning ${_cache.templates.data.length} templates from cache`);
+      return res.json({ success: true, templates: _cache.templates.data, count: _cache.templates.data.length });
     }
 
     console.log('📄 Fetching templates from database...');
@@ -2021,6 +2045,7 @@ app.get('/api/templates', async (req, res) => {
       .sort({ createdAt: -1 });
 
     const templates = await templatesCursor.toArray();
+    _cache.templates = { data: templates, ts: Date.now() };
     const queryDuration = Date.now() - queryStart;
 
     console.log(`✅ Fetched ${templates.length} templates from database (${queryDuration}ms)`);
@@ -2170,6 +2195,8 @@ app.post('/api/templates/reseed', async (req, res) => {
 
     console.log('✅ Reseed completed:', { templatesUpdated, exhibitsUpdated });
 
+    _cacheClear('templates');
+    _cacheClear('exhibits');
     return res.json({
       success: true,
       message: 'Templates/exhibits reseeded successfully',
@@ -2394,6 +2421,7 @@ app.post('/api/combinations/seed', async (req, res) => {
       { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)', migrationType: 'Content', displayOrder: 9 }
     ];
     let inserted = 0;
+    let backfilled = 0;
     for (const d of defaults) {
       const existing = await db.collection('combinations').findOne({ value: d.value, migrationType: d.migrationType });
       if (!existing) {
@@ -2404,10 +2432,26 @@ app.post('/api/combinations/seed', async (req, res) => {
           updatedAt: new Date()
         });
         inserted++;
+      } else if (!existing.id) {
+        // Legacy row missing the `id` field — backfill so edit/delete works
+        await db.collection('combinations').updateOne(
+          { _id: existing._id },
+          { $set: { id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`, updatedAt: new Date() } }
+        );
+        backfilled++;
       }
     }
+    // Also backfill any non-default rows that are missing `id`
+    const orphans = await db.collection('combinations').find({ id: { $exists: false } }).toArray();
+    for (const o of orphans) {
+      await db.collection('combinations').updateOne(
+        { _id: o._id },
+        { $set: { id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`, updatedAt: new Date() } }
+      );
+      backfilled++;
+    }
     const total = await db.collection('combinations').countDocuments();
-    res.json({ success: true, message: `Seed complete. Inserted ${inserted} new combinations. Total: ${total}.` });
+    res.json({ success: true, message: `Seed complete. Inserted ${inserted} new combinations. Backfilled ${backfilled} missing IDs. Total: ${total}.` });
   } catch (error) {
     console.error('Error seeding combinations:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -2429,7 +2473,18 @@ app.get('/api/exhibits', async (req, res) => {
     }
 
     const { combination, category } = req.query;
-    
+
+    if (!category && _cacheValid(_cache.exhibits)) {
+      let cachedExhibits = _cache.exhibits.data;
+      if (combination) {
+        cachedExhibits = cachedExhibits.filter(e =>
+          e.combinations.includes('all') || e.combinations.includes(combination)
+        );
+      }
+      console.log(`📎 Returning ${cachedExhibits.length} exhibits from cache`);
+      return res.json({ success: true, exhibits: cachedExhibits, count: cachedExhibits.length });
+    }
+
     console.log('📎 Fetching exhibits from database...');
     console.log('   Filters:', { combination, category });
 
@@ -2450,6 +2505,8 @@ app.get('/api/exhibits', async (req, res) => {
       .sort({ displayOrder: 1, name: 1 });
 
     let exhibits = await exhibitsCursor.toArray();
+
+    if (!category) { _cache.exhibits = { data: exhibits, ts: Date.now() }; }
 
     // Filter by combination on the backend
     if (combination) {
@@ -2630,6 +2687,134 @@ app.post('/api/settings/exhibit-admins', async (req, res) => {
     res.json({ success: true, emails: updated });
   } catch (e) {
     console.error('POST exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ============================================
+// APPROVAL ADMINS — admins who can edit Team Approval Settings
+// (Mirrors exhibit_admin logic. Bootstrap with APPROVAL_ADMIN_EMAILS env or DEFAULT_APPROVAL_ADMINS.)
+// ============================================
+
+const DEFAULT_APPROVAL_ADMINS = ['bala.raviteja@cloudfuze.com', 'anush.dasari@cloudfuze.com'];
+
+function isApprovalAdminByEnv(email) {
+  const list = process.env.APPROVAL_ADMIN_EMAILS;
+  const candidates = [];
+  if (typeof list === 'string' && list.trim()) {
+    list.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean).forEach((e) => candidates.push(e));
+  }
+  DEFAULT_APPROVAL_ADMINS.forEach((e) => candidates.push(e.toLowerCase()));
+  return candidates.includes((email || '').trim().toLowerCase());
+}
+
+async function getApprovalAdminEmailsFromDb() {
+  if (!db) return [];
+  try {
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    return Array.isArray(doc?.emails) ? doc.emails : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function hasApprovalAdminAccess(user) {
+  if (!user) return false;
+  if (isApprovalAdminByEnv(user.email)) return true;
+  const dbEmails = await getApprovalAdminEmailsFromDb();
+  const normalized = (user.email || '').trim().toLowerCase();
+  return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
+}
+
+async function getApprovalAdminUser(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  if (token.split('.').length !== 3) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await db.collection('users').findOne({ id: decoded.userId });
+    if (!user) {
+      res.status(401).json({ success: false, error: 'User not found' });
+      return null;
+    }
+    if (!(await hasApprovalAdminAccess(user))) {
+      res.status(403).json({ success: false, error: 'Only approval admins can manage this list' });
+      return null;
+    }
+    return user;
+  } catch (e) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+}
+
+app.get('/api/settings/approval-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const emails = await getApprovalAdminEmailsFromDb();
+    res.json({ success: true, emails });
+  } catch (e) {
+    console.error('GET approval-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/settings/approval-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const { email } = req.body || {};
+    const trimmed = (email && String(email).trim()) || '';
+    if (!trimmed || !trimmed.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+    const normalized = trimmed.toLowerCase();
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    if (emails.map((e) => String(e).trim().toLowerCase()).includes(normalized)) {
+      return res.json({ success: true, emails, message: 'Email already in list' });
+    }
+    const updated = [...emails, trimmed];
+    await db.collection('settings').updateOne(
+      { _id: 'approval_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('POST approval-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete('/api/settings/approval-admins/:email', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const emailParam = decodeURIComponent((req.params.email || '').trim());
+    if (!emailParam) return res.status(400).json({ success: false, error: 'Email required' });
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    const normalized = emailParam.toLowerCase();
+    const updated = emails.filter((e) => String(e).trim().toLowerCase() !== normalized);
+    await db.collection('settings').updateOne(
+      { _id: 'approval_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('DELETE approval-admins error:', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
@@ -2891,6 +3076,7 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
 
     console.log(`✅ Exhibit uploaded: ${exhibitDoc.name} (ID: ${result.insertedId})`);
 
+    _cacheClear('exhibits');
     res.json({
       success: true,
       message: 'Exhibit uploaded successfully',
@@ -3112,6 +3298,7 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
 
     console.log(`✅ Exhibit updated: ${id}`);
 
+    _cacheClear('exhibits');
     res.json({
       success: true,
       message: 'Exhibit updated successfully'
@@ -3175,6 +3362,7 @@ app.delete('/api/exhibits/:id', async (req, res) => {
 
     console.log(`✅ Exhibit deleted: ${id}`);
 
+    _cacheClear('exhibits');
     res.json({
       success: true,
       message: 'Exhibit deleted successfully'
@@ -3720,12 +3908,38 @@ function transformHeaderInlineImageParagraphs(xml) {
     /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:inline\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:inline>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
   const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
 
+  // Pre-compute table nesting depth at each character position so we can skip
+  // paragraphs inside table cells. `transformParagraphsWithFloatingImages` may
+  // have already wrapped anchored images in a borderless table whose cells each
+  // contain one image-only <w:p>; without this guard we would group those
+  // in-cell paragraphs and splice a replacement across the </w:tc><w:tc>
+  // boundary, leaving the outer table with an unclosed cell/row/tbl and
+  // producing malformed XML that LibreOffice rejects as "Document is empty".
+  const tblTokenRegex = /<w:tbl(?![A-Za-z])|<\/w:tbl>/g;
+  const tableDepth = new Array(xml.length + 1).fill(0);
+  {
+    let depth = 0;
+    let last = 0;
+    let tk;
+    while ((tk = tblTokenRegex.exec(xml)) !== null) {
+      tableDepth.fill(depth, last, tk.index);
+      if (tk[0] === '</w:tbl>') depth = Math.max(0, depth - 1);
+      else depth += 1;
+      last = tk.index + tk[0].length;
+      tableDepth.fill(depth, tk.index, last);
+    }
+    tableDepth.fill(depth, last, xml.length + 1);
+  }
+
   // Classify each paragraph: 'image' (image-only, no visible text),
   // 'empty' (no images, no visible text), or 'other'.
   const paragraphs = [];
   let m;
   while ((m = paragraphRegex.exec(xml)) !== null) {
     const full = m[0];
+    // Skip paragraphs nested inside a table — they belong to existing cell
+    // content and must not participate in top-level grouping.
+    if (tableDepth[m.index] > 0) continue;
     const inlineRuns = full.match(inlineImageRunRegex) || [];
     const hasAnchor = /<wp:anchor\b/.test(full);
     // Strip XML tags and check whether any visible text remains.
@@ -3957,45 +4171,69 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
 
     const hasFatalLibreOfficeStderr = (stderrText) => {
       const s = String(stderrText || '').toLowerCase();
-      // LibreOffice sometimes returns exit code 0 but prints fatal errors to stderr and produces no PDF.
       return (
-        s.includes('document is empty') ||
         s.includes('source file could not be loaded') ||
-        s.includes('could not find platform independent libraries') ||
         s.includes('error: source file could not be loaded') ||
-        s.includes('parser error') ||
         s.includes('fatal')
       );
     };
 
-    // Method 1: Direct LibreOffice system call (most reliable for exact formatting)
-    console.log('📄 Trying direct LibreOffice conversion...');
+    // Method 1: Gotenberg (Docker microservice - fastest, 1-2 seconds)
+    if (GOTENBERG_URL) {
+      try {
+        console.log('⚡ Trying Gotenberg service (fastest):', GOTENBERG_URL);
+        const baseUrl = GOTENBERG_URL.replace(/\/$/, '');
+        const endpoint = `${baseUrl}/forms/libreoffice/convert`;
+        const form = new FormData();
+        const blob = new Blob([req.file.buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        form.append('files', blob, 'document.docx');
+        form.append('outputFilename', 'agreement');
+        const resp = await fetch(endpoint, { method: 'POST', body: form });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          console.warn('⚠️ Gotenberg conversion failed:', resp.status);
+        } else {
+          const ab = await resp.arrayBuffer();
+          const pdfBuffer = Buffer.from(ab);
+          console.log('✅ PDF generated with Gotenberg (1-2s)');
+          console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
+          res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="agreement.pdf"',
+            'Content-Length': pdfBuffer.length
+          });
+          return res.send(pdfBuffer);
+        }
+      } catch (e) {
+        console.warn('⚠️ Gotenberg request error:', e.message);
+      }
+    }
+
+    // Method 2: Direct LibreOffice system call (fallback - slower, 8-10 seconds but more compatible)
     try {
+      console.log('📄 Trying direct LibreOffice conversion...');
+
+      // Buffer was already preprocessed earlier in this handler (honoring ?skipPreprocess),
+      // so use it directly here to avoid double-processing.
+      const preprocessedBuffer = req.file.buffer;
+
       const os = require('os');
       const fs = require('fs');
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpq-'));
       const inputPath = path.join(tmpDir, `${uuidv4()}.docx`);
-      
-      // Write DOCX to temp file
-      fs.writeFileSync(inputPath, req.file.buffer);
-      console.log('📄 Temp DOCX written:', inputPath);
-      
-      // Use LibreOffice to convert
+
+      fs.writeFileSync(inputPath, preprocessedBuffer);
+
       const isWindows = os.platform() === 'win32';
       let sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
-      // On Windows, prefer soffice.com for headless conversions (more reliable/no GUI subsystem).
       if (isWindows && !process.env.SOFFICE_PATH) {
         try {
           const candidateCom = sofficeCmd.replace(/soffice\.exe$/i, 'soffice.com');
-          if (fs.existsSync(candidateCom)) {
-            sofficeCmd = candidateCom;
-          }
+          if (fs.existsSync(candidateCom)) sofficeCmd = candidateCom;
         } catch {}
       }
-      console.log('📄 Using LibreOffice:', sofficeCmd);
       const sofficeCwd = isWindows ? path.dirname(sofficeCmd) : process.cwd();
 
-      // Use an isolated LibreOffice profile to avoid "profile locked"/corruption issues
       const loProfileDir = path.join(tmpDir, 'lo-profile');
       try { fs.mkdirSync(loProfileDir, { recursive: true }); } catch {}
       const toFileUri = (p) => {
@@ -4003,21 +4241,21 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
         return norm.match(/^[A-Za-z]:\//) ? `file:///${norm}` : `file://${norm}`;
       };
       const userInstallationArg = `-env:UserInstallation=${toFileUri(loProfileDir)}`;
-      
+
       const { spawn } = require('child_process');
       const conversionArgs = [
-        '--headless',
-        '--nologo',
-        '--nolockcheck',
-        '--nofirststartwizard',
-        '--norestore',
-        userInstallationArg,
-        // Use explicit writer export to reduce variability across installs
-        '--convert-to', 'pdf:writer_pdf_Export',
-        '--outdir', tmpDir,
-        inputPath
+        '--headless', '--nologo', '--nolockcheck', '--nofirststartwizard', '--norestore',
+        userInstallationArg, '--convert-to', 'pdf:writer_pdf_Export', '--outdir', tmpDir, inputPath
       ];
-      console.log('📄 LibreOffice args:', conversionArgs);
+
+      let loPythonHome = '';
+      if (isWindows) {
+        try {
+          const entries = fs.readdirSync(sofficeCwd, { withFileTypes: true });
+          const pyCore = entries.find((e) => e.isDirectory() && /^python-core-/i.test(e.name));
+          if (pyCore) loPythonHome = path.join(sofficeCwd, pyCore.name);
+        } catch {}
+      }
 
       // Use a MINIMAL clean env — npm sets npm_*, NODE_*, INIT_CWD vars that can confuse LibreOffice's
       // bundled Python interpreter (we've observed Node-spawned soffice fail with
@@ -4042,105 +4280,51 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
         cwd: sofficeCwd,
         env: sofficeEnv
       });
-      
-      let stdout = '';
-      let stderr = '';
+
+      let stdout = '', stderr = '';
       conversion.stdout.on('data', (data) => { stdout += data.toString(); });
       conversion.stderr.on('data', (data) => { stderr += data.toString(); });
-      
-      const conversionPromise = new Promise((resolve, reject) => {
+
+      const pdfBuffer = await new Promise((resolve, reject) => {
         conversion.on('close', (code) => {
-          console.log('📄 LibreOffice exit code:', code);
-          console.log('📄 LibreOffice stdout:', stdout);
-          console.log('📄 LibreOffice stderr:', stderr);
-          
           if (code !== 0) {
-            reject(new Error(`LibreOffice conversion failed with code ${code}: ${stderr}`));
+            reject(new Error(`LibreOffice failed with code ${code}`));
             return;
           }
 
-          // Find the generated PDF
           const expectedPdfPath = inputPath.replace(/\.docx$/i, '.pdf');
-          console.log('📄 Looking for PDF at:', expectedPdfPath);
-          
           let finalPdfPath = expectedPdfPath;
           if (!fs.existsSync(finalPdfPath)) {
-            // Some LibreOffice builds output a different filename; scan tmpDir for any .pdf
-            try {
-              const pdfs = fs.readdirSync(tmpDir).filter((f) => f.toLowerCase().endsWith('.pdf'));
-              if (pdfs.length > 0) {
-                finalPdfPath = path.join(tmpDir, pdfs[0]);
-                console.log('📄 PDF not found at expected path; using discovered PDF:', finalPdfPath);
-              }
-            } catch {}
+            const pdfs = fs.readdirSync(tmpDir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+            if (pdfs.length > 0) finalPdfPath = path.join(tmpDir, pdfs[0]);
           }
 
-          if (!fs.existsSync(finalPdfPath)) {
-            // Only now, if no PDF exists, treat fatal stderr patterns as a real failure signal.
-            if (hasFatalLibreOfficeStderr(stderr)) {
-              reject(new Error(`LibreOffice conversion failed (fatal stderr detected, no PDF produced): ${stderr}`));
-              return;
-            }
-            reject(new Error(`PDF not found after LibreOffice conversion. stderr: ${stderr}`));
+          if (!fs.existsSync(finalPdfPath) || !fs.statSync(finalPdfPath).size) {
+            reject(new Error('LibreOffice produced no or empty PDF'));
             return;
           }
 
-          try {
-            const st = fs.statSync(finalPdfPath);
-            if (!st || st.size === 0) {
-              if (hasFatalLibreOfficeStderr(stderr)) {
-                reject(new Error(`LibreOffice conversion failed (fatal stderr detected, empty PDF): ${stderr}`));
-                return;
-              }
-              reject(new Error(`LibreOffice produced an empty PDF. stderr: ${stderr}`));
-              return;
-            }
-          } catch (statErr) {
-            reject(new Error(`Unable to stat generated PDF. stderr: ${stderr}`));
-            return;
-          }
-
-          // At this point we have a non-empty PDF. Even if stderr contains scary messages,
-          // accept the PDF and just log the stderr as a warning.
-          if (stderr && String(stderr).trim().length > 0) {
-            console.warn('⚠️ LibreOffice produced a PDF but stderr was not empty (continuing):', stderr);
-          }
-          
-          const pdfBuffer = fs.readFileSync(finalPdfPath);
-          console.log('✅ PDF generated successfully with LibreOffice');
-          console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
-          
-          // Cleanup
-          try { fs.unlinkSync(inputPath); } catch {}
-          try { fs.unlinkSync(finalPdfPath); } catch {}
-          try { fs.rmSync(loProfileDir, { recursive: true, force: true }); } catch {}
-          try { fs.rmdirSync(tmpDir); } catch {}
-          
-          resolve(pdfBuffer);
+          const pdf = fs.readFileSync(finalPdfPath);
+          try { fs.unlinkSync(inputPath); fs.unlinkSync(finalPdfPath);
+                 fs.rmSync(loProfileDir, { recursive: true, force: true }); fs.rmdirSync(tmpDir); } catch {}
+          resolve(pdf);
         });
-        
-        conversion.on('error', (error) => {
-          console.error('❌ LibreOffice spawn error:', error);
-          reject(error);
-        });
+        conversion.on('error', (error) => reject(error));
       });
-      
-      const pdfBuffer = await conversionPromise;
-      
+
+      console.log('✅ PDF generated with LibreOffice (8-10s)');
       res.set({
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'attachment; filename="agreement.pdf"',
         'Content-Length': pdfBuffer.length
       });
       return res.send(pdfBuffer);
-      
+
     } catch (libreError) {
-      console.error('❌ Direct LibreOffice conversion failed:', libreError);
-      console.error('Error details:', libreError.message);
-      // Continue to next method
+      console.error('❌ LibreOffice conversion failed:', libreError.message);
     }
 
-    // Method 2: Use libreoffice-convert package (if available)
+    // Method 3: Use libreoffice-convert package (if available)
     if (libre && typeof libre.convertAsync === 'function') {
       try {
         console.log('📄 Trying libreoffice-convert package...');
@@ -4160,156 +4344,22 @@ app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => 
       }
     }
 
-    // Method 3: Try local LibreOffice converter service (if running)
-    // This is useful when system LibreOffice has path/profile issues.
-    if (LIBREOFFICE_SERVICE_URL) {
-      try {
-        console.log('📄 Trying LibreOffice converter service...', LIBREOFFICE_SERVICE_URL);
-        const baseUrl = String(LIBREOFFICE_SERVICE_URL).replace(/\/$/, '');
-        const endpoint = `${baseUrl}/convert`;
-        const form = new FormData();
-        const blob = new Blob([req.file.buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-        form.append('file', blob, 'document.docx');
-        const resp = await fetch(endpoint, { method: 'POST', body: form });
-        if (resp.ok) {
-          const ab = await resp.arrayBuffer();
-          const pdfBuffer = Buffer.from(ab);
-          if (pdfBuffer.length > 0) {
-            console.log('✅ PDF converted successfully with converter service');
-            res.set({
-              'Content-Type': 'application/pdf',
-              'Content-Disposition': 'attachment; filename="agreement.pdf"',
-              'Content-Length': pdfBuffer.length
-            });
-            return res.send(pdfBuffer);
-          }
-        } else {
-          const txt = await resp.text();
-          console.error('Converter service failed:', resp.status, txt);
-        }
-      } catch (e) {
-        console.error('❌ Converter service request error:', e);
-      }
-    }
+    // All conversion methods failed - show error instead of broken PDF
+    console.error('❌ ALL PDF CONVERSION METHODS FAILED');
+    console.error('Methods attempted:');
+    console.error('  1. ⚡ Gotenberg:', GOTENBERG_URL ? 'configured but failed' : 'not configured');
+    console.error('  2. 📄 Direct LibreOffice: failed');
+    console.error('  3. 📦 libreoffice-convert package:', libre ? 'failed' : 'not available');
 
-    // Method 4: Try remote Gotenberg service
-    if (GOTENBERG_URL) {
-      try {
-        console.log('📄 Trying Gotenberg service...');
-        const baseUrl = GOTENBERG_URL.replace(/\/$/, '');
-        const endpoint = `${baseUrl}/forms/libreoffice/convert`;
-        const form = new FormData();
-        const blob = new Blob([req.file.buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-        form.append('files', blob, 'document.docx');
-        form.append('outputFilename', 'agreement');
-        const resp = await fetch(endpoint, { method: 'POST', body: form });
-        if (!resp.ok) {
-          const txt = await resp.text();
-          console.error('Gotenberg conversion failed:', resp.status, txt);
-        } else {
-          const ab = await resp.arrayBuffer();
-          const pdfBuffer = Buffer.from(ab);
-          console.log('✅ PDF converted successfully with Gotenberg');
-          res.set({
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': 'attachment; filename="agreement.pdf"',
-            'Content-Length': pdfBuffer.length
-          });
-          return res.send(pdfBuffer);
-        }
-      } catch (e) {
-        console.error('❌ Gotenberg request error:', e);
-      }
-    }
-
-    // Method 5: Simple text-based PDF generation
-    console.log('📄 Trying simple text-based PDF generation...');
-    try {
-      const mammoth = require('mammoth');
-      
-      // Convert DOCX to plain text
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-      const textContent = result.value;
-      
-      console.log('📄 Extracted text length:', textContent.length);
-      console.log('📄 Text preview:', textContent.substring(0, 200) + '...');
-      
-      if (!textContent || textContent.trim().length === 0) {
-        throw new Error('No text content extracted from DOCX');
-      }
-      
-       // Create a simple PDF using jsPDF
-       const { jsPDF } = require('jspdf');
-       const pdf = new jsPDF();
-      
-      // Set font and size
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(12);
-      
-      // Split text into lines that fit the page width
-      const pageWidth = 180; // Usable width in mm (210 - 30 for margins)
-      const lineHeight = 7; // Line height in mm
-      const maxLinesPerPage = 35; // Approximate lines per page
-      
-      const lines = pdf.splitTextToSize(textContent, pageWidth);
-      
-      let currentLine = 0;
-      let currentPage = 1;
-      
-      // Add title
-      pdf.setFontSize(16);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('SERVICE AGREEMENT', 15, 20);
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'normal');
-      
-      let yPosition = 35;
-      
-      for (let i = 0; i < lines.length; i++) {
-        if (yPosition > 280) { // Near bottom of page
-          pdf.addPage();
-          yPosition = 20;
-          currentPage++;
-        }
-        
-        pdf.text(lines[i], 15, yPosition);
-        yPosition += lineHeight;
-      }
-      
-      // Add page numbers
-      const totalPages = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(10);
-        pdf.text(`Page ${i} of ${totalPages}`, 180, 290);
-      }
-      
-      const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
-      
-      console.log('✅ PDF generated successfully with text fallback');
-      console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
-      
-      res.set({
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="agreement.pdf"',
-        'Content-Length': pdfBuffer.length
-      });
-      return res.send(pdfBuffer);
-      
-    } catch (textError) {
-      console.error('❌ Text-based PDF generation failed:', textError);
-    }
-
-    // All conversion methods failed
-    console.error('❌ All conversion methods failed');
-    return res.status(500).json({ 
-      success: false, 
-      error: 'PDF conversion not available. All conversion methods failed.',
-      details: {
-        libreofficeConvert: libre ? 'failed' : 'not available',
-        gotenberg: GOTENBERG_URL ? 'failed' : 'not configured',
-        htmlFallback: 'failed',
-        systemLibreOffice: 'not used (relying on libreoffice-convert package)'
+    return res.status(500).json({
+      success: false,
+      error: 'PDF Conversion Failed',
+      message: 'Unable to convert DOCX to PDF. Please try again later.',
+      details: 'All conversion methods (Gotenberg, LibreOffice, libreoffice-convert) are unavailable or failed.',
+      troubleshooting: {
+        gotenberg: GOTENBERG_URL ? 'configured but failed - check if service is running' : 'not configured - set GOTENBERG_URL environment variable',
+        libreoffice: 'system conversion failed - check if LibreOffice is installed',
+        recommendation: 'Please try again or contact support if the problem persists'
       }
     });
 
@@ -4934,11 +4984,12 @@ app.delete('/api/templates/:id', async (req, res) => {
       }
 
     console.log('✅ Template deleted successfully:', id);
-      
-      res.json({
-        success: true,
-        message: 'Template deleted successfully'
-      });
+
+    _cacheClear('templates');
+    res.json({
+      success: true,
+      message: 'Template deleted successfully'
+    });
   } catch (error) {
     console.error('❌ Error deleting template:', error);
     res.status(500).json({ 
@@ -4989,11 +5040,12 @@ app.put('/api/templates/:id', async (req, res) => {
       }
 
     console.log('✅ Template updated successfully:', id);
-      
-      res.json({
-        success: true,
-        message: 'Template updated successfully'
-      });
+
+    _cacheClear('templates');
+    res.json({
+      success: true,
+      message: 'Template updated successfully'
+    });
   } catch (error) {
     console.error('❌ Error updating template:', error);
     res.status(500).json({ 
@@ -6340,7 +6392,7 @@ function decryptEsignSignatureStoredDoc(doc) {
 }
 
 // Helper: log audit action
-async function logAudit(documentId, action, userEmail, ipAddress) {
+async function logAudit(documentId, action, userEmail, ipAddress, extra) {
   if (!db) return;
   try {
     await db.collection('audit_logs').insertOne({
@@ -6348,7 +6400,8 @@ async function logAudit(documentId, action, userEmail, ipAddress) {
       action,
       user_email: userEmail || 'anonymous',
       timestamp: new Date(),
-      ip_address: ipAddress || null
+      ip_address: ipAddress || null,
+      ...(extra && typeof extra === 'object' ? { metadata: extra } : {})
     });
   } catch (e) {
     console.warn('Audit log error:', e?.message);
@@ -6723,8 +6776,7 @@ app.get('/api/esign/documents/:id', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
-    if (req.query.audit === 'open') {
+    if (req.query.audit === 'open' && doc.status !== 'voided') {
       await logAudit(doc._id.toString(), 'opened', req.query.signer_email || null, req.ip || req.connection?.remoteAddress);
     }
     res.json({
@@ -6739,7 +6791,10 @@ app.get('/api/esign/documents/:id', async (req, res) => {
         created_at: doc.created_at,
         sent_at: doc.sent_at || null,
         status: doc.status,
-        signed_file_path: doc.signed_file_path
+        signed_file_path: doc.signed_file_path,
+        void_reason: doc.void_reason || null,
+        voided_by: doc.voided_by || null,
+        voided_at: doc.voided_at || null
       }
     });
   } catch (error) {
@@ -6759,7 +6814,6 @@ app.get('/api/esign/documents/:id/file', async (req, res) => {
       doc = null;
     }
     if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
-    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
 
     const attachment = req.query.attachment === '1' || req.query.download === '1';
     const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
@@ -6942,24 +6996,114 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
     if (doc.status !== 'sent') {
       return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be voided' });
     }
+    const voidReason = (req.body?.void_reason || '').toString().trim().slice(0, 1000);
+    if (!voidReason) {
+      return res.status(400).json({ success: false, error: 'A reason is required when voiding a document' });
+    }
     await db.collection('esign_recipients').updateMany(
       { document_id: docId },
       { $unset: { signing_token: '' } }
     );
     await db.collection('esign_documents').updateOne(
       { _id: docId },
-      { $set: { status: 'voided', voided_at: new Date() } }
+      {
+        $set: {
+          status: 'voided',
+          voided_at: new Date(),
+          voided_by: actorEmail || null,
+          void_reason: voidReason,
+        },
+      }
     );
     await db.collection('esign_signature_secrets').deleteMany({
       $or: [{ document_id: docId }, { document_id: docId.toString() }],
     });
     try {
-      await logAudit(docId.toString(), 'voided', req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress);
+      await logAudit(docId.toString(), 'voided', actorEmail || req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
     } catch (auditErr) { /* non-fatal */ }
-    console.log('E-sign VOID: document voided', req.params.id, doc.file_name);
-    res.json({ success: true, message: 'Document voided. Signing links no longer work.' });
+    console.log('E-sign VOID: document voided', req.params.id, doc.file_name, '|', actorEmail, '|', voidReason);
+    res.json({ success: true, message: 'Document voided. Signing links no longer work.', void_reason: voidReason });
   } catch (error) {
     console.error('❌ E-sign void document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/remind - Manually send reminder emails to all pending recipients
+app.post('/api/esign/documents/:id/remind', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can send reminders for this document' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be reminded' });
+    }
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(500).json({ success: false, error: 'Email service not configured' });
+    }
+
+    const recipients = await db.collection('esign_recipients').find({
+      document_id: docId,
+      status: 'pending',
+      email: { $exists: true, $ne: '' },
+      signing_token: { $exists: true, $ne: '' },
+    }).toArray();
+
+    if (!recipients.length) {
+      return res.status(400).json({ success: false, error: 'No pending recipients to remind' });
+    }
+
+    let sentCount = 0;
+    const errors = [];
+    for (const recipient of recipients) {
+      try {
+        if (isEsignTokenExpired(recipient)) {
+          errors.push(`${recipient.email}: signing link expired`);
+          continue;
+        }
+        const { signingUrl, inboxUrl } = getEsignRecipientUrls(recipient.signing_token);
+        const { subject, html } = buildEsignRecipientEmail(doc, recipient, signingUrl, inboxUrl, {
+          mode: 'reminder',
+          tokenExpiresAt: recipient.token_expires_at,
+        });
+        const result = await sendEmail(recipient.email, subject, html);
+        if (!result.success) {
+          errors.push(`${recipient.email}: ${result.error?.message || result.error || 'send failed'}`);
+          continue;
+        }
+        await db.collection('esign_recipients').updateOne(
+          { _id: recipient._id },
+          { $set: { expiry_reminder_sent_at: new Date() } }
+        );
+        sentCount++;
+      } catch (recErr) {
+        errors.push(`${recipient.email}: ${recErr.message}`);
+      }
+    }
+
+    try {
+      await logAudit(docId.toString(), 'manual_reminder_sent', req.body?.actor_email || req.ip || 'system', req.ip || null);
+    } catch (_) { /* non-fatal */ }
+
+    if (sentCount === 0) {
+      return res.status(500).json({ success: false, error: errors.join('; ') || 'No reminders sent' });
+    }
+    res.json({
+      success: true,
+      message: `Reminder sent to ${sentCount} recipient${sentCount === 1 ? '' : 's'}.`,
+      sent: sentCount,
+      errors: errors.length ? errors : undefined,
+    });
+  } catch (error) {
+    console.error('❌ E-sign remind error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -7345,6 +7489,7 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
 
     const emailsSentTo = [];
     const failedRecipients = [];
+    const signingLinks = [];
     const now = new Date();
     const tokenExpiresAt = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000);
 
@@ -7385,6 +7530,13 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
         const result = await sendEmail(rec.email, subject, html);
         if (!result.success) throw result.error || new Error('Email send failed');
         emailsSentTo.push(String(rec.email).trim());
+        signingLinks.push({
+          recipient_id: rec._id.toString(),
+          name: rec.name || '',
+          email: String(rec.email).trim(),
+          signing_url: signingUrl,
+          expires_at: tokenExpiresAt,
+        });
         try {
           await logAudit(docId.toString(), 'expiry_extended', actorEmail || rec.email || 'system', req.ip || req.connection?.remoteAddress);
         } catch (_) { /* non-fatal */ }
@@ -8041,6 +8193,8 @@ app.post('/api/esign/signature-fields', async (req, res) => {
           text_color: tc,
           text_font: tf,
         };
+      } else if ((typeLower === 'name' || typeLower === 'title') && typeof f.prefill === 'string') {
+        textFieldExtras = { prefill: f.prefill.slice(0, 500) };
       }
       if (f.xPct != null) {
         return { ...base, ...textFieldExtras, xPct: Number(f.xPct), yPct: Number(f.yPct), widthPct: Number(f.widthPct) || 20, heightPct: Number(f.heightPct) || 4 };
@@ -8510,7 +8664,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       const f = fields[i];
       const fType = (f.type || 'signature').toLowerCase();
       let val = values[String(i)] ?? values[f._id?.toString()];
-      if (fType === 'text' && (val == null || val === '')) {
+      if ((fType === 'text' || fType === 'name' || fType === 'title') && (val == null || val === '')) {
         const p = f.prefill;
         if (typeof p === 'string' && p.length) val = p;
       }
@@ -10526,13 +10680,6 @@ app.get('/api/team-approval-settings', async (req, res) => {
           DEV: [],
           DEV2: [],
         },
-        authorizedSenders: {
-          SMB: [],
-          AM: [],
-          ENT: [],
-          DEV: [],
-          DEV2: [],
-        }
       };
       return res.json({ success: true, data: defaultSettings });
     }
@@ -10553,11 +10700,15 @@ app.put('/api/team-approval-settings', async (req, res) => {
     const newSettings = req.body;
 
     // Validate structure
-    if (!newSettings.teamLeads || !newSettings.authorizedSenders) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid settings structure. Must include teamLeads and authorizedSenders.' 
+    if (!newSettings.teamLeads) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid settings structure. Must include teamLeads.'
       });
+    }
+    // Strip the deprecated authorizedSenders field if it's still being sent
+    if (newSettings.authorizedSenders) {
+      delete newSettings.authorizedSenders;
     }
 
     // Upsert (update or insert) the settings document
@@ -10594,12 +10745,11 @@ app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
     if (settings) {
       const teamSettings = {
         teamLead: settings.teamLeads?.[teamName] || '',
-        authorizedSenders: settings.authorizedSenders?.[teamName] || [],
         additionalRecipients: settings.additionalRecipients?.[teamName] || []
       };
       return res.json({ success: true, data: teamSettings });
     } else {
-      return res.json({ success: true, data: { teamLead: '', authorizedSenders: [], additionalRecipients: [] } });
+      return res.json({ success: true, data: { teamLead: '', additionalRecipients: [] } });
     }
   } catch (error) {
     console.error('❌ Error fetching team settings:', error);

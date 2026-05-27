@@ -2,7 +2,6 @@ import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import Navigation from './Navigation';
-import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 /**
  * Layout for Agreements: left sidebar on list page (upload for signature); back button on nested pages.
@@ -10,9 +9,6 @@ import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 const EsignLayout: React.FC = () => {
   const location = useLocation();
   const isListPage = location.pathname === '/esign' || location.pathname === '/esign/';
-
-  const { workflows } = useApprovalWorkflows();
-  const isEsignEnabled = workflows.some((w) => w.status === 'approved');
 
   return (
     <div
@@ -23,7 +19,7 @@ const EsignLayout: React.FC = () => {
       }`}
     >
       {/* Left sidebar on Agreements list page (upload for signature) */}
-      {isListPage && <Navigation currentTab="esign" isEsignEnabled={isEsignEnabled} />}
+      {isListPage && <Navigation currentTab="esign" isEsignEnabled={true} />}
 
       {/* Top bar: back button (only on nested pages, e.g. place-fields, send) */}
       {!isListPage && (
@@ -45,7 +41,7 @@ const EsignLayout: React.FC = () => {
       <main
         className={
           isListPage
-            ? 'lg:pl-64 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-10 transition-all duration-300'
+            ? 'min-w-0 w-full max-w-full box-border transition-all duration-300 lg:ml-64 lg:w-[calc(100%-16rem)] lg:max-w-[calc(100%-16rem)]'
             : 'flex flex-1 flex-col min-h-0 overflow-y-auto max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-2 sm:py-3 transition-all duration-300'
         }
       >

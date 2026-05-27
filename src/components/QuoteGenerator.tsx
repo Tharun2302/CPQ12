@@ -9,8 +9,8 @@ import {
   Mail, 
   Building, 
   Check,
-  CheckCircle, 
-  Users, 
+  CheckCircle,
+  Users,
   Sparkles,
   Eye,
   Briefcase,
@@ -22,7 +22,10 @@ import {
   Plus,
   Trash2,
   RefreshCw,
-  Save
+  Save,
+  Shield,
+  UserPlus,
+  Loader2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -34,6 +37,7 @@ import { useNavigate } from 'react-router-dom';
 import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
 import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
 import { getCurrentUser } from '../utils/authUtils';
+import { useAuth } from '../hooks/useAuth';
 import CustomDatePicker from './CustomDatePicker';
 import OnlyOfficeEditor from './OnlyOfficeEditor';
 // EmailJS import removed - now using server-side email with attachment support
@@ -453,6 +457,11 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       return 'OVERAGE AGREEMENT';
     }
 
+    // Hide "Multi" from the Multi Combination template name to match the renamed dropdown UI.
+    if (rawName.toLowerCase() === 'multi combination') {
+      return 'Combination';
+    }
+
     return rawName || 'Selected Template';
   };
 
@@ -785,7 +794,6 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [teamApprovalSettings, setTeamApprovalSettings] = useState<{
     teamLeads: Record<string, string>;
     additionalRecipients: Record<string, string[]>; // Keep for backward compatibility
-    authorizedSenders: Record<string, string[]>; // People who can send approval emails to this team lead
   }>({
     teamLeads: {
       SMB: 'chitradip.saha@cloudfuze.com',
@@ -801,13 +809,6 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       DEV: [],
       DEV2: [],
     },
-    authorizedSenders: {
-      SMB: [],
-      AM: [],
-      ENT: [],
-      DEV: [],
-      DEV2: [],
-    }
   });
 
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
@@ -822,12 +823,11 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
           if (saved) {
             const parsed = JSON.parse(saved);
             const teamIds = Object.keys(parsed.teamLeads || {});
-            if (!parsed.authorizedSenders) parsed.authorizedSenders = {};
             if (!parsed.additionalRecipients) parsed.additionalRecipients = {};
             teamIds.forEach((k) => {
-              if (!Array.isArray(parsed.authorizedSenders[k])) parsed.authorizedSenders[k] = [];
               if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
             });
+            delete parsed.authorizedSenders;
             setTeamApprovalSettings(parsed);
             return true;
           }
@@ -843,14 +843,12 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
         const result = await response.json();
 
         if (result.success && result.data) {
-          // Migrate old data: ensure authorizedSenders and additionalRecipients exist for every team
           const teamIds = Object.keys(result.data.teamLeads || {});
-          if (!result.data.authorizedSenders) result.data.authorizedSenders = {};
           if (!result.data.additionalRecipients) result.data.additionalRecipients = {};
           teamIds.forEach((k) => {
-            if (!Array.isArray(result.data.authorizedSenders[k])) result.data.authorizedSenders[k] = [];
             if (!Array.isArray(result.data.additionalRecipients[k])) result.data.additionalRecipients[k] = [];
           });
+          delete result.data.authorizedSenders;
           setTeamApprovalSettings(result.data);
 
           try {
@@ -931,82 +929,10 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     return () => clearTimeout(timeoutId);
   }, [teamApprovalSettings, isLoadingSettings]);
 
-  // Get logged-in user's email
-  const currentUser = getCurrentUser();
-  const loggedInUserEmail = currentUser?.email || '';
-
-  // Check if user is authorized for any team
-  const getUserAuthorizedTeam = (): string | null => {
-    if (!loggedInUserEmail) return null;
-    
-    // Check each team's authorized senders list
-    for (const [team, senders] of Object.entries(teamApprovalSettings.authorizedSenders || {})) {
-      if (Array.isArray(senders) && senders.includes(loggedInUserEmail)) {
-        return team;
-      }
-    }
-    
-    // Also check if logged-in user is a team lead
-    for (const [team, leadEmail] of Object.entries(teamApprovalSettings.teamLeads || {})) {
-      if (leadEmail === loggedInUserEmail) {
-        return team;
-      }
-    }
-    
-    return null;
-  };
-
-  // Automatic team selection logic based on logged-in user's email (read-only; no setState during render)
-  const getAutoSelectedTeam = (amount: number = 0, clientName: string = ''): string => {
-    if (useManualSelection) return manualTeamSelection;
-    const authorizedTeam = getUserAuthorizedTeam();
-    if (authorizedTeam) return authorizedTeam;
-    return manualTeamSelection;
-  };
-
-  // Handle sending authorization request to team lead
-  const handleSendAuthorizationRequest = async () => {
-    if (!requestingTeam || !loggedInUserEmail) return;
-
-    setIsSendingRequest(true);
-    try {
-      const teamLeadEmail = teamApprovalSettings.teamLeads[requestingTeam];
-      if (!teamLeadEmail) {
-        alert('Team lead email not found for this team.');
-        setIsSendingRequest(false);
-        return;
-      }
-
-      const response = await fetch(`${BACKEND_URL}/api/send-authorization-request`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requesterEmail: loggedInUserEmail,
-          requesterName: currentUser?.name || loggedInUserEmail.split('@')[0],
-          teamLeadEmail: teamLeadEmail,
-          teamName: requestingTeam,
-          message: requestMessage || `Hi, I would like to request authorization to send approval workflows to the ${requestingTeam} team.`,
-        }),
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        alert(`✅ Authorization request sent to ${teamLeadEmail} for ${requestingTeam} team. The request has been saved to the database.`);
-        setShowRequestModal(false);
-        setRequestingTeam('');
-        setRequestMessage('');
-      } else {
-        alert('Failed to send request. Please try again or contact the team lead directly.');
-      }
-    } catch (error) {
-      console.error('Error sending authorization request:', error);
-      alert('Failed to send request. Please try again or contact the team lead directly.');
-    } finally {
-      setIsSendingRequest(false);
-    }
-  };
+  // Get logged-in user from auth context (reactive — re-renders when AuthContext refreshes the user)
+  const { user: authUser } = useAuth();
+  const loggedInUserEmail = authUser?.email || getCurrentUser()?.email || '';
+  const userIsAdmin = Boolean((authUser as any)?.isApprovalAdmin);
 
   // Helper function to get team approval email
   const getTeamApprovalEmail = (team: string): string => {
@@ -1033,7 +959,6 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     setTeamApprovalSettings((prev) => ({
       ...prev,
       teamLeads: { ...prev.teamLeads, [code]: '' },
-      authorizedSenders: { ...prev.authorizedSenders, [code]: [] },
       additionalRecipients: { ...prev.additionalRecipients, [code]: [] },
     }));
     setEditingTeam(code);
@@ -1051,9 +976,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     const next = ids.find((t) => t !== editingTeam) || ids[0];
     setTeamApprovalSettings((prev) => {
       const { [editingTeam]: _lead, ...teamLeads } = prev.teamLeads || {};
-      const { [editingTeam]: _senders, ...authorizedSenders } = prev.authorizedSenders || {};
       const { [editingTeam]: _recips, ...additionalRecipients } = prev.additionalRecipients || {};
-      return { ...prev, teamLeads, authorizedSenders, additionalRecipients };
+      return { ...prev, teamLeads, additionalRecipients };
     });
     setEditingTeam(next);
     setManualTeamSelection((current) => (current === editingTeam ? next : current));
@@ -1063,26 +987,101 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [showTeamSettingsModal, setShowTeamSettingsModal] = useState(false);
   const [editingTeam, setEditingTeam] = useState<string>('SMB');
   const [newRecipientEmail, setNewRecipientEmail] = useState<string>('');
-  const [newAuthorizedSenderEmail, setNewAuthorizedSenderEmail] = useState<string>('');
   const [newTeamCode, setNewTeamCode] = useState<string>('');
   const [showAddTeamInput, setShowAddTeamInput] = useState(false);
 
-  // State for manual team selection (can override auto-selection)
+  // Team picked by the user in the Send for Approval modal
   const [manualTeamSelection, setManualTeamSelection] = useState<string>('SMB');
-  const [useManualSelection, setUseManualSelection] = useState<boolean>(false);
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestingTeam, setRequestingTeam] = useState<string>('');
-  const [requestMessage, setRequestMessage] = useState<string>('');
-  const [isSendingRequest, setIsSendingRequest] = useState(false);
 
-  // Sync manual team selection to authorized team when user/settings are known (avoids setState during render)
-  useEffect(() => {
-    const authorized = getUserAuthorizedTeam();
-    if (authorized && manualTeamSelection === 'SMB') {
-      setManualTeamSelection(authorized);
-      console.log(`✅ Auto-selected team ${authorized} based on logged-in user: ${loggedInUserEmail}`);
+  // Approval Admins modal — manages who can edit Team Approval Settings
+  const [showApprovalAdminsModal, setShowApprovalAdminsModal] = useState(false);
+  const [approvalAdminEmails, setApprovalAdminEmails] = useState<string[]>([]);
+  const [approvalAdminLoading, setApprovalAdminLoading] = useState(false);
+  const [approvalAdminError, setApprovalAdminError] = useState<string | null>(null);
+  const [newApprovalAdminEmail, setNewApprovalAdminEmail] = useState('');
+  const [addingApprovalAdmin, setAddingApprovalAdmin] = useState(false);
+  const [removingApprovalAdmin, setRemovingApprovalAdmin] = useState<string | null>(null);
+
+  const getApprovalAdminAuthHeaders = (): Record<string, string> => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const fetchApprovalAdmins = async () => {
+    try {
+      setApprovalAdminLoading(true);
+      setApprovalAdminError(null);
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins`, { headers: getApprovalAdminAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to load admins');
+        setApprovalAdminEmails([]);
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+    } catch {
+      setApprovalAdminError('Failed to load approval admins');
+      setApprovalAdminEmails([]);
+    } finally {
+      setApprovalAdminLoading(false);
     }
-  }, [loggedInUserEmail, teamApprovalSettings, manualTeamSelection]);
+  };
+
+  const handleAddApprovalAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = newApprovalAdminEmail.trim();
+    if (!email || !email.includes('@')) {
+      setApprovalAdminError('Please enter a valid email');
+      return;
+    }
+    setAddingApprovalAdmin(true);
+    setApprovalAdminError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getApprovalAdminAuthHeaders() },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to add');
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+      setNewApprovalAdminEmail('');
+    } catch {
+      setApprovalAdminError('Failed to add email');
+    } finally {
+      setAddingApprovalAdmin(false);
+    }
+  };
+
+  const handleRemoveApprovalAdmin = async (email: string) => {
+    setRemovingApprovalAdmin(email);
+    setApprovalAdminError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: getApprovalAdminAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to remove');
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+    } catch {
+      setApprovalAdminError('Failed to remove email');
+    } finally {
+      setRemovingApprovalAdmin(null);
+    }
+  };
+
+  useEffect(() => {
+    if (showApprovalAdminsModal && userIsAdmin) {
+      fetchApprovalAdmins();
+    }
+  }, [showApprovalAdminsModal, userIsAdmin]);
 
   // Keep editingTeam and manualTeamSelection valid when team list changes (e.g. load from API)
   useEffect(() => {
@@ -1093,26 +1092,8 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
     if (!ids.includes(manualTeamSelection)) setManualTeamSelection(first);
   }, [teamApprovalSettings]);
 
-  // Single source of truth for displayed team in approval modal (avoids multiple getAutoSelectedTeam calls per render)
-  const displayTeamForModal = useMemo(
-    () => getAutoSelectedTeam(calculation?.totalCost || 0, clientInfo.clientName || ''),
-    [useManualSelection, manualTeamSelection, loggedInUserEmail, teamApprovalSettings, calculation?.totalCost, clientInfo.clientName]
-  );
-
-  // Auto-suggest logged-in user when opening settings
-  useEffect(() => {
-    if (showTeamSettingsModal && loggedInUserEmail) {
-      // Check if logged-in user is already in authorized senders for current team
-      const currentSenders = teamApprovalSettings.authorizedSenders[editingTeam] || [];
-      const isAlreadyAdded = currentSenders.includes(loggedInUserEmail);
-      
-      // If not already added and not the team lead, suggest adding them
-      if (!isAlreadyAdded && teamApprovalSettings.teamLeads[editingTeam] !== loggedInUserEmail) {
-        // Auto-populate the input field with logged-in user's email
-        setNewAuthorizedSenderEmail(loggedInUserEmail);
-      }
-    }
-  }, [showTeamSettingsModal, editingTeam, loggedInUserEmail, teamApprovalSettings]);
+  // Team displayed in the approval modal is always the user's manual pick now.
+  const displayTeamForModal = manualTeamSelection;
 
   const ensureDocxPreviewStylesInjected = () => {
     const existing = document.getElementById('docx-preview-css');
@@ -1442,12 +1423,6 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   }
 
   const handleSendToDealDesk = async () => {
-    // Validate discount is not more than 10%
-    if (clientInfo.discount && clientInfo.discount > 10) {
-      alert('Discount cannot be more than 10%. Please adjust the discount value.');
-      return;
-    }
-    
     // Validate discount doesn't bring total below $2500
     if (clientInfo.discount && clientInfo.discount > 0) {
       const finalTotal = (calculation?.totalCost ?? safeCalculation.totalCost) * (1 - (clientInfo.discount / 100));
@@ -1671,7 +1646,10 @@ Quote ID: ${quoteData.id}
 
         const companyName = (configureContactInfo?.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Your Company');
         const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '' || companyName === 'Demo Company Inc.') ? 'Your Company' : companyName;
-        const userCount = configuration?.numberOfUsers || 1;
+        // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+        const userCount = configuration?.servicePlan === 'Manage'
+          ? (configuration?.manageUsers || 1)
+          : (configuration?.numberOfUsers || 1);
         const userCost = calculation?.userCost ?? safeCalculation.userCost;
         const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
         const totalCost = getEffectiveTotalCost(configuration, calculation || safeCalculation);
@@ -2041,11 +2019,31 @@ Quote ID: ${quoteData.id}
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Effective Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
-          
+
+          // Service term tokens (Manage Plan SaaS Agreement)
+          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{service_end_date}}': (() => {
+            const start = configuration?.startDate;
+            if (!start) return 'N/A';
+            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
+            if (!months) return 'N/A';
+            try {
+              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+              if (isNaN(d.getTime())) return 'N/A';
+              d.setMonth(d.getMonth() + months);
+              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+            } catch { return 'N/A'; }
+          })(),
+          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
+            ? '3-Month Free Trial'
+            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
           '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -2205,6 +2203,22 @@ Quote ID: ${quoteData.id}
                   const first = parts.slice(0, half).join('-');
                   const second = parts.slice(half).join('-');
                   if (first === second) base = first;
+                }
+
+                // Mirror ExhibitSelector.extractBaseCombination alias rules so the merge
+                // expansion treats UI-grouped exhibits as one combination.
+                if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                  base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  base === 'box-to-google-mydrive-shareddrive' ||
+                  base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  base === 'box-to-google-sharedrive' ||
+                  base.startsWith('box-to-google-sharedrive-') ||
+                  base === 'box-to-google-mydrive-sharedrive' ||
+                  base.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  base = 'box-to-google-mydrive';
                 }
                 return base;
               };
@@ -2519,13 +2533,7 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
     e.preventDefault();
     
     console.log('🔍 handleSubmit - dealData:', dealData);
-    
-    // Validate discount is not more than 10%
-    if (clientInfo.discount && clientInfo.discount > 10) {
-      alert('Discount cannot be more than 10%. Please adjust the discount value.');
-      return;
-    }
-    
+
     // Validate discount doesn't bring total below $2500
     if (clientInfo.discount && clientInfo.discount > 0) {
       const finalTotal = (calculation?.totalCost ?? safeCalculation.totalCost) * (1 - (clientInfo.discount / 100));
@@ -2627,7 +2635,13 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
     const placeholderMappings = {
       '{{Company Name}}': quote.company || 'Company Name',
       '{{migration type}}': quote.configuration.migrationType,
-      '{{userscount}}': quote.configuration.numberOfUsers.toString(),
+      // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+      '{{userscount}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
+      '{{users_count}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
       '{{price_migration}}': formatCurrency(safeCalculation.migrationCost),
       '{{price_data}}': formatCurrency((safeCalculation.userCost || 0) + (safeCalculation.dataCost || 0)),
       // Use effective duration (handles Multi combination + nested configs)
@@ -2654,7 +2668,10 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
           const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
           return formatCurrency(Math.max(msgPerUser, contentPerUser));
         }
-        return formatCurrency((safeCalculation.userCost || 0) / (quote.configuration.numberOfUsers || 1));
+        const perUserUsers = quote.configuration.servicePlan === 'Manage'
+          ? (quote.configuration.manageUsers || 1)
+          : (quote.configuration.numberOfUsers || 1);
+        return formatCurrency((safeCalculation.userCost || 0) / (perUserUsers || 1));
       })(),
       // Email agreements do not have a GB/data-size concept; keep it empty in templates.
       '{{data_size}}': '',
@@ -2712,7 +2729,9 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
       
       // Additional mappings for compatibility
       '{{company_name}}': quote.company || 'Company Name',
-      '{{users}}': quote.configuration.numberOfUsers.toString(),
+      '{{users}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
       '{{migration_type}}': quote.configuration.migrationType,
       '{{prices}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
       '{{migration_price}}': formatCurrency(safeCalculation.migrationCost),
@@ -2727,7 +2746,30 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
         '{{instance_cost}}': formatCurrency(safeCalculation.instanceCost),
         '{{discount}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
         '{{discount_percent}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
-        '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost)
+        '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
+
+        // Service term tokens (Manage Plan SaaS Agreement)
+        '{{service_start_date}}': quote.configuration?.startDate ? formatDateMMDDYYYY(quote.configuration.startDate) : 'N/A',
+        '{{service_end_date}}': (() => {
+          const start = quote.configuration?.startDate;
+          if (!start) return 'N/A';
+          const months = quote.configuration?.servicePlan === 'Manage'
+            ? 3
+            : (getEffectiveDurationMonths(quote.configuration) || 0);
+          if (!months) return 'N/A';
+          try {
+            const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+            if (isNaN(d.getTime())) return 'N/A';
+            d.setMonth(d.getMonth() + months);
+            return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+          } catch { return 'N/A'; }
+        })(),
+        '{{service_term_label}}': quote.configuration?.servicePlan === 'Manage'
+          ? '3-Month Free Trial'
+          : (() => {
+              const m = getEffectiveDurationMonths(quote.configuration) || 0;
+              return `${m}-Month${m === 1 ? '' : 's'}`;
+            })()
     };
 
     // Create sample template text with placeholders - matches CloudFuze template
@@ -3128,8 +3170,8 @@ Total Price: {{total price}}`;
         const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       console.log('✅ PDF saved to MongoDB for workflow:', documentId);
 
-      // Get selected team (manual override or auto-selected)
-      const autoSelectedTeam = useManualSelection ? manualTeamSelection : getAutoSelectedTeam(calculation?.totalCost || 0, clientInfo.clientName || '');
+      // User picks the team in the Send for Approval modal — use that selection
+      const autoSelectedTeam = manualTeamSelection;
       const teamEmail = getTeamApprovalEmail(autoSelectedTeam);
 
       if (!teamEmail) {
@@ -4564,6 +4606,11 @@ Total Price: {{total price}}`;
           dataSizeGB: finalConfiguration.dataSizeGB,
           startDate: finalConfiguration.startDate,
           endDate: finalConfiguration.endDate,
+          // Manage Standalone fields (E99 / E100) — required for {{users_count}} and {{per_user_cost}}
+          servicePlan: finalConfiguration.servicePlan,
+          manageUsers: finalConfiguration.manageUsers,
+          manageDataGB: finalConfiguration.manageDataGB,
+          combination: finalConfiguration.combination,
           // IMPORTANT: preserve nested configs for Multi combination
           messagingConfig: finalConfiguration.messagingConfig,
           contentConfig: finalConfiguration.contentConfig,
@@ -4612,11 +4659,19 @@ Total Price: {{total price}}`;
       const fetchLatestTemplateFile = async (): Promise<File | null> => {
         try {
           if (!selectedTemplate?.id) return null;
-          const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
-            cache: 'no-store'
-          });
-          if (!fr.ok) {
-            console.warn(`⚠️ Template fetch failed with status ${fr.status}: ${fr.statusText}`);
+          // Retry once on transient 5xx (MongoDB Atlas can momentarily fail individual ops
+          // right after backend start or during brief network/replica blips).
+          let fr: Response | null = null;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
+              cache: 'no-store'
+            });
+            if (fr.ok || fr.status < 500) break;
+            console.warn(`⚠️ Template fetch attempt ${attempt + 1} returned ${fr.status}; retrying...`);
+            await new Promise(r => setTimeout(r, 600));
+          }
+          if (!fr || !fr.ok) {
+            console.warn(`⚠️ Template fetch failed with status ${fr?.status}: ${fr?.statusText}`);
             return null;
           }
           
@@ -4687,6 +4742,12 @@ Total Price: {{total price}}`;
 
       // Validate that we have a template file
       if (!templateFileForAgreement) {
+        if (selectedTemplate?.id) {
+          throw new Error(
+            `Couldn't load template "${selectedTemplate.name || selectedTemplate.id}" from the server. ` +
+            `The backend may be momentarily unavailable — please try again in a few seconds.`
+          );
+        }
         throw new Error('No template file available. Please select a template and try again.');
       }
 
@@ -4754,7 +4815,10 @@ Total Price: {{total price}}`;
           finalCompanyName = 'Demo Company Inc.';
         }
         console.log('  Final finalCompanyName:', finalCompanyName);
-        const userCount = quoteData.configuration?.numberOfUsers || 1;
+        // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+        const userCount = quoteData.configuration?.servicePlan === 'Manage'
+          ? (quoteData.configuration?.manageUsers || 1)
+          : (quoteData.configuration?.numberOfUsers || 1);
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
         // Apply $2,500 minimum to total cost for agreement generation (overage: use actual total)
@@ -5372,11 +5436,31 @@ Total Price: {{total price}}`;
           '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Effective Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
           '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
           '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
-          
+
+          // Service term tokens (Manage Plan SaaS Agreement)
+          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{service_end_date}}': (() => {
+            const start = configuration?.startDate;
+            if (!start) return 'N/A';
+            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
+            if (!months) return 'N/A';
+            try {
+              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+              if (isNaN(d.getTime())) return 'N/A';
+              d.setMonth(d.getMonth() + months);
+              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+            } catch { return 'N/A'; }
+          })(),
+          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
+            ? '3-Month Free Trial'
+            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+
           // Payment terms information (overage agreements)
           '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
           '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
@@ -5889,6 +5973,24 @@ Total Price: {{total price}}`;
                 base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
                 base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
                 base = base.replace(/-+$/, '').trim();
+                // Mirror ExhibitSelector.extractBaseCombination alias rules: merge
+                // "dropbox-to-mydrive" into "dropbox-to-google-mydrive" and collapse the
+                // box-to-google sharedrive variants. Without this, exhibits the UI groups
+                // into one folder end up with different base keys here, which produces
+                // duplicate rows / embedded exhibits in the generated agreement.
+                if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                  base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  base === 'box-to-google-mydrive-shareddrive' ||
+                  base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  base === 'box-to-google-sharedrive' ||
+                  base.startsWith('box-to-google-sharedrive-') ||
+                  base === 'box-to-google-mydrive-sharedrive' ||
+                  base.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  base = 'box-to-google-mydrive';
+                }
                 return base;
               };
               // Helper: get plan from exhibit (Basic/Standard/Advanced)
@@ -5950,7 +6052,7 @@ Total Price: {{total price}}`;
               // Helper to normalize combination name (same logic as ConfigurationForm extractCombinationName)
               const normalizeCombinationName = (name: string): string => {
                 let normalized = String(name).trim();
-                
+
                 // Remove common suffixes like:
                 // - " Standard Plan - Included Features"
                 // - " Advanced Plan - Included Features"
@@ -5962,25 +6064,46 @@ Total Price: {{total price}}`;
                   /\s+-\s*Not\s+Included\s+Features$/i,
                   /\s+-\s*.*$/i,
                 ];
-                
+
                 let cleaned = normalized;
                 for (const pattern of patterns) {
                   cleaned = cleaned.replace(pattern, '');
                 }
-                
+
                 // Also handle dash-separated format (e.g., "slack-to-teams")
                 cleaned = cleaned.toLowerCase()
                   .replace(/-(basic|standard|advanced|premium|enterprise)$/, '')
                   .replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '')
                   .replace(/-+$/, '')
                   .trim();
-                
+
                 return cleaned || normalized.toLowerCase();
               };
-              
+
               // Helper: keys in expansion loop use getBaseCombination format (dashes, e.g. "slack-to-teams")
+              // Apply the same alias rewrites as getBaseCombination so config-derived keys match
+              // the exhibit-derived keys (otherwise a config named "Dropbox To Mydrive" would build
+              // key 'dropbox-to-mydrive' but the corresponding exhibit's getBaseCombination returns
+              // 'dropbox-to-google-mydrive', and the expansion check would miss it).
+              const applyDashedAliases = (key: string): string => {
+                let k = key;
+                if (k === 'dropbox-to-mydrive' || k.startsWith('dropbox-to-mydrive-')) {
+                  k = k.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  k === 'box-to-google-mydrive-shareddrive' ||
+                  k.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  k === 'box-to-google-sharedrive' ||
+                  k.startsWith('box-to-google-sharedrive-') ||
+                  k === 'box-to-google-mydrive-sharedrive' ||
+                  k.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  k = 'box-to-google-mydrive';
+                }
+                return k;
+              };
               const toDashedKey = (category: string, normalized: string) =>
-                `${category}|${normalized.replace(/\s+/g, '-').toLowerCase()}`;
+                `${category}|${applyDashedAliases(normalized.replace(/\s+/g, '-').toLowerCase())}`;
               
               // Extract from messagingConfigs - add key in SAME format as getBaseCombination (dashes) so expansion matches
               (cfgAny.messagingConfigs || []).forEach((c: any) => {
@@ -6213,7 +6336,13 @@ Total Price: {{total price}}`;
                   const deduplicatedMergeIds = new Set<string>();
                   const seenExhibitKeys = new Map<string, string>(); // key -> exhibitId
                   
-                  // First, process existing expanded IDs and build seen keys
+                  // First, process existing expanded IDs and build seen keys.
+                  // IMPORTANT: also dedup WITHIN this initial list — after combination
+                  // aliasing (e.g. dropbox-to-mydrive → dropbox-to-google-mydrive), two
+                  // distinct exhibits (e.g. "Dropbox to Google MyDrive Basic Plan - Basic Include"
+                  // and the legacy "Dropbox to MyDrive Basic Plan - Basic Include") collapse
+                  // to the same uniqueKey, and both would otherwise be embedded in the
+                  // generated agreement.
                   for (const id of expandedExhibitIdsForMerge) {
                     const exhibit = allExhibits.find((e: any) => (e?._id ?? '').toString() === id);
                     if (exhibit) {
@@ -6222,6 +6351,15 @@ Total Price: {{total price}}`;
                       const includeType = (exhibit.includeType || (exhibit.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toLowerCase();
                       const category = (exhibit.category || 'content').toLowerCase();
                       const uniqueKey = `${category}|${baseCombo}|${plan}|${includeType}`;
+                      if (seenExhibitKeys.has(uniqueKey)) {
+                        console.warn('⚠️ Skipping duplicate exhibit in expanded merge list:', {
+                          duplicateId: id,
+                          keptId: seenExhibitKeys.get(uniqueKey),
+                          name: exhibit.name,
+                          key: uniqueKey
+                        });
+                        continue;
+                      }
                       seenExhibitKeys.set(uniqueKey, id);
                       deduplicatedMergeIds.add(id);
                     } else {
@@ -7926,7 +8064,7 @@ Total Price: {{total price}}`;
         console.log('🔍 Running comprehensive template diagnostic...');
         const { TemplateDiagnostic } = await import('../utils/templateDiagnostic');
         const diagnostic = await TemplateDiagnostic.diagnoseTemplate(
-          selectedTemplate.file,
+          templateFileForAgreement,
           templateData
         );
         
@@ -8115,8 +8253,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             };
 
             const getNormalizedBaseCombination = (ex: any): string => {
-              const primary = ex?.combinations?.[0];
-              if (!primary || primary === 'all') return '';
+              // Prefer the LONGEST non-"all" combination so exhibits tagged with both a
+              // short form (e.g. 'dropbox-to-mydrive') and a more specific one
+              // ('dropbox-to-google-mydrive') resolve to the specific key. Falling back
+              // to combinations[0] (the previous behaviour) caused two exhibits in the
+              // same UI folder to dedup under different keys and both got embedded.
+              const candidates = (ex?.combinations || []).filter((c: any) => c && c !== 'all');
+              if (candidates.length === 0) return '';
+              const primary = candidates.reduce((longest: string, c: string) =>
+                (String(c).length > longest.length ? String(c) : longest), String(candidates[0]));
               let base = String(primary).toLowerCase();
               base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
               base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
@@ -8132,6 +8277,23 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 const first = parts.slice(0, half).join('-');
                 const second = parts.slice(half).join('-');
                 if (first === second) base = first;
+              }
+              // Mirror ExhibitSelector.extractBaseCombination alias rules so legacy
+              // "dropbox-to-mydrive" exhibits collapse onto "dropbox-to-google-mydrive"
+              // (same UI folder). Without this, the dedup key below would differ and
+              // both the legacy and the specific exhibit would be embedded.
+              if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+              }
+              if (
+                base === 'box-to-google-mydrive-shareddrive' ||
+                base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                base === 'box-to-google-sharedrive' ||
+                base.startsWith('box-to-google-sharedrive-') ||
+                base === 'box-to-google-mydrive-sharedrive' ||
+                base.startsWith('box-to-google-mydrive-sharedrive-')
+              ) {
+                base = 'box-to-google-mydrive';
               }
               return base;
             };
@@ -10176,7 +10338,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         className={`text-white bg-white/15 border border-white/40 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-md hover:bg-white/25 transition-colors flex items-center gap-1 ${
                           !processedAgreement || isSavingAgreementToMongo ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
-                        title="Save agreement to document"
+                        title="Save agreement to documents page"
                       >
                         <Save className="w-3.5 h-3.5" />
                         {isSavingAgreementToMongo ? 'Saving…' : 'Save'}
@@ -10219,31 +10381,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       >
                         <Workflow className="w-3 h-3 inline mr-1" />
                         {isStartingWorkflow ? 'Sending for Approval…' : 'Send for Approval'}
-                      </button>
-                      <button
-                        onClick={handleAddEsignFields}
-                        disabled={isAddingEsignFields || isEsignBlocked}
-                        className={`text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 transition-all duration-300 ${
-                          isEsignBlocked
-                            ? 'opacity-40 cursor-not-allowed'
-                            : 'hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40'
-                        }`}
-                        title={isEsignBlocked ? 'Approval required — complete the approval workflow before sending for e-sign' : 'Go to agreements and add signature fields to this agreement'}
-                      >
-                        <PenLine className="w-3 h-3 inline mr-1" />
-                        {isAddingEsignFields ? (addEsignFieldsProgress || 'Opening…') : 'Add signature fields'}
-                      </button>
-                      <button
-                        onClick={handleEmailAgreement}
-                        disabled={isEmailingAgreement}
-                        className={`transition-colors px-3 py-1 rounded-lg text-xs font-semibold ${
-                          isEmailingAgreement
-                            ? 'text-green-300 cursor-not-allowed'
-                            : 'text-white hover:text-green-200 hover:bg-white hover:bg-opacity-10'
-                        }`}
-                        title="Send to Deal Desk"
-                      >
-                        {isEmailingAgreement ? '⏳ Sending...' : '📧 Send'}
                       </button>
                     </>
                   )}
@@ -10684,116 +10821,37 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <label className="block text-sm font-semibold text-gray-700">
                       Team Approval Group
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowTeamSettingsModal(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                      Edit Settings
-                    </button>
+                    {userIsAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setShowTeamSettingsModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        Edit Settings
+                      </button>
+                    )}
                   </div>
-                  <div className="bg-white rounded-lg p-3 border border-purple-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-semibold text-gray-900">
-                          Selected Team: <span className="text-purple-600">{displayTeamForModal}</span>
-                        </div>
-                        <div className="text-xs text-gray-600 mt-1">
-                          Team Lead: {getTeamApprovalEmail(displayTeamForModal) || 'Not configured'}
-                        </div>
-                        {loggedInUserEmail && (() => {
-                          const authorizedTeam = getUserAuthorizedTeam();
-                          const selectedTeam = displayTeamForModal;
-                          
-                          if (!authorizedTeam) {
-                            // User not authorized - show manual selection dropdown
-                            return (
-                              <div className="mt-3 space-y-3">
-                                <div>
-                                  <label className="block text-xs font-semibold text-gray-700 mb-2">
-                                    Select Team (You are not authorized by any team)
-                                  </label>
-                                  <select
-                                    value={manualTeamSelection}
-                                    onChange={(e) => setManualTeamSelection(e.target.value)}
-                                    className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                                  >
-                                    {teamIds.map((team) => (
-                                      <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                                  <div className="text-xs text-amber-800 font-semibold mb-1">
-                                    ⚠️ Not Authorized
-                                  </div>
-                                  <div className="text-xs text-amber-700 mb-2">
-                                    You are not authorized by any team leader. Select a team above or request authorization.
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setRequestingTeam(manualTeamSelection);
-                                      setShowRequestModal(true);
-                                    }}
-                                    className="w-full px-3 py-1.5 text-xs font-semibold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                                  >
-                                    Request Authorization from {manualTeamSelection} Team Lead
-                                  </button>
-                                </div>
-                                <div className="text-xs text-gray-600">
-                                  Selected Team: <span className="text-purple-600 font-semibold">{selectedTeam}</span>
-                                </div>
-                                <div className="text-xs text-gray-600">
-                                  Team Lead: {getTeamApprovalEmail(selectedTeam) || 'Not configured'}
-                                </div>
-                              </div>
-                            );
-                          }
-                          
-                          // User is authorized - show normal display with option to change
-                          return (
-                            <div className="space-y-3">
-                              <div>
-                                <div className="text-xs text-blue-600 font-semibold">
-                                  ✓ You are authorized to send approvals to this team
-                                </div>
-                              </div>
-                              
-                              {/* Option to change team */}
-                              <div className="pt-2 border-t border-gray-200">
-                                <button
-                                  type="button"
-                                  onClick={() => setUseManualSelection(!useManualSelection)}
-                                  className="text-xs text-purple-600 hover:text-purple-700 font-semibold"
-                                >
-                                  {useManualSelection ? '✓ Using manual selection' : 'Change Team'}
-                                </button>
-                                
-                                {useManualSelection && (
-                                  <div className="mt-2">
-                                    <select
-                                      value={manualTeamSelection}
-                                      onChange={(e) => {
-                                        setManualTeamSelection(e.target.value);
-                                      }}
-                                      className="w-full px-3 py-2 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                                    >
-                                      {teamIds.map((team) => (
-                                        <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
-                                      ))}
-                                    </select>
-                                    <p className="text-xs text-gray-500 mt-1">
-                                      Selected: {manualTeamSelection} - {getTeamApprovalEmail(manualTeamSelection)}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
+                  <div className="bg-white rounded-lg p-3 border border-purple-200 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-2">
+                        Select Team Lead to send this approval to
+                      </label>
+                      <select
+                        value={manualTeamSelection}
+                        onChange={(e) => setManualTeamSelection(e.target.value)}
+                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                      >
+                        {teamIds.map((team) => (
+                          <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Selected Team: <span className="text-purple-600 font-semibold">{displayTeamForModal}</span>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Team Lead: {getTeamApprovalEmail(displayTeamForModal) || 'Not configured'}
                     </div>
                   </div>
                 </div>
@@ -10846,14 +10904,24 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <Settings className="w-6 h-6 text-purple-600" />
                   <h2 className="text-xl font-extrabold text-gray-900">Team Approval Settings</h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowTeamSettingsModal(false)}
-                  className="inline-flex items-center justify-center h-9 w-9 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
-                  aria-label="Close"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowApprovalAdminsModal(true)}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    Approval Admins
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTeamSettingsModal(false)}
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                    aria-label="Close"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Modal Content */}
@@ -10942,112 +11010,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       )}
                     </div>
 
-                    {/* Authorized Senders - People who can send approval emails to this team lead */}
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Authorized Senders (People who can send approvals to this team lead)
-                      </label>
-                      <p className="text-xs text-gray-500 mb-3">
-                        Add people who can send approval emails to the {editingTeam} team lead. When they log in and start a workflow, their team will be automatically selected.
-                      </p>
-                      {loggedInUserEmail && (
-                        <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-xs text-blue-800">
-                            <strong>Logged in as:</strong> {loggedInUserEmail}
-                            {teamApprovalSettings.authorizedSenders[editingTeam]?.includes(loggedInUserEmail) ? (
-                              <span className="text-green-600 ml-2">✓ Already authorized - Your workflows will auto-select {editingTeam} team</span>
-                            ) : teamApprovalSettings.teamLeads[editingTeam] === loggedInUserEmail ? (
-                              <span className="text-purple-600 ml-2">(You are the team lead - no authorization needed)</span>
-                            ) : (
-                              <span className="text-blue-600 ml-2">- Click "Add" to authorize yourself to send approvals to {editingTeam} team</span>
-                            )}
-                          </p>
-                        </div>
-                      )}
-                      
-                      {/* Add New Authorized Sender */}
-                      <div className="flex gap-2 mb-3">
-                        <input
-                          type="email"
-                          value={newAuthorizedSenderEmail}
-                          onChange={(e) => setNewAuthorizedSenderEmail(e.target.value)}
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter' && newAuthorizedSenderEmail.trim()) {
-                              e.preventDefault();
-                              setTeamApprovalSettings(prev => ({
-                                ...prev,
-                                authorizedSenders: {
-                                  ...prev.authorizedSenders,
-                                  [editingTeam]: [
-                                    ...(prev.authorizedSenders[editingTeam] || []),
-                                    newAuthorizedSenderEmail.trim()
-                                  ]
-                                }
-                              }));
-                              setNewAuthorizedSenderEmail('');
-                            }
-                          }}
-                          className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                          placeholder="authorized.sender@cloudfuze.com"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (newAuthorizedSenderEmail.trim()) {
-                              setTeamApprovalSettings(prev => ({
-                                ...prev,
-                                authorizedSenders: {
-                                  ...prev.authorizedSenders,
-                                  [editingTeam]: [
-                                    ...(prev.authorizedSenders[editingTeam] || []),
-                                    newAuthorizedSenderEmail.trim()
-                                  ]
-                                }
-                              }));
-                              setNewAuthorizedSenderEmail('');
-                            }
-                          }}
-                          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Add
-                        </button>
-                      </div>
-
-                      {/* Authorized Senders List */}
-                      <div className="space-y-2">
-                        {teamApprovalSettings.authorizedSenders[editingTeam]?.length > 0 ? (
-                          teamApprovalSettings.authorizedSenders[editingTeam].map((email, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between px-4 py-2 bg-gray-50 rounded-lg border border-gray-200"
-                            >
-                              <span className="text-sm text-gray-700">{email}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setTeamApprovalSettings(prev => ({
-                                    ...prev,
-                                    authorizedSenders: {
-                                      ...prev.authorizedSenders,
-                                      [editingTeam]: prev.authorizedSenders[editingTeam].filter((_, i) => i !== idx)
-                                    }
-                                  }));
-                                }}
-                                className="text-red-600 hover:text-red-700 p-1 rounded transition-colors"
-                                aria-label="Remove authorized sender"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-sm text-gray-400 italic py-2">
-                            No authorized senders added yet. Add emails to allow users to automatically send approvals to this team lead.
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -11076,93 +11038,87 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           </div>
         )}
 
-        {/* Authorization Request Modal */}
-        {showRequestModal && (
-          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
-                <div className="flex items-center gap-3">
-                  <Users className="w-5 h-5 text-purple-600" />
-                  <h2 className="text-lg font-extrabold text-gray-900">Request Authorization</h2>
+        {/* Approval Admins Modal */}
+        {showApprovalAdminsModal && userIsAdmin && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4"
+            onClick={() => setShowApprovalAdminsModal(false)}
+          >
+            <div
+              className="bg-white rounded-xl border border-gray-200 shadow-lg max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-blue-600" />
+                    Approval Admins
+                  </h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Users with these emails can edit Team Approval Settings and manage this list. You can also set APPROVAL_ADMIN_EMAILS in .env.
+                  </p>
                 </div>
                 <button
-                  type="button"
-                  onClick={() => {
-                    setShowRequestModal(false);
-                    setRequestingTeam('');
-                    setRequestMessage('');
-                  }}
-                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                  onClick={() => setShowApprovalAdminsModal(false)}
+                  className="p-1 text-gray-400 hover:text-gray-600"
                   aria-label="Close"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-
-              {/* Modal Content */}
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Requesting authorization for: <span className="text-purple-600">{requestingTeam} Team</span>
-                  </label>
-                  <p className="text-xs text-gray-600">
-                    Team Lead: {teamApprovalSettings.teamLeads[requestingTeam] || 'Not configured'}
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Your Message (Optional)
-                  </label>
-                  <textarea
-                    value={requestMessage}
-                    onChange={(e) => setRequestMessage(e.target.value)}
-                    placeholder={`Hi, I would like to request authorization to send approval workflows to the ${requestingTeam} team.`}
-                    className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white min-h-[100px]"
-                    rows={4}
+              <div className="p-6 space-y-4 overflow-y-auto">
+                <form onSubmit={handleAddApprovalAdmin} className="flex gap-2">
+                  <input
+                    type="email"
+                    value={newApprovalAdminEmail}
+                    onChange={(e) => setNewApprovalAdminEmail(e.target.value)}
+                    placeholder="email@example.com"
+                    className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    disabled={addingApprovalAdmin}
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    A request email will be sent to the team lead with your message.
-                  </p>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowRequestModal(false);
-                    setRequestingTeam('');
-                    setRequestMessage('');
-                  }}
-                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSendAuthorizationRequest}
-                  disabled={isSendingRequest}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {isSendingRequest ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Users className="w-4 h-4" />
-                      Send Request
-                    </>
-                  )}
-                </button>
+                  <button
+                    type="submit"
+                    disabled={addingApprovalAdmin || !newApprovalAdminEmail.trim()}
+                    className="inline-flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    {addingApprovalAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    Add
+                  </button>
+                </form>
+                {approvalAdminError && (
+                  <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
+                    {approvalAdminError}
+                  </div>
+                )}
+                {approvalAdminLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  </div>
+                ) : approvalAdminEmails.length === 0 ? (
+                  <p className="text-gray-500 text-xs">No approval admins in the list yet. Add an email above or use .env / DEFAULT_APPROVAL_ADMINS.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                    {approvalAdminEmails.map((email) => (
+                      <li key={email} className="py-2 flex items-center justify-between gap-2">
+                        <span className="text-gray-900 text-sm truncate">{email}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveApprovalAdmin(email)}
+                          disabled={removingApprovalAdmin === email}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 text-sm"
+                          title="Remove"
+                        >
+                          {removingApprovalAdmin === email ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </div>
         )}
+
     </div>
   );
 };

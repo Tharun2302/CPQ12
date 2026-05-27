@@ -930,14 +930,18 @@ async function seedDefaultExhibits(db) {
       displayOrder: 4,
       keywords: ['structure', 'files', 'folders']
     },
-    // Google Drive (MyDrive & Shared Drive) merged exhibits
+    // Google Drive (MyDrive & Shared Drive) merged exhibits.
+    // Content covers Google MyDrive → Google MyDrive and Google MyDrive → Google Shared Drive.
+    // The previous 'google-sharedrive-to-google-sharedrive' tag was incorrect — it caused this
+    // exhibit (whose tables describe MyDrive sources) to be merged into agreements generated
+    // for Google ShareDrive → Google ShareDrive selections, producing extra unrelated tables.
     {
       name: 'Google Drive to Google(MyDrive & Shared Drive) - Included Features',
       description: 'Documentation for features included in Google Drive to Google(MyDrive & Shared Drive) migration',
       fileName: 'Google Drive to Google(MyDrive & Shared Drive) - Included Features.docx',
       // Previously used filename (kept here to migrate/rename existing DB record instead of duplicating)
       legacyFileNames: ['Google Drive to Google Drive (MyDrive & Shared Drive) - Included Features.docx'],
-      combinations: ['google-mydrive-to-google-sharedrive', 'google-sharedrive-to-google-sharedrive', 'all'],
+      combinations: ['google-mydrive-to-google-mydrive', 'google-mydrive-to-google-sharedrive', 'all'],
       category: 'content',
       isRequired: false,
       displayOrder: 5,

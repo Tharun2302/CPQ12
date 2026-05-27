@@ -128,6 +128,31 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     return () => { cancelled = true; };
   }, []);
 
+  // Auto-select the combination for single-option migration types (Multi combination, Overage Agreement).
+  // Runs whenever migrationType changes or apiCombinations finishes loading, so it also covers
+  // existing sessions, refreshes, and the race where the API hadn't responded at click time.
+  useEffect(() => {
+    const mt = config.migrationType;
+    if ((mt !== 'Multi combination' && mt !== 'Overage Agreement') || config.combination) return;
+    const fromApi = apiCombinations.filter(c => c.migrationType === mt);
+    const fallback = mt === 'Multi combination'
+      ? [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }]
+      : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
+    const options = fromApi.length > 0 ? fromApi : fallback;
+    if (options.length !== 1) return;
+    const autoValue = options[0].value;
+    const newConfig = { ...config, combination: autoValue };
+    setConfig(newConfig);
+    setCombination(autoValue);
+    onConfigurationChange(newConfig);
+    try {
+      sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+      const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+      navState.combination = autoValue;
+      sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+    } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+  }, [config.migrationType, config.combination, apiCombinations]);
+
   const toggleSection = (sectionId: string) => {
     setCollapsedSections(prev => {
       const newSet = new Set(prev);
@@ -201,6 +226,29 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 .trim();
             };
 
+            // Mirror of ExhibitSelector.extractBaseCombination alias rules so that
+            // selecting one UI folder produces one combination key here. Without these,
+            // exhibits in the same UI group whose combinations[0] differs (e.g.
+            // 'dropbox-to-mydrive' vs 'dropbox-to-google-mydrive') would produce two
+            // separate configs and thus duplicate agreement rows / exhibit documents.
+            const applyCombinationAliases = (input: string): string => {
+              let base = (input || '').toLowerCase();
+              if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+              }
+              if (
+                base === 'box-to-google-mydrive-shareddrive' ||
+                base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                base === 'box-to-google-sharedrive' ||
+                base.startsWith('box-to-google-sharedrive-') ||
+                base === 'box-to-google-mydrive-sharedrive' ||
+                base.startsWith('box-to-google-mydrive-sharedrive-')
+              ) {
+                base = 'box-to-google-mydrive';
+              }
+              return base;
+            };
+
             // Helper function to extract base combination from exhibit
             // Priority: Use combinations field (base combination), fallback to name extraction
             const extractCombinationName = (exhibit: any): string => {
@@ -209,10 +257,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const primaryCombination = exhibit.combinations[0];
                 if (primaryCombination && primaryCombination !== 'all') {
                   // Extract base combination (remove include/notinclude and plan type suffixes)
-                  const base = primaryCombination
+                  let base = primaryCombination
                     .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '')
                     .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, ''); // Run twice to catch both
-                  
+                  // Apply UI-folder alias rules so exhibits in the same UI group resolve to the same key.
+                  base = applyCombinationAliases(base);
+
                   if (base && base !== 'all' && base.length >= 3) {
                     const baseKey = normalizeBaseCombinationKey(base);
                     const label = baseKeyToDisplayLabel(baseKey);
@@ -548,14 +598,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     return cleaned;
   };
 
-  // Helper function to sanitize company name (remove trailing number sequences)
+  // Company name accepts all characters with no restrictions
   const sanitizeCompanyName = (value: string): string => {
-    // Remove emojis first
-    let cleaned = value.replace(/[\u{1F600}-\u{1F64F}|\u{1F300}-\u{1F5FF}|\u{1F680}-\u{1F6FF}|\u{2600}-\u{26FF}|\u{2700}-\u{27BF}]/gu, '');
-    // Remove trailing digits (any trailing digits after dots, spaces, or at end)
-    cleaned = cleaned.replace(/[\.\s]\d+$/g, ''); // Remove digits after dot or space
-    cleaned = cleaned.replace(/\d+$/g, ''); // Remove any remaining trailing digits
-    return cleaned;
+    return value;
   };
 
   // Detect exhibit categories when exhibits change (for Multi combination)
@@ -619,6 +664,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         console.log('📋 Combination in parsed data:', parsed.combination);
         
         const merged = {
+          // Spread first so any persisted field (servicePlan, manageUsers, manageDataGB,
+          // customerLocation, timelineProjection, etc.) restores on navigation back.
+          // The explicit overrides below take precedence for fields that need type coercion or defaults.
+          ...parsed,
           numberOfUsers: typeof parsed.numberOfUsers === 'number' ? parsed.numberOfUsers : 1,
           instanceType: parsed.instanceType || 'Small',
           numberOfInstances: typeof parsed.numberOfInstances === 'number' ? parsed.numberOfInstances : 1,
@@ -1718,25 +1767,35 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   onChange={(e) => {
                     const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
                     const preservedServicePlan = config.servicePlan === 'Bundle' ? 'Bundle' : 'Migrate';
-                    const newConfig = { ...config, migrationType: newMigrationType, combination: '', timelineProjection: '', servicePlan: preservedServicePlan as 'Migrate' | 'Bundle' };
+
+                    // Auto-select the combination when the migration type has exactly one option.
+                    // Applies to Multi combination and Overage Agreement (single-template types).
+                    let autoCombination = '';
+                    if (newMigrationType === 'Multi combination' || newMigrationType === 'Overage Agreement') {
+                      const fromApi = apiCombinations.filter(c => c.migrationType === newMigrationType);
+                      const fallback = newMigrationType === 'Multi combination'
+                        ? [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }]
+                        : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
+                      const options = fromApi.length > 0 ? fromApi : fallback;
+                      if (options.length === 1) autoCombination = options[0].value;
+                    }
+
+                    const newConfig = { ...config, migrationType: newMigrationType, combination: autoCombination, timelineProjection: '', servicePlan: preservedServicePlan as 'Migrate' | 'Bundle' };
                     setConfig(newConfig);
-                    setCombination('');
+                    setCombination(autoCombination);
                     onConfigurationChange(newConfig);
                     try {
                       sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
                       const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
                       navState.migrationType = newMigrationType;
-                      navState.combination = '';
+                      navState.combination = autoCombination;
                       sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
                     } catch (err) { console.warn('Could not save to sessionStorage:', err); }
                   }}
                   className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                 >
                   <option value="">Select Migration Type</option>
-                  <option value="Messaging">Messaging</option>
-                  <option value="Content">Content</option>
-                  <option value="Email">Email</option>
-                  <option value="Multi combination">Multi combination</option>
+                  <option value="Multi combination">Combination</option>
                   <option value="Overage Agreement">Overage</option>
                 </select>
               )}
@@ -1749,7 +1808,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
-                        Number of Users <span className="text-gray-400 font-normal">[E99]</span>
+                        Number of Users
                       </label>
                       <input
                         type="number"
@@ -1767,7 +1826,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
-                        Content data size in GB <span className="text-gray-400 font-normal">[E100]</span>
+                        Content data size in GB
                       </label>
                       <input
                         type="number"
@@ -2001,15 +2060,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-8">
 
-          {/* Template Selection - Show when migration type is selected (Messaging, Content, Email, Multi combination, Overage) */}
-          {config.migrationType && (
+          {/* Template Selection - shown for migration types where users must pick a combination.
+              Hidden for Multi combination and Overage Agreement since those have a single auto-selected combination. */}
+          {config.migrationType && config.migrationType !== 'Multi combination' && config.migrationType !== 'Overage Agreement' && (
             <div data-section="template-selection" className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-lg border border-purple-200 p-8">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <FileText className="w-8 h-8 text-white" />
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Select Combination</h3>
-                <p className="text-gray-600">Choose a combination for your {config.migrationType === 'Multi combination' ? 'multi combination' : config.migrationType.toLowerCase()} migration quote</p>
+                <p className="text-gray-600">Choose a combination for your {config.migrationType.toLowerCase()} migration quote</p>
               </div>
               
               <div className="max-w-md mx-auto">
@@ -2256,36 +2316,34 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Common Customer Location (Region) — Multi combination shared field */}
+          {/* Customer Location + Common Instance Type — side-by-side on lg, stacked on smaller screens */}
           {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
-            <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-xl shadow-md border-2 border-sky-200 p-6 mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-sky-500 rounded-full flex items-center justify-center shadow-lg">
-                  <Sparkles className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-base font-bold text-gray-900 mb-1">
-                    Customer Location
-                  </label>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Region multiplier applied to all combinations in this multi-migration.
-                  </p>
-                  <select
-                    value={config.customerLocation || '1'}
-                    onChange={(e) => handleChange('customerLocation', e.target.value as '1' | '0.8' | '0.65')}
-                    className="w-full max-w-md px-4 py-3 border-2 border-sky-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all bg-white text-base font-medium shadow-sm hover:border-sky-400"
-                  >
-                    <option value="1">Region 1 — US, Canada, UK (x1.0)</option>
-                    <option value="0.8">Region 2 — AUS, NZ, EU (x0.8)</option>
-                    <option value="0.65">Region 3 — Rest of World (x0.65)</option>
-                  </select>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              {/* Common Customer Location (Region) — Multi combination shared field */}
+              <div className="bg-gradient-to-r from-sky-50 to-blue-50 rounded-xl shadow-md border-2 border-sky-200 p-6">
+                <div className="flex items-center">
+                  <div className="flex-1">
+                    <label className="block text-base font-bold text-gray-900 mb-1">
+                      Customer Location
+                    </label>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Region multiplier applied to all combinations in this multi-migration.
+                    </p>
+                    <select
+                      value={config.customerLocation || '1'}
+                      onChange={(e) => handleChange('customerLocation', e.target.value as '1' | '0.8' | '0.65')}
+                      className="w-full px-4 py-3 border-2 border-sky-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all bg-white text-base font-medium shadow-sm hover:border-sky-400"
+                    >
+                      <option value="1">Region 1 — US, Canada, UK (x1.0)</option>
+                      <option value="0.8">Region 2 — AUS, NZ, EU (x0.8)</option>
+                      <option value="0.65">Region 3 — Rest of World (x0.65)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Common Instance Type Selector - appears after exhibits are selected */}
-          {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (() => {
+              {/* Common Instance Type Selector */}
+              {(() => {
             // Calculate if all instance types are the same
             const allInstanceTypes: string[] = [
               ...(config.messagingConfigs || []).map(cfg => cfg.instanceType || 'Small'),
@@ -2298,11 +2356,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             const displayValue = allSame ? commonValue : 'Mixed';
             
             return (
-              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl shadow-md border-2 border-purple-200 p-6 mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
-                    <Server className="w-6 h-6 text-white" />
-                  </div>
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl shadow-md border-2 border-purple-200 p-6">
+                <div className="flex items-center">
                   <div className="flex-1">
                     <label className="block text-base font-bold text-gray-900 mb-1">
                       Common Instance Type
@@ -2345,7 +2400,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           return newConfig;
                         });
                       }}
-                      className="w-full max-w-xs px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base font-medium shadow-sm hover:border-purple-400"
+                      className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all bg-white text-base font-medium shadow-sm hover:border-purple-400"
                     >
                       {!allSame && <option value="Mixed" disabled>Mixed (use individual panels below)</option>}
                       <option value="Small">Small</option>
@@ -2363,6 +2418,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               </div>
             );
           })()}
+            </div>
+          )}
 
           {/* MULTI COMBINATION: Show separate sections for Messaging, Content, and Email */}
           {config.migrationType === 'Multi combination' && config.combination && Array.isArray(selectedExhibits) && selectedExhibits.length > 0 && (
@@ -2390,7 +2447,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   messages: messagingCfg.messages || 0,
                   dataSizeGB: 0, // Not used for messaging
                   combination: messagingCfg.exhibitName || '',
-                  migrationType: 'messaging' as any
+                  migrationType: 'messaging' as any,
+                  customerLocation: config.customerLocation
                 };
                 
                 const pricing = calculateCombinationPricing(
@@ -2674,7 +2732,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
-                          {PRICING_TIERS.map(tier => (
+                          {PRICING_TIERS.filter(t => t.id !== 'advanced').map(tier => (
                             <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
                           ))}
                         </select>
@@ -2726,7 +2784,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   duration: contentCfg.duration || 0,
                   dataSizeGB: contentCfg.dataSizeGB || 0,
                   combination: contentCfg.exhibitName || '',
-                  migrationType: 'content' as any
+                  migrationType: 'content' as any,
+                  customerLocation: config.customerLocation
                 };
                 
                 const pricing = calculateCombinationPricing(
@@ -3005,7 +3064,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         >
-                          {PRICING_TIERS.map(tier => (
+                          {PRICING_TIERS.filter(t => t.id !== 'advanced').map(tier => (
                             <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
                           ))}
                         </select>
@@ -3054,7 +3113,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   messages: 0,
                   dataSizeGB: emailCfg.dataSizeGB || 0,
                   combination: emailCfg.exhibitName || '',
-                  migrationType: 'email' as any
+                  migrationType: 'email' as any,
+                  customerLocation: config.customerLocation
                 };
                 
                 const pricing = calculateCombinationPricing(
@@ -3328,7 +3388,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           }}
                           className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-medium focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                         >
-                          {PRICING_TIERS.map(tier => (
+                          {PRICING_TIERS.filter(t => t.id !== 'advanced').map(tier => (
                             <option key={tier.id} value={tier.name}>{tier.name} Plan</option>
                           ))}
                         </select>
@@ -3361,65 +3421,99 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </>
           )}
 
-          {/* Multi combination: Discount input (applies to combined total of messaging + content + email) */}
+          {/* Multi combination: Discount input + Add More Exhibits — side-by-side */}
           {config.migrationType === 'Multi combination' && config.combination &&
            (selectedExhibitCategories.hasMessaging || selectedExhibitCategories.hasContent || selectedExhibitCategories.hasEmail) && (
-            <div className="bg-gradient-to-br from-white via-pink-50/30 to-rose-50/50 rounded-2xl shadow-lg border border-pink-100/50 p-6 mb-6 backdrop-blur-sm">
-              <div className="group">
-                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
-                  <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
-                    <Percent className="w-4 h-4 text-white" />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              {/* Discount card */}
+              <div className="bg-gradient-to-br from-white via-pink-50/30 to-rose-50/50 rounded-2xl shadow-lg border border-pink-100/50 p-6 backdrop-blur-sm">
+                <div className="group">
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 whitespace-nowrap shrink-0">
+                      <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
+                        <Percent className="w-4 h-4 text-white" />
+                      </div>
+                      Discount (%)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={15}
+                      step={0.01}
+                      value={discountValue}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+
+                        if (raw === '') {
+                          setDiscountValue('');
+                          try {
+                            sessionStorage.setItem('cpq_discount_session', '');
+                            localStorage.setItem('cpq_discount', '');
+                            window.dispatchEvent(new CustomEvent('discountUpdated'));
+                          } catch {}
+                          return;
+                        }
+
+                        const numValue = Number(raw);
+
+                        if (numValue > 15) {
+                          alert('Discount cannot be more than 15%');
+                          return;
+                        }
+
+                        if (numValue < 0) {
+                          setDiscountValue('0');
+                          try {
+                            sessionStorage.setItem('cpq_discount_session', '0');
+                            localStorage.setItem('cpq_discount', '0');
+                            window.dispatchEvent(new CustomEvent('discountUpdated'));
+                          } catch {}
+                          return;
+                        }
+
+                        setDiscountValue(raw);
+
+                        try {
+                          sessionStorage.setItem('cpq_discount_session', raw);
+                          localStorage.setItem('cpq_discount', raw);
+                          window.dispatchEvent(new CustomEvent('discountUpdated'));
+                        } catch {}
+                      }}
+                      className="no-spinner flex-1 min-w-0 px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
+                      placeholder={`Enter discount percentage (max 15%)`}
+                    />
                   </div>
-                  Discount (%)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={15}
-                  step={0.01}
-                  value={discountValue}
-                  onChange={(e) => {
-                    const raw = e.target.value;
+                  <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%. Applied to the combined total (Messaging + Content + Email).</p>
+                </div>
+              </div>
 
-                    if (raw === '') {
-                      setDiscountValue('');
-                      try {
-                        sessionStorage.setItem('cpq_discount_session', '');
-                        localStorage.setItem('cpq_discount', '');
-                        window.dispatchEvent(new CustomEvent('discountUpdated'));
-                      } catch {}
-                      return;
-                    }
-
-                    const numValue = Number(raw);
-
-                    if (numValue > 15) {
-                      alert('Discount cannot be more than 15%');
-                      return;
-                    }
-
-                    if (numValue < 0) {
-                      setDiscountValue('0');
-                      try {
-                        sessionStorage.setItem('cpq_discount_session', '0');
-                        localStorage.setItem('cpq_discount', '0');
-                        window.dispatchEvent(new CustomEvent('discountUpdated'));
-                      } catch {}
-                      return;
-                    }
-
-                    setDiscountValue(raw);
-
-                    try {
-                      sessionStorage.setItem('cpq_discount_session', raw);
-                      localStorage.setItem('cpq_discount', raw);
-                      window.dispatchEvent(new CustomEvent('discountUpdated'));
-                    } catch {}
-                  }}
-                  className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                  placeholder={`Enter discount percentage (max 15%)`}
-                />
-                <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%. Applied to the combined total (Messaging + Content + Email).</p>
+              {/* Add More Exhibits card */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-lg border border-blue-200 p-6 flex items-center">
+                <div className="flex items-center justify-between gap-4 w-full">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Plus className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="text-base font-bold text-gray-900">Want to add more combinations?</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const exhibitSection = document.querySelector('[data-section="exhibits-selection"]');
+                      if (exhibitSection) {
+                        exhibitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        exhibitSection.classList.add('ring-4', 'ring-blue-400', 'ring-opacity-50');
+                        setTimeout(() => {
+                          exhibitSection.classList.remove('ring-4', 'ring-blue-400', 'ring-opacity-50');
+                        }, 2000);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    Go to Combination Selection
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -3726,41 +3820,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     <p className="text-xs text-gray-500 mt-2">Number of messages for the migration.</p>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-
-          {/* Add More Exhibits Option - Show when at least one exhibit is configured */}
-          {config.migrationType === 'Multi combination' && config.combination &&
-           (selectedExhibitCategories.hasMessaging || selectedExhibitCategories.hasContent || selectedExhibitCategories.hasEmail) && (
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-lg border border-blue-200 p-4 mb-6">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <Plus className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <span className="text-base font-bold text-gray-900 whitespace-nowrap">Want to add more exhibits?</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const exhibitSection = document.querySelector('[data-section="exhibits-selection"]');
-                    if (exhibitSection) {
-                      exhibitSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      // Highlight the section briefly
-                      exhibitSection.classList.add('ring-4', 'ring-blue-400', 'ring-opacity-50');
-                      setTimeout(() => {
-                        exhibitSection.classList.remove('ring-4', 'ring-blue-400', 'ring-opacity-50');
-                      }, 2000);
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg whitespace-nowrap flex-shrink-0"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                  Go to Exhibit Selection
-                </button>
               </div>
             </div>
           )}

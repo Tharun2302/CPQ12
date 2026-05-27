@@ -110,8 +110,8 @@ export interface QuotePendingApproval {
 
 const PDF_SCALE = 1.5;
 /** Minimum field size in pixels (used by Rnd and for persistence) */
-const MIN_FIELD_WIDTH_PX = 120;
-const MIN_FIELD_HEIGHT_PX = 40;
+const MIN_FIELD_WIDTH_PX = 80;
+const MIN_FIELD_HEIGHT_PX = 22;
 
 export type FieldType = 'signature' | 'name' | 'title' | 'date' | 'text';
 
@@ -388,6 +388,8 @@ const EsignPlaceFieldsPage: React.FC = () => {
         base.prefill = p;
         base.text_color = normalizeEsignTextColor(f.text_color);
         base.text_font = normalizeEsignTextFont(f.text_font);
+      } else if ((f.type === 'name' || f.type === 'title') && typeof f.prefill === 'string') {
+        base.prefill = f.prefill.slice(0, 500);
       }
       if (f.x == null || f.y == null) {
         return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
@@ -1172,7 +1174,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                                 position={{ x: (f.x ?? 0) * PDF_SCALE, y: (f.y ?? 0) * PDF_SCALE }}
                                 size={{ width: Math.max(MIN_FIELD_WIDTH_PX, widthPt * PDF_SCALE), height: Math.max(MIN_FIELD_HEIGHT_PX, heightPt * PDF_SCALE) }}
                                 minWidth={MIN_FIELD_WIDTH_PX}
-                                minHeight={isTextField ? Math.max(MIN_FIELD_HEIGHT_PX, 56) : MIN_FIELD_HEIGHT_PX}
+                                minHeight={isTextField ? Math.max(MIN_FIELD_HEIGHT_PX, 36) : MIN_FIELD_HEIGHT_PX}
                                 {...(isTextField ? { cancel: '.esign-text-prefill, .esign-text-toolbar, .esign-text-style-input' } : {})}
                                 onDragStop={(_e, d) => {
                                   const xPt = d.x / PDF_SCALE;
@@ -1513,21 +1515,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                               </span>
                             </div>
                             <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                              <span className="text-[9px] text-slate-500">Role:</span>
-                              <select
-                                value={roleForDropdown}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  updateRecipientRole(r.id, v === '— None —' ? (effectiveAction) : v);
-                                }}
-                                className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
-                                title="Dashboard label in email (None = generic)"
-                              >
-                                <option value="— None —">— None —</option>
-                                <option value="Team Lead">Team Lead</option>
-                                <option value="Technical Team">Technical Team</option>
-                                <option value="Legal Team">Legal Team</option>
-                              </select>
                               <span className="text-[9px] text-slate-500">Action:</span>
                               <select
                                 value={effectiveAction}
