@@ -10343,26 +10343,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         <Save className="w-3.5 h-3.5" />
                         {isSavingAgreementToMongo ? 'Saving…' : 'Save'}
                       </button>
-                      <button
-                        onClick={handleDownloadAgreement}
-                        disabled={!processedAgreement || isDownloadBlocked}
-                        className={`text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold ${
-                          !processedAgreement || isDownloadBlocked ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        title={isDownloadBlocked ? "Awaiting approval — downloads locked" : processedAgreement ? "Download Word Document" : "No agreement available"}
-                      >
-                        📥 Word
-                      </button>
-                      <button
-                        onClick={handleDownloadAgreementPDF}
-                        disabled={isDownloadBlocked}
-                        className={`text-white hover:text-green-200 transition-colors px-3 py-1 hover:bg-white hover:bg-opacity-10 rounded-lg text-xs font-semibold ${
-                          isDownloadBlocked ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        title={isDownloadBlocked ? "Awaiting approval — downloads locked" : "Download PDF"}
-                      >
-                        📄 PDF
-                      </button>
+                      {/* Word and PDF download buttons hidden to match main; OnlyOffice Edit kept (redline feature). */}
                       <button
                         onClick={handleOpenOnlyOffice}
                         disabled={!processedAgreement || isDownloadBlocked || isStartingOnlyOffice}
