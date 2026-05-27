@@ -391,6 +391,13 @@ interface ClientInfo {
   paymentTerms?: string;
 }
 
+interface CustomLineItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+}
+
 const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   calculation,
   configuration,
@@ -713,6 +720,16 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSavingAgreementToMongo, setIsSavingAgreementToMongo] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Custom line items — extra rows the user adds to the agreement pricing table.
+  // Added on top of the standard CloudFuze pricing (after any discount), and injected
+  // into the agreement's pricing table just above the "Total Price" row.
+  const [customLineItems, setCustomLineItems] = useState<CustomLineItem[]>([]);
+  const [newCustomItem, setNewCustomItem] = useState<{ name: string; description: string; price: string }>({
+    name: '',
+    description: '',
+    price: '',
+  });
 
   // Inline-edit agreement state — user can tweak the generated agreement before sending for approval
   const [isEditingAgreement, setIsEditingAgreement] = useState(false);
@@ -2094,7 +2111,29 @@ Quote ID: ${quoteData.id}
         templateData['{{userDataDescription}}'] = emailCombinedDescription;
         templateData['{{description}}'] = emailCombinedDescription;
 
-        const result = await DocxTemplateProcessor.processDocxTemplate(templateFileForEmail as File, templateData);
+        // Custom line items: add their total on top of the (already discounted) total tokens.
+        if (customLineItems.length > 0 && customLineItemsTotal > 0) {
+          const parseCurrencyToNumber = (s: string | undefined): number => {
+            if (!s) return 0;
+            const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
+            return Number.isFinite(n) ? n : 0;
+          };
+          [
+            '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
+            '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
+            '{{final_total}}', '{{finalTotal}}',
+          ].forEach((tok) => {
+            if (tok in templateData) {
+              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + customLineItemsTotal);
+            }
+          });
+        }
+
+        const result = await DocxTemplateProcessor.processDocxTemplate(
+          templateFileForEmail as File,
+          templateData,
+          { customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })) }
+        );
         if (result.success && result.processedDocx) {
           agreementBlob = result.processedDocx;
           
@@ -4329,6 +4368,33 @@ Total Price: {{total price}}`;
       console.error('❌ Error generating PDF:', error);
       alert('Error generating PDF. Please try again.');
     }
+  };
+
+  const customLineItemsTotal = customLineItems.reduce((sum, item) => sum + (item.price || 0), 0);
+
+  const handleAddCustomLineItem = () => {
+    const name = newCustomItem.name.trim();
+    const description = newCustomItem.description.trim();
+    const price = parseFloat(newCustomItem.price);
+
+    if (!name) {
+      alert('Please enter a name for the custom line item.');
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      alert('Please enter a valid (non-negative) price for the custom line item.');
+      return;
+    }
+
+    setCustomLineItems((prev) => [
+      ...prev,
+      { id: `cli-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, description, price },
+    ]);
+    setNewCustomItem({ name: '', description: '', price: '' });
+  };
+
+  const handleRemoveCustomLineItem = (id: string) => {
+    setCustomLineItems((prev) => prev.filter((item) => item.id !== id));
   };
 
   const handleGenerateAgreement = async () => {
@@ -7956,7 +8022,33 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('  Template data values:', Object.values(templateData));
         
         // Critical tokens validation already performed earlier in the code
-        
+
+        // Custom line items: add their total on top of whatever the total tokens currently hold.
+        // Discount applies to base pricing only (custom items are added after discount), so we
+        // simply add the custom total to the final displayed total tokens regardless of flow.
+        if (customLineItems.length > 0 && customLineItemsTotal > 0) {
+          const parseCurrencyToNumber = (s: string | undefined): number => {
+            if (!s) return 0;
+            const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
+            return Number.isFinite(n) ? n : 0;
+          };
+          const totalTokens = [
+            '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
+            '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
+            '{{final_total}}', '{{finalTotal}}',
+          ];
+          totalTokens.forEach((tok) => {
+            if (tok in templateData) {
+              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + customLineItemsTotal);
+            }
+          });
+          console.log('🧾 Added custom line items to total:', {
+            count: customLineItems.length,
+            customLineItemsTotal,
+            newTotalPrice: templateData['{{total price}}'],
+          });
+        }
+
         // CRITICAL: Log the exact templateData being sent to DOCX processor
         console.log('🎯 SENDING TO DOCX PROCESSOR:');
         console.log('  templateData keys:', Object.keys(templateData));
@@ -7974,7 +8066,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         
         const result = await DocxTemplateProcessor.processDocxTemplate(
           templateFileForAgreement,
-          templateData
+          templateData,
+          { customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })) }
         );
 
         if (result.success && result.processedDocx) {
@@ -9723,6 +9816,96 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 </p>
               </div>
             )}
+
+            {/* Custom Line Items - add extra rows to the agreement pricing table */}
+            <div className="group">
+              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Plus className="w-4 h-4 text-white" />
+                </div>
+                Custom Line Items
+                <span className="text-xs text-gray-500 font-normal">(optional)</span>
+              </label>
+
+              {/* Existing items list */}
+              {customLineItems.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {customLineItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 p-3 rounded-xl border-2 border-gray-200 bg-gray-50"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-800 truncate">{item.name}</div>
+                        {item.description && (
+                          <div className="text-xs text-gray-500 truncate">{item.description}</div>
+                        )}
+                      </div>
+                      <div className="text-sm font-bold text-gray-800 whitespace-nowrap">
+                        {formatCurrency(item.price)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCustomLineItem(item.id)}
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                        title="Remove line item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-end gap-2 pr-12 text-sm">
+                    <span className="text-gray-500">Custom items subtotal:</span>
+                    <span className="font-bold text-gray-800">{formatCurrency(customLineItemsTotal)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Add new item form */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+                <input
+                  type="text"
+                  placeholder="Name (e.g. Onboarding)"
+                  className="md:col-span-4 px-4 py-3 border-2 rounded-xl focus:ring-4 transition-all duration-200 bg-white text-sm border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/20 hover:border-indigo-300"
+                  value={newCustomItem.name}
+                  onChange={(e) => setNewCustomItem((p) => ({ ...p, name: e.target.value }))}
+                />
+                <input
+                  type="text"
+                  placeholder="Description (optional)"
+                  className="md:col-span-5 px-4 py-3 border-2 rounded-xl focus:ring-4 transition-all duration-200 bg-white text-sm border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/20 hover:border-indigo-300"
+                  value={newCustomItem.description}
+                  onChange={(e) => setNewCustomItem((p) => ({ ...p, description: e.target.value }))}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Price"
+                  className="md:col-span-2 px-4 py-3 border-2 rounded-xl focus:ring-4 transition-all duration-200 bg-white text-sm border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/20 hover:border-indigo-300"
+                  value={newCustomItem.price}
+                  onChange={(e) => setNewCustomItem((p) => ({ ...p, price: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomLineItem();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomLineItem}
+                  className="md:col-span-1 flex items-center justify-center gap-1 px-3 py-3 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 transition-colors"
+                  title="Add line item"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Added rows appear in the agreement pricing table above &quot;Total Price&quot; and are
+                added to the total (after any discount).
+              </p>
+            </div>
 
             <button
               type="submit"
