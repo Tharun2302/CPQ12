@@ -4761,6 +4761,28 @@ const ONLYOFFICE_PUBLIC_URL = process.env.ONLYOFFICE_PUBLIC_URL || 'http://local
 // In Docker Desktop, host.docker.internal resolves to the host machine.
 const BACKEND_CALLBACK_URL = process.env.BACKEND_CALLBACK_URL || 'http://host.docker.internal:3001';
 
+// OnlyOffice JWT secret. When set (production), the Document Server runs with JWT_ENABLED=true
+// and rejects every unsigned request. We must (a) sign the editor config, (b) sign outbound
+// CommandService calls, and (c) verify inbound save callbacks. When empty (localhost dev with
+// JWT disabled) all of this is skipped, preserving the existing insecure-but-simple behavior.
+const ONLYOFFICE_JWT_SECRET = (process.env.ONLYOFFICE_JWT_SECRET || '').trim();
+
+// Verify an inbound OnlyOffice callback. OnlyOffice puts the JWT either in the body (`token`)
+// or in the Authorization header ("Bearer <jwt>", header name set by JWT_HEADER). Returns the
+// decoded payload, or throws. When no secret is configured, verification is skipped (returns null).
+function verifyOnlyOfficeCallback(req) {
+  if (!ONLYOFFICE_JWT_SECRET) return null;
+  let token = req.body && req.body.token;
+  if (!token) {
+    const auth = req.headers['authorization'] || '';
+    if (auth.startsWith('Bearer ')) token = auth.slice(7);
+  }
+  if (!token) throw new Error('missing OnlyOffice JWT on callback');
+  // OnlyOffice nests the real payload under `payload` when the token comes from the Authorization header.
+  const decoded = jwt.verify(token, ONLYOFFICE_JWT_SECRET);
+  return decoded && decoded.payload ? decoded.payload : decoded;
+}
+
 app.post('/api/onlyoffice/start-session', upload.single('file'), async (req, res) => {
   try {
     if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
@@ -4784,26 +4806,34 @@ app.post('/api/onlyoffice/start-session', upload.single('file'), async (req, res
     const fileUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/file/${sessionId}`;
     const callbackUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/callback/${sessionId}`;
 
+    const config = {
+      documentType: 'word',
+      document: {
+        fileType: 'docx',
+        key: sessionId, // unique per edit session
+        title: 'agreement.docx',
+        url: fileUrl,
+      },
+      editorConfig: {
+        callbackUrl,
+        lang: 'en',
+        mode: 'edit',
+        user: { id: 'user-1', name: 'User' },
+        customization: { autosave: true, forcesave: true, compactToolbar: false },
+      },
+    };
+
+    // When JWT is enabled (production), the Document Server requires the config to carry a
+    // signed token; without it the editor refuses to open. No-op on localhost (empty secret).
+    if (ONLYOFFICE_JWT_SECRET) {
+      config.token = jwt.sign(config, ONLYOFFICE_JWT_SECRET, { expiresIn: '5h' });
+    }
+
     res.json({
       success: true,
       sessionId,
       editorUrl: ONLYOFFICE_PUBLIC_URL,
-      config: {
-        documentType: 'word',
-        document: {
-          fileType: 'docx',
-          key: sessionId, // unique per edit session
-          title: 'agreement.docx',
-          url: fileUrl,
-        },
-        editorConfig: {
-          callbackUrl,
-          lang: 'en',
-          mode: 'edit',
-          user: { id: 'user-1', name: 'User' },
-          customization: { autosave: true, forcesave: true, compactToolbar: false },
-        },
-      },
+      config,
     });
   } catch (e) {
     console.error('❌ onlyoffice start-session error:', e);
@@ -4834,7 +4864,13 @@ app.post('/api/onlyoffice/callback/:sessionId', express.json({ limit: '50mb' }),
   const s = onlyofficeSessions.get(sessionId);
   if (!s) return res.status(404).json({ error: 1 });
   try {
-    const body = req.body || {};
+    // Reject forged callbacks when JWT is enabled. A verified token's payload carries the
+    // authoritative status/url, so prefer it over the raw (unsigned) body fields.
+    let body = req.body || {};
+    if (ONLYOFFICE_JWT_SECRET) {
+      const verified = verifyOnlyOfficeCallback(req);
+      if (verified) body = { ...body, ...verified };
+    }
     console.log(`📥 onlyoffice callback [${sessionId}]: status=${body.status}, url=${body.url ? 'present' : 'absent'}`);
     if (body.status === 2 || body.status === 6) {
       // Saved — download the edited DOCX from the URL OnlyOffice provides.
@@ -4914,10 +4950,19 @@ app.post('/api/onlyoffice/force-save/:sessionId', async (req, res) => {
   }
   try {
     const commandUrl = `${ONLYOFFICE_INTERNAL_URL}/coauthoring/CommandService.ashx`;
+    const command = { c: 'forcesave', key: sessionId };
+    // When JWT is enabled, the CommandService rejects unsigned commands. Sign the body itself
+    // (OnlyOffice verifies the `token` field) and also send it as a Bearer header for good measure.
+    const headers = { 'Content-Type': 'application/json' };
+    if (ONLYOFFICE_JWT_SECRET) {
+      const token = jwt.sign(command, ONLYOFFICE_JWT_SECRET, { expiresIn: '5m' });
+      command.token = token;
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const resp = await axios.post(
       commandUrl,
-      { c: 'forcesave', key: sessionId },
-      { timeout: 15000, headers: { 'Content-Type': 'application/json' } },
+      command,
+      { timeout: 15000, headers },
     );
     console.log(`📤 forcesave [${sessionId}] →`, resp.data);
     res.json({ success: true, response: resp.data });
