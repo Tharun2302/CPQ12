@@ -33,6 +33,9 @@ services:
       - "3003:80"
     volumes:
       - ./onlyoffice-data:/var/www/onlyoffice/Data
+      # Config override: allow OnlyOffice to call back to host.docker.internal (private IP).
+      # Without this, OnlyOffice 9.3+ refuses to send save callbacks for security reasons.
+      - ./onlyoffice-local-override.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
     depends_on:
       - postgres
     restart: unless-stopped

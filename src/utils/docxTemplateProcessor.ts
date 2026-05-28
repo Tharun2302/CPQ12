@@ -127,6 +127,17 @@ export interface DocxTemplateData {
   }>;
 }
 
+export interface CustomLineItemInput {
+  name: string;
+  description: string;
+  price: string; // pre-formatted currency, e.g. "$1,000.00"
+}
+
+export interface DocxProcessingOptions {
+  /** Extra rows to inject into the pricing table just above the "Total Price" row. */
+  customLineItems?: CustomLineItemInput[];
+}
+
 export interface DocxProcessingResult {
   success: boolean;
   processedDocx?: Blob;
@@ -368,22 +379,91 @@ export class DocxTemplateProcessor {
   }
 
   /**
+   * Inject custom line-item rows into the pricing table, just above the "Total Price" row.
+   *
+   * Works across all templates without editing them: it locates the table that contains a
+   * "Total Price" row, clones the formatting of an existing 3-cell data row in that table, and
+   * fills the cloned row's cells with each custom item's name / description / price.
+   */
+  private injectCustomLineItemRows(documentXml: string, items: CustomLineItemInput[]): string {
+    if (!items || items.length === 0) return documentXml;
+
+    const plain = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+
+    // The pricing summary is often split into separate tables: a data-rows table (with the
+    // "Job Requirement | Description | Price(USD)" header and 3-cell rows) and a separate
+    // Discount/Total table. We inject into the *data-rows* table, before its "Total Price"
+    // row if present, otherwise at the end of that table (which sits just above the Total table).
+    let injected = false;
+    return documentXml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/gi, (tbl) => {
+      if (injected) return tbl; // inject only once
+
+      const rows = tbl.match(/<w:tr\b[\s\S]*?<\/w:tr>/gi) || [];
+
+      // Identify the pricing data table by its header text.
+      const isPricingTable = rows.some((r) => {
+        const t = plain(r).toLowerCase();
+        return t.includes('job requirement') || t.replace(/\s+/g, '').includes('price(usd)');
+      });
+      if (!isPricingTable) return tbl;
+
+      // Pick a 3-cell data row to clone for formatting (skip the header row).
+      const cloneRow = rows.find((r) => {
+        const cellCount = (r.match(/<w:tc[\s>]/gi) || []).length;
+        return cellCount === 3 && !/job\s*requirement/i.test(plain(r));
+      });
+      if (!cloneRow) return tbl; // can't safely build a row that matches the table layout
+
+      // Extract the three cells' <w:tcPr> (preserves column widths) from the clone row.
+      const cloneCells = cloneRow.match(/<w:tc\b[\s\S]*?<\/w:tc>/gi) || [];
+      if (cloneCells.length !== 3) return tbl;
+      const tcPrs = cloneCells.map((c) => {
+        const m = c.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/i);
+        return m ? m[0] : '';
+      });
+
+      const buildCell = (tcPr: string, text: string) => {
+        const t = this.escapeXmlText(text || '');
+        return `<w:tc>${tcPr}<w:p><w:r><w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
+      };
+
+      const newRows = items
+        .map((it) =>
+          `<w:tr>${buildCell(tcPrs[0], it.name)}${buildCell(tcPrs[1], it.description)}${buildCell(tcPrs[2], it.price)}</w:tr>`
+        )
+        .join('');
+
+      injected = true;
+
+      // If the Total Price row lives in this same table, insert before it; else append at end.
+      const totalRow = rows.find((r) => /total\s*price/i.test(plain(r)));
+      if (totalRow) {
+        const idx = tbl.indexOf(totalRow);
+        return tbl.slice(0, idx) + newRows + tbl.slice(idx);
+      }
+      return tbl.replace(/<\/w:tbl>$/i, `${newRows}</w:tbl>`);
+    });
+  }
+
+  /**
    * Static method for easy access
    */
   public static async processDocxTemplate(
     file: File,
-    templateData: DocxTemplateData
+    templateData: DocxTemplateData,
+    options?: DocxProcessingOptions
   ): Promise<DocxProcessingResult> {
     const processor = DocxTemplateProcessor.getInstance();
-    return processor.processDocxTemplate(file, templateData);
+    return processor.processDocxTemplate(file, templateData, options);
   }
-  
+
   /**
    * Process DOCX template with quote data
    */
   async processDocxTemplate(
     templateFile: File,
-    templateData: DocxTemplateData
+    templateData: DocxTemplateData,
+    options?: DocxProcessingOptions
   ): Promise<DocxProcessingResult> {
     const startTime = Date.now();
     
@@ -1423,6 +1503,22 @@ export class DocxTemplateProcessor {
         }
       } catch (sigLineErr) {
         console.warn('⚠️ Could not patch signature blank lines in DOCX:', sigLineErr);
+      }
+
+      // Inject custom line-item rows into the pricing table (above "Total Price").
+      try {
+        const customItems = options?.customLineItems || [];
+        if (customItems.length > 0) {
+          const beforeInject = finalDocumentXml;
+          finalDocumentXml = this.injectCustomLineItemRows(finalDocumentXml, customItems);
+          if (finalDocumentXml !== beforeInject) {
+            console.log(`✅ Injected ${customItems.length} custom line-item row(s) into pricing table`);
+          } else {
+            console.warn('⚠️ Custom line items provided but no pricing table with a "Total Price" row was found to inject into');
+          }
+        }
+      } catch (injectErr) {
+        console.warn('⚠️ Could not inject custom line-item rows:', injectErr);
       }
 
       if (finalDocumentXml !== originalFinalXml) {
@@ -2699,7 +2795,7 @@ export class DocxTemplateProcessor {
       );
       
       if (undefinedKeys.length > 0) {
-        console.error('❌ DOCX PROCESSOR: Found undefined/null/empty values for keys:', undefinedKeys);
+        console.debug('DOCX PROCESSOR: Empty values (will be auto-filled below):', undefinedKeys);
         
         // Replace with intelligent fallbacks
         undefinedKeys.forEach(key => {
