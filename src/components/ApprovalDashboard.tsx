@@ -825,7 +825,7 @@ const ApprovalDashboard: React.FC = () => {
                             ) : (
                               <>
                                 <PenLine className="h-4 w-4 shrink-0" />
-                                <span>Proceed to e-Sign</span>
+                                <span>e-Sign</span>
                               </>
                             )}
                           </button>
