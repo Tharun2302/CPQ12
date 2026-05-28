@@ -206,6 +206,16 @@ const EditDatesModal: React.FC<EditDatesModalProps> = ({ documentId, actorEmail,
     setError(null);
     try {
       const res = await fetch(`${endpointBase}/edit-context`);
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        // Server returned HTML (Express default 404) instead of JSON — the
+        // /edit-context route is missing on the running backend.
+        throw new Error(
+          res.status === 404
+            ? 'Edit Dates endpoint not found on the backend. Please restart the backend server (node server.cjs) so the new route is loaded.'
+            : `Unexpected response from server (status ${res.status}). Please restart the backend server and try again.`
+        );
+      }
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || `Failed to load (${res.status})`);
