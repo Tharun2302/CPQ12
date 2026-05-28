@@ -726,6 +726,33 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [agreementPreviewIsPdf, setAgreementPreviewIsPdf] = useState(false);
   /** PDF from DOCX conversion — reused for download / e-sign / View Document. */
   const [cachedPdfAgreement, setCachedPdfAgreement] = useState<Blob | null>(null);
+  /** Snapshot of the last token map sent to the DOCX processor — enables date editing
+   *  post-generation. Saved alongside the document so EditDatesModal can re-render. */
+  const [lastTemplateDataSnapshot, setLastTemplateDataSnapshot] = useState<Record<string, string> | null>(null);
+
+  /** Build the date-editing snapshot to persist with the saved document. Called at every
+   *  saveDocument site. Returns null fields gracefully when state isn't populated yet
+   *  (e.g. user is saving a manually-uploaded PDF) so the backend just stores nulls. */
+  const buildDateEditSnapshot = (): {
+    dates: { projectStartDate: string | null; effectiveDate: string | null; quoteExpiryDate: string | null };
+    templateData: Record<string, string> | null;
+    templateId: string | null;
+    customLineItems: Array<{ name: string; description: string; price: number }>;
+  } => ({
+    dates: {
+      // Project Start Date lives on configuration.startDate, NOT on clientInfo.
+      projectStartDate: configuration?.startDate || null,
+      effectiveDate: clientInfo.effectiveDate || null,
+      quoteExpiryDate: clientInfo.quoteExpiryDate || null,
+    },
+    templateData: lastTemplateDataSnapshot,
+    templateId: selectedTemplate?.id ? String(selectedTemplate.id) : null,
+    customLineItems: customLineItems.map((it) => ({
+      name: it.name,
+      description: it.description,
+      price: it.price,
+    })),
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSavingAgreementToMongo, setIsSavingAgreementToMongo] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
@@ -2127,6 +2154,10 @@ Quote ID: ${quoteData.id}
           });
         }
 
+        // Snapshot the full token map so we can re-render this agreement later with
+        // different dates (EditDatesModal uses this).
+        setLastTemplateDataSnapshot({ ...templateData });
+
         const result = await DocxTemplateProcessor.processDocxTemplate(
           templateFileForEmail as File,
           templateData,
@@ -2946,7 +2977,9 @@ Total Price: {{total price}}`;
           savedDoc.docxFileData = docxBase64;
           savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
         }
-        
+
+        Object.assign(savedDoc, buildDateEditSnapshot());
+
         await documentServiceMongoDB.saveDocument(savedDoc);
         console.log('✅ PDF saved to MongoDB successfully from PDF button');
         
@@ -3166,7 +3199,9 @@ Total Price: {{total price}}`;
           savedDoc.docxFileData = docxBase64;
           savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
         }
-        
+
+        Object.assign(savedDoc, buildDateEditSnapshot());
+
         const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       console.log('✅ PDF saved to MongoDB for workflow:', documentId);
 
@@ -3356,6 +3391,8 @@ Total Price: {{total price}}`;
         savedDoc.docxFileData = docxBase64;
         savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
       }
+
+      Object.assign(savedDoc, buildDateEditSnapshot());
 
       const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       setAddEsignFieldsProgress('Opening…');
@@ -8201,7 +8238,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         console.log('  templateData.{{Duration_of_months}}:', templateData['{{Duration_of_months}}']);
         console.log('  templateData.{{instance_cost}}:', templateData['{{instance_cost}}']);
         console.log('  templateData.{{per_user_cost}}:', templateData['{{per_user_cost}}']);
-        
+
+        // Snapshot the full token map so we can re-render this agreement later with
+        // different dates (EditDatesModal uses this).
+        setLastTemplateDataSnapshot({ ...templateData });
+
         const result = await DocxTemplateProcessor.processDocxTemplate(
           templateFileForAgreement,
           templateData,
@@ -8987,6 +9028,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         savedDoc.docxFileData = docxBase64;
         savedDoc.docxFileName = `agreement-${sanitizedClientName}-${dateStr}.docx`;
       }
+      Object.assign(savedDoc, buildDateEditSnapshot());
       await documentServiceMongoDB.saveDocument(
         savedDoc as Omit<import('../services/documentServiceMongoDB').SavedDocument, 'id'>,
       );

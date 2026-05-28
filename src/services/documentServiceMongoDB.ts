@@ -26,6 +26,16 @@ export interface SavedDocument {
     migrationType?: string;
     numberOfUsers?: number;
   };
+  // Snapshot fields used by EditDatesModal to re-render the document with new dates
+  // after the agreement has been sent for approval or signature.
+  dates?: {
+    projectStartDate?: string | null;
+    effectiveDate?: string | null;
+    quoteExpiryDate?: string | null;
+  } | null;
+  templateData?: Record<string, string> | null;
+  templateId?: string | null;
+  customLineItems?: Array<{ name: string; description: string; price: number }>;
 }
 
 class DocumentServiceMongoDB {

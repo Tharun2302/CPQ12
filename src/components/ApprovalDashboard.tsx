@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Calendar,
+  CalendarClock,
   FileText,
   Loader2,
   Search,
@@ -14,9 +15,11 @@ import {
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { useAuth } from '../hooks/useAuth';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import PdfCanvasViewer from './PdfCanvasViewer';
+import EditDatesModal from './EditDatesModal';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -165,9 +168,13 @@ const ApprovalDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const showStandaloneBackLink = location.pathname !== '/approval';
+  const { user } = useAuth();
+  const userIsApprovalAdmin = Boolean((user as any)?.isApprovalAdmin);
+  const currentUserEmail = String((user as any)?.email || '').trim().toLowerCase();
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [query, setQuery] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
+  const [editDatesDocId, setEditDatesDocId] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -834,6 +841,25 @@ const ApprovalDashboard: React.FC = () => {
                           <span className="sm:hidden">Preview</span>
                           <span className="hidden sm:inline">Preview Doc</span>
                         </button>
+                        {workflow.documentId && (() => {
+                          const wfCreator = String(workflow.creatorEmail || '').trim().toLowerCase();
+                          const canEdit = userIsApprovalAdmin || (currentUserEmail !== '' && wfCreator === currentUserEmail);
+                          const label = canEdit ? 'Edit Dates' : 'View Dates';
+                          const shortLabel = canEdit ? 'Edit dates' : 'View dates';
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setEditDatesDocId(String(workflow.documentId))}
+                              title={canEdit ? 'Edit project start / effective / expiry dates' : 'View dates (read only — you are not the creator)'}
+                              aria-label={label}
+                              className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-white border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-0 transition-all whitespace-nowrap"
+                            >
+                              <CalendarClock className="h-4 w-4 text-gray-500" />
+                              <span className="sm:hidden">{shortLabel}</span>
+                              <span className="hidden sm:inline">{label}</span>
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -1032,6 +1058,22 @@ const ApprovalDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {editDatesDocId && (() => {
+        const editingWf = (workflows || []).find((w: any) => String(w?.documentId || '') === editDatesDocId);
+        const wfCreator = String(editingWf?.creatorEmail || '').trim().toLowerCase();
+        const canEdit = userIsApprovalAdmin || (currentUserEmail !== '' && wfCreator === currentUserEmail);
+        return (
+          <EditDatesModal
+            documentId={editDatesDocId}
+            source="document"
+            actorEmail={user?.email || ''}
+            canEdit={canEdit}
+            onClose={() => setEditDatesDocId(null)}
+            onSaved={() => { /* approval list doesn't show dates; nothing to refresh */ }}
+          />
+        );
+      })()}
     </div>
   );
 };

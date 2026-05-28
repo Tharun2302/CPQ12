@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Loader2, Check, Clock, Download, Eye, XCircle } from 'lucide-react';
+import { Loader2, Check, Clock, Download, Eye, XCircle, CalendarClock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
+import EditDatesModal from '../components/EditDatesModal';
 
 interface EsignDocument {
   id: string;
@@ -69,6 +70,8 @@ const EsignTrackingPage: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
   const [extendingExpiry, setExtendingExpiry] = useState(false);
   const [extendResult, setExtendResult] = useState<string | null>(null);
+  const [editDatesOpen, setEditDatesOpen] = useState(false);
+  const userIsApprovalAdmin = Boolean((user as any)?.isApprovalAdmin);
 
   const loadData = useCallback(async () => {
     if (!documentId) return;
@@ -345,6 +348,14 @@ const EsignTrackingPage: React.FC = () => {
                     <Eye className="h-5 w-5" />
                     Preview document
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditDatesOpen(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50"
+                  >
+                    <CalendarClock className="h-5 w-5" />
+                    {(isCreator || userIsApprovalAdmin) ? 'Edit dates' : 'View dates'}
+                  </button>
                   {doc.status === 'sent' && isCreator && pendingRecipients.length > 0 && (
                     <button
                       type="button"
@@ -400,6 +411,16 @@ const EsignTrackingPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {editDatesOpen && documentId && (
+        <EditDatesModal
+          documentId={documentId}
+          actorEmail={user?.email || ''}
+          canEdit={isCreator || userIsApprovalAdmin}
+          onClose={() => setEditDatesOpen(false)}
+          onSaved={() => { loadData(); }}
+        />
+      )}
     </div>
   );
 };

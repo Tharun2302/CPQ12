@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell } from 'lucide-react';
+import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import Navigation from './Navigation';
+import EditDatesModal from './EditDatesModal';
 
 interface RecipientStatus {
   id: string;
@@ -71,6 +72,7 @@ function formatEsignCreatedAtLine(ag: Agreement): string | null {
 
 const EsignAgreementStatusDashboard: React.FC = () => {
   const { user } = useAuth();
+  const userIsApprovalAdmin = Boolean((user as any)?.isApprovalAdmin);
   const [activeTab, setActiveTab] = useState<StatusFilterTab>('all');
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +88,7 @@ const EsignAgreementStatusDashboard: React.FC = () => {
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [dateFilter, setDateFilter] = useState<{ type: 'none' } | { type: 'dateRange'; from: string; to: string }>({ type: 'none' });
+  const [editDatesAgreementId, setEditDatesAgreementId] = useState<string | null>(null);
 
   const closeActionsMenu = useCallback(() => {
     setOpenActionsId(null);
@@ -739,6 +742,14 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                           Send Reminder
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => { setEditDatesAgreementId(openAgreement.id); closeActionsMenu(); }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        <CalendarClock className="h-4 w-4 shrink-0" />
+                        {(isCurrentUserCreator(openAgreement) || userIsApprovalAdmin) ? 'Edit dates' : 'View dates'}
+                      </button>
                       {status === 'sent' && isCurrentUserCreator(openAgreement) && (
                         <button
                           type="button"
@@ -918,6 +929,20 @@ const EsignAgreementStatusDashboard: React.FC = () => {
             </div>
           </div>
         )}
+
+        {editDatesAgreementId && (() => {
+          const editingAg = agreements.find((a) => a.id === editDatesAgreementId);
+          const canEdit = !!editingAg && (isCurrentUserCreator(editingAg) || userIsApprovalAdmin);
+          return (
+            <EditDatesModal
+              documentId={editDatesAgreementId}
+              actorEmail={user?.email || ''}
+              canEdit={canEdit}
+              onClose={() => setEditDatesAgreementId(null)}
+              onSaved={() => { fetchStatus(); }}
+            />
+          );
+        })()}
       </div>
     </div>
   );

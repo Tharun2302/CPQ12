@@ -92,6 +92,37 @@ function esignActorIsDocumentCreator(doc, actorEmail) {
   return uploader !== '' && actor !== '' && uploader === actor;
 }
 
+/** Authorization for Edit Dates on an e-sign document. Creator OR Approval Admin.
+ *  Async because admin status may need a DB lookup. */
+async function actorCanEditEsignDates(esignDoc, actorEmail) {
+  if (!actorEmail) return false;
+  if (esignActorIsDocumentCreator(esignDoc, actorEmail)) return true;
+  return await hasApprovalAdminAccess({ email: actorEmail });
+}
+
+/** Authorization for Edit Dates on a documents-collection row. Creator OR Approval
+ *  Admin. The `documents` collection doesn't store creator directly, so we resolve
+ *  it via the linked approval_workflows row (creatorEmail) or any linked esign
+ *  document (uploaded_by). */
+async function actorCanEditSourceDocumentDates(doc, actorEmail) {
+  if (!actorEmail) return false;
+  if (await hasApprovalAdminAccess({ email: actorEmail })) return true;
+  const actor = String(actorEmail).trim().toLowerCase();
+  if (!actor) return false;
+  try {
+    const wf = await db.collection('approval_workflows').findOne({ documentId: doc.id });
+    if (wf) {
+      const wfCreator = String(wf.creatorEmail || wf.createdBy || '').trim().toLowerCase();
+      if (wfCreator && wfCreator === actor) return true;
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    const esign = await db.collection('esign_documents').findOne({ source_document_id: doc.id });
+    if (esign && esignActorIsDocumentCreator(esign, actorEmail)) return true;
+  } catch (e) { /* fall through */ }
+  return false;
+}
+
 // Helper: returns true for any localhost / 127.0.0.1 origin (any port) or known prod domains.
 function isAllowedOrigin(origin) {
   if (!origin) return false;
@@ -3389,7 +3420,12 @@ app.post('/api/documents', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
-    const { fileName, fileData, fileSize, clientName, clientEmail, company, templateName, quoteId, metadata, docxFileData, docxFileName } = req.body;
+    const {
+      fileName, fileData, fileSize, clientName, clientEmail, company,
+      templateName, quoteId, metadata, docxFileData, docxFileName,
+      // New fields for date editing post-generation
+      dates, templateData, templateId, customLineItems
+    } = req.body;
 
     if (!fileName || !fileData) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -3440,7 +3476,19 @@ app.post('/api/documents', async (req, res) => {
       quoteId,
       metadata,
       createdAt: new Date(),
-      status: 'active'
+      status: 'active',
+      // Snapshot of inputs used to render this document — enables date editing post-generation.
+      // dates may be undefined for legacy callers; templateData/templateId/customLineItems are
+      // captured so the doc can be re-rendered client-side with new dates later.
+      dates: dates && typeof dates === 'object' ? {
+        projectStartDate: dates.projectStartDate || null,
+        effectiveDate: dates.effectiveDate || null,
+        quoteExpiryDate: dates.quoteExpiryDate || null
+      } : null,
+      templateData: templateData && typeof templateData === 'object' ? templateData : null,
+      templateId: templateId || null,
+      customLineItems: Array.isArray(customLineItems) ? customLineItems : [],
+      dateHistory: []
     };
     
     // Add DOCX data if available
@@ -6775,7 +6823,14 @@ app.post('/api/esign/documents/from-approval', async (req, res) => {
       requested_by_name: requestedByName,
       requested_by_email: requestedByEmail,
       created_at: new Date(),
-      status: 'draft'
+      status: 'draft',
+      // Copy date-editing snapshot from source document so the editor can re-render later.
+      // Legacy source documents won't have these; the modal degrades gracefully.
+      dates: document.dates || null,
+      templateData: document.templateData || null,
+      templateId: document.templateId || null,
+      customLineItems: Array.isArray(document.customLineItems) ? document.customLineItems : [],
+      dateHistory: []
     };
     const result = await db.collection('esign_documents').insertOne(doc);
     const esignId = result.insertedId.toString();
@@ -7616,6 +7671,426 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ E-sign extend-expiry error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/documents/:id/edit-context
+// Same shape as the esign variant but targets the `documents` collection. Looked up
+// by the custom `id` field (e.g. "ContactCompanyInc_JohnSmith_37728"), not Mongo _id.
+// Used by the Edit Dates modal when invoked from the Approval Workflow dashboard
+// (before the document has been sent for e-signature).
+app.get('/api/documents/:id/edit-context', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const doc = await db.collection('documents').findOne({ id: req.params.id });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    res.json({
+      success: true,
+      context: {
+        id: req.params.id,
+        file_name: doc.fileName || null,
+        status: doc.status || 'active',
+        source_document_id: null, // not applicable for the source row itself
+        dates: doc.dates || null,
+        templateData: doc.templateData || null,
+        templateId: doc.templateId || null,
+        customLineItems: Array.isArray(doc.customLineItems) ? doc.customLineItems : [],
+        dateHistory: Array.isArray(doc.dateHistory) ? doc.dateHistory : [],
+        clientInfo: {
+          clientName: doc.clientName || null,
+          clientEmail: doc.clientEmail || null,
+          company: doc.company || null,
+        },
+        canRerender: !!(doc.templateData && doc.templateId),
+      }
+    });
+  } catch (error) {
+    console.error('❌ documents edit-context error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/documents/:id/dates
+// Updates the three contract dates on a documents-collection row (the source document
+// created from QuoteGenerator). Cascades to any linked esign_documents row so the
+// approval-side and e-sign-side stay in sync. Mirrors the esign variant otherwise.
+app.patch('/api/documents/:id/dates', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+
+    const doc = await db.collection('documents').findOne({ id: req.params.id });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const {
+      dates: newDates,
+      reason,
+      actorEmail,
+      pdfFileData,
+      pdfFileName,
+      docxFileData,
+      docxFileName,
+    } = req.body || {};
+
+    if (!newDates || typeof newDates !== 'object') {
+      return res.status(400).json({ success: false, error: 'dates object is required' });
+    }
+
+    // Authorization: only the document creator OR an approval admin can edit dates.
+    if (!(await actorCanEditSourceDocumentDates(doc, actorEmail))) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can edit dates' });
+    }
+
+    const normalizedNewDates = {
+      projectStartDate: newDates.projectStartDate || null,
+      effectiveDate: newDates.effectiveDate || null,
+      quoteExpiryDate: newDates.quoteExpiryDate || null,
+    };
+
+    const historyEntry = {
+      changedAt: new Date(),
+      changedBy: (actorEmail && String(actorEmail).trim()) || 'unknown',
+      oldDates: doc.dates || null,
+      newDates: normalizedNewDates,
+      reason: (reason && String(reason).trim()) || null,
+      reRendered: !!(pdfFileData || docxFileData),
+    };
+
+    let newPdfBuffer = null;
+    if (pdfFileData) {
+      try {
+        newPdfBuffer = Buffer.from(pdfFileData, 'base64');
+        if (!newPdfBuffer || newPdfBuffer.length === 0) {
+          return res.status(400).json({ success: false, error: 'pdfFileData decoded to empty buffer' });
+        }
+      } catch (decodeErr) {
+        return res.status(400).json({ success: false, error: 'Invalid pdfFileData base64' });
+      }
+    }
+
+    let newDocxBuffer = null;
+    if (docxFileData) {
+      try {
+        const decoded = Buffer.from(docxFileData, 'base64');
+        if (decoded.length > 0) newDocxBuffer = decoded;
+      } catch (decodeErr) {
+        console.warn('PATCH documents dates: ignored invalid docxFileData base64', decodeErr?.message);
+      }
+    }
+
+    const docUpdate = {
+      $set: {
+        dates: normalizedNewDates,
+        last_dates_updated_at: new Date(),
+      },
+      $push: {
+        dateHistory: historyEntry,
+      },
+    };
+    if (newPdfBuffer) {
+      docUpdate.$set.fileData = newPdfBuffer;
+      docUpdate.$set.fileSize = newPdfBuffer.length;
+      if (pdfFileName) docUpdate.$set.fileName = pdfFileName;
+    }
+    if (newDocxBuffer) {
+      docUpdate.$set.docxFileData = newDocxBuffer;
+      if (docxFileName) docUpdate.$set.docxFileName = docxFileName;
+    }
+
+    await db.collection('documents').updateOne({ id: req.params.id }, docUpdate);
+
+    // Cascade: find any esign_documents that point at this source and update them too.
+    // This is the inverse of the cascade in PATCH /api/esign/documents/:id/dates.
+    try {
+      const linkedEsignDocs = await db.collection('esign_documents')
+        .find({ source_document_id: req.params.id })
+        .toArray();
+
+      for (const esignDoc of linkedEsignDocs) {
+        const esignUpdate = {
+          $set: {
+            dates: normalizedNewDates,
+            last_dates_updated_at: new Date(),
+          },
+          $push: {
+            dateHistory: historyEntry,
+          },
+        };
+        if (newPdfBuffer) {
+          esignUpdate.$set.file_data = newPdfBuffer.toString('base64');
+          if (pdfFileName) esignUpdate.$set.file_name = pdfFileName;
+          // Also overwrite the on-disk file so the e-sign download endpoint serves the new bytes.
+          if (esignDoc.file_path && typeof esignDoc.file_path === 'string') {
+            try {
+              fs.writeFileSync(esignDoc.file_path, newPdfBuffer);
+            } catch (diskErr) {
+              console.warn('PATCH documents dates: failed to overwrite esign file on disk', esignDoc._id?.toString(), diskErr?.message);
+            }
+          }
+        }
+        await db.collection('esign_documents').updateOne({ _id: esignDoc._id }, esignUpdate);
+      }
+    } catch (cascadeErr) {
+      console.warn('PATCH documents dates: cascade to esign_documents failed', cascadeErr?.message);
+    }
+
+    res.json({
+      success: true,
+      message: newPdfBuffer
+        ? 'Dates updated and document re-rendered.'
+        : 'Dates updated. Document file was not re-rendered (no new blob supplied).',
+      dates: normalizedNewDates,
+      historyEntry,
+    });
+  } catch (error) {
+    console.error('❌ PATCH documents dates error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/edit-context
+// Returns everything the EditDatesModal needs to re-render the document with new dates:
+// current dates, the templateData snapshot, templateId, customLineItems, and dateHistory.
+// If the document was generated before date-editing was supported, fields may be null —
+// the modal handles that case by either degrading to a metadata-only update or showing
+// a "cannot re-render legacy document" warning.
+app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    let docId;
+    try {
+      docId = new ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    // If esign doc doesn't have the snapshot (e.g. created before this feature shipped or
+    // uploaded manually), try to backfill from the source document.
+    let dates = doc.dates || null;
+    let templateData = doc.templateData || null;
+    let templateId = doc.templateId || null;
+    let customLineItems = Array.isArray(doc.customLineItems) ? doc.customLineItems : [];
+    let dateHistory = Array.isArray(doc.dateHistory) ? doc.dateHistory : [];
+    let sourceClientInfo = null;
+
+    if (doc.source_document_id) {
+      try {
+        const sourceDoc = await db.collection('documents').findOne({ id: doc.source_document_id });
+        if (sourceDoc) {
+          if (!dates && sourceDoc.dates) dates = sourceDoc.dates;
+          if (!templateData && sourceDoc.templateData) templateData = sourceDoc.templateData;
+          if (!templateId && sourceDoc.templateId) templateId = sourceDoc.templateId;
+          if ((!customLineItems || customLineItems.length === 0) && Array.isArray(sourceDoc.customLineItems)) {
+            customLineItems = sourceDoc.customLineItems;
+          }
+          // dateHistory should reflect the linked source if the esign row hasn't recorded any yet.
+          if (dateHistory.length === 0 && Array.isArray(sourceDoc.dateHistory)) {
+            dateHistory = sourceDoc.dateHistory;
+          }
+          sourceClientInfo = {
+            clientName: sourceDoc.clientName || null,
+            clientEmail: sourceDoc.clientEmail || null,
+            company: sourceDoc.company || null,
+          };
+        }
+      } catch (sourceErr) {
+        console.warn('edit-context: failed to read source document', sourceErr?.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      context: {
+        id: req.params.id,
+        file_name: doc.file_name,
+        status: doc.status,
+        source_document_id: doc.source_document_id || null,
+        upload_source: doc.upload_source || null,   // 'manual' | 'approval' | null
+        dates,
+        templateData,
+        templateId,
+        customLineItems,
+        dateHistory,
+        clientInfo: sourceClientInfo,
+        canRerender: !!(templateData && templateId),
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign edit-context error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/esign/documents/:id/dates
+// Updates the three contract dates on an esign document. Per product decisions:
+//   - allowed in ALL statuses including signed (creator confirms warning in UI)
+//   - existing approvals/signatures are NOT reset, even if document is re-rendered
+//   - every change is appended to dateHistory for audit
+//
+// Body shape:
+//   {
+//     dates:     { projectStartDate, effectiveDate, quoteExpiryDate },  // required
+//     reason:    string | null,                                          // optional
+//     actorEmail: string,                                                // who is making the change
+//     // Optional new blobs from client-side re-render. If absent, dates are updated as metadata
+//     // only and the stored PDF/DOCX keep their old date values until the user re-renders.
+//     pdfFileData:  base64 string (optional),
+//     pdfFileName:  string (optional),
+//     docxFileData: base64 string (optional),
+//     docxFileName: string (optional),
+//   }
+app.patch('/api/esign/documents/:id/dates', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    let docId;
+    try {
+      docId = new ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const {
+      dates: newDates,
+      reason,
+      actorEmail,
+      pdfFileData,
+      pdfFileName,
+      docxFileData,
+      docxFileName,
+    } = req.body || {};
+
+    if (!newDates || typeof newDates !== 'object') {
+      return res.status(400).json({ success: false, error: 'dates object is required' });
+    }
+
+    // Authorization: only the document creator OR an approval admin can edit dates.
+    if (!(await actorCanEditEsignDates(doc, actorEmail))) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can edit dates' });
+    }
+
+    const normalizedNewDates = {
+      projectStartDate: newDates.projectStartDate || null,
+      effectiveDate: newDates.effectiveDate || null,
+      quoteExpiryDate: newDates.quoteExpiryDate || null,
+    };
+
+    const historyEntry = {
+      changedAt: new Date(),
+      changedBy: (actorEmail && String(actorEmail).trim()) || doc.uploaded_by || 'unknown',
+      oldDates: doc.dates || null,
+      newDates: normalizedNewDates,
+      reason: (reason && String(reason).trim()) || null,
+      reRendered: !!(pdfFileData || docxFileData),
+    };
+
+    // If client supplied a new PDF blob, write it to disk + update file_data.
+    // We overwrite the same on-disk path so e-sign download endpoints continue to work.
+    let newPdfBuffer = null;
+    if (pdfFileData) {
+      try {
+        newPdfBuffer = Buffer.from(pdfFileData, 'base64');
+        if (!newPdfBuffer || newPdfBuffer.length === 0) {
+          return res.status(400).json({ success: false, error: 'pdfFileData decoded to empty buffer' });
+        }
+      } catch (decodeErr) {
+        return res.status(400).json({ success: false, error: 'Invalid pdfFileData base64' });
+      }
+    }
+
+    if (newPdfBuffer) {
+      try {
+        // Write to existing file_path if present, else a new path under documentsDir.
+        const targetPath = doc.file_path && typeof doc.file_path === 'string'
+          ? doc.file_path
+          : path.join(documentsDir, `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+        fs.writeFileSync(targetPath, newPdfBuffer);
+        if (!doc.file_path) {
+          // Persist the newly assigned path so subsequent reads succeed.
+          await db.collection('esign_documents').updateOne(
+            { _id: docId },
+            { $set: { file_path: targetPath } }
+          );
+        }
+      } catch (diskErr) {
+        console.error('PATCH dates: failed to write new PDF to disk', diskErr);
+        return res.status(500).json({ success: false, error: 'Failed to write new PDF to disk' });
+      }
+    }
+
+    const esignUpdate = {
+      $set: {
+        dates: normalizedNewDates,
+        last_dates_updated_at: new Date(),
+      },
+      $push: {
+        dateHistory: historyEntry,
+      },
+    };
+    if (newPdfBuffer) {
+      esignUpdate.$set.file_data = newPdfBuffer.toString('base64');
+      if (pdfFileName) esignUpdate.$set.file_name = pdfFileName;
+    }
+
+    await db.collection('esign_documents').updateOne({ _id: docId }, esignUpdate);
+
+    // Cascade to source documents row if linked, so the original PDF/DOCX in the
+    // "documents" collection also reflects the updated dates and audit trail.
+    if (doc.source_document_id) {
+      const sourceUpdate = {
+        $set: {
+          dates: normalizedNewDates,
+          last_dates_updated_at: new Date(),
+        },
+        $push: {
+          dateHistory: historyEntry,
+        },
+      };
+      if (newPdfBuffer) {
+        sourceUpdate.$set.fileData = newPdfBuffer;
+        sourceUpdate.$set.fileSize = newPdfBuffer.length;
+        if (pdfFileName) sourceUpdate.$set.fileName = pdfFileName;
+      }
+      if (docxFileData) {
+        try {
+          const docxBuffer = Buffer.from(docxFileData, 'base64');
+          if (docxBuffer.length > 0) {
+            sourceUpdate.$set.docxFileData = docxBuffer;
+            if (docxFileName) sourceUpdate.$set.docxFileName = docxFileName;
+          }
+        } catch (decodeErr) {
+          console.warn('PATCH dates: ignored invalid docxFileData base64', decodeErr?.message);
+        }
+      }
+      try {
+        await db.collection('documents').updateOne(
+          { id: doc.source_document_id },
+          sourceUpdate
+        );
+      } catch (cascadeErr) {
+        console.warn('PATCH dates: cascade to documents collection failed', cascadeErr?.message);
+      }
+    }
+
+    try {
+      await logAudit(req.params.id, 'dates_updated', historyEntry.changedBy, req.ip || req.connection?.remoteAddress);
+    } catch (_) { /* non-fatal */ }
+
+    res.json({
+      success: true,
+      message: newPdfBuffer
+        ? 'Dates updated and document re-rendered.'
+        : 'Dates updated. Document file was not re-rendered (no new blob supplied).',
+      dates: normalizedNewDates,
+      historyEntry,
+    });
+  } catch (error) {
+    console.error('❌ PATCH dates error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -414,22 +414,33 @@ export class DocxTemplateProcessor {
       });
       if (!cloneRow) return tbl; // can't safely build a row that matches the table layout
 
-      // Extract the three cells' <w:tcPr> (preserves column widths) from the clone row.
+      // Extract each clone cell's formatting so injected rows match the template rows:
+      //   <w:tcPr> — column width / borders / shading
+      //   <w:pPr>  — paragraph alignment (e.g. <w:jc w:val="center"/>) — without this the
+      //             new row's text defaults to left-aligned while template rows are centered
+      //   <w:rPr>  — run properties (font, size) of the first run
       const cloneCells = cloneRow.match(/<w:tc\b[\s\S]*?<\/w:tc>/gi) || [];
       if (cloneCells.length !== 3) return tbl;
-      const tcPrs = cloneCells.map((c) => {
-        const m = c.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/i);
-        return m ? m[0] : '';
+      const cellFormats = cloneCells.map((c) => {
+        const tcPr = c.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/i);
+        const pPr = c.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/i);
+        // The first run's rPr (not the paragraph-mark rPr that lives inside pPr).
+        const rPr = c.match(/<w:r\b[^>]*>\s*(<w:rPr\b[\s\S]*?<\/w:rPr>)/i);
+        return {
+          tcPr: tcPr ? tcPr[0] : '',
+          pPr: pPr ? pPr[0] : '',
+          rPr: rPr ? rPr[1] : '',
+        };
       });
 
-      const buildCell = (tcPr: string, text: string) => {
+      const buildCell = (fmt: { tcPr: string; pPr: string; rPr: string }, text: string) => {
         const t = this.escapeXmlText(text || '');
-        return `<w:tc>${tcPr}<w:p><w:r><w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
+        return `<w:tc>${fmt.tcPr}<w:p>${fmt.pPr}<w:r>${fmt.rPr}<w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
       };
 
       const newRows = items
         .map((it) =>
-          `<w:tr>${buildCell(tcPrs[0], it.name)}${buildCell(tcPrs[1], it.description)}${buildCell(tcPrs[2], it.price)}</w:tr>`
+          `<w:tr>${buildCell(cellFormats[0], it.name)}${buildCell(cellFormats[1], it.description)}${buildCell(cellFormats[2], it.price)}</w:tr>`
         )
         .join('');
 
