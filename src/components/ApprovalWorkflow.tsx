@@ -673,19 +673,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   return (
     <div className="min-h-full bg-gradient-to-br from-slate-50 to-blue-50 w-full">
       <div className="w-full space-y-6">
-        {userIsAdmin && (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => setShowApprovalAdminsModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
-            >
-              <Shield className="w-4 h-4 text-blue-600" />
-              Approval Admins
-            </button>
-          </div>
-        )}
-
         {/* Tab Content */}
         {activeTab === 'start' && (
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200">
