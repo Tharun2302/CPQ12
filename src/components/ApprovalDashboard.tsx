@@ -847,27 +847,7 @@ const ApprovalDashboard: React.FC = () => {
                         >
                           <Eye className="h-5 w-5 text-gray-500" />
                         </button>
-                        {workflow.documentId && (() => {
-                          const wfCreator = String(workflow.creatorEmail || '').trim().toLowerCase();
-                          const canEdit = userIsApprovalAdmin || (currentUserEmail !== '' && wfCreator === currentUserEmail);
-                          const label = canEdit ? 'Edit Dates' : 'View Dates';
-                          const shortLabel = canEdit ? 'Edit dates' : 'View dates';
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setEditDatesDocId(String(workflow.documentId))}
-                              title={canEdit ? 'Edit project start / effective / expiry dates' : 'View dates (read only — you are not the creator)'}
-                              aria-label={label}
-                              className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-white border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-0 transition-all whitespace-nowrap"
-                            >
-                              <CalendarClock className="h-4 w-4 text-gray-500" />
-                              <span className="sm:hidden">{shortLabel}</span>
-                              <span className="hidden sm:inline">{label}</span>
-                            </button>
-                          );
-                        })()}
-
-                        {/* More Actions ⋮ — Reminder, Copy Link, Cancel Approval, Reset (creator only) */}
+                        {/* More Actions ⋮ — Reminder, Copy Link, Edit/View Dates, Cancel Approval, Reset (creator only) */}
                         <div className="relative">
                           <button
                             type="button"
@@ -911,6 +891,18 @@ const ApprovalDashboard: React.FC = () => {
                                     Copy Link
                                     {lock}
                                   </button>
+                                  {workflow.documentId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can edit dates for this approval.'); return; } setEditDatesDocId(String(workflow.documentId)); }}
+                                      className={itemCls}
+                                      title={canManage ? 'Edit project start / effective / expiry dates' : 'Only the requester can edit dates for this approval'}
+                                    >
+                                      <CalendarClock className="h-4 w-4 shrink-0" />
+                                      Edit Dates
+                                      {lock}
+                                    </button>
+                                  )}
                                   {status === 'approved' && workflow.esignDocumentId && (
                                     <button
                                       type="button"
