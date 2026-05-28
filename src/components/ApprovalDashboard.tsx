@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Calendar,
+  Eye,
   FileText,
   Loader2,
   Search,
@@ -836,10 +837,9 @@ const ApprovalDashboard: React.FC = () => {
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 transition-all whitespace-nowrap"
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-md bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 transition-all"
                         >
-                          <FileText className="h-4 w-4 text-gray-500" />
-                          <span>Preview</span>
+                          <Eye className="h-5 w-5 text-gray-500" />
                         </button>
 
                         {/* More Actions ⋮ — Reminder, Copy Link, Cancel Approval, Reset (creator only) */}
