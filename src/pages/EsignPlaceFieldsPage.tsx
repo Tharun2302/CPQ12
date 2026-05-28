@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
-import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, UserPlus, Trash2, Bookmark, Plus, Users, Pencil, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Star, FileText, BookOpen, CheckCircle2 } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, FileText, BookOpen, CheckCircle2, UserPlus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 import {
@@ -630,50 +630,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
     });
   };
 
-  const updateEditingGroupName = (name: string) => {
-    setEditingGroup((prev) => (prev ? { ...prev, name } : null));
-  };
-
-  const updateEditingGroupRecipient = (index: number, field: 'name' | 'email' | 'role', value: string) => {
-    setEditingGroup((prev) => {
-      if (!prev || index < 0 || index >= prev.recipients.length) return prev;
-      const next = prev.recipients.map((r, i) =>
-        i === index ? { ...r, [field]: field === 'role' ? value as 'signer' | 'reviewer' : value } : r
-      );
-      return { ...prev, recipients: next };
-    });
-  };
-
-  const removeRecipientFromEditingGroup = (index: number) => {
-    setEditingGroup((prev) => {
-      if (!prev || index < 0 || index >= prev.recipients.length) return prev;
-      const next = prev.recipients.filter((_, i) => i !== index);
-      return { ...prev, recipients: next };
-    });
-  };
-
-  const addRecipientToEditingGroup = () => {
-    setEditingGroup((prev) => {
-      if (!prev) return prev;
-      return { ...prev, recipients: [...prev.recipients, { name: '', email: '', role: 'signer' }] };
-    });
-  };
-
-  const saveEditingGroup = () => {
-    if (!editingGroup) return;
-    const name = editingGroup.name.trim();
-    const recipients = editingGroup.recipients.filter((r) => r.email.trim());
-    if (!name || recipients.length === 0) return;
-    const next = savedGroups.map((g) =>
-      g.id === editingGroup.id
-        ? { ...g, name, recipients }
-        : g
-    );
-    saveGroupsToStorage(next);
-    setSavedGroups(next);
-    setEditingGroup(null);
-  };
-
   /** Persist fields to backend (pass updated list after drag/resize so size and position are saved). */
   const saveFieldsToBackend = useCallback(
     async (fieldsToSave: PlacedField[]) => {
@@ -1034,61 +990,6 @@ const EsignPlaceFieldsPage: React.FC = () => {
                 className="inline-flex items-center justify-center rounded-xl bg-indigo-600 text-white px-6 py-2.5 text-sm font-semibold hover:bg-indigo-700 shadow-md hover:shadow-lg transition-shadow"
               >
                 Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {editingGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setEditingGroup(null)}>
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">Edit group</h2>
-              <button type="button" onClick={() => setEditingGroup(null)} className="p-1 rounded text-slate-400 hover:text-slate-600">×</button>
-            </div>
-            <div className="p-4 overflow-y-auto flex-1 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Group name</label>
-                <input
-                  type="text"
-                  value={editingGroup.name}
-                  onChange={(e) => updateEditingGroupName(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="e.g. Legal team"
-                />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-slate-700">Recipients in group</label>
-                  <button type="button" onClick={addRecipientToEditingGroup} className="text-xs font-medium text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1">
-                    <UserPlus className="h-3.5 w-3.5" /> Add
-                  </button>
-                </div>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {editingGroup.recipients.map((r, index) => (
-                    <div key={index} className="flex gap-2 items-start rounded border border-slate-200 p-2 bg-slate-50/80">
-                      <div className="flex-1 min-w-0 grid grid-cols-1 gap-1.5">
-                        <input type="text" value={r.name} onChange={(e) => updateEditingGroupRecipient(index, 'name', e.target.value)} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
-                        <input type="email" value={r.email} onChange={(e) => updateEditingGroupRecipient(index, 'email', e.target.value)} placeholder="Email" className="w-full rounded border border-slate-300 px-2 py-1 text-xs" />
-                        <select value={r.role} onChange={(e) => updateEditingGroupRecipient(index, 'role', e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-xs bg-white">
-                          <option value="signer">Signer</option>
-                          <option value="reviewer">Reviewer</option>
-                        </select>
-                      </div>
-                      <button type="button" onClick={() => removeRecipientFromEditingGroup(index)} className="p-1 rounded text-slate-400 hover:text-red-600 shrink-0" title="Remove from group">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="px-4 py-3 border-t border-slate-200 flex justify-end gap-2">
-              <button type="button" onClick={() => setEditingGroup(null)} className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">
-                Cancel
-              </button>
-              <button type="button" onClick={saveEditingGroup} disabled={!editingGroup.name.trim() || editingGroup.recipients.every((r) => !r.email.trim())} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-                Save
               </button>
             </div>
           </div>
@@ -1483,197 +1384,91 @@ const EsignPlaceFieldsPage: React.FC = () => {
           <div className="w-full lg:w-80 shrink-0 order-1 lg:order-2 flex flex-col min-h-0 max-h-[min(52vh,420px)] lg:max-h-none lg:h-full">
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-3 sm:p-4 space-y-4 sm:space-y-5 overflow-y-auto flex-1 min-h-0">
-                <div id="esign-tour-recipients-panel">
-                  <h2 className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</h2>
-                  <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers need a Signature field; Reviewers use Name, Title, Date, or Text only, then mark as Reviewed.</p>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {recipients.map((r, index) => {
-                  const isSelected = selectedRecipientId === r.id;
-                  const recipientColor = getRecipientColor(r.id, recipients);
-                  const effectiveAction = r.action ?? (r.role === 'Technical Team' || r.role === 'Legal Team' ? 'reviewer' : (r.role?.toLowerCase() === 'reviewer' ? 'reviewer' : 'signer'));
-                  const isReviewer = effectiveAction === 'reviewer';
-                  const roleForDropdown = r.role === 'Team Lead' || r.role === 'Technical Team' || r.role === 'Legal Team' ? r.role : '— None —';
-                  return (
-                    <div
-                      key={r.id}
-                      className={`rounded-lg overflow-hidden border-2 ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-300 bg-white'}`}
-                    >
-                      <div className="flex items-start justify-between gap-1 p-2.5">
-                        <div className="min-w-0 flex-1 flex items-start gap-2">
-                          <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color" />
-                          <div className="min-w-0 flex-1">
-                            <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
-                            <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-2">
-                              {roleForDropdown !== '— None —' && (
-                                <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                                  {getRoleDisplayLabel(r.role)}
-                                </span>
-                              )}
-                              <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                                {effectiveAction === 'reviewer' ? 'Review' : 'Sign'}
-                              </span>
+              <div id="esign-tour-recipients-panel">
+                <h2 className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</h2>
+                <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers need a Signature field; Reviewers use Name, Title, Date, or Text only, then mark as Reviewed.</p>
+                {recipients.length > 0 && (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {recipients.map((r, index) => {
+                      const isSelected = selectedRecipientId === r.id;
+                      const recipientColor = getRecipientColor(r.id, recipients);
+                      const effectiveAction = r.action ?? (r.role === 'Technical Team' || r.role === 'Legal Team' ? 'reviewer' : (r.role?.toLowerCase() === 'reviewer' ? 'reviewer' : 'signer'));
+                      const isReviewer = effectiveAction === 'reviewer';
+                      return (
+                        <div key={r.id} className={`rounded-lg overflow-hidden border-2 ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-300 bg-white'}`}>
+                          <div className="flex items-start justify-between gap-1 p-2.5">
+                            <div className="min-w-0 flex-1 flex items-start gap-2">
+                              <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color" />
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
+                                <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
+                                <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                                  <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                                    {isReviewer ? 'Review' : 'Sign'}
+                                  </span>
+                                  <span className="text-[9px] text-slate-500">Action:</span>
+                                  <select
+                                    value={effectiveAction}
+                                    onChange={(e) => updateRecipientAction(r.id, e.target.value as 'signer' | 'reviewer')}
+                                    className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
+                                    title="Sign or Review"
+                                  >
+                                    <option value="signer">Sign</option>
+                                    <option value="reviewer">Review</option>
+                                  </select>
+                                </div>
+                              </div>
                             </div>
-                            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                              <span className="text-[9px] text-slate-500">Action:</span>
-                              <select
-                                value={effectiveAction}
-                                onChange={(e) => updateRecipientAction(r.id, e.target.value as 'signer' | 'reviewer')}
-                                className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
-                                title="Sign or Review"
-                              >
-                                <option value="signer">Sign</option>
-                                <option value="reviewer">Review</option>
-                              </select>
+                            <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end">
+                              {recipients.length > 1 && (
+                                <>
+                                  <button type="button" onClick={() => moveRecipientUp(index)} disabled={index === 0} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
+                                  <button type="button" onClick={() => moveRecipientDown(index)} disabled={index === recipients.length - 1} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
+                                </>
+                              )}
+                              <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end">
-                          {recipients.length > 1 && (
-                            <>
-                              <button type="button" onClick={() => moveRecipientUp(index)} disabled={index === 0} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => moveRecipientDown(index)} disabled={index === recipients.length - 1} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
-                            </>
-                          )}
-                          <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-2 pt-2 border-t border-slate-200">
-                <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
-                <input
-                  type="email"
-                  value={newRecipient.email}
-                  onChange={(e) => {
-                    const email = e.target.value;
-                    setNewRecipient((p) => {
-                      // Auto-fill the Name input only if the user hasn't typed one
-                      // themselves yet. This avoids clobbering manual entries while
-                      // still saving keystrokes for known recipients.
-                      const entry = lookupRecipient(email);
-                      const nextName = entry && !p.name.trim() ? entry.name : p.name;
-                      return { ...p, email, name: nextName };
-                    });
-                    setRecipientError(null);
-                  }}
-                  placeholder="Email"
-                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5"
-                />
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-xs text-slate-600">Role:</span>
-                  <select
-                    value={newRecipient.role}
-                    onChange={(e) => setNewRecipient((p) => ({ ...p, role: e.target.value as 'signer' | 'reviewer' }))}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-                  >
-                    <option value="signer">Signer</option>
-                    <option value="reviewer">Reviewer</option>
-                  </select>
-                </div>
-                {recipientError && <p className="text-xs text-red-600 mt-1">{recipientError}</p>}
-                <button type="button" onClick={addRecipient} disabled={addingRecipient || !newRecipient.email.trim()} className="mt-1.5 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {addingRecipient ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add recipient
-                </button>
-                {recipients.length > 0 && (
-                  <div className="mt-2 space-y-1.5">
-                    <button type="button" onClick={saveCurrentRecipientsToSaved} className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800">
-                      <Bookmark className="h-3.5 w-3.5" /> Save current to list
-                    </button>
-                    <div className="flex gap-1.5 items-center flex-wrap">
-                      <input
-                        type="text"
-                        value={groupNameInput}
-                        onChange={(e) => setGroupNameInput(e.target.value)}
-                        placeholder="Group name"
-                        className="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1 text-xs"
-                      />
-                      <button type="button" onClick={saveCurrentAsGroup} disabled={!groupNameInput.trim()} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50">
-                        <Users className="h-3.5 w-3.5" /> Save as group
-                      </button>
-                    </div>
+                      );
+                    })}
                   </div>
                 )}
+                <div className="mt-2 pt-2 border-t border-slate-200">
+                  <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
+                  <input
+                    type="email"
+                    value={newRecipient.email}
+                    onChange={(e) => {
+                      const email = e.target.value;
+                      setNewRecipient((p) => {
+                        const entry = lookupRecipient(email);
+                        const nextName = entry && !p.name.trim() ? entry.name : p.name;
+                        return { ...p, email, name: nextName };
+                      });
+                      setRecipientError(null);
+                    }}
+                    placeholder="Email"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5"
+                  />
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-xs text-slate-600">Role:</span>
+                    <select
+                      value={newRecipient.role}
+                      onChange={(e) => setNewRecipient((p) => ({ ...p, role: e.target.value as 'signer' | 'reviewer' }))}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                    >
+                      <option value="signer">Signer</option>
+                      <option value="reviewer">Reviewer</option>
+                    </select>
+                  </div>
+                  {recipientError && <p className="text-xs text-red-600 mt-1">{recipientError}</p>}
+                  <button type="button" onClick={addRecipient} disabled={addingRecipient || !newRecipient.email.trim()} className="mt-1.5 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {addingRecipient ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add recipient
+                  </button>
+                </div>
               </div>
-                </div>
-              {savedGroups.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-200">
-                  <p className="text-xs font-medium text-slate-700 mb-1">Saved groups</p>
-                  <p className="text-[10px] text-slate-500 mb-1.5">Use &quot;Add to document&quot; to add a group. Default (★) is your preferred group when adding.</p>
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {savedGroups.map((g) => {
-                      const isExpanded = expandedGroupId === g.id;
-                      const isDefault = defaultGroupId === g.id;
-                      return (
-                        <div key={g.id} className={`rounded border overflow-hidden ${isDefault ? 'border-amber-400 bg-amber-50/50' : 'border-slate-200 bg-white'}`}>
-                          <div className="flex items-center justify-between gap-1 px-2 py-1.5">
-                            <button type="button" onClick={() => setExpandedGroupId(isExpanded ? null : g.id)} className="min-w-0 flex-1 flex items-center gap-1 text-left">
-                              <span className="text-slate-400">{isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}</span>
-                              <p className="text-xs font-medium text-slate-800 truncate">{g.name}</p>
-                              {isDefault && <span className="shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-200 text-amber-900">Default</span>}
-                              <p className="text-[10px] text-slate-500 shrink-0">({g.recipients.length})</p>
-                            </button>
-                            <div className="flex items-center gap-0.5 shrink-0">
-                              <button type="button" onClick={() => setDefaultGroup(isDefault ? null : g.id)} className={`p-1 rounded ${isDefault ? 'text-amber-600 hover:bg-amber-100' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`} title={isDefault ? 'Remove as default group' : 'Set as default group (preferred when you add to document)'}>
-                                <Star className={`h-3.5 w-3.5 ${isDefault ? 'fill-current' : ''}`} />
-                              </button>
-                              <button type="button" onClick={() => addGroupToDocument(g)} className="p-1 rounded text-indigo-600 hover:bg-indigo-50 font-medium text-xs" title="Add all to current document">
-                                Add to document
-                              </button>
-                              <button type="button" onClick={() => startEditingGroup(g)} className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-indigo-50" title="Edit group">
-                                <Pencil className="h-3 w-3" />
-                              </button>
-                              <button type="button" onClick={() => removeGroup(g.id)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Remove group">
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                          {isExpanded && (
-                            <div className="border-t border-slate-100 bg-slate-50/70 px-2 py-1.5 space-y-1 max-h-32 overflow-y-auto">
-                              {g.recipients.map((r, i) => (
-                                <div key={i} className="flex items-center justify-between gap-2 text-[10px]">
-                                  <span className="text-slate-700 truncate">{r.name || r.email}</span>
-                                  <span className="text-slate-500 truncate shrink-0 max-w-[120px]">{r.email}</span>
-                                  <span className={`shrink-0 px-1 py-0.5 rounded text-[9px] font-medium ${r.role === 'reviewer' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>{r.role}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {savedRecipients.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-200">
-                  <p className="text-xs font-medium text-slate-700 mb-1.5">Saved recipients</p>
-                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                    {savedRecipients.map((s) => {
-                      const alreadyAdded = recipients.some((r) => r.email.toLowerCase() === s.email.toLowerCase());
-                      return (
-                        <div key={s.id} className="flex items-center justify-between gap-1 rounded border border-slate-200 bg-white px-2 py-1.5">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-slate-800 truncate">{s.name || s.email}</p>
-                            <p className="text-[10px] text-slate-500 truncate">{s.email}</p>
-                          </div>
-                          <div className="flex items-center gap-0.5 shrink-0">
-                            <button type="button" onClick={() => addFromSaved(s)} disabled={alreadyAdded} className="p-1 rounded text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed" title={alreadyAdded ? 'Already added' : 'Add to document'}>
-                              <Plus className="h-3.5 w-3.5" />
-                            </button>
-                            <button type="button" onClick={() => removeSavedRecipient(s.id)} className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50" title="Remove from saved">
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              <p className="text-xs text-slate-500 mt-3">Place fields for:</p>
+              <p className="text-xs text-slate-500">Place fields for:</p>
               <select
                 id="esign-tour-place-for-select"
                 value={selectedRecipientId || ''}

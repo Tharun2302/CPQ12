@@ -762,10 +762,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       )
                     )}
 
-                    {/* Combined Total - show tier-based total for this plan column */}
+                    {/* Combined Total - show final payable amount after discount */}
                     <div className="flex justify-between items-center text-base bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-lg p-4">
                       <span className="font-bold text-purple-900">Combined Total ({calc.tier.name} Plan):</span>
-                      <span className="font-bold text-2xl text-purple-900">{formatCurrency(planTotal)}</span>
+                      <span className="font-bold text-2xl text-purple-900">{formatCurrency(discountInfo.finalPrice)}</span>
                     </div>
                   </>
                 ) : configuration?.servicePlan === 'Manage' ? (

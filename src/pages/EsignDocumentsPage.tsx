@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, FileText, Loader2, PenLine, Download, Trash2, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Copy, Bell } from 'lucide-react';
+import { Upload, FileText, Loader2, PenLine, Download, Trash2, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Copy, Bell, X, Users } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
-import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 
 interface RecipientRow {
   id: string;
@@ -109,6 +108,13 @@ function formatEsignCreatedByLine(doc: EsignDocument): string {
   return parts.length ? `Created by ${parts.join(' · ')}` : 'Created by —';
 }
 
+function formatBytes(n: number): string {
+  if (!n || n <= 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function formatEsignDateTime(iso: string | undefined): string {
   if (!iso) return '';
   try {
@@ -130,16 +136,7 @@ const EsignDocumentsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
 
-  // eSign is always accessible (no approval gating)
-  const { workflows: approvalWorkflows } = useApprovalWorkflows();
-
-  /** Returns the approval status for an eSign document by matching workflow.esignDocumentId */
-  const getDocApprovalStatus = (docId: string): 'approved' | 'in_progress' | 'denied' | 'pending' | null => {
-    const match = approvalWorkflows.find((w) => w.esignDocumentId === docId);
-    if (!match) return null;
-    return match.status as 'approved' | 'in_progress' | 'denied' | 'pending';
-  };
-  const [documents, setDocuments] = useState<EsignDocument[]>([]);
+const [documents, setDocuments] = useState<EsignDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -150,6 +147,17 @@ const EsignDocumentsPage: React.FC = () => {
   const [copyingDocId, setCopyingDocId] = useState<string | null>(null);
   const [remindingDocId, setRemindingDocId] = useState<string | null>(null);
   const [remindedDocId, setRemindedDocId] = useState<string | null>(null);
+  const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(null);
+  const [uploadedDocumentName, setUploadedDocumentName] = useState<string>('');
+  const [uploadedFileSize, setUploadedFileSize] = useState<number>(0);
+  const [removingUpload, setRemovingUpload] = useState(false);
+  const [recipientInputs, setRecipientInputs] = useState<Array<{ name: string; email: string }>>([
+    { name: '', email: '' },
+  ]);
+  const [signingOrderEnabled, setSigningOrderEnabled] = useState(false);
+  const [savingRecipients, setSavingRecipients] = useState(false);
+  const [reminderToast, setReminderToast] = useState<{ recipients: string[] } | null>(null);
+  const reminderToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [statusModalId, setStatusModalId] = useState<string | null>(null);
@@ -169,8 +177,12 @@ const EsignDocumentsPage: React.FC = () => {
       const data = await res.json();
       if (data.success && Array.isArray(data.agreements)) {
         const email = user?.email;
+        // Manual e-sign page is the workspace for drafts only. Once a document is sent,
+        // it moves to the e-sign status page for tracking, so exclude non-draft docs here.
         const mine = email
-          ? (data.agreements as EsignDocument[]).filter((d) => isEsignDocumentForCurrentUser(d, email))
+          ? (data.agreements as EsignDocument[]).filter(
+              (d) => isEsignDocumentForCurrentUser(d, email) && (d.status || '').toLowerCase() === 'draft'
+            )
           : [];
         setDocuments(mine);
       } else {
@@ -211,8 +223,7 @@ const EsignDocumentsPage: React.FC = () => {
     setDropdownPosition(null);
   }, []);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const uploadFile = async (file: File) => {
     if (!file || file.type !== 'application/pdf') {
       setUploadError('Please select a PDF file');
       return;
@@ -230,7 +241,11 @@ const EsignDocumentsPage: React.FC = () => {
       const data = await res.json();
       if (data.success) {
         await loadDocuments();
-        navigate(`/esign/${data.document.id}/place-fields`);
+        setUploadedDocumentId(data.document.id);
+        setUploadedDocumentName(data.document.file_name || file.name);
+        setUploadedFileSize(file.size || 0);
+        setRecipientInputs([{ name: '', email: '' }]);
+        setSigningOrderEnabled(false);
       } else {
         setUploadError(data.error || 'Upload failed');
       }
@@ -238,8 +253,119 @@ const EsignDocumentsPage: React.FC = () => {
       setUploadError(err?.message || 'Upload failed');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await uploadFile(file);
+    e.target.value = '';
+  };
+
+  const updateRecipientInput = (index: number, field: 'name' | 'email', value: string) => {
+    setRecipientInputs((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
+  };
+
+  const addRecipientInput = () => {
+    setRecipientInputs((prev) => [...prev, { name: '', email: '' }]);
+  };
+
+  const removeRecipientInput = (index: number) => {
+    setRecipientInputs((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  };
+
+  const handleSaveRecipientsAndContinue = async () => {
+    if (!uploadedDocumentId) return;
+    const valid = recipientInputs.filter((r) => r.email.trim());
+    if (valid.length > 0) {
+      setSavingRecipients(true);
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}/recipients`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipients: valid.map((r) => ({
+              name: r.name.trim() || r.email.trim(),
+              email: r.email.trim(),
+              role: 'signer',
+            })),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          alert(data.error || 'Failed to save recipients');
+          setSavingRecipients(false);
+          return;
+        }
+      } catch (err: any) {
+        alert(err?.message || 'Failed to save recipients');
+        setSavingRecipients(false);
+        return;
+      }
+      setSavingRecipients(false);
+    }
+    const docId = uploadedDocumentId;
+    setUploadedDocumentId(null);
+    setUploadedDocumentName('');
+    setUploadedFileSize(0);
+    setRecipientInputs([{ name: '', email: '' }]);
+    navigate(`/esign/${docId}/place-fields`);
+  };
+
+  const handleRemoveUploadedFile = async () => {
+    if (!uploadedDocumentId) return;
+    if (!window.confirm(`Remove "${uploadedDocumentName || 'this document'}"? The uploaded file will be deleted.`)) return;
+    setRemovingUpload(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${uploadedDocumentId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_email: user?.email || '' }),
+      });
+      // Treat success and 404 (already gone) the same — clear the local state either way.
+      if (!res.ok && res.status !== 404) {
+        const data = await res.json().catch(() => ({}));
+        alert(data?.error || `Remove failed (${res.status})`);
+        return;
+      }
+      setUploadedDocumentId(null);
+      setUploadedDocumentName('');
+      setUploadedFileSize(0);
+      setRecipientInputs([{ name: '', email: '' }]);
+      setSigningOrderEnabled(false);
+      await loadDocuments();
+    } catch {
+      alert('Could not remove the file. Please try again.');
+    } finally {
+      setRemovingUpload(false);
+    }
+  };
+
+  const handleCancelAddRecipients = () => {
+    setUploadedDocumentId(null);
+    setUploadedDocumentName('');
+    setUploadedFileSize(0);
+    setRecipientInputs([{ name: '', email: '' }]);
+    setSigningOrderEnabled(false);
+  };
+
+  const [dragActive, setDragActive] = useState(false);
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  };
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  };
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) await uploadFile(file);
   };
 
   const handleVoid = async (docId: string) => {
@@ -290,6 +416,14 @@ const EsignDocumentsPage: React.FC = () => {
       }
       setRemindedDocId(docId);
       setTimeout(() => setRemindedDocId((c) => (c === docId ? null : c)), 2500);
+
+      const doc = documents.find((d) => d.id === docId);
+      const pendingRecipients = (doc?.recipients ?? [])
+        .filter((r) => r.status !== 'signed' && r.status !== 'approved')
+        .map((r) => r.name || r.email);
+      if (reminderToastTimerRef.current) clearTimeout(reminderToastTimerRef.current);
+      setReminderToast({ recipients: pendingRecipients.length ? pendingRecipients : ['recipients'] });
+      reminderToastTimerRef.current = setTimeout(() => setReminderToast(null), 4000);
     } catch {
       alert('Could not send reminder.');
     } finally {
@@ -523,6 +657,30 @@ const EsignDocumentsPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50/80 py-5 sm:py-6 px-4 sm:px-6 lg:px-8 w-full">
+      {reminderToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 bg-white border border-emerald-200 shadow-lg rounded-xl px-4 py-3.5 max-w-sm animate-in slide-in-from-bottom-2 duration-200">
+          <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+            <Bell className="h-4 w-4 text-emerald-600" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-900">Reminder sent</p>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              A reminder email with the signing link was sent to{' '}
+              <span className="font-medium text-slate-700">
+                {reminderToast.recipients.join(', ')}
+              </span>.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReminderToast(null)}
+            className="shrink-0 text-slate-400 hover:text-slate-600 mt-0.5"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <div className="w-full">
         <div className="mb-4 sm:mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -549,101 +707,215 @@ const EsignDocumentsPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Upload — compact card, no dead horizontal space */}
-        <div id="esign-tour-upload" className="w-fit max-w-full bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4 scroll-mt-24">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-            <h2 className="text-base font-semibold text-slate-900 sm:shrink-0">Upload Document</h2>
-            <label className="inline-flex items-center gap-2 px-4 py-2.5 sm:px-5 bg-violet-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-violet-700 disabled:opacity-50 shadow-sm w-fit">
-              <Upload className="h-5 w-5 shrink-0" />
-              {uploading ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
-                  Uploading…
-                </>
-              ) : (
-                'Choose PDF'
-              )}
-              <input
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={handleUpload}
-                className="hidden"
-                disabled={uploading}
-              />
-            </label>
+        {/* Add documents — DocuSign-style drag-and-drop area */}
+        <div id="esign-tour-upload" className="bg-white rounded-xl border border-slate-200/90 shadow-sm mb-4 scroll-mt-24 overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-slate-900">Add documents</h2>
           </div>
-          {uploadError && (
-            <p className="mt-3 text-sm text-red-600">{uploadError}</p>
-          )}
+          <div className="p-5">
+            {uploadedDocumentId ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-red-50 border border-red-200 flex items-center justify-center shrink-0" aria-hidden>
+                  <FileText className="h-6 w-6 text-red-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900 truncate" title={uploadedDocumentName}>
+                    {uploadedDocumentName || 'Uploaded document'}
+                  </p>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+                    <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                      <Check className="h-3.5 w-3.5" /> Uploaded
+                    </span>
+                    {formatBytes(uploadedFileSize) && (
+                      <>
+                        <span>·</span>
+                        <span>{formatBytes(uploadedFileSize)}</span>
+                      </>
+                    )}
+                    <span>·</span>
+                    <span>PDF</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveUploadedFile}
+                  disabled={removingUpload}
+                  title="Remove this file"
+                  aria-label="Remove uploaded file"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-500 hover:text-red-600 hover:border-red-300 hover:bg-red-50 disabled:opacity-50 shrink-0"
+                >
+                  {removingUpload ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </button>
+              </div>
+            ) : (
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`rounded-xl border-2 border-dashed transition-colors flex flex-col items-center justify-center gap-3 py-12 px-6 ${
+                  dragActive
+                    ? 'border-violet-500 bg-violet-50/60'
+                    : 'border-slate-300 bg-slate-50/60 hover:bg-slate-50'
+                }`}
+              >
+                <div className="w-14 h-14 rounded-xl bg-slate-200/70 flex items-center justify-center">
+                  <Upload className="h-6 w-6 text-slate-500" />
+                </div>
+                <p className="text-sm text-slate-600">Drag a document here or</p>
+                <label className="inline-flex items-center gap-2 px-6 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-semibold cursor-pointer hover:bg-violet-700 disabled:opacity-50 shadow-sm">
+                  {uploading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                      Uploading…
+                    </>
+                  ) : (
+                    'Upload'
+                  )}
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={handleUpload}
+                    className="hidden"
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+            )}
+            {uploadError && (
+              <p className="mt-3 text-sm text-red-600">{uploadError}</p>
+            )}
+          </div>
         </div>
 
-        {/* ── Ready for e-Sign section ── */}
-        {(() => {
-          const readyDocs = documents.filter(
-            (d) => getDocApprovalStatus(d.id) === 'approved' && d.status === 'draft'
-          );
-          if (readyDocs.length === 0) return null;
-          return (
-            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 shadow-sm overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3 border-b border-emerald-200 bg-emerald-100/60">
-                <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
-                  <Check className="w-3.5 h-3.5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-emerald-900">
-                    Ready for e-Sign
-                    <span className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">
-                      {readyDocs.length}
-                    </span>
-                  </h2>
-                  <p className="text-[11px] text-emerald-700 mt-0.5">
-                    These agreements have been approved — place signature fields to send for signing.
-                  </p>
-                </div>
+        {uploadedDocumentId && (
+          <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm mb-4 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900">Add a recipient</h2>
+                {uploadedDocumentName && (
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">For {uploadedDocumentName}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelAddRecipients}
+                className="text-slate-400 hover:text-slate-600 p-1"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={signingOrderEnabled}
+                  onChange={(e) => setSigningOrderEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                />
+                <span className="text-sm font-medium text-slate-700">Set signing order</span>
+                <span className="text-xs text-slate-500">
+                  {signingOrderEnabled ? '(Recipients sign sequentially)' : '(All recipients sign simultaneously)'}
+                </span>
+              </label>
+
+              <div className="space-y-3">
+                {recipientInputs.map((r, index) => {
+                  const colors = [
+                    'border-l-teal-400',
+                    'border-l-sky-400',
+                    'border-l-amber-400',
+                    'border-l-rose-400',
+                    'border-l-violet-400',
+                  ];
+                  const colorClass = colors[index % colors.length];
+                  return (
+                    <div
+                      key={index}
+                      className={`bg-slate-50/40 border border-slate-200 rounded-lg border-l-4 ${colorClass} p-4`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {signingOrderEnabled && (
+                          <span className="mt-7 inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-200 text-slate-700 text-xs font-bold shrink-0">
+                            {index + 1}
+                          </span>
+                        )}
+                        <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-700 mb-1">
+                              Name <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={r.name}
+                                onChange={(e) => updateRecipientInput(index, 'name', e.target.value)}
+                                placeholder="Name"
+                                className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-white"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-700 mb-1">
+                              Email <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="email"
+                              value={r.email}
+                              onChange={(e) => updateRecipientInput(index, 'email', e.target.value)}
+                              placeholder="Email"
+                              className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-white"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeRecipientInput(index)}
+                          disabled={recipientInputs.length <= 1}
+                          className="mt-7 p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                          title="Remove"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Cards */}
-              <div className="divide-y divide-emerald-100">
-                {readyDocs.map((doc) => (
-                  <div key={doc.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-emerald-50 transition-colors">
-                    {/* Icon */}
-                    <div className="w-9 h-9 rounded-lg bg-emerald-100 border border-emerald-200 flex items-center justify-center shrink-0">
-                      <FileText className="h-4 w-4 text-emerald-600" />
-                    </div>
-
-                    {/* Name + meta */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate" title={doc.file_name}>
-                        {doc.file_name}
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{formatEsignCreatedByLine(doc)}</p>
-                    </div>
-
-                    {/* Approved badge */}
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200 shrink-0">
-                      <Check className="w-3 h-3" />
-                      Approved
-                    </span>
-
-                    {/* CTA */}
-                    <Link
-                      to={`/esign/${doc.id}/place-fields`}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors shrink-0 shadow-sm"
-                    >
-                      <PenLine className="w-3.5 h-3.5 shrink-0" />
-                      Place fields &amp; Send
-                    </Link>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={addRecipientInput}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Users className="h-4 w-4" />
+                  Add Recipient
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRecipientsAndContinue}
+                  disabled={savingRecipients}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 shadow-sm"
+                >
+                  {savingRecipients ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Next
+                </button>
               </div>
             </div>
-          );
-        })()}
+          </div>
+        )}
 
-        {/* Your Documents — tighter table columns (fixed layout) */}
+
+        {/* Draft documents — drafts only; sent/completed are tracked on the e-sign status page */}
         <div id="esign-tour-documents" className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden scroll-mt-24">
-          <h2 className="text-base font-semibold text-slate-900 px-4 sm:px-5 py-3 border-b border-slate-200">All Documents</h2>
+          <div className="px-4 sm:px-5 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-900">Draft documents</h2>
+            <Link to="/esign-tracking" className="text-xs font-medium text-indigo-600 hover:text-indigo-700">
+              View sent &amp; completed →
+            </Link>
+          </div>
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
@@ -657,17 +929,19 @@ const EsignDocumentsPage: React.FC = () => {
                   <p className="text-sm mt-1">Your e-sign agreements are shown for the account you&apos;re logged in with.</p>
                 </>
               ) : (
-                <p>No documents yet. Upload a PDF to get started.</p>
+                <>
+                  <p>No drafts in progress.</p>
+                  <p className="text-sm mt-1">Upload a PDF to start, or check <Link to="/esign-tracking" className="text-indigo-600 hover:text-indigo-700 font-medium">e-sign status</Link> for sent &amp; completed agreements.</p>
+                </>
               )}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full table-fixed min-w-[580px] divide-y divide-slate-200">
                 <colgroup>
-                  <col style={{ width: '42%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '22%' }} />
+                  <col style={{ width: '55%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '30%' }} />
                 </colgroup>
                 <thead className="bg-slate-50">
                   <tr>

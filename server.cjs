@@ -6871,7 +6871,12 @@ app.get('/api/esign/documents/:id', async (req, res) => {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     let doc;
     try {
-      doc = await db.collection('esign_documents').findOne({ _id: new ObjectId(req.params.id) });
+      // Exclude heavy base64 PDF blobs — this metadata endpoint never returns them, and loading
+      // them made the View Status modal slow (it polls this endpoint every 10s).
+      doc = await db.collection('esign_documents').findOne(
+        { _id: new ObjectId(req.params.id) },
+        { projection: { file_data: 0, signed_file_data: 0 } }
+      );
     } catch {
       doc = null;
     }
@@ -6890,7 +6895,10 @@ app.get('/api/esign/documents/:id', async (req, res) => {
         creator_email: doc.requested_by_email || (String(doc.uploaded_by || '').includes('@') ? doc.uploaded_by : null),
         created_at: doc.created_at,
         sent_at: doc.sent_at || null,
+        signed_at: doc.signed_at || null,
         status: doc.status,
+        upload_source: doc.upload_source || 'manual',
+        signing_order_enforced: doc.signing_order_enforced || false,
         signed_file_path: doc.signed_file_path,
         void_reason: doc.void_reason || null,
         voided_by: doc.voided_by || null,
@@ -7152,7 +7160,7 @@ app.post('/api/esign/documents/:id/remind', async (req, res) => {
 
     const recipients = await db.collection('esign_recipients').find({
       document_id: docId,
-      status: 'pending',
+      status: { $in: ['pending', 'viewed'] },
       email: { $exists: true, $ne: '' },
       signing_token: { $exists: true, $ne: '' },
     }).toArray();
@@ -7291,6 +7299,10 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
         signing_token: r.signing_token || null,
         token_expires_at: r.token_expires_at || null,
         expiry_reminder_sent_at: r.expiry_reminder_sent_at || null,
+        // Activity timestamps for tracking
+        sent_at: r.sent_at || null,
+        viewed_at: r.viewed_at || null,
+        signed_at: r.signed_at || null,
         // Forwarding fields
         forwarded_to_email: r.forwarded_to_email || null,
         forwarded_to_name: r.forwarded_to_name || null,
@@ -7302,6 +7314,33 @@ app.get('/api/esign/documents/:id/recipients', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ E-sign get recipients error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/activity - Activity timeline (from audit_logs) for the tracking UI
+app.get('/api/esign/documents/:id/activity', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const docIdStr = docId.toString();
+    const logs = await db.collection('audit_logs')
+      .find({ $or: [{ document_id: docId }, { document_id: docIdStr }] })
+      .sort({ timestamp: 1 })
+      .toArray();
+    res.json({
+      success: true,
+      activity: logs.map((l) => ({
+        action: l.action,
+        actor: l.user_email || null,
+        timestamp: l.timestamp,
+        recipient: (l.metadata && l.metadata.recipient) || null,
+        metadata: l.metadata || null,
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign activity error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -7414,7 +7453,7 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
 
 // Shared helper: send e-sign document to signers (used by POST route and by approval-completion auto-send)
 async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}) {
-  const { uploadedBy = 'system' } = options;
+  const { uploadedBy = 'system', signingOrderEnforced = false } = options;
   if (!db) return { success: false, error: 'Database not available' };
   let docId;
   try {
@@ -7456,14 +7495,19 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   }
   let emailsSent = 0;
   const emailsSentTo = [];
-  for (const rec of recipients) {
+  for (let recIdx = 0; recIdx < recipients.length; recIdx++) {
+    const rec = recipients[recIdx];
     const token = crypto.randomUUID();
     const tokenCreatedAt = new Date();
     const tokenExpiresAt = new Date(tokenCreatedAt.getTime() + ESIGN_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    // Sequential mode: only send email to the first recipient; others wait until previous signs.
+    // Deferred recipients get a token now but no `sent_at` until their email actually goes out.
+    const isDeferred = signingOrderEnforced && recIdx > 0;
     await db.collection('esign_recipients').updateOne(
       { _id: rec._id },
-      { $set: { signing_token: token, status: 'pending', token_created_at: tokenCreatedAt, token_expires_at: tokenExpiresAt } }
+      { $set: { signing_token: token, status: 'pending', token_created_at: tokenCreatedAt, token_expires_at: tokenExpiresAt, ...(isDeferred ? {} : { sent_at: tokenCreatedAt }) } }
     );
+    if (isDeferred) continue;
     const { signingUrl, inboxUrl } = getEsignRecipientUrls(token);
     if (process.env.SENDGRID_API_KEY && rec.email) {
       if (emailsSent === 0) {
@@ -7512,7 +7556,7 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
   }
   await db.collection('esign_documents').updateOne(
     { _id: docId },
-    { $set: { status: 'sent', sent_at: new Date() }, $unset: { sequential: '' } }
+    { $set: { status: 'sent', sent_at: new Date(), signing_order_enforced: signingOrderEnforced } }
   );
   await logAudit(docId, 'sent', uploadedBy, null);
   return { success: true, emails_sent: emailsSent, emails_sent_to: emailsSentTo };
@@ -7524,6 +7568,7 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
     if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
     const result = await sendDocumentForSignatureInternal(req.params.id, {
       uploadedBy: req.body.uploaded_by || 'system',
+      signingOrderEnforced: req.body.signing_order_enforced === true,
     });
     if (!result.success) {
       return res.status(result.error === 'Document not found' ? 404 : 400).json({ success: false, error: result.error });
@@ -7577,7 +7622,7 @@ app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
     const pendingRecipients = await db.collection('esign_recipients')
       .find({
         ...esignRecipientsDocumentFilter(docId),
-        status: 'pending',
+        status: { $in: ['pending', 'viewed'] },
         email: { $exists: true, $ne: '' },
       })
       .sort({ order: 1, _id: 1 })
@@ -8131,7 +8176,7 @@ app.get('/api/esign/pending-for-email', async (req, res) => {
     // Case-insensitive email match so dashboard finds items regardless of how email was stored
     const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     const recipients = await db.collection('esign_recipients')
-      .find({ email: emailRegex, status: 'pending', signing_token: { $exists: true, $ne: '' } })
+      .find({ email: emailRegex, status: { $in: ['pending', 'viewed'] }, signing_token: { $exists: true, $ne: '' } })
       .toArray();
     const docIds = [...new Set(recipients.map((r) => r.document_id).filter(Boolean))];
     const docs = await db.collection('esign_documents')
@@ -8181,7 +8226,7 @@ app.get('/api/esign/inbox-by-token', async (req, res) => {
 
     // Queue: all pending for this email (doc status 'sent')
     const pendingRecipients = await db.collection('esign_recipients')
-      .find({ email: emailRegex, status: 'pending', signing_token: { $exists: true, $ne: '' } })
+      .find({ email: emailRegex, status: { $in: ['pending', 'viewed'] }, signing_token: { $exists: true, $ne: '' } })
       .sort({ _id: 1 })
       .toArray();
     const pendingDocIds = [...new Set(pendingRecipients.map((r) => r.document_id).filter(Boolean))];
@@ -8267,6 +8312,20 @@ app.get('/api/esign/sign-by-token/:token', async (req, res) => {
     }
     if (doc.status === 'voided') {
       return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    }
+    // Track first "viewed": when a recipient opens their signing link, promote pending → viewed
+    // (never downgrade signed/reviewed/denied). Record viewed_at once for the activity timeline.
+    if (recipient.status === 'pending') {
+      const now = new Date();
+      await db.collection('esign_recipients').updateOne(
+        { _id: recipient._id, status: 'pending' },
+        { $set: { status: 'viewed', ...(recipient.viewed_at ? {} : { viewed_at: now }) } }
+      );
+      if (!recipient.viewed_at) {
+        recipient.viewed_at = now;
+        try { await logAudit(docId, 'viewed', recipient.email, req.ip || req.connection?.remoteAddress, { recipient: recipient.email }); } catch (_) { /* non-fatal */ }
+      }
+      recipient.status = 'viewed';
     }
     const recipientIdStr = recipient._id.toString();
     let fields = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
@@ -9297,7 +9356,7 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
     if (signing_token) {
       await db.collection('esign_recipients').updateOne(
         { signing_token },
-        { $set: { status: 'signed' } }
+        { $set: { status: 'signed', signed_at: new Date() } }
       );
       const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
       const completedCount = await db.collection('esign_recipients').countDocuments({
@@ -9336,6 +9395,28 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
       try {
         await db.collection('esign_signature_secrets').deleteMany({ recipient_id: recipient._id });
       } catch (_) { /* non-fatal */ }
+    }
+
+    // Sequential signing: send email to the next pending recipient
+    try {
+      const freshDoc = await db.collection('esign_documents').findOne({ _id: docId });
+      if (freshDoc?.signing_order_enforced && freshDoc.status !== 'completed') {
+        const nextRecipient = await db.collection('esign_recipients').findOne(
+          { document_id: docId, status: 'pending', signing_token: { $exists: true } },
+          { sort: { order: 1, _id: 1 } }
+        );
+        if (nextRecipient?.email && nextRecipient.signing_token) {
+          const { signingUrl, inboxUrl } = getEsignRecipientUrls(nextRecipient.signing_token);
+          const tokenExpiresAt = nextRecipient.token_expires_at;
+          const { subject, html } = buildEsignRecipientEmail(freshDoc, nextRecipient, signingUrl, inboxUrl, { mode: 'initial', tokenExpiresAt });
+          await sendEmail(nextRecipient.email, subject, html);
+          await db.collection('esign_recipients').updateOne({ _id: nextRecipient._id }, { $set: { sent_at: new Date() } });
+          await logAudit(docId, 'sent', nextRecipient.email, null, { recipient: nextRecipient.email, sequential: true });
+          console.log('📧 Sequential e-sign: sent signing email to next recipient', nextRecipient.email);
+        }
+      }
+    } catch (seqErr) {
+      console.warn('Sequential e-sign: failed to send next recipient email (non-fatal):', seqErr?.message || seqErr);
     }
 
     res.json({
@@ -9412,6 +9493,11 @@ app.get('/api/esign/agreement-status', async (req, res) => {
         status: r.status || 'pending',
         order: r.order ?? 999,
         comment: r.comment || null,
+        // Activity timestamps for tracking
+        sent_at: r.sent_at || null,
+        viewed_at: r.viewed_at || null,
+        signed_at: r.signed_at || null,
+        token_expires_at: r.token_expires_at || null,
         // Forwarding fields
         forwarded_to_email: r.forwarded_to_email || null,
         forwarded_to_name: r.forwarded_to_name || null,

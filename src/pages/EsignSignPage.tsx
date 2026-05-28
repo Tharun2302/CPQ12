@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
-import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle, ArrowRight, ArrowLeft, CheckCircle2, Sparkles } from 'lucide-react';
+import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle, ArrowRight, ArrowLeft, CheckCircle2, ChevronDown } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
@@ -161,6 +161,7 @@ const EsignSignPage: React.FC = () => {
   const [typedSignatureFontIndex, setTypedSignatureFontIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [finishMenuOpen, setFinishMenuOpen] = useState(false);
   const [success, setSuccess] = useState(false);
   const [alreadySigned, setAlreadySigned] = useState(false);
   const [alreadyReviewed, setAlreadyReviewed] = useState(false);
@@ -218,6 +219,16 @@ const EsignSignPage: React.FC = () => {
   const activePosition =
     activeFieldIdx != null ? navigableIdxList.indexOf(activeFieldIdx) + 1 : 0;
   const isUntouched = remainingCount === totalNavigable && totalNavigable > 0;
+
+  // Preload the cursive signature fonts so the canvas rasterizes them correctly when
+  // the user types a signature and clicks Apply. Without this, the FIRST Apply may
+  // render with a fallback font (or produce a blank/clipped image) due to a race.
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.fonts) return;
+    Promise.all(
+      SIGNATURE_FONTS.map((f) => document.fonts.load(`48px ${f.family}`).catch(() => null))
+    ).catch(() => {});
+  }, []);
 
   /** Pick the first pending field as active when fields first load (signer flow only). */
   useEffect(() => {
@@ -505,19 +516,36 @@ const EsignSignPage: React.FC = () => {
     if (!text) return null;
     const font = SIGNATURE_FONTS[typedSignatureFontIndex];
     if (!font) return null;
+    // Skip if the cursive font isn't ready yet — would rasterize with a fallback otherwise.
+    // The mount-time preload effect kicks off loading, so this is typically true by the time
+    // the user clicks Apply. If still loading, return null so the caller can fall through.
+    const fontSize = 48;
+    const fontShorthand = `${fontSize}px ${font.family}`;
+    if (typeof document !== 'undefined' && document.fonts && !document.fonts.check(fontShorthand)) {
+      // Kick off the load (fire-and-forget); next render/click should succeed.
+      document.fonts.load(fontShorthand).catch(() => {});
+      return null;
+    }
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    const fontSize = 48;
     const padding = 16;
-    ctx.font = `${fontSize}px ${font.family}`;
+    // Measure at logical pixel size, then scale the canvas up by devicePixelRatio (or 2x min)
+    // so cursive strokes don't blur into each other when displayed at smaller sizes.
+    const scale = Math.max(2, Math.min(4, (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio * 2 : 2));
+    ctx.font = fontShorthand;
     const metrics = ctx.measureText(text);
-    canvas.width = Math.ceil(metrics.width) + padding * 2;
-    canvas.height = fontSize + padding * 2;
-    ctx.font = `${fontSize}px ${font.family}`;
+    const logicalW = Math.ceil(metrics.width) + padding * 2;
+    const logicalH = fontSize + padding * 2;
+    canvas.width = Math.ceil(logicalW * scale);
+    canvas.height = Math.ceil(logicalH * scale);
+    // Re-set context after canvas resize (resets state) and scale for crisp rendering.
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.font = fontShorthand;
     ctx.fillStyle = '#000';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, padding, canvas.height / 2);
+    ctx.textAlign = 'left';
+    ctx.fillText(text, padding, logicalH / 2);
     return canvas.toDataURL('image/png');
   };
 
@@ -629,6 +657,16 @@ const EsignSignPage: React.FC = () => {
       setError('Download failed');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleEditAtRoot = () => {
+    setFieldValues(getInitialFieldValues(fields));
+    clearSignature();
+    setSelectedSignatureFieldIndex(null);
+    if (recipientRole === 'signer') {
+      initialActiveSetRef.current = false;
+      setActiveFieldIdx(null);
     }
   };
 
@@ -1228,10 +1266,10 @@ const EsignSignPage: React.FC = () => {
           <div className="mb-4">
             {renderForwardRequestPanel()}
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 flex-1 min-h-0 flex flex-col">
             <div
               ref={scrollContainerRef}
-              className="rounded-xl border-2 border-slate-200 overflow-y-auto overflow-x-hidden bg-slate-100 min-h-[400px] max-h-[70vh]"
+              className="rounded-xl border-2 border-slate-200 overflow-y-auto overflow-x-hidden bg-slate-100 flex-1 min-h-0"
             >
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <div
@@ -1686,7 +1724,7 @@ const EsignSignPage: React.FC = () => {
 
   return (
     <div
-      className="min-h-screen bg-slate-50 py-4 px-2 sm:py-8 sm:px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] sm:pb-32"
+      className="h-screen overflow-hidden bg-slate-50 p-2 sm:p-4 flex flex-col"
     >
       <style>{`
         @keyframes esignActiveFieldPulse {
@@ -1714,15 +1752,76 @@ const EsignSignPage: React.FC = () => {
         .esign-submit-ready:hover {
           background-color: #047857 !important;
         }
+        @keyframes esignStartCtaPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(107, 78, 255, 0.55), 0 4px 12px rgba(107, 78, 255, 0.25); }
+          50% { box-shadow: 0 0 0 10px rgba(107, 78, 255, 0), 0 4px 16px rgba(107, 78, 255, 0.35); }
+        }
+        .esign-start-cta {
+          background-color: #6B4EFF;
+          animation: esignStartCtaPulse 1.8s ease-in-out infinite;
+        }
+        .esign-start-cta:hover {
+          background-color: #5A3FE0;
+        }
       `}</style>
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-          <div className="bg-indigo-600 px-4 py-3 sm:px-6 sm:py-4">
-            <h1 className="text-lg sm:text-xl font-bold text-white">Sign Document</h1>
-            <p className="text-indigo-100 text-xs sm:text-sm mt-0.5 break-words">{doc.file_name}</p>
+      <div className="max-w-7xl w-full mx-auto flex-1 min-h-0 flex flex-col">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div className="bg-slate-900 px-4 py-3 sm:px-6 sm:py-3.5 flex items-center justify-between gap-3 shrink-0">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base sm:text-lg font-semibold text-white">Review and complete</h1>
+              <p className="text-slate-300 text-[11px] sm:text-xs mt-0.5 break-words truncate">{doc.file_name}</p>
+            </div>
+            <div className="relative flex items-stretch shrink-0">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting || fields.length === 0 || (recipientRole === 'signer' && remainingCount > 0)}
+                className="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 text-sm font-semibold rounded-l-md disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  'Finish'
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFinishMenuOpen((v) => !v)}
+                className="bg-violet-600 hover:bg-violet-700 text-white px-2 py-2 rounded-r-md border-l border-violet-700 inline-flex items-center"
+                aria-label="More options"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+              {finishMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setFinishMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-200 z-50 py-1">
+                    <button
+                      type="button"
+                      onClick={() => { handleEditAtRoot(); setFinishMenuOpen(false); }}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                    >
+                      <Pencil className="h-4 w-4" /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { handleDownload(doc?.file_name); setFinishMenuOpen(false); }}
+                      disabled={downloading}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Download
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+          <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 flex-1 min-h-0 flex flex-col overflow-hidden">
             {/* Forward panel intentionally hidden in the signing flow — forwarding is only available
                 on the pre-approval screen (before the signer clicks Approve & Sign). */}
             {recipientRole !== 'signer' && renderForwardRequestPanel()}
@@ -1741,61 +1840,72 @@ const EsignSignPage: React.FC = () => {
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    {allFieldsDone ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    ) : isUntouched ? (
-                      <Sparkles className="w-5 h-5 text-indigo-600 shrink-0" />
-                    ) : (
-                      <ArrowRight className="w-5 h-5 text-indigo-600 shrink-0" />
-                    )}
-                    <button
-                      type="button"
-                      onClick={goToNextField}
-                      disabled={allFieldsDone || navigableIdxList.length === 0}
-                      className="min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 transition-colors hover:bg-slate-100/70 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
-                      aria-label={
-                        allFieldsDone
-                          ? 'All required fields complete'
-                          : isUntouched
-                          ? 'Jump to the first required field'
-                          : 'Jump to the next required field'
-                      }
-                      title={
-                        allFieldsDone
-                          ? undefined
-                          : isUntouched
-                          ? 'Click to start signing'
-                          : 'Jump to the next required field'
-                      }
-                    >
-                      <p
-                        className={`text-sm font-semibold ${
-                          allFieldsDone ? 'text-emerald-800' : 'text-slate-900'
-                        }`}
+                  {isUntouched && !allFieldsDone ? (
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={goToNextField}
+                        disabled={navigableIdxList.length === 0}
+                        className="esign-start-cta inline-flex items-center gap-2 rounded-lg text-white px-5 py-2.5 text-sm font-semibold shadow-md cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label="Click to begin signing"
+                        title="Click to start signing"
                       >
-                        {allFieldsDone
-                          ? 'All required fields completed. Ready to submit.'
-                          : isUntouched
-                          ? 'Start here'
-                          : `Next required field${
-                              activeFieldIdx != null && fields[activeFieldIdx]
-                                ? `: ${fieldNavLabel(fields[activeFieldIdx].type)}`
-                                : ''
-                            }`}
-                      </p>
-                      {!allFieldsDone && (
-                        <p className="text-xs text-slate-600 mt-0.5">
-                          Field {activePosition} of {totalNavigable} · {remainingCount} remaining
-                        </p>
+                        <span>Click to begin signing</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                      <span className="text-sm font-medium text-slate-700">
+                        {totalNavigable} signature{totalNavigable === 1 ? '' : 's'} needed
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {allFieldsDone ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                      ) : (
+                        <ArrowRight className="w-5 h-5 text-indigo-600 shrink-0" />
                       )}
-                      {allFieldsDone && (
-                        <p className="text-xs text-emerald-700 mt-0.5">
-                          {totalNavigable} of {totalNavigable} complete
+                      <button
+                        type="button"
+                        onClick={goToNextField}
+                        disabled={allFieldsDone || navigableIdxList.length === 0}
+                        className="min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 transition-colors hover:bg-slate-100/70 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+                        aria-label={
+                          allFieldsDone
+                            ? 'All required fields complete'
+                            : 'Jump to the next required field'
+                        }
+                        title={
+                          allFieldsDone
+                            ? undefined
+                            : 'Jump to the next required field'
+                        }
+                      >
+                        <p
+                          className={`text-sm font-semibold ${
+                            allFieldsDone ? 'text-emerald-800' : 'text-slate-900'
+                          }`}
+                        >
+                          {allFieldsDone
+                            ? 'All required fields completed. Ready to submit.'
+                            : `Next required field${
+                                activeFieldIdx != null && fields[activeFieldIdx]
+                                  ? `: ${fieldNavLabel(fields[activeFieldIdx].type)}`
+                                  : ''
+                              }`}
                         </p>
-                      )}
-                    </button>
-                  </div>
+                        {!allFieldsDone && (
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Field {activePosition} of {totalNavigable} · {remainingCount} remaining
+                          </p>
+                        )}
+                        {allFieldsDone && (
+                          <p className="text-xs text-emerald-700 mt-0.5">
+                            {totalNavigable} of {totalNavigable} complete
+                          </p>
+                        )}
+                      </button>
+                    </div>
+                  )}
                   {!allFieldsDone && (
                     <div className="flex items-center gap-2 shrink-0">
                       <div
@@ -1837,10 +1947,10 @@ const EsignSignPage: React.FC = () => {
               </div>
             )}
             {/* PDF with all pages in one scrollable view - same logic as Place Fields */}
-            <div>
+            <div className="flex-1 min-h-0 flex flex-col">
               <div
                 ref={scrollContainerRef}
-                className="rounded-xl border-2 border-slate-200 overflow-y-auto overflow-x-hidden bg-slate-100 min-h-[400px] max-h-[70vh]"
+                className="rounded-xl border-2 border-slate-200 overflow-y-auto overflow-x-hidden bg-slate-100 flex-1 min-h-0"
               >
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                   <div
@@ -2187,135 +2297,17 @@ const EsignSignPage: React.FC = () => {
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            {(() => {
-              const signerIncomplete = recipientRole === 'signer' && remainingCount > 0;
-              const submitDisabled = submitting || fields.length === 0 || signerIncomplete;
-              const submitReady =
-                recipientRole === 'signer' && totalNavigable > 0 && allFieldsDone && !submitting;
-              const handleEdit = () => {
-                setFieldValues(getInitialFieldValues(fields));
-                clearSignature();
-                setSelectedSignatureFieldIndex(null);
-                if (recipientRole === 'signer') {
-                  initialActiveSetRef.current = false;
-                  setActiveFieldIdx(null);
-                }
-              };
-              return (
-                <>
-                  {/* Desktop sticky action bar — pinned to viewport bottom so Edit / Submit /
-                      Download remain reachable without scrolling through the entire agreement.
-                      Mobile uses its own sticky bar below. */}
-                  <div className="hidden sm:block fixed bottom-0 left-0 right-0 z-[1000] border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-4px_16px_rgba(15,23,42,0.08)]">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-row gap-3">
-                      <button
-                        type="button"
-                        onClick={handleEdit}
-                        disabled={submitting}
-                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Pencil className="h-5 w-5" />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSubmit}
-                        disabled={submitDisabled}
-                        className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-3 font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed ${
-                          submitReady ? 'esign-submit-ready' : ''
-                        }`}
-                      >
-                        {submitting ? (
-                          <>
-                            <Loader2 className="h-5 w-5 animate-spin" />
-                            Submitting…
-                          </>
-                        ) : (
-                          <>
-                            <Check className="h-5 w-5" />
-                            Submit
-                          </>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDownload(doc?.file_name)}
-                        disabled={downloading}
-                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border-2 border-slate-300 text-slate-700 bg-white py-3 font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {downloading ? (
-                          <>
-                            <Loader2 className="h-5 w-5 animate-spin" />
-                            Downloading…
-                          </>
-                        ) : (
-                          <>
-                            <Download className="h-5 w-5" />
-                            Download
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Mobile sticky bottom action bar */}
-                  <div
-                    className="sm:hidden fixed bottom-0 left-0 right-0 z-[1000] border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-4px_16px_rgba(15,23,42,0.08)]"
-                    style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-                  >
-                    {recipientRole === 'signer' && totalNavigable > 0 && (
-                      <div
-                        className={`px-4 pt-2 pb-1 text-xs font-medium ${
-                          allFieldsDone ? 'text-emerald-700' : 'text-slate-600'
-                        }`}
-                      >
-                        {allFieldsDone
-                          ? 'All required fields completed. Ready to submit.'
-                          : `${remainingCount} of ${totalNavigable} field${
-                              totalNavigable === 1 ? '' : 's'
-                            } remaining`}
-                      </div>
-                    )}
-                    <div className="px-3 py-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleEdit}
-                        disabled={submitting}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border-2 border-slate-300 text-slate-700 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSubmit}
-                        disabled={submitDisabled}
-                        className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed ${
-                          submitReady ? 'esign-submit-ready' : ''
-                        }`}
-                      >
-                        {submitting ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Submitting…
-                          </>
-                        ) : (
-                          <>
-                            <Check className="h-4 w-4" />
-                            Submit
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    {submitDisabled && !submitting && signerIncomplete && (
-                      <p className="px-4 pb-2 text-[11px] text-slate-500">
-                        Complete all required fields to continue
-                      </p>
-                    )}
-                  </div>
-                </>
-              );
-            })()}
+          </div>
+          {/* DocuSign-style footer */}
+          <div className="shrink-0 border-t border-slate-200 bg-white px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+            <span>Powered by Zenop.ai</span>
+            <div className="flex items-center gap-3">
+              <span className="hidden sm:inline">English (US)</span>
+              <a href="#" className="hover:text-slate-700 hover:underline">Terms of Use</a>
+              <span className="text-slate-300">·</span>
+              <a href="#" className="hover:text-slate-700 hover:underline">Privacy</a>
+            </div>
+            <span className="text-slate-400">Copyright © {new Date().getFullYear()} Zenop.ai. All rights reserved.</span>
           </div>
         </div>
       </div>
