@@ -11,8 +11,12 @@ import {
   PenLine,
   Bell,
   RotateCcw,
+  MoreVertical,
+  Copy,
+  Lock,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
@@ -164,7 +168,15 @@ const stepperLabelClass = (idx: number, currentIdx: number, rawStatus?: string) 
 const ApprovalDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const showStandaloneBackLink = location.pathname !== '/approval';
+
+  /** Only the requester (workflow creator) may proceed to e-sign, reset, or send reminders. */
+  const isWorkflowCreator = (workflow: any): boolean => {
+    const me = (user?.email || '').trim().toLowerCase();
+    const creator = String(workflow?.creatorEmail || '').trim().toLowerCase();
+    return !!me && !!creator && me === creator;
+  };
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [query, setQuery] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
@@ -181,12 +193,53 @@ const ApprovalDashboard: React.FC = () => {
   const [resettingEsignId, setResettingEsignId] = useState<string | null>(null);
   // Tracks which workflow reminder is being sent + per-workflow success flash
   const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
-  const [reminderSentId, setReminderSentId] = useState<string | null>(null);
+
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [cancelingApprovalId, setCancelingApprovalId] = useState<string | null>(null);
+  const [actionToast, setActionToast] = useState<string | null>(null);
 
   const {
     workflows,
     refreshWorkflows,
+    updateWorkflow,
   } = useApprovalWorkflows();
+
+  const flashToast = (msg: string) => {
+    setActionToast(msg);
+    window.setTimeout(() => setActionToast((m) => (m === msg ? null : m)), 3000);
+  };
+
+  const handleCopyApprovalLink = async (workflow: any) => {
+    const url = `${window.location.origin}/approval?id=${encodeURIComponent(workflow.id)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    flashToast('Approval link copied');
+  };
+
+  const handleCancelApproval = async (workflow: any) => {
+    if (!window.confirm(`Reject this approval for "${workflow.clientName || workflow.documentId || 'this item'}"?\n\nThe approval workflow will stop progressing and be marked as rejected.`)) {
+      return;
+    }
+    setCancelingApprovalId(workflow.id);
+    try {
+      await updateWorkflow(workflow.id, { status: 'denied' });
+      flashToast('Approval rejected');
+    } catch {
+      alert('Could not reject the approval. Please try again.');
+    } finally {
+      setCancelingApprovalId(null);
+    }
+  };
 
   /**
    * Creates an eSign document from the approved workflow's agreement and
@@ -214,6 +267,7 @@ const ApprovalDashboard: React.FC = () => {
       // Clear pending-approval sessionStorage so the place-fields page shows
       // "Send for Signature" directly (approval is already complete)
       sessionStorage.removeItem('quotePendingApproval');
+      // Go straight to place-fields, where recipients are added and signature fields placed.
       navigate(`/esign/${data.document.id}/place-fields`);
     } catch (err: any) {
       alert(err?.message || 'Failed to open e-sign. Please try again.');
@@ -299,9 +353,7 @@ const ApprovalDashboard: React.FC = () => {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to send reminder');
-      // Show brief success flash on the card
-      setReminderSentId(workflowId);
-      setTimeout(() => setReminderSentId(null), 3000);
+      flashToast('Reminder sent to the current approver');
     } catch (err: any) {
       alert(err?.message || 'Failed to send reminder. Please try again.');
     } finally {
@@ -502,6 +554,12 @@ const ApprovalDashboard: React.FC = () => {
       className="w-full max-w-full min-w-0 bg-white text-slate-800"
       style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif" }}
     >
+      {actionToast && (
+        <div className="fixed bottom-6 right-6 z-[70] flex items-center gap-2 rounded-xl bg-slate-900 text-white px-4 py-3 shadow-lg">
+          <Check className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span className="text-sm font-medium">{actionToast}</span>
+        </div>
+      )}
       {showStandaloneBackLink && (
         <button
           type="button"
@@ -679,6 +737,7 @@ const ApprovalDashboard: React.FC = () => {
                 const statusLabel = String(status).replace('_', ' ');
                 const requestedBy = workflow.creatorName || workflow.creatorEmail || '—';
                 const createdAt = workflow.createdAt ? new Date(workflow.createdAt) : null;
+                const canManage = isWorkflowCreator(workflow);
 
                 const teamStep = getStep(workflow, 'Team Approval');
                 const technicalStep = getStep(workflow, 'Technical Team');
@@ -739,101 +798,125 @@ const ApprovalDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="flex w-full shrink-0 flex-col gap-2 self-stretch sm:w-auto sm:flex-row sm:self-start lg:self-stretch">
-                        {/* Send Reminder — shown for pending / in_progress workflows */}
-                        {(status === 'pending' || status === 'in_progress') && (
-                          reminderSentId === workflow.id ? (
-                            <span className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-50 border border-emerald-200 px-3.5 py-2 text-sm font-semibold text-emerald-700 whitespace-nowrap">
-                              <Check className="h-4 w-4 shrink-0" />
-                              Reminder Sent
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSendReminder(workflow.id)}
-                              disabled={sendingReminderId === workflow.id}
-                              title="Send a reminder email to the current pending approver"
-                              className={`inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-amber-500 border border-amber-500 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap ${
-                                sendingReminderId === workflow.id
-                                  ? 'opacity-70 cursor-not-allowed'
-                                  : 'hover:bg-amber-600 hover:border-amber-600'
-                              }`}
-                            >
-                              {sendingReminderId === workflow.id ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                                  <span>Sending…</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Bell className="h-4 w-4 shrink-0" />
-                                  <span>Send Reminder</span>
-                                </>
-                              )}
-                            </button>
-                          )
+                      <div className="flex w-full shrink-0 items-center gap-2 self-stretch sm:w-auto sm:self-start lg:self-stretch">
+                        {/* Primary: Proceed to e-Sign — approved only, creator only */}
+                        {status === 'approved' && (
+                          <button
+                            type="button"
+                            onClick={() => canManage
+                              ? handleProceedToEsignWithCheck(workflow)
+                              : alert('Only the requester can proceed to e-sign for this approval.')}
+                            disabled={processingEsignId === workflow.id || resettingEsignId === workflow.id}
+                            title={canManage ? 'Approval complete — add recipients, place fields and send for e-signature' : 'Only the requester can proceed to e-sign for this approval'}
+                            className={`inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold shadow-sm transition-all whitespace-nowrap ${
+                              !canManage
+                                ? 'bg-emerald-300 border-emerald-300 text-white/90 cursor-not-allowed'
+                                : processingEsignId === workflow.id || resettingEsignId === workflow.id
+                                  ? 'bg-emerald-600 border-emerald-600 text-white opacity-70 cursor-not-allowed'
+                                  : 'bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700 hover:border-emerald-700'
+                            }`}
+                          >
+                            {processingEsignId === workflow.id ? (
+                              <>
+                                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                <span>Opening…</span>
+                              </>
+                            ) : (
+                              <>
+                                <PenLine className="h-4 w-4 shrink-0" />
+                                <span>Proceed to e-Sign</span>
+                              </>
+                            )}
+                          </button>
                         )}
 
-                        {/* e-Sign button — shown for all approved workflows, same look regardless of state */}
-                        {status === 'approved' && (
-                          <div className="inline-flex w-full sm:w-auto items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleProceedToEsignWithCheck(workflow)}
-                              disabled={processingEsignId === workflow.id || resettingEsignId === workflow.id}
-                              title="Approval complete — add recipients, place fields and send for e-signature"
-                              className={`inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 rounded-md bg-emerald-600 border border-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap ${
-                                processingEsignId === workflow.id || resettingEsignId === workflow.id
-                                  ? 'opacity-70 cursor-not-allowed'
-                                  : 'hover:bg-emerald-700 hover:border-emerald-700'
-                              }`}
-                            >
-                              {processingEsignId === workflow.id ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                                  <span>Opening…</span>
-                                </>
-                              ) : (
-                                <>
-                                  <PenLine className="h-4 w-4 shrink-0" />
-                                  <span>Proceed to e-Sign</span>
-                                </>
-                              )}
-                            </button>
-                            {/* Reset e-sign — only shown when an esign document already exists */}
-                            {workflow.esignDocumentId && (
-                              <button
-                                type="button"
-                                onClick={() => handleResetEsign(workflow)}
-                                disabled={resettingEsignId === workflow.id || processingEsignId === workflow.id}
-                                title="Reset e-sign — delete current document and start over with new recipients and fields"
-                                aria-label="Reset e-sign"
-                                className={`inline-flex items-center justify-center rounded-md border px-2 py-2 text-sm font-semibold shadow-sm transition-all whitespace-nowrap ${
-                                  resettingEsignId === workflow.id || processingEsignId === workflow.id
-                                    ? 'opacity-70 cursor-not-allowed bg-gray-100 border-gray-200 text-gray-400'
-                                    : 'bg-white border-gray-300 text-gray-600 hover:bg-red-50 hover:border-red-300 hover:text-red-600'
-                                }`}
-                              >
-                                {resettingEsignId === workflow.id ? (
-                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="h-4 w-4 shrink-0" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        {/* Preview — available to everyone */}
                         <button
                           type="button"
                           onClick={() => openAgreementPreview(workflow)}
                           title="Preview document"
                           aria-label="Preview document"
-                          className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-md bg-white border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 focus-visible:ring-offset-0 transition-all whitespace-nowrap"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 transition-all whitespace-nowrap"
                         >
                           <FileText className="h-4 w-4 text-gray-500" />
-                          <span className="sm:hidden">Preview</span>
-                          <span className="hidden sm:inline">Preview Doc</span>
+                          <span>Preview</span>
                         </button>
+
+                        {/* More Actions ⋮ — Reminder, Copy Link, Cancel Approval, Reset (creator only) */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setOpenMenuId(openMenuId === workflow.id ? null : workflow.id)}
+                            title="More actions"
+                            aria-label="More actions"
+                            aria-expanded={openMenuId === workflow.id}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-400"
+                          >
+                            <MoreVertical className="h-5 w-5" />
+                          </button>
+                          {openMenuId === workflow.id && (() => {
+                            const itemCls = canManage
+                              ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                              : 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-400 hover:bg-gray-50 cursor-not-allowed';
+                            const lock = !canManage ? <Lock className="h-3 w-3 ml-auto shrink-0" /> : null;
+                            return (
+                              <>
+                                <div className="fixed inset-0 z-40" aria-hidden onClick={() => setOpenMenuId(null)} />
+                                <div className="absolute right-0 top-full mt-1 z-50 min-w-[190px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                                  {(status === 'pending' || status === 'in_progress') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can send reminders for this approval.'); return; } handleSendReminder(workflow.id); }}
+                                      disabled={canManage && sendingReminderId === workflow.id}
+                                      className={itemCls}
+                                      title={canManage ? undefined : 'Only the requester can send reminders for this approval'}
+                                    >
+                                      {canManage && sendingReminderId === workflow.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Bell className="h-4 w-4 shrink-0" />}
+                                      Reminder
+                                      {lock}
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can copy the approval link.'); return; } handleCopyApprovalLink(workflow); }}
+                                    className={itemCls}
+                                    title={canManage ? undefined : 'Only the requester can copy the approval link'}
+                                  >
+                                    <Copy className="h-4 w-4 shrink-0" />
+                                    Copy Link
+                                    {lock}
+                                  </button>
+                                  {status === 'approved' && workflow.esignDocumentId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can reset e-sign for this approval.'); return; } handleResetEsign(workflow); }}
+                                      disabled={canManage && (resettingEsignId === workflow.id || processingEsignId === workflow.id)}
+                                      className={itemCls}
+                                      title={canManage ? undefined : 'Only the requester can reset e-sign for this approval'}
+                                    >
+                                      {canManage && resettingEsignId === workflow.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <RotateCcw className="h-4 w-4 shrink-0" />}
+                                      Reset e-Sign
+                                      {lock}
+                                    </button>
+                                  )}
+                                  {(status === 'pending' || status === 'in_progress') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can cancel this approval.'); return; } handleCancelApproval(workflow); }}
+                                      disabled={canManage && cancelingApprovalId === workflow.id}
+                                      className={`${itemCls} ${canManage ? 'hover:bg-red-50 hover:text-red-600' : ''}`}
+                                      title={canManage ? undefined : 'Only the requester can cancel this approval'}
+                                    >
+                                      {canManage && cancelingApprovalId === workflow.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                                      Cancel Approval
+                                      {lock}
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </div>
 
