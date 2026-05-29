@@ -10,11 +10,14 @@ interface NavigationProps {
   currentTab: string;
   /** Shows "Start Manual Approval" below Exhibits on every tab; opens manual flow (navigates to /approval if needed). */
   onStartManualApproval?: () => void;
+  /** Called when the Approval link is clicked. Resets the internal tab to the dashboard
+   *  view so clicking Approval while the Start Manual Approval form is open returns to the list. */
+  onApprovalClick?: () => void;
   /** When false, the eSign and eSign Status tabs are grayed out and non-clickable until an approval workflow is approved. */
   isEsignEnabled?: boolean;
 }
 
-const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApproval, isEsignEnabled = true }) => {
+const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApproval, onApprovalClick, isEsignEnabled = true }) => {
   const { isAuthenticated, user } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -66,7 +69,13 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
       <Link
         key={tab.id}
         to={tab.path}
-        onClick={mobile ? () => setIsMobileMenuOpen(false) : undefined}
+        onClick={() => {
+          if (mobile) setIsMobileMenuOpen(false);
+          // Same-path Link clicks are a no-op in react-router. Call the registered
+          // handler so the Approval tab's internal view resets to the dashboard
+          // even when the URL doesn't change.
+          if (tab.id === 'approval') onApprovalClick?.();
+        }}
         className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-gray-700 hover:text-gray-900 hover:bg-white/60 hover:shadow-md ${
           isActive ? 'bg-white/70 text-gray-900 shadow-sm' : ''
         }`}

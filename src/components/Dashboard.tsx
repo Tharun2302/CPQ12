@@ -171,6 +171,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [currentTab, navigate]);
 
+  // Mirror of the start-manual handler: lets the sidebar "Approval" link reset the
+  // internal tab back to the dashboard view when the URL is already /approval
+  // (React Router treats same-path Link clicks as a no-op).
+  const approvalDashboardHandlerRef = useRef<(() => void) | null>(null);
+  const registerApprovalDashboardReset = useCallback((handler: (() => void) | null) => {
+    approvalDashboardHandlerRef.current = handler;
+  }, []);
+  const triggerApprovalDashboard = useCallback(() => {
+    approvalDashboardHandlerRef.current?.();
+  }, []);
+
   // Handle browser back button navigation
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
@@ -604,6 +615,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <ApprovalWorkflow
             quotes={quotes}
             registerStartManualApproval={registerStartManualApproval}
+            registerApprovalDashboardReset={registerApprovalDashboardReset}
             onStartWorkflow={(workflowData) => {
               console.log('Starting approval workflow:', workflowData);
               // Here you can add logic to handle the workflow start
@@ -632,7 +644,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="min-h-screen w-full max-w-[100%] bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100/50">
-      <Navigation currentTab={currentTab} onStartManualApproval={triggerStartManualApproval} isEsignEnabled={isEsignEnabled} />
+      <Navigation currentTab={currentTab} onStartManualApproval={triggerStartManualApproval} onApprovalClick={triggerApprovalDashboard} isEsignEnabled={isEsignEnabled} />
 
       <main className="min-w-0 w-full max-w-full box-border px-2 sm:px-3 py-4 sm:py-6 lg:py-6 transition-all duration-300 lg:ml-64 lg:w-[calc(100%-16rem)] lg:max-w-[calc(100%-16rem)] lg:pl-3 lg:pr-4">
         {renderTabContent()}

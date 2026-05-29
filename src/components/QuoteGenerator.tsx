@@ -1671,7 +1671,7 @@ Quote ID: ${quoteData.id}
       if (!agreementBlob && templateFileForEmail && templateFileForEmail.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
 
-        const companyName = (configureContactInfo?.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Your Company');
+        const companyName = (clientInfo.company || configureContactInfo?.company || dealData?.companyByContact || dealData?.company || 'Your Company');
         const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '' || companyName === 'Demo Company Inc.') ? 'Your Company' : companyName;
         // Manage Standalone uses manageUsers (E99), not numberOfUsers.
         const userCount = configuration?.servicePlan === 'Manage'
@@ -4842,7 +4842,7 @@ Total Price: {{total price}}`;
         console.log('  dealData:', dealData);
         console.log('  configureContactInfo:', configureContactInfo);
         
-        const companyName = configureContactInfo?.company || quoteData.company || clientInfo.company || dealData?.companyByContact || dealData?.company || 'Demo Company Inc.';
+        const companyName = clientInfo.company || quoteData.company || configureContactInfo?.company || dealData?.companyByContact || dealData?.company || 'Demo Company Inc.';
         console.log('  Final companyName:', companyName);
         
         // CRITICAL: Additional fallback if company name is still undefined or empty
