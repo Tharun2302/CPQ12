@@ -254,7 +254,16 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             const extractCombinationName = (exhibit: any): string => {
               // First, try to extract base combination from combinations field
               if (exhibit.combinations && exhibit.combinations.length > 0) {
-                const primaryCombination = exhibit.combinations[0];
+                // Pick the LONGEST non-'all' combination so the most specific variant wins
+                // (e.g. 'dropbox-to-google-sharedrive' beats 'dropbox-to-google'). Otherwise
+                // the agreement renders the truncated form ("Dropbox To Google") instead of
+                // the full combination ("Dropbox To Google Shared Drive").
+                const nonAllCombinations = (exhibit.combinations as string[]).filter((c) => c && c !== 'all');
+                const primaryCombination = nonAllCombinations.length > 0
+                  ? nonAllCombinations.reduce((longest, c) =>
+                      (String(c).length > String(longest).length ? String(c) : String(longest)),
+                      String(nonAllCombinations[0]))
+                  : exhibit.combinations[0];
                 if (primaryCombination && primaryCombination !== 'all') {
                   // Extract base combination (remove include/notinclude and plan type suffixes)
                   let base = primaryCombination
@@ -367,8 +376,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               if (existing) {
                 // Preserve existing config but update planType if not set
                 // Preserve existing instanceType - don't override with sharedInstanceType
+                // Always update exhibitName so cached configs pick up the corrected
+                // (longest-combination) display name.
                 newMessagingConfigs.push({
                   ...existing,
+                  exhibitName: combinationName,
                   planType: existing.planType || exhibitPlanType,
                 });
               } else {
@@ -402,8 +414,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               if (existing) {
                 // Preserve existing config but update planType if not set
                 // Preserve existing instanceType - don't override with sharedInstanceType
+                // Always update exhibitName so cached configs pick up the corrected
+                // (longest-combination) display name.
                 newContentConfigs.push({
                   ...existing,
+                  exhibitName: combinationName,
                   planType: existing.planType || exhibitPlanType,
                 });
               } else {
@@ -431,6 +446,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 existing ? {
                   ...existing,
                   // Preserve existing instanceType - don't override with sharedInstanceType
+                  // Always update exhibitName so cached configs pick up the corrected name.
+                  exhibitName: combinationName,
                 } : {
                   exhibitId: primaryExhibitId,
                   exhibitName: combinationName, // Display the combination name

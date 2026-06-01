@@ -2597,7 +2597,13 @@ app.get('/api/exhibits/:id/file', async (req, res) => {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${exhibit.fileName}"`);
     res.setHeader('Content-Length', fileBuffer.length);
-    
+    // Disable HTTP caching so that exhibit edits made via the admin UI are reflected
+    // immediately on the next agreement generation. Without this, the browser caches
+    // the binary by URL and keeps serving the stale .docx after the file is replaced.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     console.log(`✅ Exhibit file sent: ${exhibit.fileName}`);
     res.send(fileBuffer);
 

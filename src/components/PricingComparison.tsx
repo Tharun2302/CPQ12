@@ -953,7 +953,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     >
                       <option value="Basic">Basic Plan</option>
                       <option value="Standard">Standard Plan</option>
-                      <option value="Advanced">Advanced Plan</option>
                     </select>
                   </div>
                 </div>
@@ -981,7 +980,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     >
                       <option value="Basic">Basic Plan</option>
                       <option value="Standard">Standard Plan</option>
-                      <option value="Advanced">Advanced Plan</option>
                     </select>
                   </div>
                 </div>
@@ -1009,7 +1007,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     >
                       <option value="Basic">Basic Plan</option>
                       <option value="Standard">Standard Plan</option>
-                      <option value="Advanced">Advanced Plan</option>
                     </select>
                   </div>
                 </div>

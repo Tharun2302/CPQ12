@@ -2379,8 +2379,10 @@ Quote ID: ${quoteData.id}
 
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
-                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
-                
+                // Bypass HTTP cache so admin-side exhibit edits show up on the next email send.
+                const cacheBuster = `?t=${Date.now()}`;
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store' });
+
                 if (response.ok) {
                   const blob = await response.blob();
                   exhibitBlobs.push(blob);
@@ -5630,8 +5632,15 @@ Total Price: {{total price}}`;
                     const category = (exhibit.category || 'content').toLowerCase();
                     const combinations = exhibit.combinations || [];
                     
-                    // Find the first non-'all' combination
-                    const combination = combinations.find((c: string) => c !== 'all');
+                    // Find the LONGEST non-'all' combination so the most specific
+                    // variant wins (e.g. "dropbox-to-google-sharedrive" beats
+                    // "dropbox-to-google"), preventing truncated migration names
+                    // like "Dropbox To Google" instead of "Dropbox To Google Shared Drive".
+                    const nonAllCombinations = combinations.filter((c: string) => c !== 'all');
+                    const combination = nonAllCombinations.length > 0
+                      ? nonAllCombinations.reduce((longest: string, c: string) =>
+                          (String(c).length > String(longest).length ? String(c) : String(longest)), String(nonAllCombinations[0]))
+                      : undefined;
                     
                     if (combination) {
                       const label = getCombinationLabel(combination);
@@ -6191,6 +6200,122 @@ Total Price: {{total price}}`;
                 emailConfigs: (cfgAny.emailConfigs || []).length
               });
 
+              // Normalize hyphen variations so "shared-drive" matches "sharedrive" (and
+              // "my-drive" matches "mydrive"). The config-built key uses dashes between
+              // every word; the DB-stored combinations field often glues them together.
+              // Apply to BOTH sides of every compatibility check.
+              const normalizeHyphens = (k: string): string => {
+                if (!k) return k;
+                return k
+                  .replace(/-shared-drive(\b|-|$)/g, '-sharedrive$1')
+                  .replace(/-shared-drives(\b|-|$)/g, '-sharedrives$1')
+                  .replace(/-my-drive(\b|-|$)/g, '-mydrive$1')
+                  .replace(/-share-point(\b|-|$)/g, '-sharepoint$1')
+                  .replace(/-one-drive(\b|-|$)/g, '-onedrive$1');
+              };
+              // Helper: two combination keys are "compatible" when they are equal or
+              // when one is a hierarchical extension of the other (e.g. "dropbox-to-google"
+              // is a PARENT of "dropbox-to-google-sharedrive"). This matters when an exhibit
+              // lists both a generic combination tag and a more-specific child. Strict
+              // equality on the LONGEST key would otherwise skip an exhibit whose only
+              // selected overlap is the parent key.
+              const combosCompatible = (rawA: string, rawB: string): boolean => {
+                const a = normalizeHyphens(rawA || '');
+                const b = normalizeHyphens(rawB || '');
+                if (!a || !b) return false;
+                if (a === b) return true;
+                return a.startsWith(b + '-') || b.startsWith(a + '-');
+              };
+              // Build "canonical user intent" combinations from BOTH selectedCombinationKeys
+              // (the specific keys from selectedExhibits, e.g. "dropbox-to-google-sharedrive"
+              // from a combined exhibit's longest combination) AND configCombinationNames
+              // (the user's dropdown text, which can be truncated to just "dropbox-to-google"
+              // in stale sessions). After collecting all candidates, drop any key that is a
+              // PARENT of another candidate in the same category — only the most specific
+              // (longest) keys survive. Without this, a stale "dropbox-to-google" config
+              // name would let MyDrive exhibits pass the canonical check because they're
+              // technically "children" of that parent.
+              const allCanonicalCandidates = new Set<string>();
+              for (const k of selectedCombinationKeys) {
+                const parts = k.split('|');
+                if (parts.length === 2) {
+                  const norm = normalizeHyphens(applyDashedAliases(parts[1]));
+                  allCanonicalCandidates.add(`${parts[0]}|${norm}`);
+                }
+              }
+              for (const k of configCombinationNames) {
+                const parts = k.split('|');
+                if (parts.length === 2) {
+                  const norm = normalizeHyphens(applyDashedAliases(parts[1].replace(/\s+/g, '-').toLowerCase()));
+                  allCanonicalCandidates.add(`${parts[0]}|${norm}`);
+                }
+              }
+              const canonicalIntentKeys = new Set<string>();
+              for (const k of allCanonicalCandidates) {
+                const parts = k.split('|');
+                if (parts.length !== 2) continue;
+                const cat = parts[0];
+                const val = parts[1];
+                let isExtendedByAnother = false;
+                for (const other of allCanonicalCandidates) {
+                  if (other === k) continue;
+                  const op = other.split('|');
+                  if (op.length !== 2 || op[0] !== cat) continue;
+                  if (op[1].startsWith(val + '-')) {
+                    isExtendedByAnother = true;
+                    break;
+                  }
+                }
+                if (!isExtendedByAnother) {
+                  canonicalIntentKeys.add(k);
+                }
+              }
+              console.log('🎯 Canonical intent keys (most specific per category):', Array.from(canonicalIntentKeys));
+              // True when there is a canonical sibling of `c` selected — i.e. the user
+              // explicitly chose a different specific child under the same parent.
+              // E.g. canonical has 'dropbox-to-google-sharedrive', c='dropbox-to-google-mydrive':
+              // they share parent 'dropbox-to-google' but neither is a prefix of the
+              // other → distinct sibling → reject.
+              const hasCanonicalDistinctSibling = (cRaw: string, category: string): boolean => {
+                const c = normalizeHyphens(cRaw);
+                const canonicalForCat: string[] = [];
+                for (const k of canonicalIntentKeys) {
+                  const prefix = `${category}|`;
+                  if (k.startsWith(prefix)) canonicalForCat.push(k.slice(prefix.length));
+                }
+                if (canonicalForCat.length === 0) return false; // no intent → can't be distinct sibling
+                return canonicalForCat.some((canon) => {
+                  if (combosCompatible(c, canon)) return false; // same / parent / child — fine
+                  // Distinct sibling check: share a non-trivial prefix ending at '-'
+                  // boundary, but neither is a prefix of the other.
+                  let i = 0;
+                  while (i < c.length && i < canon.length && c[i] === canon[i]) i++;
+                  const commonPrefix = c.slice(0, i);
+                  if (!commonPrefix.endsWith('-')) return false;
+                  return commonPrefix.length > 0;
+                });
+              };
+              const exhibitMatchesSelectedKeys = (ex: any, category: string): boolean => {
+                const exCombos = ((ex?.combinations || []) as string[])
+                  .map((c) => String(c).toLowerCase())
+                  .filter((c) => c && c !== 'all')
+                  .map((c) => applyDashedAliases(c));
+                const selectedForCategory: string[] = [];
+                for (const sk of selectedCombinationKeys) {
+                  const prefix = `${category}|`;
+                  if (sk.startsWith(prefix)) selectedForCategory.push(sk.slice(prefix.length));
+                }
+                // Step 1: must have at least one compatible (equal/parent/child) match in selectedCombinationKeys
+                const hasAnyCompatibleMatch = exCombos.some((c) => selectedForCategory.some((sk) => combosCompatible(c, sk)));
+                if (!hasAnyCompatibleMatch) return false;
+                // Step 2: the user's CANONICAL intent (from configs) must not be violated.
+                // If the user chose "Shared Drive" specifically, reject exhibits whose
+                // only matches are sibling drives (MyDrive). Each ex combo that matched
+                // via parent-only must also be compatible with the canonical intent.
+                const isOkVsCanonical = exCombos.every((c) => !hasCanonicalDistinctSibling(c, category));
+                return isOkVsCanonical;
+              };
+
               // Expand: for each selected (category, combination), add ALL exhibits that match that combination
               // AND the selected plan (Basic/Standard/Advanced), including BOTH Include and Not Include variants.
               // IMPORTANT: Build fresh set with only exhibits matching selected plan (don't keep exhibits from other plans).
@@ -6206,23 +6331,39 @@ Total Price: {{total price}}`;
                     skippedExhibits.push({ name: ex.name || 'unknown', reason: 'no base combination' });
                     continue;
                   }
-                  const key = `${category}|${baseCombo}`;
-                  if (!selectedCombinationKeys.has(key)) {
-                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `combination mismatch: ${key}` });
-                    continue; // Skip if not selected combination
-                  }
-                  
-                  // CRITICAL: Verify the exhibit's combinations array actually contains the selected combination
-                  // This prevents exhibits with multiple combinations from being incorrectly matched
-                  // For example, if we selected "google-mydrive-to-google-mydrive", don't include exhibits
-                  // that only have "google-mydrive-to-google-sharedrive" even if they share the same baseCombo pattern
-                  const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
-                  const hasExactMatch = exCombinations.includes('all') || exCombinations.includes(baseCombo);
-                  if (!hasExactMatch) {
-                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `exact combination not in exhibit combinations: ${baseCombo} not in [${exCombinations.join(', ')}]` });
+                  // Accept the exhibit if ANY of its non-'all' combinations is compatible
+                  // (equal OR parent/child) with any combination the user selected. This is
+                  // looser than strict equality on the LONGEST key, which previously skipped
+                  // exhibits whose only overlap with the selection was a parent (e.g. exhibit
+                  // tagged with both "dropbox-to-google" and "dropbox-to-google-sharedrive"
+                  // when only the parent "dropbox-to-google" is in selectedCombinationKeys).
+                  if (!exhibitMatchesSelectedKeys(ex, category)) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `no compatible combination in selection: ${(ex.combinations || []).join(', ')}` });
                     continue;
                   }
-                  
+
+                  const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
+
+                  // Reject "combined" exhibits whose combinations include a DISTINCT sibling
+                  // that the user did not select. Parent/child overlaps with the selection
+                  // are fine (e.g. exhibit tagged with both 'dropbox-to-google' parent and
+                  // 'dropbox-to-google-sharedrive' child is OK when the user selected either
+                  // one). The MyDrive vs Shared Drive case is a distinct sibling and still drops.
+                  const nonGenericCombos = exCombinations.filter((c: string) => c && c !== 'all');
+                  const selectedForCategory: string[] = [];
+                  for (const sk of selectedCombinationKeys) {
+                    const prefix = `${category}|`;
+                    if (sk.startsWith(prefix)) selectedForCategory.push(sk.slice(prefix.length));
+                  }
+                  const hasUnselectedSibling = nonGenericCombos.some((c: string) => {
+                    const aliased = applyDashedAliases(c);
+                    return !selectedForCategory.some((sk) => combosCompatible(aliased, sk));
+                  });
+                  if (hasUnselectedSibling) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `combined exhibit has unselected sibling combinations: [${nonGenericCombos.join(', ')}]` });
+                    continue;
+                  }
+
                   const exhibitPlan = getPlanFromExhibit(ex);
                   // IMPORTANT: Allow exhibits without plan types (generic exhibits) to be included
                   // These are combination-specific but not plan-specific (e.g., "Google Chat to Google Chat")
@@ -6306,15 +6447,44 @@ Total Price: {{total price}}`;
                     for (const ex of allExhibits) {
                       const exCat = (ex.category || 'content').toLowerCase();
                       if (exCat !== category) continue;
-                      
-                      // Check if exhibit's combinations array contains the exact baseCombo
+
+                      // Check if exhibit's combinations array contains the config's baseCombo
+                      // OR a parent/child of it. Strict equality skipped Standard-Plan
+                      // exhibits whose specific child key didn't match the config's parent key.
                       const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
-                      const hasExactMatch = exCombinations.includes('all') || exCombinations.includes(baseCombo);
-                      if (!hasExactMatch) continue;
-                      
-                      // Also verify baseCombo matches (double-check)
+                      const hasCompatibleMatch = exCombinations.includes('all') ||
+                        exCombinations.some((c: string) => combosCompatible(c, baseCombo));
+                      if (!hasCompatibleMatch) continue;
+
+                      // Same compatibility check for the exhibit's own baseCombo.
                       const exBase = getBaseCombination(ex);
-                      if (exBase !== baseCombo) continue;
+                      if (!combosCompatible(exBase, baseCombo)) continue;
+
+                      // Reject "combined" exhibits that list sibling combinations not compatible
+                      // with anything the user selected (e.g. a MyDrive-and-SharedDrive file when
+                      // only Shared Drive is selected). Parent/child overlaps are kept.
+                      const nonGenericCombos = exCombinations.filter((c: string) => c && c !== 'all');
+                      const selectedForCategory: string[] = [];
+                      for (const sk of selectedCombinationKeys) {
+                        const prefix = `${exCat}|`;
+                        if (sk.startsWith(prefix)) selectedForCategory.push(sk.slice(prefix.length));
+                      }
+                      const hasUnselectedSibling = nonGenericCombos.some((c: string) => {
+                        const aliased = applyDashedAliases(c);
+                        return !selectedForCategory.some((sk) => combosCompatible(aliased, sk));
+                      });
+                      if (hasUnselectedSibling) continue;
+
+                      // Canonical-intent enforcement: reject MyDrive exhibits when the user's
+                      // dropdown chose Shared Drive (and vice versa). Even though both might
+                      // pass the parent-compatibility check above, the user's specific intent
+                      // from configCombinationNames must win.
+                      const exAliasedCombos = nonGenericCombos.map((c: string) => applyDashedAliases(c));
+                      const violatesCanonical = exAliasedCombos.some((c: string) => hasCanonicalDistinctSibling(c, exCat));
+                      if (violatesCanonical) {
+                        console.log('⚠️ addForConfig: rejecting exhibit due to canonical-intent mismatch', { name: ex?.name, exAliasedCombos });
+                        continue;
+                      }
                       
                       if (planLower) {
                         const exPlan = getPlanFromExhibit(ex).toLowerCase();
@@ -8357,7 +8527,108 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               // Expand merge list to include sibling Included/Not Included exhibits for the same base combo + plan.
               // (This block is for AGREEMENT generation; do not rely on variables created in the email merge path.)
               let expandedUniqueSelectedExhibitsForMerge: string[] = Array.from(uniqueSelectedExhibitsForMerge);
-              
+
+              // Build canonical intent for THIS scope from contentConfigs[].exhibitName / etc.
+              // We use the user's explicit dropdown selection as the authoritative filter so
+              // sibling expansion below cannot smuggle in distinct-drive variants (MyDrive
+              // when SharedDrive is configured, or vice versa). This duplicates the canonical
+              // logic from the primary expansion site — that one lives in a different scope.
+              const canonicalIntentKeysHere = new Set<string>();
+              const normalizeHyphensHere = (k: string): string => {
+                if (!k) return k;
+                return k
+                  .replace(/-shared-drive(\b|-|$)/g, '-sharedrive$1')
+                  .replace(/-shared-drives(\b|-|$)/g, '-sharedrives$1')
+                  .replace(/-my-drive(\b|-|$)/g, '-mydrive$1')
+                  .replace(/-share-point(\b|-|$)/g, '-sharepoint$1')
+                  .replace(/-one-drive(\b|-|$)/g, '-onedrive$1');
+              };
+              const cfgAnyHere = configuration as any;
+              const normalizeConfigName = (raw: string) => {
+                let cleaned = String(raw || '').trim();
+                const patterns = [
+                  /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i,
+                  /\s+Plan\s*-\s*.*$/i,
+                  /\s+-\s*Included\s+Features$/i,
+                  /\s+-\s*Not\s+Included\s+Features$/i,
+                  /\s+-\s*.*$/i,
+                ];
+                for (const p of patterns) cleaned = cleaned.replace(p, '');
+                return cleaned
+                  .toLowerCase()
+                  .replace(/\s+/g, '-')
+                  .replace(/-(basic|standard|advanced|premium|enterprise)$/, '')
+                  .replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '')
+                  .replace(/-+$/, '');
+              };
+              // Collect all candidate canonical keys, then keep only the most specific
+              // (longest) ones per category. Without this prune, a stale config name like
+              // "Dropbox To Google" (parent) would coexist with the specific
+              // "dropbox-to-google-sharedrive" (child) and the distinct-sibling check
+              // would treat MyDrive as compatible with the parent.
+              const allCandidatesHere = new Set<string>();
+              const collectCanonical = (list: any[] | undefined, cat: string) => {
+                if (!Array.isArray(list)) return;
+                for (const c of list) {
+                  if (c?.exhibitName) {
+                    const norm = normalizeHyphensHere(normalizeConfigName(c.exhibitName));
+                    if (norm) allCandidatesHere.add(`${cat}|${norm}`);
+                  }
+                  // Also include the exhibitId's combinations if we can resolve them
+                  if (c?.exhibitId) {
+                    const ex = lookup.get(String(c.exhibitId));
+                    if (ex?.combinations && Array.isArray(ex.combinations)) {
+                      for (const combo of ex.combinations) {
+                        const lc = String(combo || '').toLowerCase();
+                        if (!lc || lc === 'all') continue;
+                        const norm = normalizeHyphensHere(lc);
+                        allCandidatesHere.add(`${cat}|${norm}`);
+                      }
+                    }
+                  }
+                }
+              };
+              collectCanonical(cfgAnyHere.messagingConfigs, 'messaging');
+              collectCanonical(cfgAnyHere.contentConfigs, 'content');
+              collectCanonical(cfgAnyHere.emailConfigs, 'email');
+              // Keep only maximal keys (those not extended by another candidate in the
+              // same category). This drops parent keys when a more specific child exists.
+              for (const k of allCandidatesHere) {
+                const parts = k.split('|');
+                if (parts.length !== 2) continue;
+                const cat = parts[0];
+                const val = parts[1];
+                let isExtended = false;
+                for (const other of allCandidatesHere) {
+                  if (other === k) continue;
+                  const op = other.split('|');
+                  if (op.length !== 2 || op[0] !== cat) continue;
+                  if (op[1].startsWith(val + '-')) { isExtended = true; break; }
+                }
+                if (!isExtended) canonicalIntentKeysHere.add(k);
+              }
+              console.log('🎯 Secondary expansion canonical intent keys:', Array.from(canonicalIntentKeysHere));
+              const hasCanonicalDistinctSiblingHere = (cRaw: string, cat: string): boolean => {
+                const c = normalizeHyphensHere(cRaw);
+                const canonicalForCat: string[] = [];
+                for (const k of canonicalIntentKeysHere) {
+                  const prefix = `${cat}|`;
+                  if (k.startsWith(prefix)) canonicalForCat.push(k.slice(prefix.length));
+                }
+                if (canonicalForCat.length === 0) return false;
+                return canonicalForCat.some((canon) => {
+                  // Compatible (equal / parent / child) is fine
+                  if (c === canon) return false;
+                  if (c.startsWith(canon + '-') || canon.startsWith(c + '-')) return false;
+                  // Distinct sibling: share prefix ending at '-' boundary
+                  let i = 0;
+                  while (i < c.length && i < canon.length && c[i] === canon[i]) i++;
+                  const commonPrefix = c.slice(0, i);
+                  if (!commonPrefix.endsWith('-')) return false;
+                  return commonPrefix.length > 0;
+                });
+              };
+
               try {
 
                 const expandedForMerge = new Set<string>();
@@ -8374,10 +8645,19 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   const baseCombo = getNormalizedBaseCombination(ex);
                   const planLower = getPlanLowerFromExhibit(ex);
                   const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
-                  
+
+                  // Canonical-intent gate: even if this exhibit was in selectedExhibits
+                  // (e.g. user selected a "combined" folder containing distinct sibling
+                  // variants), drop it if it's a distinct sibling of the user's actual
+                  // dropdown choice.
+                  if (baseCombo && hasCanonicalDistinctSiblingHere(baseCombo, category)) {
+                    console.log('⚠️ Secondary expansion: rejecting exhibit due to canonical-intent mismatch', { name: ex?.name, baseCombo });
+                    continue;
+                  }
+
                   // Create unique key for this exhibit
                   const uniqueKey = `${category}|${baseCombo}|${planLower}|${includeType}`;
-                  
+
                   // Only add if we haven't seen this exact exhibit before
                   if (!seenExhibitKeys.has(uniqueKey)) {
                     seenExhibitKeys.add(uniqueKey);
@@ -8386,19 +8666,36 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   
                   if (!baseCombo || !planLower) continue;
 
-                  // Add sibling exhibits (both Included and Not Included) for same base combo + plan
+                  // Add sibling exhibits (both Included and Not Included) for same base combo + plan.
+                  // Use parent/child compatibility instead of strict equality so a dedicated
+                  // "Standard Not Include" exhibit (whose baseCombo may differ slightly from
+                  // the selected exhibit's baseCombo, e.g. via the longest-combination tie
+                  // break) is still picked up as a sibling.
+                  const combosCompatibleHere = (a: string, b: string): boolean => {
+                    if (!a || !b) return false;
+                    if (a === b) return true;
+                    return a.startsWith(b + '-') || b.startsWith(a + '-');
+                  };
                   for (const other of allExhibits) {
                     if (!other?._id) continue;
                     const otherCat = (other?.category || 'content').toString().toLowerCase();
                     if (otherCat !== category) continue;
                     if (getPlanLowerFromExhibit(other) !== planLower) continue;
-                    if (getNormalizedBaseCombination(other) !== baseCombo) continue;
+                    const otherBase = getNormalizedBaseCombination(other);
+                    if (!combosCompatibleHere(otherBase, baseCombo)) continue;
                     const otherIncludeType = (other?.includeType || (other?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
                     if (otherIncludeType !== 'included' && otherIncludeType !== 'notincluded') continue;
-                    
-                    // Create unique key for sibling exhibit
-                    const otherUniqueKey = `${otherCat}|${baseCombo}|${planLower}|${otherIncludeType}`;
-                    
+
+                    // Canonical-intent gate for sibling expansion. Without this, a sibling
+                    // search seeded by a SharedDrive exhibit could still pull in MyDrive
+                    // exhibits whose baseCombo is parent-compatible with the seed's parent.
+                    if (otherBase && hasCanonicalDistinctSiblingHere(otherBase, otherCat)) continue;
+
+                    // Use the OTHER exhibit's own baseCombo in the dedup key, otherwise two
+                    // exhibits with different baseCombos but compatible via parent/child
+                    // would collide under the same key.
+                    const otherUniqueKey = `${otherCat}|${otherBase}|${planLower}|${otherIncludeType}`;
+
                     // Only add if we haven't seen this exact exhibit before
                     if (!seenExhibitKeys.has(otherUniqueKey)) {
                       seenExhibitKeys.add(otherUniqueKey);
@@ -8418,6 +8715,83 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 // Never fail agreement generation because of merge-list expansion
                 console.warn('⚠️ Could not expand exhibit merge list; using original selection.', e);
                 expandedUniqueSelectedExhibitsForMerge = Array.from(uniqueSelectedExhibitsForMerge);
+              }
+
+              // AUTHORITATIVE OVERRIDE — rebuild the merge list from `allExhibits` directly,
+              // keeping ONLY exhibits whose combinations exactly match the user's canonical
+              // intent. This bypasses every heuristic that may have leaked sibling/combined
+              // exhibits through (e.g. MyDrive content showing when user picked Shared Drive).
+              //
+              // Strict match rule:
+              //   1. Exhibit must contain at least one canonical key (or a child of it).
+              //   2. Exhibit must NOT contain any combination that is a DISTINCT SIBLING of
+              //      any canonical key (e.g. dropbox-to-google-mydrive when canonical is
+              //      dropbox-to-google-sharedrive).
+              // 'all' entries are universal and ignored.
+              try {
+                const canonicalKeysFlat: { cat: string; key: string }[] = [];
+                for (const k of canonicalIntentKeysHere) {
+                  const parts = k.split('|');
+                  if (parts.length === 2) canonicalKeysFlat.push({ cat: parts[0], key: parts[1] });
+                }
+                if (canonicalKeysFlat.length > 0 && allExhibits.length > 0) {
+                  const aliasFix = (raw: string) => {
+                    let k = (raw || '').toLowerCase();
+                    if (k === 'dropbox-to-mydrive' || k.startsWith('dropbox-to-mydrive-')) {
+                      k = k.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                    }
+                    return normalizeHyphensHere(k);
+                  };
+                  const isExactMatch = (ex: any): boolean => {
+                    const exCat = (ex?.category || 'content').toString().toLowerCase();
+                    const exCombos = ((ex?.combinations || []) as string[])
+                      .map((c) => String(c).toLowerCase())
+                      .filter((c) => c && c !== 'all')
+                      .map((c) => aliasFix(c));
+                    if (exCombos.length === 0) return false;
+                    const canonForCat = canonicalKeysFlat.filter((ck) => ck.cat === exCat).map((ck) => ck.key);
+                    if (canonForCat.length === 0) return false;
+                    // Rule 1: at least one of the exhibit's combinations must match a
+                    // canonical key (exact or canonical is a parent of it).
+                    const hasCanon = exCombos.some((c) =>
+                      canonForCat.some((ck) => c === ck || c.startsWith(ck + '-')),
+                    );
+                    if (!hasCanon) return false;
+                    // Rule 2: every exhibit combination must be compatible (equal / parent /
+                    // child) with at least one canonical key. A distinct sibling fails this.
+                    const allCompatible = exCombos.every((c) =>
+                      canonForCat.some((ck) =>
+                        c === ck || c.startsWith(ck + '-') || ck.startsWith(c + '-'),
+                      ),
+                    );
+                    return allCompatible;
+                  };
+                  const selectedPlanLowerForFilter = ((calculation || safeCalculation)?.tier?.name ?? '').toString().toLowerCase();
+                  const strictIds: string[] = [];
+                  for (const ex of allExhibits) {
+                    if (!isExactMatch(ex)) continue;
+                    // Match plan too (skip generic-plan exhibits only if a plan is selected)
+                    if (selectedPlanLowerForFilter) {
+                      const exPlan = (ex?.planType || '').toString().toLowerCase();
+                      const isGenericPlan = !exPlan;
+                      if (!isGenericPlan && exPlan !== selectedPlanLowerForFilter) continue;
+                    }
+                    strictIds.push((ex?._id ?? '').toString());
+                  }
+                  if (strictIds.length > 0) {
+                    console.log('🎯 Authoritative merge list (strict canonical match):', {
+                      before: expandedUniqueSelectedExhibitsForMerge.length,
+                      after: strictIds.length,
+                      strictIds,
+                      canonical: canonicalKeysFlat,
+                    });
+                    expandedUniqueSelectedExhibitsForMerge = strictIds;
+                  } else {
+                    console.warn('⚠️ Strict canonical filter found 0 exhibits — falling back to existing merge list to avoid empty Exhibit section.');
+                  }
+                }
+              } catch (overrideErr) {
+                console.warn('⚠️ Authoritative override skipped due to error:', overrideErr);
               }
 
               const isNotIncludedExhibit = (ex: any): boolean => {
@@ -8484,6 +8858,112 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 dedupedIds.push(id);
               }
 
+              // FINAL FILTER: drop "combined" exhibits whose body covers combinations the
+              // user did not select. A combined exhibit's name lists multiple combinations
+              // (e.g. "Dropbox to Google (MyDrive & Shared Drive)") and its body contains
+              // tables for both — embedding it leaks the un-selected combination's tables
+              // into the agreement. The exhibit metadata's `combinations` array is sometimes
+              // incomplete, so we detect "combined-ness" from the name itself.
+              //
+              // We treat MyDrive vs Shared Drive as the canonical "drive variants" pair. If
+              // the name mentions both AND the user did not select both, drop the exhibit.
+              // We also drop combined exhibits when a dedicated alternative is present in
+              // the same plan/includeType group (belt-and-suspenders).
+              const isCombinedExhibitName = (name: string): boolean => {
+                const n = (name || '').toLowerCase();
+                if (/\([^)]*&[^)]*\)/.test(n)) return true; // "(X & Y)" pattern
+                const hasMyDrive = /mydrive|my\s*drive/.test(n);
+                const hasSharedDrive = /shared\s*drive|shareddrive|shared\s*-\s*drive/.test(n);
+                return hasMyDrive && hasSharedDrive;
+              };
+              // Which "drive variants" appear in a combined name. Used to check whether the
+              // user actually selected all of them.
+              const driveVariantsInName = (name: string): string[] => {
+                const n = (name || '').toLowerCase();
+                const variants: string[] = [];
+                if (/mydrive|my\s*drive/.test(n)) variants.push('mydrive');
+                if (/shared\s*drive|shareddrive|shared\s*-\s*drive/.test(n)) variants.push('shareddrive');
+                return variants;
+              };
+              // Does selectedCombinationKeys include a key for the given drive variant in the
+              // exhibit's category? We don't have direct access to selectedCombinationKeys
+              // here, so derive what the user selected from the OTHER dedicated exhibits in
+              // dedupedIds (those that are not combined). If a dedicated MyDrive exhibit is
+              // in the list, the user selected MyDrive; same for Shared Drive.
+              const dedicatedVariantsSelected = new Set<string>();
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                if (isCombinedExhibitName(ex.name || '')) continue;
+                const variants = driveVariantsInName(ex.name || '');
+                variants.forEach((v) => dedicatedVariantsSelected.add(v));
+              }
+
+              type Group = { combined: string[]; dedicated: string[] };
+              const groupByKey: Record<string, Group> = {};
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                const category = (ex?.category || 'content').toString().toLowerCase();
+                const planLower = getPlanLowerFromExhibit(ex);
+                const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                const groupKey = `${category}|${planLower}|${includeType}`;
+                if (!groupByKey[groupKey]) groupByKey[groupKey] = { combined: [], dedicated: [] };
+                if (isCombinedExhibitName(ex.name || '')) {
+                  groupByKey[groupKey].combined.push(id);
+                } else {
+                  groupByKey[groupKey].dedicated.push(id);
+                }
+              }
+              const dropCombinedIds = new Set<string>();
+              for (const groupKey of Object.keys(groupByKey)) {
+                const g = groupByKey[groupKey];
+                for (const id of g.combined) {
+                  const ex = lookup.get(id);
+                  if (!ex) continue;
+                  const variantsInThisCombined = driveVariantsInName(ex.name || '');
+                  // Rule A: dedicated alternative present in same plan/includeType group → drop combined.
+                  // This is the safe case — we have a better option, drop the combined to avoid duplicates.
+                  if (g.dedicated.length > 0) {
+                    dropCombinedIds.add(id);
+                    console.warn('⚠️ Dropping combined exhibit (dedicated alternative present)', { id, name: ex?.name, groupKey, keptDedicated: g.dedicated });
+                    continue;
+                  }
+                  // Rule B: combined exhibit covers a drive variant the user did not select.
+                  // ONLY drop if dropping still leaves at least one OTHER combined exhibit in
+                  // this group — otherwise the entire Exhibit section (e.g. "Exhibit 2 - Not
+                  // Included") would be empty, which is worse than including a slightly-too-
+                  // broad combined exhibit. The merger renders "Exhibit 2" header even with
+                  // imperfect content; an empty section just confuses the reader.
+                  if (variantsInThisCombined.length >= 2) {
+                    const userSelectedAll = variantsInThisCombined.every((v) => dedicatedVariantsSelected.has(v));
+                    if (!userSelectedAll) {
+                      const remainingCombined = g.combined.filter((cid) => cid !== id && !dropCombinedIds.has(cid));
+                      if (remainingCombined.length > 0) {
+                        dropCombinedIds.add(id);
+                        console.warn('⚠️ Dropping combined exhibit (covers unselected drive variant)', {
+                          id, name: ex?.name, groupKey, variantsInThisCombined, dedicatedVariantsSelected: Array.from(dedicatedVariantsSelected),
+                        });
+                      } else {
+                        console.log('ℹ️ Keeping combined exhibit despite unselected drive variant — it is the only option for this group', {
+                          id, name: ex?.name, groupKey, variantsInThisCombined,
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+              const filteredDedupedIds = dedupedIds.filter((id) => !dropCombinedIds.has(id));
+              if (filteredDedupedIds.length !== dedupedIds.length) {
+                console.log('📎 Final combined-exhibit filter:', {
+                  before: dedupedIds.length,
+                  after: filteredDedupedIds.length,
+                  dropped: dropCombinedIds.size,
+                });
+              }
+              dedupedIds.length = 0;
+              dedupedIds.push(...filteredDedupedIds);
+
               // Sort exhibits: Included first, then Not Included; within each group: category + displayOrder
               const categoryOrder = (cat: string) => {
                 const normalized = (cat || 'content').toLowerCase();
@@ -8511,15 +8991,21 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               for (const exhibitId of sortedExhibits) {
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
-                
+
                 // Get exhibit metadata FIRST (before fetching file)
                 const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                 if (!exhibit) {
                   console.warn(`⚠️ Exhibit ${exhibitId} not found in metadata, skipping`);
                   continue;
                 }
-                
-                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file`);
+
+                // Bypass any HTTP cache so admin-side edits to the exhibit show up here
+                // on the next agreement generation. We use BOTH a no-store fetch option AND a
+                // timestamp query param — the option handles browsers that honor it, the query
+                // param defeats Vite's dev proxy and any intermediate proxy that ignores
+                // Cache-Control headers (which is why a backend-only fix wasn't enough).
+                const cacheBuster = `?t=${Date.now()}`;
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store' });
                 
                 if (response.ok) {
                   const blob = await response.blob();
@@ -8563,11 +9049,39 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 const { mergeDocxFiles } = await import('../utils/docxMerger');
                 
                 processedDocument = await mergeDocxFiles(processedDocument, exhibitBlobs, exhibitMetadata);
-                
+
                 console.log('✅ Exhibits merged successfully!', {
                   totalExhibits: exhibitBlobs.length,
                   finalSize: processedDocument.size
                 });
+
+                // Post-merge fix: some exhibit DOCX files have a hardcoded plan label
+                // ("Basic Plan Features" / "Standard Plan Features" / "Advanced Plan Features")
+                // in their table-header row that doesn't match the user's actually-selected plan
+                // (a data issue in the source exhibits, not the filter). Normalize the label
+                // here so the rendered agreement matches the selected tier.
+                try {
+                  const selectedTierName = (calculation || safeCalculation)?.tier?.name;
+                  if (selectedTierName && processedDocument instanceof Blob) {
+                    const PizZipMod = (await import('pizzip')).default;
+                    const buf = await processedDocument.arrayBuffer();
+                    const zip = new PizZipMod(buf);
+                    const docXmlFile = zip.file('word/document.xml');
+                    if (docXmlFile) {
+                      const xml = docXmlFile.asText();
+                      const planLabelRegex = /(Basic|Standard|Advanced)\s+Plan\s+Features/gi;
+                      const fixedXml = xml.replace(planLabelRegex, `${selectedTierName} Plan Features`);
+                      if (fixedXml !== xml) {
+                        zip.file('word/document.xml', fixedXml);
+                        const outBuf = zip.generate({ type: 'arraybuffer' });
+                        processedDocument = new Blob([outBuf], { type: processedDocument.type });
+                        console.log(`✅ Normalized exhibit plan label to "${selectedTierName} Plan Features"`);
+                      }
+                    }
+                  }
+                } catch (planLabelError) {
+                  console.warn('⚠️ Failed to normalize exhibit plan label (non-fatal):', planLabelError);
+                }
               }
             } catch (mergeError) {
               console.error('❌ Error merging exhibits:', mergeError);

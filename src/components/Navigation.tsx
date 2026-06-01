@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { FileText, Upload, Building, Menu, X, CheckCircle, FolderOpen, PenLine, BarChart3, FileCheck, Lock, HelpCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import UserMenu from './auth/UserMenu';
@@ -19,8 +19,16 @@ interface NavigationProps {
 
 const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApproval, onApprovalClick, isEsignEnabled = true }) => {
   const { isAuthenticated, user } = useAuth();
+  const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+
+  // Fallback when the host page didn't supply a handler (e.g. the e-sign pages
+  // render Navigation directly without going through Dashboard). Navigating to
+  // /approval with this state flag tells ApprovalWorkflow to land on the
+  // Start Manual Approval form.
+  const handleManualApprovalClick = onStartManualApproval
+    ?? (() => navigate('/approval', { state: { openManualApproval: true } }));
 
   // Close mobile menu when window is resized to larger screens
   useEffect(() => {
@@ -112,21 +120,22 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
 
           {/* Nav Links */}
           <div className="flex-1 flex flex-col py-4 px-3 space-y-2 overflow-y-auto">
-            {tabs.filter((t) => t.id !== 'esign' && t.id !== 'esign-tracking').map((tab) => renderTabLink(tab))}
+            {tabs.filter((t) => !['esign', 'esign-tracking', 'templates', 'exhibits', 'documents'].includes(t.id)).map((tab) => renderTabLink(tab))}
 
-            {onStartManualApproval && (
-              <button
-                type="button"
-                onClick={onStartManualApproval}
-                className="flex w-full shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold text-gray-700 transition-all duration-300 hover:bg-white/60 hover:text-gray-900 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-              >
-                <FileCheck className="h-5 w-5 shrink-0" />
-                <span className="leading-tight">Start Manual Approval</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleManualApprovalClick}
+              className="flex w-full shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold text-gray-700 transition-all duration-300 hover:bg-white/60 hover:text-gray-900 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            >
+              <FileCheck className="h-5 w-5 shrink-0" />
+              <span className="leading-tight">Manual Approval</span>
+            </button>
 
             {(() => { const t = tabs.find((x) => x.id === 'esign'); return t ? renderTabLink(t) : null; })()}
             {(() => { const t = tabs.find((x) => x.id === 'esign-tracking'); return t ? renderTabLink(t) : null; })()}
+            {(() => { const t = tabs.find((x) => x.id === 'templates'); return t ? renderTabLink(t) : null; })()}
+            {(() => { const t = tabs.find((x) => x.id === 'exhibits'); return t ? renderTabLink(t) : null; })()}
+            {(() => { const t = tabs.find((x) => x.id === 'documents'); return t ? renderTabLink(t) : null; })()}
           </div>
 
           {/* Bottom: Help + User Menu */}
@@ -180,21 +189,22 @@ const Navigation: React.FC<NavigationProps> = ({ currentTab, onStartManualApprov
           {isAuthenticated && isMobileMenuOpen && (
             <div className="border-t border-blue-100/50 py-4">
               <div className="flex flex-col space-y-2">
-                {tabs.filter((t) => t.id !== 'esign' && t.id !== 'esign-tracking').map((tab) => renderTabLink(tab, true))}
+                {tabs.filter((t) => !['esign', 'esign-tracking', 'templates', 'exhibits', 'documents'].includes(t.id)).map((tab) => renderTabLink(tab, true))}
 
-                {onStartManualApproval && (
-                  <button
-                    type="button"
-                    onClick={() => { setIsMobileMenuOpen(false); onStartManualApproval(); }}
-                    className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left font-semibold text-gray-700 transition-all duration-300 hover:bg-white/60 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                  >
-                    <FileCheck className="h-5 w-5 shrink-0" />
-                    <span className="leading-tight">Start Manual Approval</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => { setIsMobileMenuOpen(false); handleManualApprovalClick(); }}
+                  className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left font-semibold text-gray-700 transition-all duration-300 hover:bg-white/60 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                >
+                  <FileCheck className="h-5 w-5 shrink-0" />
+                  <span className="leading-tight">Manual Approval</span>
+                </button>
 
                 {(() => { const t = tabs.find((x) => x.id === 'esign'); return t ? renderTabLink(t, true) : null; })()}
                 {(() => { const t = tabs.find((x) => x.id === 'esign-tracking'); return t ? renderTabLink(t, true) : null; })()}
+                {(() => { const t = tabs.find((x) => x.id === 'templates'); return t ? renderTabLink(t, true) : null; })()}
+                {(() => { const t = tabs.find((x) => x.id === 'exhibits'); return t ? renderTabLink(t, true) : null; })()}
+                {(() => { const t = tabs.find((x) => x.id === 'documents'); return t ? renderTabLink(t, true) : null; })()}
 
                 <button
                   type="button"
