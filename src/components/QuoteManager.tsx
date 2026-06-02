@@ -1469,7 +1469,7 @@ ZENOP Pro Solutions Team`;
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredSavedDocuments.map((doc) => (
+            {filteredSavedDocuments.map((doc, index) => (
               <div
                 key={doc.id}
                 className="bg-white rounded-xl shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow"
@@ -1486,6 +1486,9 @@ ZENOP Pro Solutions Team`;
                       </p>
                     </div>
                   </div>
+                  <span className="text-xs font-semibold text-gray-500 bg-gray-100 rounded-full px-2.5 py-1 flex-shrink-0">
+                    #{index + 1}
+                  </span>
                 </div>
 
                 <div className="space-y-2 mb-4">

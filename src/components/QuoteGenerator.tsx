@@ -2946,63 +2946,9 @@ Total Price: {{total price}}`;
         pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
       }
       
-      // Save PDF to MongoDB database
-      try {
-        console.log('💾 Saving PDF to MongoDB from PDF button...');
-        const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
-        const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
-        
-        const savedDoc: any = {
-          fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
-          fileData: base64Data,
-          fileSize: pdfBlob.size,
-          clientName: clientInfo.clientName || 'Unknown',
-          clientEmail: clientInfo.clientEmail || '',
-          company: clientInfo.company || 'Unknown Company',
-          templateName: selectedTemplate?.name || 'Agreement',
-          generatedDate: new Date().toISOString(),
-          quoteId: quoteId,
-          metadata: {
-            totalCost: calculation?.totalCost || 0,
-            duration: configuration?.duration || 0,
-            migrationType: configuration?.migrationType || 'Messaging',
-            numberOfUsers: configuration?.numberOfUsers || 0
-          }
-        };
-        
-        // Also save DOCX if available (for Word downloads)
-        if (originalDocxAgreement) {
-          console.log('💾 Also saving DOCX to MongoDB...');
-          const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
-          const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
-          const dateStr = new Date().toISOString().split('T')[0];
-          savedDoc.docxFileData = docxBase64;
-          savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
-        }
+      // NOTE: Downloading the PDF intentionally does NOT save it to the Documents page.
+      // Documents are persisted only via the "Save" button and "Send for Approval".
 
-        Object.assign(savedDoc, buildDateEditSnapshot());
-
-        await documentServiceMongoDB.saveDocument(savedDoc);
-        console.log('✅ PDF saved to MongoDB successfully from PDF button');
-        
-        // Show success notification
-        const notification = document.createElement('div');
-        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
-        notification.innerHTML = `
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-          </svg>
-          <span>PDF saved to document</span>
-        `;
-        document.body.appendChild(notification);
-        setTimeout(() => {
-          notification.remove();
-        }, 3000);
-      } catch (error) {
-        console.error('❌ Error saving PDF to MongoDB:', error);
-        // Continue with download even if saving fails
-      }
-      
       const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
       link.href = url;
@@ -3355,49 +3301,17 @@ Total Price: {{total price}}`;
     setIsAddingEsignFields(true);
     setAddEsignFieldsProgress('Preparing…');
     try {
-      let pdfBlob: Blob;
-      if (processedAgreement.type === 'application/pdf') {
-        pdfBlob = processedAgreement;
-      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
-        pdfBlob = cachedPdfAgreement;
-      } else {
-        setAddEsignFieldsProgress('Converting…');
-        const { templateService } = await import('../utils/templateService');
-        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
-      }
-      setAddEsignFieldsProgress('Saving…');
-      const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
-      const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
-
-      const savedDoc: any = {
-        fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
-        fileData: base64Data,
-        fileSize: pdfBlob.size,
-        clientName: clientInfo.clientName || 'Unknown',
-        clientEmail: clientInfo.clientEmail || '',
-        company: clientInfo.company || 'Unknown Company',
-        templateName: selectedTemplate?.name || 'Agreement',
-        generatedDate: new Date().toISOString(),
-        quoteId: quoteId,
-        metadata: {
-          totalCost: Number(totalCost) || 0,
-          duration: configuration?.duration || 0,
-          migrationType: configuration?.migrationType || 'Messaging',
-          numberOfUsers: configuration?.numberOfUsers || 0
-        }
-      };
-      if (originalDocxAgreement) {
-        const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
-        const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
-        const dateStr = new Date().toISOString().split('T')[0];
-        savedDoc.docxFileData = docxBase64;
-        savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
-      }
-
-      Object.assign(savedDoc, buildDateEditSnapshot());
-
-      const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
       setAddEsignFieldsProgress('Opening…');
+
+      // Reuse the already-approved document instead of saving a duplicate.
+      // "Add e-sign fields" is always reached AFTER Send-for-Approval, so the agreement
+      // already exists in the Documents collection (manual e-sign uploads are a separate
+      // flow). This keeps the Documents page limited to entries created by the "Save"
+      // button and "Send for Approval".
+      const documentId = activeWorkflowDocumentId;
+      if (!documentId) {
+        throw new Error('No approved document was found to send for e-signature. Please complete the approval step first.');
+      }
 
       const creatorEmail = (() => {
         try {
@@ -11007,7 +10921,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         }`}
                         title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Open in Word-style editor'}
                       >
-                        {isStartingOnlyOffice ? '⏳ Opening…' : '✏️ Edit'}
+                        {isStartingOnlyOffice ? '⏳ Opening…' : '✏️ Edit for RedLine'}
                       </button>
                       <button
                         onClick={() => setShowApprovalModal(true)}
