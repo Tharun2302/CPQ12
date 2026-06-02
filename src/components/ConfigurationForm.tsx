@@ -249,10 +249,23 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               return base;
             };
 
+            // Helper: derive a folder-style label from the exhibit NAME by stripping the
+            // plan / include suffix. For "Egnyte to Google MyDrive Standard Plan - Standard
+            // Include" this returns "Egnyte to Google MyDrive".
+            const extractLabelFromName = (rawName: string): string => {
+              const s = String(rawName || '').trim();
+              if (!s || s === 'New Exhibit') return '';
+              const dashIdx = s.indexOf(' - ');
+              let base = dashIdx > 0 ? s.substring(0, dashIdx) : s;
+              base = base.replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '').trim();
+              return base;
+            };
+
             // Helper function to extract base combination from exhibit
             // Priority: Use combinations field (base combination), fallback to name extraction
             const extractCombinationName = (exhibit: any): string => {
               // First, try to extract base combination from combinations field
+              let comboLabel = '';
               if (exhibit.combinations && exhibit.combinations.length > 0) {
                 // Pick the LONGEST non-'all' combination so the most specific variant wins
                 // (e.g. 'dropbox-to-google-sharedrive' beats 'dropbox-to-google'). Otherwise
@@ -274,18 +287,37 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
                   if (base && base !== 'all' && base.length >= 3) {
                     const baseKey = normalizeBaseCombinationKey(base);
-                    const label = baseKeyToDisplayLabel(baseKey);
-                    return label || base.trim();
+                    comboLabel = baseKeyToDisplayLabel(baseKey) || base.trim();
                   }
                 }
               }
-              
+
+              // If the exhibit's NAME contains a more specific destination than the
+              // combinations-derived label (e.g. name "Egnyte to Google MyDrive" vs combo
+              // "Egnyte To Google" — because the exhibit's combinations array only has a
+              // generic parent like 'egnyte-to-google'), prefer the name-derived label.
+              const nameLabel = extractLabelFromName(exhibit.name || '');
+              const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+              if (nameLabel && comboLabel) {
+                const nameNorm = normalize(nameLabel);
+                const comboNorm = normalize(comboLabel);
+                // Use the name when it's strictly more specific than the combo label.
+                // Two cases: name extends combo with extra words, OR name and combo differ
+                // beyond the shared parent (different destination).
+                const nameExtendsCombo = nameNorm !== comboNorm && nameNorm.startsWith(comboNorm + ' ');
+                const namesAgree = nameNorm === comboNorm || nameNorm.startsWith(comboNorm + ' ') || comboNorm.startsWith(nameNorm + ' ');
+                if (nameExtendsCombo || !namesAgree) {
+                  return nameLabel;
+                }
+              }
+              if (comboLabel) return comboLabel;
+
               // Fallback: Extract from exhibit name (for backward compatibility)
               const exhibitName = exhibit.name || '';
               if (!exhibitName || exhibitName === 'New Exhibit') {
                 return exhibitName;
               }
-              
+
               // Remove common suffixes like:
               // - " Standard Plan - Included Features"
               // - " Advanced Plan - Included Features"
@@ -297,12 +329,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 /\s+-\s*Not\s+Included\s+Features$/i,
                 /\s+-\s*.*$/i,
               ];
-              
+
               let cleaned = exhibitName;
               for (const pattern of patterns) {
                 cleaned = cleaned.replace(pattern, '');
               }
-              
+
               return cleaned.trim() || exhibitName;
             };
             

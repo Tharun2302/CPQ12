@@ -8718,17 +8718,111 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               }
 
               // AUTHORITATIVE OVERRIDE — rebuild the merge list from `allExhibits` directly,
-              // keeping ONLY exhibits whose combinations exactly match the user's canonical
-              // intent. This bypasses every heuristic that may have leaked sibling/combined
-              // exhibits through (e.g. MyDrive content showing when user picked Shared Drive).
+              // keeping ONLY exhibits whose NAME or combinations match the user's intent.
               //
-              // Strict match rule:
-              //   1. Exhibit must contain at least one canonical key (or a child of it).
-              //   2. Exhibit must NOT contain any combination that is a DISTINCT SIBLING of
-              //      any canonical key (e.g. dropbox-to-google-mydrive when canonical is
-              //      dropbox-to-google-sharedrive).
-              // 'all' entries are universal and ignored.
+              // Two layers (in order):
+              //   A. NAME-BASED — derive canonical name patterns from the names of the
+              //      user's selectedExhibits (e.g. "Egnyte to Google MyDrive" from a name
+              //      like "Egnyte to Google MyDrive Standard Plan - Standard Include").
+              //      Reject any exhibit whose name base doesn't match. This is the most
+              //      reliable signal because the user explicitly checked those files.
+              //   B. COMBINATIONS-BASED (fallback if name-based finds nothing) — strict
+              //      combination check (no distinct siblings).
               try {
+                // Extract a normalized name base (strip plan/include suffix, collapse drive
+                // variants so "MyDrive" / "My Drive" / "Mydrive" compare equal).
+                const extractNameBase = (rawName: string): string => {
+                  const s = String(rawName || '').trim();
+                  if (!s) return '';
+                  const dashIdx = s.indexOf(' - ');
+                  let base = dashIdx > 0 ? s.substring(0, dashIdx) : s;
+                  base = base.replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '').trim();
+                  return base
+                    .toLowerCase()
+                    .replace(/\s+/g, ' ')
+                    .replace(/\bmy\s*drive\b/g, 'mydrive')
+                    .replace(/\bshared?\s*drive\b/g, 'sharedrive')
+                    .replace(/\bone\s*drive\b/g, 'onedrive')
+                    .replace(/\bshare\s*point\b/g, 'sharepoint')
+                    .trim();
+                };
+                const canonicalNames = new Set<string>();
+                for (const id of (selectedExhibits || [])) {
+                  const ex = lookup.get(String(id || ''));
+                  if (ex?.name) {
+                    const base = extractNameBase(ex.name);
+                    if (base) canonicalNames.add(base);
+                  }
+                }
+                const selectedPlanLowerForFilter = ((calculation || safeCalculation)?.tier?.name ?? '').toString().toLowerCase();
+                let nameFilterApplied = false;
+                if (canonicalNames.size > 0 && allExhibits.length > 0) {
+                  console.log('🎯 Canonical name bases (from selectedExhibits):', Array.from(canonicalNames));
+                  // Collect every exhibit that matches by name + plan, then group by
+                  // (name base, plan, includeType) so we can pick the freshest of duplicates.
+                  type Candidate = { id: string; ex: any; ts: number; includeType: string; plan: string };
+                  const candidates: Candidate[] = [];
+                  const tsOf = (e: any): number => {
+                    const updated = e?.updatedAt ? new Date(e.updatedAt).getTime() : NaN;
+                    if (!isNaN(updated)) return updated;
+                    const created = e?.createdAt ? new Date(e.createdAt).getTime() : NaN;
+                    if (!isNaN(created)) return created;
+                    // Version number is monotonic upward when present.
+                    const v = Number(e?.version || 0);
+                    return v;
+                  };
+                  for (const ex of allExhibits) {
+                    const exBase = extractNameBase(ex?.name || '');
+                    if (!exBase || !canonicalNames.has(exBase)) continue;
+                    const exPlan = (ex?.planType || '').toString().toLowerCase();
+                    if (selectedPlanLowerForFilter) {
+                      const isGenericPlan = !exPlan;
+                      if (!isGenericPlan && exPlan !== selectedPlanLowerForFilter) continue;
+                    }
+                    const inferredInclude = (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                    candidates.push({ id: (ex?._id ?? '').toString(), ex, ts: tsOf(ex), includeType: inferredInclude, plan: exPlan });
+                  }
+                  // Group by (name base, plan, includeType) — pick the candidate with the
+                  // most recent updatedAt/createdAt/version. This prefers the freshest
+                  // upload when legacy duplicates exist in the DB.
+                  const winners = new Map<string, Candidate>();
+                  for (const cand of candidates) {
+                    const exBase = extractNameBase(cand.ex?.name || '');
+                    const groupKey = `${exBase}|${cand.plan}|${cand.includeType}`;
+                    const existing = winners.get(groupKey);
+                    if (!existing || cand.ts > existing.ts) {
+                      winners.set(groupKey, cand);
+                    }
+                  }
+                  const droppedAsLegacy = candidates
+                    .filter((c) => {
+                      const exBase = extractNameBase(c.ex?.name || '');
+                      const k = `${exBase}|${c.plan}|${c.includeType}`;
+                      return winners.get(k)?.id !== c.id;
+                    })
+                    .map((c) => ({ id: c.id, name: c.ex?.name, ts: c.ts }));
+                  if (droppedAsLegacy.length > 0) {
+                    console.warn('⚠️ Dropped legacy/older duplicate exhibits in favor of newest:', droppedAsLegacy);
+                  }
+                  const nameMatchedIds = Array.from(winners.values()).map((c) => c.id);
+                  if (nameMatchedIds.length > 0) {
+                    console.log('🎯 Authoritative merge list (NAME-BASED strict match, newest-only):', {
+                      before: expandedUniqueSelectedExhibitsForMerge.length,
+                      after: nameMatchedIds.length,
+                      ids: nameMatchedIds,
+                      winners: Array.from(winners.values()).map((c) => ({ id: c.id, name: c.ex?.name, plan: c.plan, includeType: c.includeType, ts: c.ts })),
+                    });
+                    expandedUniqueSelectedExhibitsForMerge = nameMatchedIds;
+                    nameFilterApplied = true;
+                  } else {
+                    console.warn('⚠️ NAME-BASED filter matched 0 exhibits — trying combinations-based filter');
+                  }
+                }
+                if (nameFilterApplied) {
+                  // Skip the combinations-based filter — name-based already worked.
+                  throw new Error('__NAME_BASED_FILTER_APPLIED__');
+                }
+                // Fallback: combinations-based strict filter.
                 const canonicalKeysFlat: { cat: string; key: string }[] = [];
                 for (const k of canonicalIntentKeysHere) {
                   const parts = k.split('|');
@@ -8791,7 +8885,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   }
                 }
               } catch (overrideErr) {
-                console.warn('⚠️ Authoritative override skipped due to error:', overrideErr);
+                if (overrideErr instanceof Error && overrideErr.message === '__NAME_BASED_FILTER_APPLIED__') {
+                  // Sentinel — name-based filter already produced a clean list, skipping
+                  // the combinations-based fallback is intentional, not an error.
+                } else {
+                  console.warn('⚠️ Authoritative override skipped due to error:', overrideErr);
+                }
               }
 
               const isNotIncludedExhibit = (ex: any): boolean => {

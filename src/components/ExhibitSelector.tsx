@@ -662,18 +662,46 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       }
       
       if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 3) {
-        // Use base combination as folder name
-        const folderName = formatCombinationForDisplay(baseCombination);
-        
+        // Default folder name derived from the combination key.
+        let folderName = formatCombinationForDisplay(baseCombination);
+
+        // Override: when the combination key is a GENERIC PARENT covering multiple
+        // destinations (e.g. "nfs-to-microsoft" → both OneDrive AND SharePoint Online
+        // exhibits), use the destination implied by the exhibit's NAME instead. Without
+        // this, exhibits with different destinations end up lumped into one folder
+        // because their `combinations` field doesn't include a specific child key.
+        // Heuristic: extract "<source> to <destination>" from the exhibit name (the
+        // segment before " - " and before " Standard|Basic|Advanced Plan").
+        const exhibitNameRaw = (exhibit.name || '').toString();
+        const dashIdx = exhibitNameRaw.indexOf(' - ');
+        const nameBase = (dashIdx > 0 ? exhibitNameRaw.substring(0, dashIdx) : exhibitNameRaw)
+          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
+          .trim();
+        if (nameBase) {
+          // Convert the combination's display label to a comparable shape; if the
+          // exhibit-name-derived label is MORE SPECIFIC (longer / additional segments
+          // beyond the combination label), prefer it as the folder name.
+          const comboNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+          const nameNorm = nameBase.toLowerCase().replace(/\s+/g, ' ').trim();
+          const isMoreSpecific = nameNorm !== comboNorm && nameNorm.length > comboNorm.length;
+          // Also override when the names imply different destinations (e.g. combo says
+          // "Nfs To Microsoft" but the name says "NFS to OneDrive" — sharing only the
+          // source/parent, NOT the destination).
+          const namesAgree = nameNorm === comboNorm || nameNorm.startsWith(comboNorm + ' ') || comboNorm.startsWith(nameNorm + ' ');
+          if (isMoreSpecific || !namesAgree) {
+            folderName = nameBase;
+          }
+        }
+
         // Skip rendering these groups entirely in the UI (case-insensitive check)
         const folderNameLower = folderName.toLowerCase();
-        const shouldHide = Array.from(hiddenGroupNames).some(hiddenName => 
+        const shouldHide = Array.from(hiddenGroupNames).some(hiddenName =>
           hiddenName.toLowerCase() === folderNameLower
         );
         if (shouldHide) {
           return;
         }
-        
+
         if (!groups.has(folderName)) {
           groups.set(folderName, []);
         }
