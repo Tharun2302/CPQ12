@@ -16,7 +16,8 @@ import {
   Send,
   AlertCircle,
   Palette,
-  FileDown
+  FileDown,
+  Search
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -72,6 +73,8 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     useState<DealDocumentsApprovalFilter>('all');
   const [savedDocuments, setSavedDocuments] = useState<SavedDocument[]>([]);
   const [savedDocumentsTotalCount, setSavedDocumentsTotalCount] = useState(0);
+  // Free-text search over the loaded saved documents (company, contact, email, template).
+  const [documentSearchQuery, setDocumentSearchQuery] = useState('');
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -1331,6 +1334,17 @@ ZENOP Pro Solutions Team`;
     }
   };
 
+  // Apply the free-text search to the loaded documents (case-insensitive match on
+  // company, contact name, email, and template/migration type).
+  const normalizedDocSearch = documentSearchQuery.trim().toLowerCase();
+  const filteredSavedDocuments = normalizedDocSearch
+    ? savedDocuments.filter((doc) =>
+        [doc.company, doc.clientName, doc.clientEmail, doc.templateName]
+          .filter(Boolean)
+          .some((field) => String(field).toLowerCase().includes(normalizedDocSearch))
+      )
+    : savedDocuments;
+
   return (
     <div className="max-w-6xl mx-auto p-8">
       {/* Header */}
@@ -1366,22 +1380,50 @@ ZENOP Pro Solutions Team`;
               </p>
             )}
           </div>
-          <div className="flex flex-col gap-1 sm:items-end">
-            <label htmlFor="deal-doc-approval-filter" className="text-xs font-medium text-gray-600">
-              Approval workflow
-            </label>
-            <select
-              id="deal-doc-approval-filter"
-              value={dealDocumentsApprovalFilter}
-              onChange={(e) =>
-                setDealDocumentsApprovalFilter(e.target.value as DealDocumentsApprovalFilter)
-              }
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[220px]"
-            >
-              <option value="all">All documents</option>
-              <option value="in_workflow">In approval workflow</option>
-              <option value="no_workflow">No approval workflow</option>
-            </select>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="deal-doc-search" className="text-xs font-medium text-gray-600">
+                Search documents
+              </label>
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  id="deal-doc-search"
+                  type="text"
+                  value={documentSearchQuery}
+                  onChange={(e) => setDocumentSearchQuery(e.target.value)}
+                  placeholder="Company, contact, email, type…"
+                  className="rounded-lg border border-gray-300 bg-white pl-9 pr-8 py-2 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[260px]"
+                />
+                {documentSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setDocumentSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                    aria-label="Clear search"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 sm:items-end">
+              <label htmlFor="deal-doc-approval-filter" className="text-xs font-medium text-gray-600">
+                Approval workflow
+              </label>
+              <select
+                id="deal-doc-approval-filter"
+                value={dealDocumentsApprovalFilter}
+                onChange={(e) =>
+                  setDealDocumentsApprovalFilter(e.target.value as DealDocumentsApprovalFilter)
+                }
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[220px]"
+              >
+                <option value="all">All documents</option>
+                <option value="in_workflow">In approval workflow</option>
+                <option value="no_workflow">No approval workflow</option>
+              </select>
+            </div>
           </div>
         </div>
         
@@ -1411,9 +1453,23 @@ ZENOP Pro Solutions Team`;
                 'No saved agreements without a linked approval workflow (or there are no documents in the library yet).'}
             </p>
           </div>
+        ) : filteredSavedDocuments.length === 0 ? (
+          <div className="bg-gray-50 rounded-xl p-8 text-center">
+            <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-600">
+              No documents match "<span className="font-medium">{documentSearchQuery}</span>".
+            </p>
+            <button
+              type="button"
+              onClick={() => setDocumentSearchQuery('')}
+              className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              Clear search
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {savedDocuments.map((doc) => (
+            {filteredSavedDocuments.map((doc) => (
               <div
                 key={doc.id}
                 className="bg-white rounded-xl shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow"

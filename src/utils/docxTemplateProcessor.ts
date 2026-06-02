@@ -446,10 +446,15 @@ export class DocxTemplateProcessor {
 
       injected = true;
 
-      // If the Total Price row lives in this same table, insert before it; else append at end.
-      const totalRow = rows.find((r) => /total\s*price/i.test(plain(r)));
-      if (totalRow) {
-        const idx = tbl.indexOf(totalRow);
+      // Insert custom rows ABOVE the Discount row when present, so custom line items appear
+      // before the discount (and before Total Price). If there's no Discount row in this table,
+      // fall back to inserting before the Total Price row; otherwise append at the end of the
+      // table (which sits just above a separate Discount/Total table).
+      const anchorRow =
+        rows.find((r) => /discount/i.test(plain(r))) ||
+        rows.find((r) => /total\s*price/i.test(plain(r)));
+      if (anchorRow) {
+        const idx = tbl.indexOf(anchorRow);
         return tbl.slice(0, idx) + newRows + tbl.slice(idx);
       }
       return tbl.replace(/<\/w:tbl>$/i, `${newRows}</w:tbl>`);
