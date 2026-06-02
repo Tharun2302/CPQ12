@@ -10900,20 +10900,16 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         {isSavingAgreementToMongo ? 'Saving…' : 'Save'}
                       </button>
                       {/* Word and PDF download buttons hidden to match main; OnlyOffice Edit kept (redline feature). */}
-                      {/* Edit button is feature-flagged off until the server has the RAM + OnlyOffice subdomain.
-                          To enable: set VITE_ENABLE_ONLYOFFICE_EDIT=true (build arg) and rebuild. */}
-                      {import.meta.env.VITE_ENABLE_ONLYOFFICE_EDIT === 'true' && (
-                        <button
-                          onClick={handleOpenOnlyOffice}
-                          disabled={!processedAgreement || isDownloadBlocked || isStartingOnlyOffice}
-                          className={`text-white bg-white/15 border border-white/40 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-md hover:bg-white/25 transition-colors flex items-center gap-1 ${
-                            !processedAgreement || isDownloadBlocked || isStartingOnlyOffice ? 'opacity-50 cursor-not-allowed' : ''
-                          }`}
-                          title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Open in Word-style editor'}
-                        >
-                          {isStartingOnlyOffice ? '⏳ Opening…' : '✏️ Edit'}
-                        </button>
-                      )}
+                      <button
+                        onClick={handleOpenOnlyOffice}
+                        disabled={!processedAgreement || isDownloadBlocked || isStartingOnlyOffice}
+                        className={`text-white bg-white/15 border border-white/40 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-md hover:bg-white/25 transition-colors flex items-center gap-1 ${
+                          !processedAgreement || isDownloadBlocked || isStartingOnlyOffice ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Open in Word-style editor'}
+                      >
+                        {isStartingOnlyOffice ? '⏳ Opening…' : '✏️ Edit'}
+                      </button>
                       <button
                         onClick={() => setShowApprovalModal(true)}
                         disabled={isStartingWorkflow}
