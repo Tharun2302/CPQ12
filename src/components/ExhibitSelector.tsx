@@ -33,6 +33,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const selectedExhibitsRef = React.useRef(selectedExhibits);
   useEffect(() => { selectedExhibitsRef.current = selectedExhibits; });
+  // Exhibit IDs belonging to hidden combinations (kept out of the selection)
+  const hiddenExhibitIdsRef = React.useRef<string[]>([]);
   const listScrollRef = React.useRef<HTMLDivElement>(null);
 
   // Reset scroll to top whenever the search query changes so the first result is always visible
@@ -57,7 +59,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       
       // Check if validation is needed
       const needsCleanup = invalidSelections.length > 0;
-      const requiredIds = exhibits.filter(ex => ex.isRequired).map(ex => ex._id);
+      // Exclude exhibits belonging to hidden combinations so they are never auto-(re)added
+      const hiddenIds = new Set(hiddenExhibitIdsRef.current.map((id: string) => id.toString()));
+      const requiredIds = exhibits
+        .filter(ex => ex.isRequired && !hiddenIds.has(ex._id.toString()))
+        .map(ex => ex._id);
       const missingRequired = requiredIds.filter(id => !validSelections.includes(id));
       const needsRequired = missingRequired.length > 0;
       
@@ -694,6 +700,20 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           }
         }
 
+        // Canonicalize "OneDrive / SharePoint <-> OneDrive / SharePoint" folder labels
+        // regardless of separator (dash vs whitespace) or casing, so every variant
+        // (e.g. "Onedrive / Sharepoint Onedrive / Sharepoint") lands in one folder.
+        const folderNameNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (/^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint$/.test(folderNameNorm)) {
+          folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+        }
+        // Canonicalize "Google My Drive & Share Drive To/to Google My Drive & Share Drive"
+        // (the only difference between the two folders is the "To"/"to" casing) so both land
+        // in one folder.
+        if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
+          folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+        }
+
         // Skip rendering these groups entirely in the UI (case-insensitive check)
         const folderNameLower = folderName.toLowerCase();
         const shouldHide = Array.from(hiddenGroupNames).some(hiddenName =>
@@ -718,7 +738,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         const normalizedName = exhibitName.toLowerCase().replace(/\s+/g, ' ').trim();
         if (normalizedName.includes('onedrive') && normalizedName.includes('sharepoint')) {
           // Check if it matches the pattern "OneDrive / SharePoint - OneDrive / SharePoint - ..."
-          const onedriveSharePointPattern = /^onedrive\s*\/\s*sharepoint\s*-\s*onedrive\s*\/\s*sharepoint/i;
+          // The separator between the two halves may be a dash OR just whitespace
+          // (e.g. "Onedrive / Sharepoint Onedrive / Sharepoint"), so the dash is optional.
+          const onedriveSharePointPattern = /^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint/i;
           if (onedriveSharePointPattern.test(exhibitName)) {
             const folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
             if (!groups.has(folderName)) {
@@ -747,7 +769,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           if (normalizedFolderName === 'onedrive to sharepoint' || normalizedFolderName === 'onedrive to share point') {
             folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
           }
-          
+          // Merge the "To"/"to" casing variants of this combination into one folder
+          if (normalizedFolderName === 'google my drive & share drive to google my drive & share drive') {
+            folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+          }
+
           if (!folderName || folderName.length < 3) {
             folderName = baseName;
           }
@@ -838,9 +864,48 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       });
     });
     
+    // Combinations to hide from the selector UI (matched on the displayed name,
+    // normalized to lowercase with collapsed whitespace).
+    const hiddenDisplayNames = new Set<string>([
+      'google my drive & shareddrive to google my drive & shareddrive std inscope',
+      'google my drive & shareddrive to google my drive & shareddrive std outscope',
+      'google my drive & shareddrive to google my drive & shareddrive adv inscope',
+      'google my drive & shareddrive to google my drive & shareddrive adv outscope',
+      'google mydrive to google shared drive',
+      'google mydrive to box',
+      'google mydrive to dropbox',
+      'box to box',
+      'google shared drive to egnyte',
+    ]);
+    // Filter out hidden combinations AND record their exhibit IDs so they can be
+    // removed from the current selection. Hiding a combination must also DESELECT it,
+    // otherwise it silently flows into the generated agreement (the agreement is built
+    // from selectedExhibits, not from what the list shows).
+    const hiddenIds: string[] = [];
+    const visibleResult = result.filter((item) => {
+      const isHidden = hiddenDisplayNames.has((item.name || '').toLowerCase().replace(/\s+/g, ' ').trim());
+      if (isHidden) {
+        (item.exhibits || []).forEach((ex: Exhibit) => { if (ex?._id) hiddenIds.push(ex._id.toString()); });
+        return false;
+      }
+      return true;
+    });
+    hiddenExhibitIdsRef.current = hiddenIds;
+
     // Sort by display order
-    return result.sort((a, b) => a.displayOrder - b.displayOrder);
+    return visibleResult.sort((a, b) => a.displayOrder - b.displayOrder);
   }, [searchFilteredExhibits]);
+
+  // Deselect any exhibits that belong to a hidden combination (keeps the agreement in
+  // sync with what the user can actually see/select).
+  useEffect(() => {
+    const hidden = new Set(hiddenExhibitIdsRef.current.map((id: string) => id.toString()));
+    if (hidden.size === 0) return;
+    const filtered = selectedExhibits.filter((id) => !hidden.has((id ?? '').toString()));
+    if (filtered.length !== selectedExhibits.length) {
+      onExhibitsChange(filtered);
+    }
+  }, [processedExhibits, selectedExhibits, onExhibitsChange]);
 
   const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
     if (isRequired) return; // Cannot deselect required exhibits
