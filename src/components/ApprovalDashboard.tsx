@@ -16,6 +16,7 @@ import {
   MoreVertical,
   Copy,
   Lock,
+  Download,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -213,6 +214,7 @@ const ApprovalDashboard: React.FC = () => {
   const [redlineEditorUrl, setRedlineEditorUrl] = useState<string>('');
   const [isStartingRedline, setIsStartingRedline] = useState<string | null>(null); // documentId being opened
   const [isFinalizingRedline, setIsFinalizingRedline] = useState(false);
+  const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null); // documentId being downloaded
 
   const {
     workflows,
@@ -240,6 +242,55 @@ const ApprovalDashboard: React.FC = () => {
       document.body.removeChild(ta);
     }
     flashToast('Approval link copied');
+  };
+
+  // Download the approval agreement as a PDF. Works for every workflow status:
+  // documents under an active workflow 403 on the /file download endpoint, so we
+  // pull the bytes via the preview dataUrl (or /file?inline=1) and save them client-side.
+  const handleDownloadPdf = async (workflow: any) => {
+    const docId = workflow?.documentId;
+    if (!docId) {
+      alert('No document is attached to this approval.');
+      return;
+    }
+    setDownloadingPdfId(workflow.id);
+    try {
+      let blob: Blob | null = null;
+
+      // 1) Preferred: preview endpoint returns a base64 dataUrl even while the
+      //    workflow is pending (when /file downloads are blocked).
+      try {
+        const previewResp = await fetch(`${BACKEND_URL}/api/documents/${encodeURIComponent(docId)}/preview`);
+        if (previewResp.ok) {
+          const result = await previewResp.json();
+          if (result?.success && typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:')) {
+            blob = await (await fetch(result.dataUrl)).blob();
+          }
+        }
+      } catch { /* fall through to the file stream */ }
+
+      // 2) Fallback: binary PDF stream (inline=1 is always permitted).
+      if (!blob) {
+        const fileResp = await fetch(getDocumentFileInlineUrl(String(docId)));
+        if (!fileResp.ok) throw new Error(`Download failed (${fileResp.status})`);
+        blob = await fileResp.blob();
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${String(docId)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      flashToast('Agreement PDF downloaded');
+    } catch (e) {
+      console.error('Failed to download agreement PDF:', e);
+      alert('Could not download the agreement PDF. Please try again.');
+    } finally {
+      setDownloadingPdfId(null);
+    }
   };
 
   const handleCancelApproval = async (workflow: any) => {
@@ -978,6 +1029,20 @@ const ApprovalDashboard: React.FC = () => {
                                     Copy Link
                                     {lock}
                                   </button>
+                                  {workflow.documentId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setOpenMenuId(null); handleDownloadPdf(workflow); }}
+                                      disabled={downloadingPdfId === workflow.id}
+                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                      title="Download the approval agreement as a PDF"
+                                    >
+                                      {downloadingPdfId === workflow.id
+                                        ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                        : <Download className="h-4 w-4 shrink-0" />}
+                                      Download PDF
+                                    </button>
+                                  )}
                                   {workflow.documentId && (
                                     <button
                                       type="button"
