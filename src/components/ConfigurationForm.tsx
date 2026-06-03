@@ -258,6 +258,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               const dashIdx = s.indexOf(' - ');
               let base = dashIdx > 0 ? s.substring(0, dashIdx) : s;
               base = base.replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '').trim();
+              base = base.replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '').trim();
               return base;
             };
 

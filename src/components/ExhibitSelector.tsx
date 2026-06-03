@@ -676,6 +676,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         const dashIdx = exhibitNameRaw.indexOf(' - ');
         const nameBase = (dashIdx > 0 ? exhibitNameRaw.substring(0, dashIdx) : exhibitNameRaw)
           .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
+          .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
           .trim();
         if (nameBase) {
           // Convert the combination's display label to a comparable shape; if the

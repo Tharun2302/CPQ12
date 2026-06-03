@@ -11,28 +11,28 @@ const EXHIBITS_DIR = path.join(__dirname, 'backend-exhibits');
 const exhibits = [
   {
     fileName: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive std Inscope.docx',
-    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive std Inscope',
+    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive - Standard Plan - Standard Include',
     planType: 'standard',
     includeType: 'included',
     displayOrder: 0,
   },
   {
     fileName: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive std Outscope.docx',
-    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive std Outscope',
+    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive - Standard Plan - Standard Not Include',
     planType: 'standard',
     includeType: 'notincluded',
     displayOrder: 1,
   },
   {
     fileName: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive adv Inscope.docx',
-    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive adv Inscope',
+    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive - Advanced Plan - Advanced Include',
     planType: 'advanced',
     includeType: 'included',
     displayOrder: 2,
   },
   {
     fileName: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive adv outscope.docx',
-    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive adv outscope',
+    name: 'Google My Drive & SharedDrive to Google My Drive & SharedDrive - Advanced Plan - Advanced Not Include',
     planType: 'advanced',
     includeType: 'notincluded',
     displayOrder: 3,
