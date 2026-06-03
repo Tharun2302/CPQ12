@@ -24,6 +24,7 @@ import { BACKEND_URL } from '../config/api';
 import { getDocumentFileInlineUrl, iframeSrcFromDocumentPreview } from '../utils/documentPreviewUrl';
 import PdfCanvasViewer from './PdfCanvasViewer';
 import EditDatesModal from './EditDatesModal';
+import OnlyOfficeEditor from './OnlyOfficeEditor';
 
 type ViewKey = 'dashboard' | 'pending' | 'approved' | 'rejected';
 
@@ -205,6 +206,14 @@ const ApprovalDashboard: React.FC = () => {
   const [cancelingApprovalId, setCancelingApprovalId] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
+  // "Edit for RedLine" — OnlyOffice Word-style editor opened from an approval card.
+  const [redlineDocId, setRedlineDocId] = useState<string | null>(null);
+  const [redlineSessionId, setRedlineSessionId] = useState<string | null>(null);
+  const [redlineConfig, setRedlineConfig] = useState<any | null>(null);
+  const [redlineEditorUrl, setRedlineEditorUrl] = useState<string>('');
+  const [isStartingRedline, setIsStartingRedline] = useState<string | null>(null); // documentId being opened
+  const [isFinalizingRedline, setIsFinalizingRedline] = useState(false);
+
   const {
     workflows,
     refreshWorkflows,
@@ -245,6 +254,84 @@ const ApprovalDashboard: React.FC = () => {
       alert('Could not reject the approval. Please try again.');
     } finally {
       setCancelingApprovalId(null);
+    }
+  };
+
+  // Open the OnlyOffice "Edit for RedLine" editor for an approval's document.
+  const handleOpenRedline = async (documentId: string) => {
+    if (!documentId) return;
+    setIsStartingRedline(documentId);
+    try {
+      const resp = await fetch(
+        `${BACKEND_URL}/api/onlyoffice/start-session-from-document/${encodeURIComponent(documentId)}`,
+        { method: 'POST' },
+      );
+      const data = await resp.json();
+      if (!resp.ok || !data?.success) throw new Error(data?.error || 'Failed to open the editor');
+      setRedlineDocId(documentId);
+      setRedlineSessionId(data.sessionId);
+      setRedlineEditorUrl(data.editorUrl);
+      setRedlineConfig(data.config);
+    } catch (e) {
+      alert(
+        e instanceof Error
+          ? e.message
+          : 'Could not open the redline editor. Make sure OnlyOffice is running.',
+      );
+    } finally {
+      setIsStartingRedline(null);
+    }
+  };
+
+  const closeRedline = () => {
+    setRedlineDocId(null);
+    setRedlineSessionId(null);
+    setRedlineConfig(null);
+    setRedlineEditorUrl('');
+  };
+
+  // After the user clicks Done: force-save, wait for the edited DOCX+PDF, then overwrite the document.
+  const handleFinalizeRedline = async () => {
+    if (!redlineSessionId) return;
+    setIsFinalizingRedline(true);
+    try {
+      try {
+        await fetch(`${BACKEND_URL}/api/onlyoffice/force-save/${redlineSessionId}`, { method: 'POST' });
+      } catch {
+        /* still poll for any auto-saved version */
+      }
+
+      const start = Date.now();
+      let data: any = null;
+      while (Date.now() - start < 30000) {
+        const r = await fetch(`${BACKEND_URL}/api/onlyoffice/result/${redlineSessionId}`);
+        if (r.ok) {
+          data = await r.json();
+          if (data?.status === 'ready') break;
+          if (data?.status === 'no-changes' || data?.status === 'editor-error' || data?.status === 'pdf-failed') break;
+        }
+        await new Promise((res) => setTimeout(res, 1500));
+      }
+
+      if (data?.status === 'ready') {
+        const persist = await fetch(
+          `${BACKEND_URL}/api/onlyoffice/persist-to-document/${redlineSessionId}`,
+          { method: 'POST' },
+        );
+        const pdata = await persist.json();
+        if (!persist.ok || !pdata?.success) throw new Error(pdata?.error || 'Failed to save the edited document');
+        flashToast('Redline saved — document updated');
+        closeRedline();
+      } else if (data?.status === 'no-changes') {
+        flashToast('No changes to save');
+        closeRedline();
+      } else {
+        alert('Saving the edited document timed out. Click Save in the editor first, then try Done again.');
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save the edited document.');
+    } finally {
+      setIsFinalizingRedline(false);
     }
   };
 
@@ -903,6 +990,21 @@ const ApprovalDashboard: React.FC = () => {
                                       {lock}
                                     </button>
                                   )}
+                                  {workflow.documentId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can edit this document.'); return; } handleOpenRedline(String(workflow.documentId)); }}
+                                      disabled={canManage && isStartingRedline === String(workflow.documentId)}
+                                      className={itemCls}
+                                      title={canManage ? 'Open the Word editor to redline this document' : 'Only the requester can edit this document'}
+                                    >
+                                      {canManage && isStartingRedline === String(workflow.documentId)
+                                        ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                        : <PenLine className="h-4 w-4 shrink-0" />}
+                                      Edit for RedLine
+                                      {lock}
+                                    </button>
+                                  )}
                                   {status === 'approved' && workflow.esignDocumentId && (
                                     <button
                                       type="button"
@@ -1148,6 +1250,48 @@ const ApprovalDashboard: React.FC = () => {
           />
         );
       })()}
+
+      {/* Edit for RedLine — OnlyOffice Word-style editor (overwrites the document on Done) */}
+      {redlineConfig && redlineSessionId && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex flex-col">
+          <div className="bg-gradient-to-r from-blue-700 to-indigo-700 text-white px-4 py-2 flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold">✏️ Edit for RedLine (Word editor)</span>
+              <span className="text-xs text-blue-200">
+                Make your edits, click <strong>File → Save</strong> in the editor, then click <strong>Done</strong>.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleFinalizeRedline}
+                disabled={isFinalizingRedline}
+                className="bg-green-500 hover:bg-green-600 disabled:opacity-60 text-white text-sm font-semibold rounded-md px-4 py-1.5 flex items-center gap-2"
+                title="Apply your edits and overwrite the document"
+              >
+                {isFinalizingRedline ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {isFinalizingRedline ? 'Saving…' : 'Done'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (!isFinalizingRedline) closeRedline(); }}
+                disabled={isFinalizingRedline}
+                className="bg-white/15 hover:bg-white/25 disabled:opacity-60 text-white text-sm font-semibold rounded-md px-4 py-1.5 flex items-center gap-2"
+                title="Close without applying"
+              >
+                <X className="h-4 w-4" /> Close
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 bg-white">
+            <OnlyOfficeEditor
+              editorUrl={redlineEditorUrl}
+              config={redlineConfig}
+              onError={(msg) => alert('Editor error: ' + msg)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

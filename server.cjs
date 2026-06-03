@@ -5041,6 +5041,102 @@ app.get('/api/onlyoffice/result/:sessionId', (req, res) => {
   });
 });
 
+// Start an OnlyOffice edit session from an existing saved document ("Edit for RedLine" on the
+// Approval page). Pulls the document's Word (DOCX) from MongoDB and binds the session to that
+// document id so the edits can be saved back via /persist-to-document.
+app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const { id } = req.params;
+    const document = await db.collection('documents').findOne({ id });
+    if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const toBuf = (fd) => {
+      if (!fd) return null;
+      if (Buffer.isBuffer(fd)) return fd;
+      if (fd.buffer) return Buffer.from(fd.buffer);
+      if (fd.data) return Buffer.from(fd.data);
+      if (typeof fd === 'string') return Buffer.from(fd, 'base64');
+      return null;
+    };
+    const isDocx = (b) => b && b.length > 1 && b[0] === 0x50 && b[1] === 0x4b;
+
+    // Prefer the stored Word file; fall back to fileData if it is itself a DOCX.
+    let docx = toBuf(document.docxFileData);
+    if (!isDocx(docx)) {
+      const fd = toBuf(document.fileData);
+      docx = isDocx(fd) ? fd : null;
+    }
+    if (!isDocx(docx)) {
+      return res.status(400).json({ success: false, error: 'No editable Word (DOCX) version is available for this document, so it cannot be redlined.' });
+    }
+
+    const sessionId = uuidv4();
+    onlyofficeSessions.set(sessionId, {
+      origDocx: docx,
+      editedDocx: null,
+      editedPdf: null,
+      status: 'editing',
+      createdAt: Date.now(),
+      documentId: id,
+    });
+
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [sid, s] of onlyofficeSessions.entries()) {
+      if (s.createdAt < cutoff) onlyofficeSessions.delete(sid);
+    }
+
+    const fileUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/file/${sessionId}`;
+    const callbackUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/callback/${sessionId}`;
+    const config = {
+      documentType: 'word',
+      document: {
+        fileType: 'docx',
+        key: sessionId,
+        title: (document.fileName || 'agreement').replace(/\.[^.]+$/, '') + '.docx',
+        url: fileUrl,
+      },
+      editorConfig: {
+        callbackUrl,
+        lang: 'en',
+        mode: 'edit',
+        user: { id: 'user-1', name: 'User' },
+        customization: { autosave: true, forcesave: true, compactToolbar: false },
+      },
+    };
+    if (ONLYOFFICE_JWT_SECRET) config.token = jwt.sign(config, ONLYOFFICE_JWT_SECRET, { expiresIn: '5h' });
+
+    res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config });
+  } catch (e) {
+    console.error('❌ onlyoffice start-session-from-document error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Persist the edited (redlined) document from an OnlyOffice session back into the documents
+// collection, overwriting both the PDF (fileData) and the Word copy (docxFileData).
+app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const s = onlyofficeSessions.get(req.params.sessionId);
+    if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
+    if (!s.documentId) return res.status(400).json({ success: false, error: 'Session is not bound to a document' });
+    if (s.status !== 'ready' || !s.editedPdf || !s.editedDocx) {
+      return res.status(409).json({ success: false, error: 'Edited document not ready yet', status: s.status });
+    }
+    const result = await db.collection('documents').updateOne(
+      { id: s.documentId },
+      { $set: { fileData: s.editedPdf, docxFileData: s.editedDocx, fileSize: s.editedPdf.length, updatedAt: new Date() } }
+    );
+    if (result.matchedCount === 0) return res.status(404).json({ success: false, error: 'Document not found' });
+    console.log(`✅ onlyoffice redline persisted to document ${s.documentId} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
+    res.json({ success: true, documentId: s.documentId });
+  } catch (e) {
+    console.error('❌ onlyoffice persist-to-document error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // Test DOCX to PDF conversion capabilities
 app.get('/api/convert/test', async (req, res) => {
   try {
