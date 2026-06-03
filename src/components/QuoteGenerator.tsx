@@ -6552,11 +6552,40 @@ Total Price: {{total price}}`;
               type ConfigRow = { category: string; displayName: string; exhibitConfig: any; exhibit?: any };
               const configRows: ConfigRow[] = [];
 
+              // Normalized key used to collapse duplicate rows that describe the SAME migration
+              // under different name spellings. Crucially, a name whose two halves are identical
+              // (e.g. "OneDrive / SharePoint - OneDrive / SharePoint" or the space-separated
+              // "Onedrive / Sharepoint Onedrive / Sharepoint") collapses to a single half, so both
+              // spellings map to the same key and produce one row.
+              const combinationDedupeKey = (name: string): string => {
+                const norm = (name || '')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                const words = norm.split(' ').filter(Boolean);
+                if (words.length >= 2 && words.length % 2 === 0) {
+                  const half = words.length / 2;
+                  if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
+                    return words.slice(0, half).join(' ');
+                  }
+                }
+                return norm;
+              };
+              const seenComboKeys = new Set<string>();
+
               const addRowsFromConfigs = (list: any[] | undefined, category: string) => {
                 if (!Array.isArray(list)) return;
                 for (const cfg of list) {
                   const displayName = (cfg?.exhibitName ?? cfg?.combinationName ?? '').toString().trim();
                   if (!displayName) continue;
+                  // Skip duplicate combinations (same category + normalized combination name)
+                  const dedupeKey = `${category}|${combinationDedupeKey(displayName)}`;
+                  if (seenComboKeys.has(dedupeKey)) {
+                    console.log('⏭️ Skipping duplicate agreement row:', { category, displayName, dedupeKey });
+                    continue;
+                  }
+                  seenComboKeys.add(dedupeKey);
                   const exhibitId = cfg?.exhibitId;
                   const exhibit = exhibitId ? allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId?.toString()) : undefined;
                   configRows.push({ category, displayName, exhibitConfig: cfg, exhibit: exhibit || undefined });
@@ -7342,8 +7371,39 @@ Total Price: {{total price}}`;
               }
             }
 
+            // Collapse duplicate combinations (the SAME migration under different name
+            // spellings, e.g. "OneDrive / SharePoint - OneDrive / SharePoint" vs the
+            // space-separated "Onedrive / Sharepoint Onedrive / Sharepoint") so only one
+            // instance row is emitted and the price isn't double-counted. A name whose two
+            // halves are identical collapses to a single half → both spellings share a key.
+            const serverDedupeKey = (name: string): string => {
+              const norm = (name || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+              const words = norm.split(' ').filter(Boolean);
+              if (words.length >= 2 && words.length % 2 === 0) {
+                const half = words.length / 2;
+                if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
+                  return words.slice(0, half).join(' ');
+                }
+              }
+              return norm;
+            };
+            const seenServerKeys = new Set<string>();
+            const dedupedItems = items.filter((it) => {
+              const key = `${it.kind}|${serverDedupeKey(it.exhibitName)}`;
+              if (seenServerKeys.has(key)) {
+                console.log('⏭️ Skipping duplicate instance/server row:', { kind: it.kind, exhibitName: it.exhibitName, key });
+                return false;
+              }
+              seenServerKeys.add(key);
+              return true;
+            });
+
             // Build servers array for docxtemplater loop
-            const serversArray = items.map((it, idx) => {
+            const serversArray = dedupedItems.map((it, idx) => {
               const name = (it.exhibitName || '').trim();
               // Keep normal spaces. If you see large gaps in Word/PDF, fix the DOCX cell alignment
               // (use Center/Left, not Justify/Distributed) rather than forcing non-breaking spaces,
@@ -7376,7 +7436,7 @@ Total Price: {{total price}}`;
                 // Per-server duration (use this in template instead of {{Duration_of_months}} if you want each row's own months)
                 serverMonths: months,
                 // Template helpers
-                isLast: idx === items.length - 1
+                isLast: idx === dedupedItems.length - 1
               };
             });
 
