@@ -316,14 +316,14 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     <div id="pricing-comparison" className="bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 rounded-2xl shadow-2xl border border-slate-200/50 p-8 backdrop-blur-sm">
       <div className="text-center mb-10">
         <h2 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-3">
-          {configuration?.combination === 'overage-agreement'
+          {(configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement')
             ? 'Overage Agreement Pricing'
             : configuration?.servicePlan === 'Manage'
             ? 'Your Manage Plan'
             : 'Choose Your Perfect Plan'}
         </h2>
         <p className="text-gray-600 text-lg">
-          {configuration?.combination === 'overage-agreement'
+          {(configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement')
             ? 'Instance costs only - no user or data costs apply'
             : configuration?.servicePlan === 'Manage'
             ? 'Review your Manage plan summary and total cost'
@@ -411,7 +411,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </div>
                 )}
                 {/* Special heading for overage agreement */}
-                {configuration?.combination === 'overage-agreement' ? (
+                {(configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement') ? (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
                     Overage Agreement
                   </h3>
