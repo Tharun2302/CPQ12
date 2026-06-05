@@ -220,7 +220,11 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     }
 
     // For overage agreement, show only ONE plan (first available)
-    if (configuration?.combination === 'overage-agreement') {
+    // Check both combination AND migrationType to handle case where combination isn't set yet
+    if (
+      configuration?.combination === 'overage-agreement' ||
+      configuration?.migrationType === 'Overage Agreement'
+    ) {
       return calc === calculations[0];
     }
 
