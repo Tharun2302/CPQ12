@@ -109,12 +109,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
   // Combinations from API (user-managed via Combination Manager); fallback to hardcoded if empty
   const [apiCombinations, setApiCombinations] = useState<Array<{ value: string; label: string; migrationType: string }>>([]);
-  useEffect(() => {
-    let cancelled = false;
+  const fetchCombinations = () => {
     fetch(`${BACKEND_URL}/api/combinations`)
       .then((res) => res.json())
       .then((data) => {
-        if (!cancelled && data.success && Array.isArray(data.combinations)) {
+        if (data.success && Array.isArray(data.combinations)) {
           setApiCombinations(
             data.combinations.map((c: any) => ({
               value: c.value || '',
@@ -125,7 +124,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         }
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+  };
+
+  useEffect(() => {
+    fetchCombinations();
+    window.addEventListener('combinationsUpdated', fetchCombinations);
+    return () => window.removeEventListener('combinationsUpdated', fetchCombinations);
   }, []);
 
   // Auto-select the combination for single-option migration types (Multi combination, Overage Agreement).

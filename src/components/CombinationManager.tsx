@@ -151,6 +151,7 @@ const CombinationManager: React.FC = () => {
         }
         setSubmitSuccess(formFile ? 'Combination and template file updated.' : 'Combination updated.');
         setCombinations((prev) => prev.map((c) => (c.id === editingCombo.id ? (updatedCombo || c) : c)));
+        window.dispatchEvent(new CustomEvent('combinationsUpdated'));
       } else {
         if (formFile) {
           const fd = new FormData();
@@ -170,6 +171,7 @@ const CombinationManager: React.FC = () => {
           }
           setSubmitSuccess('Combination added with file.');
           setCombinations((prev) => [...prev, data.combination].sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999)));
+          window.dispatchEvent(new CustomEvent('combinationsUpdated'));
         } else {
           const res = await fetch(`${BACKEND_URL}/api/combinations`, {
             method: 'POST',
@@ -183,6 +185,7 @@ const CombinationManager: React.FC = () => {
           }
           setSubmitSuccess('Combination added.');
           setCombinations((prev) => [...prev, data.combination].sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999)));
+          window.dispatchEvent(new CustomEvent('combinationsUpdated'));
         }
       }
       setTimeout(closeModal, 1200);
@@ -204,6 +207,7 @@ const CombinationManager: React.FC = () => {
       }
       setCombinations((prev) => prev.filter((c) => c.id !== id));
       setDeleteConfirm(null);
+      window.dispatchEvent(new CustomEvent('combinationsUpdated'));
     } catch (err: any) {
       setSubmitError(err.message || 'Delete failed');
     }
