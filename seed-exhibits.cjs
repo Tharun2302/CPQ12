@@ -290,8 +290,8 @@ async function seedDefaultExhibits(db) {
     },
     // ShareFile to Google Shared Drive exhibits
     {
-      name: 'ShareFile to Google SharedDrive Standard Plan - Standard Included',
-      description: 'Documentation for features included in ShareFile to Google SharedDrive Standard Plan migration',
+      name: 'ShareFile to Google Shared Drive Standard Plan - Standard Included',
+      description: 'Documentation for features included in ShareFile to Google Shared Drive Standard Plan migration',
       fileName: 'ShareFile to Google SharedDrive Advanced Plan - Advanced Included.docx',
       legacyFileNames: [
         'sharefile-to-google-sharedrive-advanced-plan-included.docx'
@@ -300,11 +300,11 @@ async function seedDefaultExhibits(db) {
       category: 'content',
       isRequired: false,
       displayOrder: 1,
-      keywords: ['sharefile', 'google', 'sharedrive', 'standard', 'included', 'features']
+      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'standard', 'included', 'features']
     },
     {
-      name: 'ShareFile to Google SharedDrive Standard Plan - Standard Not Included',
-      description: 'Documentation for features not included in ShareFile to Google SharedDrive Standard Plan migration',
+      name: 'ShareFile to Google Shared Drive Standard Plan - Standard Not Included',
+      description: 'Documentation for features not included in ShareFile to Google Shared Drive Standard Plan migration',
       fileName: 'ShareFile to Google SharedDrive Advanced Plan - Advanced Not Included.docx',
       legacyFileNames: [
         'sharefile-to-google-sharedrive-advanced-plan-notincluded.docx'
@@ -313,12 +313,12 @@ async function seedDefaultExhibits(db) {
       category: 'content',
       isRequired: false,
       displayOrder: 2,
-      keywords: ['sharefile', 'google', 'sharedrive', 'standard', 'not included', 'features', 'limitations']
+      keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'standard', 'not included', 'features', 'limitations']
     },
-    // ShareFile to Google SharedDrive (Standard) exhibits
+    // ShareFile to Google Shared Drive (Basic) exhibits
     {
-      name: 'ShareFile to Google SharedDrive Basic Plan - Basic Included',
-      description: 'Documentation for features included in ShareFile to Google SharedDrive Basic Plan migration',
+      name: 'ShareFile to Google Shared Drive Basic Plan - Basic Included',
+      description: 'Documentation for features included in ShareFile to Google Shared Drive Basic Plan migration',
       fileName: 'ShareFile to Google SharedDrive Standard Plan - Standard Included.docx',
       combinations: ['sharefile-to-google-sharedrive', 'all'],
       category: 'content',
@@ -327,8 +327,8 @@ async function seedDefaultExhibits(db) {
       keywords: ['sharefile', 'google', 'sharedrive', 'shared drive', 'basic', 'included', 'features', 'content', 'migration']
     },
     {
-      name: 'ShareFile to Google SharedDrive Basic Plan - Basic Not Included',
-      description: 'Documentation for features not included in ShareFile to Google SharedDrive Basic Plan migration',
+      name: 'ShareFile to Google Shared Drive Basic Plan - Basic Not Included',
+      description: 'Documentation for features not included in ShareFile to Google Shared Drive Basic Plan migration',
       fileName: 'ShareFile to Google SharedDrive Standard Plan - Standard Not Included.docx',
       combinations: ['sharefile-to-google-sharedrive', 'all'],
       category: 'content',
