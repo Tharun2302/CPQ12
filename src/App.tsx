@@ -1145,11 +1145,12 @@ function App() {
     }
   }, [templates.length]); // Trigger when templates array changes from empty to populated
 
-  // When Multi combination + combination selected but no DB template: use combination-attached file as template
+  // When Multi combination or Overage Agreement + combination selected but no DB template: use combination-attached file as template
   useEffect(() => {
     const migrationType = configuration?.migrationType;
     const combination = (configuration?.combination || '').trim().toLowerCase();
-    if (migrationType !== 'Multi combination' || !combination || selectedTemplate) return;
+    const isCombinationTemplateType = migrationType === 'Multi combination' || migrationType === 'Overage Agreement';
+    if (!isCombinationTemplateType || !combination || selectedTemplate) return;
 
     let cancelled = false;
     (async () => {
