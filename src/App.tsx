@@ -184,6 +184,18 @@ function App() {
 
   // Removed duplicated localStorage-only loader to prevent double reloads per navigation
 
+  // When a combination template file is updated in Combination Manager, clear the
+  // stale cached combo template so the loader re-fetches the latest file from the backend.
+  useEffect(() => {
+    const handleCombinationsUpdated = () => {
+      if (selectedTemplate?.id?.startsWith?.('combo-')) {
+        setSelectedTemplate(null);
+      }
+    };
+    window.addEventListener('combinationsUpdated', handleCombinationsUpdated);
+    return () => window.removeEventListener('combinationsUpdated', handleCombinationsUpdated);
+  }, [selectedTemplate]);
+
   // Sync selected template with loaded templates
   // CRITICAL: Clear template if combination doesn't match to prevent wrong template persistence
   useEffect(() => {
