@@ -2938,16 +2938,16 @@ app.post('/api/exhibits', upload.single('file'), async (req, res) => {
     if (!planType || planType.trim() === '') {
       return res.status(400).json({ 
         success: false, 
-        error: 'Missing required field: planType is required. Please select Basic, Standard, or Advanced.' 
+        error: 'Missing required field: planType is required. Please select Basic or Standard.'
       });
     }
 
-    // Validate plan type value
-    const validPlanTypes = ['basic', 'standard', 'advanced'];
+    // Validate plan type value (Advanced removed — only Basic and Standard are supported)
+    const validPlanTypes = ['basic', 'standard'];
     if (!validPlanTypes.includes(planType.toLowerCase())) {
-      return res.status(400).json({ 
-        success: false, 
-        error: `Invalid plan type: ${planType}. Must be one of: Basic, Standard, or Advanced.` 
+      return res.status(400).json({
+        success: false,
+        error: `Invalid plan type: ${planType}. Must be one of: Basic or Standard.`
       });
     }
 
@@ -3208,14 +3208,14 @@ app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
       if (!planTypeValue) {
         return res.status(400).json({ 
           success: false, 
-          error: 'Plan Type is required. Please select Basic, Standard, or Advanced.' 
+          error: 'Plan Type is required. Please select Basic or Standard.'
         });
       }
-      const validPlanTypes = ['basic', 'standard', 'advanced'];
+      const validPlanTypes = ['basic', 'standard'];
       if (!validPlanTypes.includes(planTypeValue)) {
-        return res.status(400).json({ 
-          success: false, 
-          error: `Invalid plan type: ${req.body.planType}. Must be one of: Basic, Standard, or Advanced.` 
+        return res.status(400).json({
+          success: false,
+          error: `Invalid plan type: ${req.body.planType}. Must be one of: Basic or Standard.`
         });
       }
       updateData.planType = planTypeValue;

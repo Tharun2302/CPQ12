@@ -58,25 +58,12 @@ export const PRICING_TIERS: PricingTier[] = [
       'Advanced reporting',
       'Custom integrations'
     ]
-  },
-  {
-    id: 'advanced',
-    name: 'Advanced',
-    perUserCost: 40.0,
-    perGBCost: 1.80,
-    managedMigrationCost: 300,
-    instanceCost: 500,
-    userLimits: { from: 1, to: Infinity },
-    gbLimits: { from: 1, to: 10000 },
-    features: [
-      'Dedicated support',
-      'Premium migration',
-      '24/7 phone support',
-      'Enterprise reporting',
-      'Full customization',
-      'SLA guarantee'
-    ]
   }
+  // NOTE: The 'Advanced' tier was removed — the updated pricing has only Basic and
+  // Standard. Do NOT re-add it here. The lowercase 'advanced' entry in
+  // `perUserCostLookupByPlan` below is intentionally kept: the Standard plan's
+  // managed-migration cost reads that table (see `mgmtLookupKey` mapping), so deleting
+  // it would change Standard pricing.
 ];
 
 /* =========================================================

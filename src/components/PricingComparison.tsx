@@ -206,8 +206,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     };
   }, []);
 
-  // Filter plans: only Basic and Standard are shown (Advanced is retained in PRICING_TIERS
-  // for any backend templates still referencing it, but never surfaced in the UI).
+  // Filter plans: only Basic and Standard exist. The Advanced tier was removed from
+  // PRICING_TIERS, so calculations never contain it — no Advanced-specific filter needed.
   const filteredCalculations = calculations.filter(calc => {
     // Debug logging for slack-to-google-chat
     if (configuration?.combination === 'slack-to-google-chat') {
@@ -228,9 +228,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     if (configuration?.servicePlan === 'Manage') {
       return calc === calculations[0];
     }
-
-    // Hard rule: never show Advanced
-    if (calc.tier.name === 'Advanced') return false;
 
     // Show only Basic and Standard for every combination — combination-specific
     // hideBasicPlan / hideStandardPlan rules and the per-template-existence guard
