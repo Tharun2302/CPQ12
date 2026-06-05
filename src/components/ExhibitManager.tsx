@@ -72,10 +72,12 @@ function normalizeFolderKey(input: string): string {
 }
 
 function buildCombinationKey(base: string, includeType: string, planType: string): string {
+  // IMPORTANT: Combination key should ONLY be the base migration path.
+  // Include type and plan type are stored separately in the exhibit document.
+  // They should NOT be part of the combination key, otherwise exhibits don't group together.
+  // Example: Both "Include" and "Not Include" should use "sharefile-to-google-sharedrive"
   const b = normalizeFolderKey(base);
-  const t = String(includeType || '').toLowerCase();
-  const p = String(planType || '').toLowerCase();
-  return [b || 'all', t, p].filter(Boolean).join('-');
+  return b || 'all';
 }
 
 interface Exhibit {
