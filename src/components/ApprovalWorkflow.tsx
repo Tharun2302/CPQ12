@@ -804,6 +804,26 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   <Plus className="w-4 h-4" />
                   Add Email
                 </button>
+
+                {/* Sequential vs Parallel Toggle */}
+                <div className="mt-4 pt-4 border-t border-blue-200">
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.sendSequentially !== false}
+                      onChange={(e) => setFormData(prev => ({ ...prev, sendSequentially: e.target.checked }))}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      Send Sequentially <span className="text-gray-500">(#1 approves first, then #2, etc.)</span>
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-2 ml-7">
+                    {formData.sendSequentially !== false
+                      ? '✓ Approvers will receive documents one at a time in order'
+                      : '✓ All approvers will receive documents at the same time'}
+                  </p>
+                </div>
               </div>
 
               {/* Start Workflow Button */}
