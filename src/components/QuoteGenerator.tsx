@@ -10714,7 +10714,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </p>
 
               {/* Discount for Custom Line Items - Check combined total (main + custom) */}
-              {customLineItems.length > 0 && (calculatedTotalBeforeCustom + customLineItemsTotal >= 2500) && (
+              {customLineItems.length > 0 && (finalTotalAfterDiscount + customLineItemsTotal >= 2500) && (
                 <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
                   <label className="block text-sm font-semibold text-gray-800 mb-2">
                     Custom Items Discount (%)
@@ -10742,10 +10742,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   </p>
                 </div>
               )}
-              {customLineItems.length > 0 && (calculatedTotalBeforeCustom + customLineItemsTotal < 2500) && (
+              {customLineItems.length > 0 && (finalTotalAfterDiscount + customLineItemsTotal < 2500) && (
                 <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
                   <p className="text-xs text-amber-700 font-medium">
-                    💡 Discount available when combined total ≥ $2,500. Current: {formatCurrency(calculatedTotalBeforeCustom + customLineItemsTotal)}
+                    💡 Discount available when combined total ≥ $2,500. Current: {formatCurrency(finalTotalAfterDiscount + customLineItemsTotal)}
                   </p>
                 </div>
               )}
