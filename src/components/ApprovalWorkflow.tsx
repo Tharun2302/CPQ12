@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { FileText, Rocket, Users, FileCheck, BarChart3, Settings, X, Plus, Trash2, Shield, UserPlus, Loader2 } from 'lucide-react';
+import { FileText, Rocket, Users, FileCheck, BarChart3, Settings, X, Plus, Trash2, Shield, UserPlus, Loader2, Mail } from 'lucide-react';
 import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
 import ApprovalDashboard from './ApprovalDashboard';
 import { BACKEND_URL } from '../config/api';
