@@ -10764,7 +10764,6 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   )}
                 </div>
               </div>
-            </div>
 
             <button
               type="submit"
