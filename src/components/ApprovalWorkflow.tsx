@@ -692,10 +692,8 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   Back to Dashboard
                 </button>
               </div>
-              {/* Document Information & Contact Information side by side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Document Information Section */}
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+              {/* Document Information */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <FileText className="w-5 h-5 text-blue-600" />
                     Document Information
@@ -704,13 +702,12 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                     {/* Upload document for this workflow */}
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-3">
-                        Upload Document (PDF, Excel, CSV)
+                        Upload Document (All file types)
                       </label>
                       <div className="flex flex-col gap-2">
                         <input
                           ref={fileInputRef}
                           type="file"
-                          accept=".pdf,.csv,.xlsx,.xls"
                           onChange={(e) => {
                             const file = e.target.files && e.target.files[0];
                             setUploadedFile(file || null);
@@ -755,81 +752,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                     </div>
                   </div>
                 </div>
-
-                {/* Contact Information Section */}
-                <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-6 border border-emerald-200">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
-                    <Users className="w-5 h-5 text-white" />
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900">Contact Information</h3>
-                  {(contactInfo.clientName || contactInfo.clientEmail || contactInfo.company) && (
-                    <span className="ml-auto text-xs text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full font-medium">
-                      Saved Contact
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-600 mb-4">
-                  Optional. Used for document metadata and approval emails. If saved contact exists, it will be pre-filled.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Contact Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={contactInfo.clientName}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setContactInfo(prev => ({ ...prev, clientName: v }));
-                        try {
-                          localStorage.setItem('cpq_contact_info', JSON.stringify({ ...contactInfo, clientName: v }));
-                        } catch (_) {}
-                      }}
-                      placeholder="e.g. John Smith"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Contact Email <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={contactInfo.clientEmail}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setContactInfo(prev => ({ ...prev, clientEmail: v }));
-                        try {
-                          localStorage.setItem('cpq_contact_info', JSON.stringify({ ...contactInfo, clientEmail: v }));
-                        } catch (_) {}
-                      }}
-                      placeholder="e.g. john.smith@company.com"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Company Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={contactInfo.company}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setContactInfo(prev => ({ ...prev, company: v }));
-                        try {
-                          localStorage.setItem('cpq_contact_info', JSON.stringify({ ...contactInfo, company: v }));
-                        } catch (_) {}
-                      }}
-                      placeholder="e.g. Acme Corp"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-              </div>
 
               <p className="text-sm text-gray-500">
                 Upload a document using the file selector above to send it for approval.
