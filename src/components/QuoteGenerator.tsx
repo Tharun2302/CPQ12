@@ -761,6 +761,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Added on top of the standard CloudFuze pricing (after any discount), and injected
   // into the agreement's pricing table just above the "Total Price" row.
   const [customLineItems, setCustomLineItems] = useState<CustomLineItem[]>([]);
+  const [customLineItemsDiscount, setCustomLineItemsDiscount] = useState<number>(0);
   const [newCustomItem, setNewCustomItem] = useState<{ name: string; description: string; price: string }>({
     name: '',
     description: '',
@@ -2143,13 +2144,15 @@ Quote ID: ${quoteData.id}
             const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
             return Number.isFinite(n) ? n : 0;
           };
+          // Apply discount to custom line items if set
+          const discountedCustomTotal = customLineItemsTotal * (1 - (customLineItemsDiscount || 0) / 100);
           [
             '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
             '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
             '{{final_total}}', '{{finalTotal}}',
           ].forEach((tok) => {
             if (tok in templateData) {
-              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + customLineItemsTotal);
+              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + discountedCustomTotal);
             }
           });
         }
@@ -8343,14 +8346,15 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         // Critical tokens validation already performed earlier in the code
 
         // Custom line items: add their total on top of whatever the total tokens currently hold.
-        // Discount applies to base pricing only (custom items are added after discount), so we
-        // simply add the custom total to the final displayed total tokens regardless of flow.
+        // Apply discount to custom items if set, then add to final total.
         if (customLineItems.length > 0 && customLineItemsTotal > 0) {
           const parseCurrencyToNumber = (s: string | undefined): number => {
             if (!s) return 0;
             const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
             return Number.isFinite(n) ? n : 0;
           };
+          // Apply discount to custom line items if set
+          const discountedCustomTotal = customLineItemsTotal * (1 - (customLineItemsDiscount || 0) / 100);
           const totalTokens = [
             '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
             '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
@@ -8358,7 +8362,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           ];
           totalTokens.forEach((tok) => {
             if (tok in templateData) {
-              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + customLineItemsTotal);
+              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + discountedCustomTotal);
             }
           });
           console.log('🧾 Added custom line items to total:', {
@@ -10696,6 +10700,29 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 Added rows appear in the agreement pricing table above &quot;Total Price&quot; and are
                 added to the total (after any discount).
               </p>
+
+              {/* Discount for Custom Line Items */}
+              {customLineItems.length > 0 && (
+                <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">
+                    Custom Items Discount (%)
+                    <span className="text-xs text-gray-500 font-normal ml-2">(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    placeholder="Enter discount percentage"
+                    className="w-full px-4 py-2 border-2 rounded-lg focus:ring-4 transition-all duration-200 bg-white text-sm border-indigo-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                    value={customLineItemsDiscount || ''}
+                    onChange={(e) => setCustomLineItemsDiscount(e.target.value ? parseFloat(e.target.value) : 0)}
+                  />
+                  <p className="text-xs text-gray-600 mt-2">
+                    Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
+                  </p>
+                </div>
+              )}
             </div>
 
             <button
