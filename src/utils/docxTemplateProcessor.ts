@@ -466,8 +466,8 @@ export class DocxTemplateProcessor {
       if (discount && discount.percentage > 0) {
         const discountLabel = `${discount.percentage}% Applied`;
         const discountAmount = `-${formatCurrency(discount.amount)}`;
-        newRows += `<w:tr>${buildCell(cellFormats[0], 'Discount')}${buildCell(cellFormats[1], discountLabel)}${buildCell(cellFormats[2], discountAmount)}</w:tr>`;
-        console.log('✅ Added discount row:', { percentage: discount.percentage, amount: discount.amount });
+        newRows += `<w:tr>${buildCell(cellFormats[0], '')}${buildCell(cellFormats[1], discountLabel)}${buildCell(cellFormats[2], discountAmount)}</w:tr>`;
+        console.log('✅ Added discount row:', { percentage: discount.percentage, amount: discount.amount, formatted: discountAmount });
       }
 
       injected = true;
