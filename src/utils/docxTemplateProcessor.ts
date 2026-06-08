@@ -464,9 +464,8 @@ export class DocxTemplateProcessor {
 
       // Add discount row if discount is provided
       if (discount && discount.percentage > 0) {
-        const { formatCurrency: formatCurrencyFn } = require('./pricing');
         const discountLabel = `${discount.percentage}% Applied`;
-        const discountAmount = `-${formatCurrencyFn(discount.amount)}`;
+        const discountAmount = `-${formatCurrency(discount.amount)}`;
         newRows += `<w:tr>${buildCell(cellFormats[0], 'Discount')}${buildCell(cellFormats[1], discountLabel)}${buildCell(cellFormats[2], discountAmount)}</w:tr>`;
         console.log('✅ Added discount row:', { percentage: discount.percentage, amount: discount.amount });
       }
