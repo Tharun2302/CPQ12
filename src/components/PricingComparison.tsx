@@ -851,6 +851,15 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                 </span>
               </button>
               
+              {/* Warning when discount won't apply (below $2,500 threshold) */}
+              {discount > 0 && (originalTotalBeforeMinimum < 2500 || (discountInfo.finalPrice < 2500 && originalTotalBeforeMinimum > 0)) && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-700 font-medium text-center">
+                    ⚠️ Discount won't apply here because your amount is below the $2,500 threshold
+                  </p>
+                </div>
+              )}
+
               {/* Informational note when calculated total was below minimum (selection allowed; charge is $2,500) */}
               {isBelowMinimumMultiCombination && (
                 <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
