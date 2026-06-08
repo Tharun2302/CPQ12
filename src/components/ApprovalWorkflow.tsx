@@ -685,11 +685,11 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
               <div className="flex items-center justify-start">
                 <button
                   type="button"
-                  onClick={() => navigate('/dashboard')}
+                  onClick={() => setActiveTab('dashboard')}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 bg-gray-100 text-gray-800 shadow-sm hover:bg-gray-200"
                 >
                   <BarChart3 className="w-5 h-5" />
-                  ← Back to Dashboard
+                  ← Back to Approval Dashboard
                 </button>
               </div>
               {/* Document Information */}
