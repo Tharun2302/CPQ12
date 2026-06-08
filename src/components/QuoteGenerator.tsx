@@ -10714,8 +10714,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </p>
 
               {/* Discount for Custom Line Items - Always show input */}
-              {
-                <div className={`mt-4 p-4 bg-gradient-to-br rounded-xl border-2 ${
+              <div className={`mt-4 p-4 bg-gradient-to-br rounded-xl border-2 ${
                   (finalTotalAfterDiscount + customLineItemsTotal >= 2500)
                     ? 'from-indigo-50 to-purple-50 border-indigo-200'
                     : 'from-amber-50 to-orange-50 border-amber-200'
@@ -10764,7 +10763,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     </p>
                   )}
                 </div>
-              )}
+              </div>
             </div>
 
             <button
