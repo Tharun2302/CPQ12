@@ -2144,8 +2144,14 @@ Quote ID: ${quoteData.id}
             const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
             return Number.isFinite(n) ? n : 0;
           };
-          // Apply discount to custom line items if set
-          const discountedCustomTotal = customLineItemsTotal * (1 - (customLineItemsDiscount || 0) / 100);
+          // Apply discount to custom line items with $2,500 floor
+          let discountedCustomTotal = customLineItemsTotal;
+          if (customLineItemsDiscount > 0 && customLineItemsTotal >= 2500) {
+            const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
+            const finalTotal = customLineItemsTotal - discountAmount;
+            // Keep discount only if final stays >= $2,500
+            discountedCustomTotal = finalTotal >= 2500 ? finalTotal : customLineItemsTotal;
+          }
           [
             '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
             '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
@@ -8353,8 +8359,14 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
             return Number.isFinite(n) ? n : 0;
           };
-          // Apply discount to custom line items if set
-          const discountedCustomTotal = customLineItemsTotal * (1 - (customLineItemsDiscount || 0) / 100);
+          // Apply discount to custom line items with $2,500 floor
+          let discountedCustomTotal = customLineItemsTotal;
+          if (customLineItemsDiscount > 0 && customLineItemsTotal >= 2500) {
+            const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
+            const finalTotal = customLineItemsTotal - discountAmount;
+            // Keep discount only if final stays >= $2,500
+            discountedCustomTotal = finalTotal >= 2500 ? finalTotal : customLineItemsTotal;
+          }
           const totalTokens = [
             '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
             '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
@@ -10701,8 +10713,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 added to the total (after any discount).
               </p>
 
-              {/* Discount for Custom Line Items */}
-              {customLineItems.length > 0 && (
+              {/* Discount for Custom Line Items - Same rules as main discount */}
+              {customLineItems.length > 0 && customLineItemsTotal >= 2500 && (
                 <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
                   <label className="block text-sm font-semibold text-gray-800 mb-2">
                     Custom Items Discount (%)
@@ -10711,15 +10723,29 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <input
                     type="number"
                     min="0"
-                    max="100"
+                    max="15"
                     step="0.1"
-                    placeholder="Enter discount percentage"
+                    placeholder="Enter discount percentage (max 15%)"
                     className="w-full px-4 py-2 border-2 rounded-lg focus:ring-4 transition-all duration-200 bg-white text-sm border-indigo-200 focus:border-indigo-500 focus:ring-indigo-500/20"
                     value={customLineItemsDiscount || ''}
-                    onChange={(e) => setCustomLineItemsDiscount(e.target.value ? parseFloat(e.target.value) : 0)}
+                    onChange={(e) => {
+                      const val = e.target.value ? Math.min(15, parseFloat(e.target.value)) : 0;
+                      setCustomLineItemsDiscount(val);
+                    }}
                   />
                   <p className="text-xs text-gray-600 mt-2">
-                    Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
+                    <span className="font-medium">Discount Rules:</span>
+                    <br />• Available only for custom items with total ≥ $2,500
+                    <br />• Maximum discount: 15%
+                    <br />• Final price after discount must stay ≥ $2,500
+                    <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
+                  </p>
+                </div>
+              )}
+              {customLineItems.length > 0 && customLineItemsTotal < 2500 && (
+                <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
+                  <p className="text-xs text-amber-700 font-medium">
+                    💡 Custom items discount available when total ≥ $2,500. Current total: {formatCurrency(customLineItemsTotal)}
                   </p>
                 </div>
               )}
