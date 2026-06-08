@@ -412,16 +412,25 @@ export class DocxTemplateProcessor {
       // Identify the pricing data table by its header text.
       const isPricingTable = rows.some((r) => {
         const t = plain(r).toLowerCase();
-        return t.includes('job requirement') || t.replace(/\s+/g, '').includes('price(usd)');
+        return t.includes('job requirement')
+          || t.includes('price(usd)')
+          || (t.includes('description') && t.includes('price'))
+          || (t.includes('job') && t.includes('price'));
       });
-      if (!isPricingTable) return tbl;
+      if (!isPricingTable) {
+        console.log('⚠️ Table skipped - not a pricing table. Header texts:', rows.slice(0, 1).map(r => plain(r).substring(0, 100)));
+        return tbl;
+      }
 
       // Pick a 3-cell data row to clone for formatting (skip the header row).
       const cloneRow = rows.find((r) => {
         const cellCount = (r.match(/<w:tc[\s>]/gi) || []).length;
         return cellCount === 3 && !/job\s*requirement/i.test(plain(r));
       });
-      if (!cloneRow) return tbl; // can't safely build a row that matches the table layout
+      if (!cloneRow) {
+        console.log('⚠️ Could not find a 3-cell data row to clone. Row cell counts:', rows.map(r => (r.match(/<w:tc[\s>]/gi) || []).length));
+        return tbl; // can't safely build a row that matches the table layout
+      }
 
       // Extract each clone cell's formatting so injected rows match the template rows:
       //   <w:tcPr> — column width / borders / shading
@@ -459,6 +468,7 @@ export class DocxTemplateProcessor {
         const discountLabel = `${discount.percentage}% Applied`;
         const discountAmount = `-${formatCurrencyFn(discount.amount)}`;
         newRows += `<w:tr>${buildCell(cellFormats[0], 'Discount')}${buildCell(cellFormats[1], discountLabel)}${buildCell(cellFormats[2], discountAmount)}</w:tr>`;
+        console.log('✅ Added discount row:', { percentage: discount.percentage, amount: discount.amount });
       }
 
       injected = true;
@@ -467,13 +477,17 @@ export class DocxTemplateProcessor {
       // before the discount (and before Total Price). If there's no Discount row in this table,
       // fall back to inserting before the Total Price row; otherwise append at the end of the
       // table (which sits just above a separate Discount/Total table).
-      const anchorRow =
-        rows.find((r) => /discount/i.test(plain(r))) ||
-        rows.find((r) => /total\s*price/i.test(plain(r)));
+      const discountRow = rows.find((r) => /discount/i.test(plain(r)));
+      const totalPriceRow = rows.find((r) => /total\s*price/i.test(plain(r)));
+      const anchorRow = discountRow || totalPriceRow;
+
       if (anchorRow) {
+        console.log('✅ Found anchor row:', plain(anchorRow).substring(0, 50));
         const idx = tbl.indexOf(anchorRow);
         return tbl.slice(0, idx) + newRows + tbl.slice(idx);
       }
+
+      console.log('⚠️ No anchor row found, appending at end of table');
       return tbl.replace(/<\/w:tbl>$/i, `${newRows}</w:tbl>`);
     });
   }
