@@ -10713,9 +10713,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 added to the total (after any discount).
               </p>
 
-              {/* Discount for Custom Line Items - Check combined total (main + custom) */}
-              {customLineItems.length > 0 && (finalTotalAfterDiscount + customLineItemsTotal >= 2500) && (
-                <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
+              {/* Discount for Custom Line Items - Always show input, but warn if conditions not met */}
+              {customLineItems.length > 0 && (
+                <div className={`mt-4 p-4 bg-gradient-to-br rounded-xl border-2 ${
+                  (finalTotalAfterDiscount + customLineItemsTotal >= 2500)
+                    ? 'from-indigo-50 to-purple-50 border-indigo-200'
+                    : 'from-amber-50 to-orange-50 border-amber-200'
+                }`}>
                   <label className="block text-sm font-semibold text-gray-800 mb-2">
                     Custom Items Discount (%)
                     <span className="text-xs text-gray-500 font-normal ml-2">(optional)</span>
@@ -10726,27 +10730,34 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     max="15"
                     step="0.1"
                     placeholder="Enter discount percentage (max 15%)"
-                    className="w-full px-4 py-2 border-2 rounded-lg focus:ring-4 transition-all duration-200 bg-white text-sm border-indigo-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                    disabled={(finalTotalAfterDiscount + customLineItemsTotal < 2500)}
+                    className={`w-full px-4 py-2 border-2 rounded-lg focus:ring-4 transition-all duration-200 bg-white text-sm ${
+                      (finalTotalAfterDiscount + customLineItemsTotal >= 2500)
+                        ? 'border-indigo-200 focus:border-indigo-500 focus:ring-indigo-500/20'
+                        : 'border-amber-300 bg-amber-50 opacity-60 cursor-not-allowed'
+                    }`}
                     value={customLineItemsDiscount || ''}
                     onChange={(e) => {
                       const val = e.target.value ? Math.min(15, parseFloat(e.target.value)) : 0;
                       setCustomLineItemsDiscount(val);
                     }}
                   />
-                  <p className="text-xs text-gray-600 mt-2">
-                    <span className="font-medium">Discount Rules:</span>
-                    <br />• Available when combined total ≥ $2,500 (main + custom items)
-                    <br />• Maximum discount: 15%
-                    <br />• Final price after discount must stay ≥ $2,500
-                    <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
-                  </p>
-                </div>
-              )}
-              {customLineItems.length > 0 && (finalTotalAfterDiscount + customLineItemsTotal < 2500) && (
-                <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
-                  <p className="text-xs text-amber-700 font-medium">
-                    💡 Discount available when combined total ≥ $2,500. Current: {formatCurrency(finalTotalAfterDiscount + customLineItemsTotal)}
-                  </p>
+
+                  {(finalTotalAfterDiscount + customLineItemsTotal >= 2500) ? (
+                    <p className="text-xs text-gray-600 mt-2">
+                      <span className="font-medium">✅ Discount Rules:</span>
+                      <br />• Available when combined total ≥ $2,500 (main + custom items)
+                      <br />• Maximum discount: 15%
+                      <br />• Final price after discount must stay ≥ $2,500
+                      <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-700 mt-2">
+                      <span className="font-medium">⚠️ Discount Not Available Yet</span>
+                      <br />Discount will only be applied when combined total ≥ $2,500
+                      <br />Current: {formatCurrency(finalTotalAfterDiscount + customLineItemsTotal)} (Need ${(2500 - (finalTotalAfterDiscount + customLineItemsTotal)).toFixed(2)} more)
+                    </p>
+                  )}
                 </div>
               )}
             </div>
