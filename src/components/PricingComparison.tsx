@@ -261,18 +261,16 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Helper function to apply discount calculations
   const calculateDiscountedPrice = (totalCost: number) => {
-    const isDiscountAllowed = totalCost >= 2500;
     const isDiscountValid = discount > 0 && discount <= 15;
-    const shouldApplyDiscount = isDiscountAllowed && isDiscountValid;
-    
-    if (shouldApplyDiscount) {
+
+    if (isDiscountValid) {
       const discountAmount = totalCost * (discount / 100);
       const finalTotal = totalCost - discountAmount;
       return {
         originalPrice: totalCost,
         discountAmount,
-        finalPrice: finalTotal >= 2500 ? finalTotal : totalCost, // Don't apply if final would be < $2500
-        hasDiscount: finalTotal >= 2500,
+        finalPrice: finalTotal,
+        hasDiscount: true,
         discountPercent: discount
       };
     }
@@ -374,11 +372,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             
             originalTotalBeforeMinimum = planTotal;
             
-            // Apply $2500 minimum to overall Multi combination total
-            const MINIMUM_TOTAL = 2500;
-            if (planTotal < MINIMUM_TOTAL) {
-              planTotal = MINIMUM_TOTAL;
-            }
           }
           
           const discountInfo = calculateDiscountedPrice(planTotal);
@@ -936,10 +929,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               {/* Button to proceed with custom selection */}
               <button
                 onClick={() => {
-                  if (customTotal > 0 && customTotal < 2500) {
-                    alert('Below $2,500 not applicable. Please select additional combinations or adjust your configuration to meet the minimum requirement of $2,500.');
-                    return;
-                  }
                   // Create a custom PricingCalculation from the selected tiers
                   if (!configuration) return;
                   
@@ -1011,12 +1000,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   
                   onSelectTier(customCalculation);
                 }}
-                disabled={customTotal > 0 && customTotal < 2500}
-                className={`mt-4 w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group text-white ${
-                  customTotal > 0 && customTotal < 2500
-                    ? 'bg-gray-400 cursor-not-allowed hover:scale-100 hover:shadow-lg'
-                    : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
-                }`}
+                className="mt-4 w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                 <span className="relative flex items-center justify-center gap-2">

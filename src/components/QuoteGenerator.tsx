@@ -3081,19 +3081,13 @@ Total Price: {{total price}}`;
       const isOverageAgreementApproval =
         (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
         (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
-      const MINIMUM_TOTAL = 2500;
-      const baseApprovalAmount = isOverageAgreementApproval
-        ? totalCost
-        : Math.max(totalCost, MINIMUM_TOTAL);
-      
-      // Apply discount if applicable (but ensure it doesn't go below $2,500 for non-overage)
+      const baseApprovalAmount = totalCost;
+
+      // Apply discount if applicable
       let approvalAmount = baseApprovalAmount;
       if (shouldApplyDiscount) {
         const discountAmount = baseApprovalAmount * (discountPercent / 100);
-        const amountAfterDiscount = baseApprovalAmount - discountAmount;
-        approvalAmount = isOverageAgreementApproval
-          ? amountAfterDiscount
-          : Math.max(amountAfterDiscount, MINIMUM_TOTAL);
+        approvalAmount = baseApprovalAmount - discountAmount;
       }
 
       // First, save the PDF to MongoDB if not already saved
@@ -4770,10 +4764,7 @@ Total Price: {{total price}}`;
         const isOverageAgreementQuote =
           (quoteData.configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
           (quoteData.configuration?.migrationType || '').toLowerCase() === 'overage agreement';
-        const MINIMUM_TOTAL = 2500;
-        const totalCost = isOverageAgreementQuote
-          ? calculatedTotalCost
-          : (calculatedTotalCost < MINIMUM_TOTAL ? MINIMUM_TOTAL : calculatedTotalCost);
+        const totalCost = calculatedTotalCost;
         const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
         const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
@@ -7472,39 +7463,6 @@ Total Price: {{total price}}`;
                 cloudfuzeManageTotal += parseFloat(exhibitPriceStr) || 0;
               }
             }
-            
-            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze Migrate)
-            const MINIMUM_TOTAL = 2500;
-            if (cloudfuzeManageTotal < MINIMUM_TOTAL && exhibitsData.length > 0) {
-              const deficit = MINIMUM_TOTAL - cloudfuzeManageTotal;
-              
-              // Add deficit to the first exhibit's price
-              const firstExhibit = exhibitsData[0];
-              if (firstExhibit && firstExhibit.exhibitPrice) {
-                const currentPriceStr = firstExhibit.exhibitPrice.replace(/[$,]/g, '');
-                const currentPrice = parseFloat(currentPriceStr) || 0;
-                const newPrice = currentPrice + deficit;
-                
-                // Update exhibit price
-                firstExhibit.exhibitPrice = formatCurrency(newPrice);
-                
-                // Update bundled price (10% discount amount)
-                const newBundledPrice = newPrice * 0.1;
-                firstExhibit.exhibitBundledPrice = formatCurrency(newBundledPrice);
-                
-                // Recalculate total with updated exhibit price
-                cloudfuzeManageTotal = MINIMUM_TOTAL;
-                
-                console.log('💰 Applied $2,500 minimum by adding deficit to first exhibit:', {
-                  originalExhibitPrice: formatCurrency(currentPrice),
-                  deficit: formatCurrency(deficit),
-                  newExhibitPrice: formatCurrency(newPrice),
-                  newBundledPrice: formatCurrency(newBundledPrice),
-                  finalTotal: formatCurrency(cloudfuzeManageTotal)
-                });
-              }
-            }
-            
             console.log('🔍 Multi-combination Total Price Calculation:', {
               serverPricesTotal: formatCurrency(total),
               migrationCost: formatCurrency(migrationCost || 0),
@@ -7804,28 +7762,10 @@ Total Price: {{total price}}`;
             const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
             const usersCost = userCost + dataCost;
             let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
-            
-            // Apply $2,500 minimum by adding deficit to first exhibit (CloudFuze Migrate) — skip for overage
-            const isOverageAgreementTemplate =
-              (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
-              (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
-            const MINIMUM_TOTAL = 2500;
-            let finalUsersCost = usersCost; // This will be what's displayed
-            if (!isOverageAgreementTemplate && calculatedDisplayedTotal < MINIMUM_TOTAL) {
-              const deficit = MINIMUM_TOTAL - calculatedDisplayedTotal;
-              finalUsersCost = usersCost + deficit; // Add deficit to usersCost for display
-              calculatedDisplayedTotal = MINIMUM_TOTAL;
-              
-              // Update the first exhibit's price to match
-              if (exhibitsData.length > 0) {
-                const firstExhibit = exhibitsData[0];
-                if (firstExhibit) {
-                  firstExhibit.exhibitPrice = formatCurrency(finalUsersCost);
-                }
-              }
-            }
-            
-            // Set users_cost to the FINAL value (after minimum adjustment if any)
+
+            const finalUsersCost = usersCost;
+
+            // Set users_cost to the final value
             templateData['{{users_cost}}'] = formatCurrency(finalUsersCost);
             templateData['{{user_cost}}'] = formatCurrency(finalUsersCost);
             templateData['{{userCost}}'] = formatCurrency(finalUsersCost);
@@ -10699,11 +10639,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </p>
 
               {/* Discount for Custom Line Items - Always show input */}
-              <div className={`mt-4 p-4 bg-gradient-to-br rounded-xl border-2 ${
-                  (finalTotalAfterDiscount + customLineItemsTotal >= 2500)
-                    ? 'from-indigo-50 to-purple-50 border-indigo-200'
-                    : 'from-amber-50 to-orange-50 border-amber-200'
-                }`}>
+              <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
                   <label className="block text-sm font-semibold text-gray-800 mb-2">
                     Custom Items Discount (%)
                     <span className="text-xs text-gray-500 font-normal ml-2">(optional)</span>

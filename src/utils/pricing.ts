@@ -192,16 +192,8 @@ function calculateManagePricing(config: ConfigurationData, tier: PricingTier): P
   const rData = dataCostRaw * regionMult;
   let totalCost = rUser + rData;
 
-  const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = rUser;
-  if (totalCost < MINIMUM_TOTAL) {
-    const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = rUser + deficit;
-    totalCost = MINIMUM_TOTAL;
-  }
-
   const result: PricingCalculation = {
-    userCost: adjustedUserCost,
+    userCost: rUser,
     dataCost: rData,
     migrationCost: 0,
     instanceCost: 0,
@@ -356,19 +348,8 @@ function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier)
   const rInst = instanceCost * regionMult;
   let totalCost = rUser + rData + rMgd + rInst;
 
-  // Skip minimum for Multi combination (minimum will be applied to overall total)
-  const isMultiCombination = config.combination?.startsWith('multi-combination-');
-  const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = rUser;
-
-  if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
-    const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = rUser + deficit;
-    totalCost = MINIMUM_TOTAL;
-  }
-
   const result = {
-    userCost: adjustedUserCost,
+    userCost: rUser,
     dataCost: rData,
     migrationCost: rMgd,
     instanceCost: rInst,
@@ -524,19 +505,8 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
   const rInst = instanceCost * regionMult;
   let totalCost = rUser + rData + rMgd + rInst;
 
-  // Skip minimum for Multi combination (minimum will be applied to overall total)
-  const isMultiCombination = config.combination?.startsWith('multi-combination-');
-  const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = rUser;
-
-  if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
-    const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = rUser + deficit;
-    totalCost = MINIMUM_TOTAL;
-  }
-
   const contentResult = {
-    userCost: adjustedUserCost,
+    userCost: rUser,
     dataCost: rData,
     migrationCost: rMgd,
     instanceCost: rInst,
@@ -680,18 +650,8 @@ function calculateEmailPricing(config: ConfigurationData, tier: PricingTier): Pr
   let totalCost = rUser + rData + rMgd + rInst;
 
   // Skip minimum for Multi combination (minimum will be applied to overall total)
-  const isMultiCombination = config.combination?.startsWith('multi-combination-');
-  const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = rUser;
-
-  if (!isMultiCombination && totalCost < MINIMUM_TOTAL) {
-    const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = rUser + deficit;
-    totalCost = MINIMUM_TOTAL;
-  }
-
   const emailResult = {
-    userCost: adjustedUserCost,
+    userCost: rUser,
     dataCost: rData,
     migrationCost: rMgd,
     instanceCost: rInst,
@@ -959,40 +919,21 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       (contentCalculation?.instanceCost || 0) +
       (emailCalculation?.instanceCost || 0);
 
-    console.log('📊 Multi combination - Combined total (before minimum):', totalCombined);
-
-    // Apply $2500 minimum to OVERALL Multi combination total
-    const MINIMUM_TOTAL = 2500;
-    let adjustedCombinedUserCost = combinedUserCost;
-    let finalTotal = totalCombined;
-    
-    if (totalCombined < MINIMUM_TOTAL) {
-      const deficit = MINIMUM_TOTAL - totalCombined;
-      adjustedCombinedUserCost = combinedUserCost + deficit;
-      finalTotal = MINIMUM_TOTAL;
-      
-      console.log('💰 Applied $2500 minimum to Multi combination overall total:', {
-        originalTotal: totalCombined,
-        originalUserCost: combinedUserCost,
-        deficit,
-        adjustedUserCost: adjustedCombinedUserCost,
-        finalTotal: MINIMUM_TOTAL
-      });
-    }
+    console.log('📊 Multi combination - Combined total:', totalCombined);
 
     assertPricingInvariant(
-      adjustedCombinedUserCost,
+      combinedUserCost,
       combinedDataCost,
       combinedMigrationCost,
       combinedInstanceCost,
       finalTotal
     );
     return {
-      userCost: adjustedCombinedUserCost,
+      userCost: combinedUserCost,
       dataCost: combinedDataCost,
       migrationCost: combinedMigrationCost,
       instanceCost: combinedInstanceCost,
-      totalCost: finalTotal,
+      totalCost: totalCombined,
       tier,
       messagingCalculation,
       contentCalculation,
@@ -1064,17 +1005,8 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
   const migrationCost = fallbackPricing.migrationCost;
   const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
   let totalCost = userCost + dataCost + migrationCost + instanceCost;
-  
-  const MINIMUM_TOTAL = 2500;
-  let adjustedUserCost = userCost;
-  
-  if (totalCost < MINIMUM_TOTAL) {
-    const deficit = MINIMUM_TOTAL - totalCost;
-    adjustedUserCost = userCost + deficit;
-    totalCost = MINIMUM_TOTAL;
-  }
- 
-  const fallbackResult = { userCost: adjustedUserCost, dataCost, migrationCost, instanceCost, totalCost, tier };
+
+  const fallbackResult = { userCost, dataCost, migrationCost, instanceCost, totalCost, tier };
   assertPricingInvariant(fallbackResult.userCost, fallbackResult.dataCost, fallbackResult.migrationCost, fallbackResult.instanceCost, fallbackResult.totalCost);
   return fallbackResult;
 }

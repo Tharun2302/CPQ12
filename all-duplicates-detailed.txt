@@ -1,0 +1,1663 @@
+[dotenv@17.2.2] injecting env (24) from .env -- tip: 📡 observe env with Radar: https://dotenvx.com/radar
+
+╔════════════════════════════════════════════════════════════════╗
+║        ALL COMBINATIONS WITH DUPLICATES - DETAILED LIST        ║
+╚════════════════════════════════════════════════════════════════╝
+
+
+[=================================================================]
+GROUP 1: ALL
+Plan: standard | Include: included
+Total Exhibits: 48 (Duplicates: 47)
+=================================================================
+
+  1. ShareFile to Google SharedDrive Standard Plan - Standard Included
+     ID: 69400400eafb4acacf0b5aaa
+     File: Sharefile to Google SharedDrive Standard Included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  2. Dropbox to Box Standard Plan - Standard Include
+     ID: 6944d1567c81e01956c7b2a5
+     File: Dropbox to Box standard included (1).docx
+     Combinations: ["dropbox-to-box","all"]
+
+  3. Dropbox to Egnyte Standard Plan - Standard Include
+     ID: 6944dd1eb323b3ba931922e9
+     File: Dropbox to Egnyte standard included.docx
+     Combinations: ["dropbox-to-egnyte","all"]
+
+  4. Dropbox to MyDrive Standard Plan - Standard Include
+     ID: 6944e0ff93e170a2e67af87a
+     File: Dropbox to Mydrive standard included.docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  5. Box to Box Advanced Plan - Advanced Include
+     ID: 69494474094bca211f852aa4
+     File: Box to Box Advanced Plan - Advanced Include.docx
+     Combinations: ["box-to-box","all"]
+
+  6. Box to Dropbox Standard Plan - Standard Include
+     ID: 694947fccb471b7053ae5a74
+     File: Box to Dropbox Advanced Plan - Advanced Include.docx
+     Combinations: ["box-to-dropbox","all"]
+
+  7. Box to ShareFile Standard Plan - Standard Include
+     ID: 694952895489cded3c028aa0
+     File: Box to ShareFile Standard  Include.docx
+     Combinations: ["box-to-sharefile","all"]
+
+  8. Dropbox to OneDrive Standard Plan - Standard Include
+     ID: 69495db5bed1e3bc412b0583
+     File: Dropbox to Onedrive standard included.docx
+     Combinations: ["dropbox-to-onedrive","all"]
+
+  9. Box to Google MyDrive Standard Plan - Standard Include
+     ID: 694f937c4018436bbc0e4e92
+     File: Box to Google MyDrive Advanced Plan - Advanced Include.docx
+     Combinations: ["box-to-google-mydrive","all"]
+
+  10. Dropbox to SharePoint Online Standard Plan - Standard Include
+     ID: 6953c1ef0ca9a4d254e08ac3
+     File: Dropbox to SharePoint Online standard included.docx
+     Combinations: ["dropbox-to-sharepoint","all"]
+
+  11. Box to OneDrive Standard Plan - Standard Include
+     ID: 6953e3eadf6cabde114db8b5
+     File: Box to OneDrive Advanced Plan - Advanced Include.docx
+     Combinations: ["box-to-onedrive","all"]
+
+  12. Box to SharePoint Online Standard Plan - Standard Include
+     ID: 6953e75af4446a001225e591
+     File: Box to SharePoint Online Advanced Plan - Advanced Include.docx
+     Combinations: ["box-to-sharepoint","all"]
+
+  13. Egnyte to SharePoint Online Standard Plan - Standard Include
+     ID: 6953ed7c568ee546e6cc41e2
+     File: Egnyte to SharePoint Online included.docx
+     Combinations: ["egnyte-to-sharepoint-online","all"]
+
+  14. Egnyte to Google Shared Drive Standard Plan - Standard Include
+     ID: 695e5afaf6e5474b2c7a1221
+     File: Egnyte to Google Shared Drive included.docx
+     Combinations: ["egnyte-to-google-sharedrive","all"]
+
+  15. Egnyte to Google MyDrive Standard Plan - Standard Include
+     ID: 695e5ecd7321cbc525f47e6b
+     File: Egnyte to Google My Drive included.docx
+     Combinations: ["egnyte-to-google","all"]
+
+  16. ShareFile to SharePoint Online Standard Plan - Standard Include
+     ID: 695e60ff19abab4234dc96dd
+     File: Sharefile to SharePoint Online Standard Included.docx
+     Combinations: ["sharefile-to-sharepoint","all"]
+
+  17. ShareFile to ShareFile Standard Plan - Standard Include
+     ID: 695e627fd989101704f5c34b
+     File: ShareFile to ShareFile Advanced Plan - Advanced Include.docx
+     Combinations: ["sharefile-to-sharefile","all"]
+
+  18. ShareFile to OneDrive Standard Plan - Standard Include
+     ID: 695e6401bdd5ea56437abae6
+     File: Sharefile to OneDrive Standard Included.docx
+     Combinations: ["sharefile-to-onedrive","all"]
+
+  19. ShareFile to Google MyDrive Standard Plan - Standard Included
+     ID: 695e661ea4cccb2f54de6606
+     File: Sharefile to Google Mydrive Standard Included.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+  20. OneDrive to OneDrive Standard Plan - Standard Include
+     ID: 695f6a26a70348a8d5e956a9
+     File: onedrive to onedrive standard included.docx
+     Combinations: ["onedrive-to-onedrive","all"]
+
+  21. OneDrive to Google MyDrive Standard Plan - Standard Include
+     ID: 695f6caedb1e3b250edc8a74
+     File: onedrive to google mydrive standard included.docx
+     Combinations: ["onedrive-to-google-mydrive","all"]
+
+  22. NFS to SharePoint Online Standard Plan - Standard Include
+     ID: 695f7141036b9e315ad4387c
+     File: NFS to SharePoint Online standard included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  23. NFS to Google Shared Drive Standard Plan - Standard Include
+     ID: 6960855cf30deb251a707d1d
+     File: NFS to Google Share Drive standard included.docx
+     Combinations: ["nfs-to-google","all"]
+
+  24. NFS to Google MyDrive Standard Plan - Standard Include
+     ID: 69609ce647c07139a4ebe4f7
+     File: NFS to Google MyDrive standard included.docx
+     Combinations: ["nfs-to-google","all"]
+
+  25. Google MyDrive to Google MyDrive Standard Plan - Standard Include
+     ID: 6960b77d53b13c182d949de4
+     File: Google My Drive -Google My Drive  standard included.docx
+     Combinations: ["google-mydrive-to-google-mydrive","all"]
+
+  26. Google MyDrive to OneDrive Standard Plan - Standard Include
+     ID: 6960b909017c0edc9d1fe338
+     File: Google My Drive- OneDrive standard included.docx
+     Combinations: ["google-mydrive-to-onedrive","all"]
+
+  27. Google MyDrive to Google Shared Drive Standard Plan - Standard Include
+     ID: 6960ba75c96ec65811ffbe50
+     File: Google MyDrive to Google Shared Drive Advanced Plan - Advanced Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  28. Google MyDrive to Egnyte Standard Plan - Standard Include
+     ID: 6960bc110a41c034b416fca1
+     File: Google MyDrive- Egnyte standard included.docx
+     Combinations: ["google-mydrive-to-egnyte","all"]
+
+  29. Google MyDrive to Dropbox Standard Plan - Standard Include
+     ID: 6960bd3bf6e267b8c3a6d9df
+     File: Google MyDrive to Dropbox Advanced Plan - Advanced Include.docx
+     Combinations: ["google-mydrive-to-dropbox","all"]
+
+  30. Google MyDrive to Box Advanced Plan - Advanced Include
+     ID: 6960be510a2b315165727c5b
+     File: Google MyDrive to Box Advanced Plan - Advanced Include.docx
+     Combinations: ["google-mydrive-to-box","all"]
+
+  31. Google MyDrive to SharePoint Online Standard Plan - Standard Include
+     ID: 6960f8383c0a8b035c047a0a
+     File: Google MyDrive- SharePoint Online standard included.docx
+     Combinations: ["google-mydrive-to-sharepoint","all"]
+
+  32. NFS to OneDrive Standard Plan - Standard Include
+     ID: 6960fa898c5f6d11a5a61b7b
+     File: NFS to onedrive standard included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  33. SharePoint to SharePoint Online Standard Plan - Standard Include
+     ID: 69610cf23547b19ad8d5d7ca
+     File: Share point Online to Share point online standard included.docx
+     Combinations: ["all"]
+
+  34. Egnyte to OneDrive Standard Plan - Standard Include
+     ID: 6961122e248c36af361e6057
+     File: Egnyte to OneDrive included.docx
+     Combinations: ["egnyte-to-onedrive","all"]
+
+  35. Gmail to Outlook Standard Plan - Standard Include
+     ID: 6966598efe0fbb24853923a4
+     File: Gmail to Outlook Standard Plan - Standard Include.docx
+     Combinations: ["gmail-to-outlook","all"]
+
+  36. Gmail to Gmail Standard Plan - Standard Include
+     ID: 69666f5b1dd31d683c881e49
+     File: Gmail to Gmail Standard Plan - Standard Include.docx
+     Combinations: ["gmail-to-gmail","all"]
+
+  37. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 6967906d0d2cb1db2f4aec0b
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  38. Dropbox to Google Shared Drive Standard Plan - Standard Include
+     ID: 6967c696a7d7c1972a07ea74
+     File: Dropbox to shared drive standard included.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  39. Box to Google Shared Drive Standard Plan - Standard Include
+     ID: 6967c697a7d7c1972a07ea76
+     File: Box to Google Shared Drive Advanced Plan - Advanced Include.docx
+     Combinations: ["box-to-google-sharedrive","all"]
+
+  40. Dropbox to Google MyDrive Standard Plan - Standard Include
+     ID: 696a45415d18434d1b410b51
+     File: Dropbox to My Drive standard included.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google","all"]
+
+  41. Google Shared Drive to Google Shared Drive Standard Plan - Standard Included
+     ID: 696f7900eb26b2aa1cd79fec
+     File: Google Shared Drive- Google Shared Drive standard included.docx
+     Combinations: ["google-sharedrive-to-google-sharedrive","all"]
+
+  42. Google Shared Drive to SharePoint Online Standard Plan - Standard Included
+     ID: 696f7e26f09b5547ac44e2c0
+     File: Google Shared Drive- Share point Online standard included.docx
+     Combinations: ["google-sharedrive-to-sharepoint","all"]
+
+  43. Google Shared Drive to Egnyte Standard Plan - Standard Included
+     ID: 696f8421f3047be71dccf55a
+     File: Google Shared Drive to Egnyte Advanced Plan - Advanced Included.docx
+     Combinations: ["google-sharedrive-to-egnyte","all"]
+
+  44. Google Shared Drive to OneDrive Standard Plan - Standard Included
+     ID: 696f875d4cdcc4428b8e8f79
+     File: Google Shared Drive- OneDrive standard included.docx
+     Combinations: ["google-sharedrive-to-onedrive","all"]
+
+  45. SharePoint to Google Shared Drive Standard Plan - Standard Included
+     ID: 696f8f5dc2467ec897cdd7f3
+     File: Share point Online to Google share drive standard included.docx
+     Combinations: ["sharepoint-online-to-google-sharedrive","all"]
+
+  46. SharePoint to Google MyDrive Standard Plan - Standard Included
+     ID: 696f926ad5e7e0c7b4e9e304
+     File: Share point Online to Google MyDrive standard included.docx
+     Combinations: ["sharepoint-online-to-google-mydrive","all"]
+
+  47. SharePoint to Egnyte Standard Plan - Standard Included
+     ID: 696f951964f816edff35bf2d
+     File: Share point Online to Egnyte standard included.docx
+     Combinations: ["sharepoint-online-to-egnyte","all"]
+
+  48. ShareFile to Google Shared Drive Standard Plan - Included Features
+     ID: 69705d075db342c1893897ad
+     File: sharefile-to-google-sharedrive-advanced-plan-included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 2: ALL
+Plan: basic | Include: included
+Total Exhibits: 46 (Duplicates: 45)
+=================================================================
+
+  1. OneDrive to OneDrive Standard Plan - Included Features
+     ID: 694017cb3878a2d6dcc8137d
+     File: OneDrive to OneDrive Standard Plan - Included Features.docx
+     Combinations: ["onedrive-to-onedrive","all"]
+
+  2. Dropbox to Box Basic Plan - Basic Include
+     ID: 6944d5979e58b1d93f4c9baa
+     File: Dropbox to Box Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-box","all"]
+
+  3. Dropbox to Egnyte Basic Plan - Basic Include
+     ID: 6944d8c82d1b6fa686f16231
+     File: Dropbox to Egnyte Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-egnyte","all"]
+
+  4. Dropbox to MyDrive Basic Plan - Basic Include
+     ID: 6944e81de22c1481c5e2a018
+     File: Dropbox to MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  5. Dropbox to Google Shared Drive Basic Plan - Basic Include
+     ID: 6944ed70a65a4961f72fc94a
+     File: Dropbox to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  6. Box to Dropbox Basic Plan - Basic Include
+     ID: 69494606f3df56afd433023a
+     File: Box to Dropbox Standard Plan - Standard Include.docx
+     Combinations: ["box-to-dropbox","all"]
+
+  7. Box to ShareFile Basic Plan - Basic Include
+     ID: 694955efda541709a704e7a1
+     File: Box to ShareFile Standard Plan - Standard Include.docx
+     Combinations: ["box-to-sharefile","all"]
+
+  8. Dropbox to OneDrive Basic Plan - Basic Include
+     ID: 69495db5bed1e3bc412b0581
+     File: Dropbox to OneDrive Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-onedrive","all"]
+
+  9. Dropbox to SharePoint Online Basic Plan - Basic Include
+     ID: 6953bb33f8cdb6db861f7da4
+     File: Dropbox to SharePoint Online Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-sharepoint","all"]
+
+  10. Box to Google Shared Drive Basic Plan - Basic Include
+     ID: 6953e3e9df6cabde114db8b3
+     File: Box to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["box-to-google-sharedrive","all"]
+
+  11. Box to OneDrive Basic Plan - Basic Include
+     ID: 6953e3eadf6cabde114db8b6
+     File: Box to OneDrive Standard Plan - Standard Include.docx
+     Combinations: ["box-to-onedrive","all"]
+
+  12. Box to SharePoint Online Basic Plan - Basic Include
+     ID: 6953e75af4446a001225e592
+     File: Box to SharePoint Online Standard Plan - Standard Include.docx
+     Combinations: ["box-to-sharepoint","all"]
+
+  13. Egnyte to OneDrive Basic Plan - Basic Include
+     ID: 6953e96445fdb12e1e8f0c3e
+     File: Egnyte to OneDrive Standard Plan - Standard Include.docx
+     Combinations: ["egnyte-to-onedrive","all"]
+
+  14. Egnyte to Google Shared Drive Basic Plan - Basic Include
+     ID: 6953ea9f041938ef5d1e29a9
+     File: Egnyte to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["egnyte-to-google-sharedrive","all"]
+
+  15. Egnyte to Google MyDrive Basic Plan - Basic Include
+     ID: 6953ebbdec22d46e0b0fb483
+     File: Egnyte to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["egnyte-to-google","all"]
+
+  16. OneDrive to Google MyDrive Basic Plan - Basic Include
+     ID: 695f65268d84acb0d1e61a37
+     File: OneDrive to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["onedrive-to-google-mydrive","all"]
+
+  17. NFS to SharePoint Online Basic Plan - Basic Include
+     ID: 695f6ec09ebab1306b101f7f
+     File: NFS to SharePoint Online Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  18. NFS to OneDrive Basic Plan - Basic Include
+     ID: 695f7a1be1fead4fd516f226
+     File: NFS to OneDrive Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  19. Slack to Google Chat Basic Plan - Basic Include
+     ID: 695fc065088376becf345a6d
+     File: Slack to Google Chat Basic Plan - Basic Include.docx
+     Combinations: ["slack-to-google-chat","all"]
+
+  20. NFS to Google Shared Drive Basic Plan - Basic Include
+     ID: 696099bc46a4280f356f934f
+     File: NFS to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+  21. NFS to Google MyDrive Basic Plan - Basic Include
+     ID: 69609b347990d8f5a5ebe9b9
+     File: NFS to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+  22. Google MyDrive to SharePoint Online Basic Plan - Basic Include
+     ID: 6960a03303f2be2e2efb5876
+     File: Google MyDrive to SharePoint Online Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-sharepoint","all"]
+
+  23. Google MyDrive to OneDrive Basic Plan - Basic Include
+     ID: 6960a23c07a2cd8303200de9
+     File: Google MyDrive to OneDrive Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-onedrive","all"]
+
+  24. Google MyDrive to Google Shared Drive Basic Plan - Basic Include
+     ID: 6960a78babe789ae5811ef80
+     File: Google MyDrive to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  25. Google MyDrive to Google MyDrive Basic Plan - Basic Include
+     ID: 6960b04b5e2ee52c3b80ec88
+     File: Google MyDrive to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","all"]
+
+  26. Google MyDrive to Egnyte Basic Plan - Basic Include
+     ID: 6960b21540221a220ce19c2f
+     File: Google MyDrive to Egnyte Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-egnyte","all"]
+
+  27. Google MyDrive to Dropbox Basic Plan - Basic Include
+     ID: 6960b344ffcb6b9f0c93e6d4
+     File: Google MyDrive to Dropbox Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-dropbox","all"]
+
+  28. Google MyDrive to Box Standard Plan - Standard Include
+     ID: 6960b4a433c5a7f666d6c89c
+     File: Google MyDrive to Box Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-box","all"]
+
+  29. Egnyte to SharePoint Online Basic Plan - Basic Include
+     ID: 6960cbd5909248c0b552d5e3
+     File: Egnyte to SharePoint Online Standard Plan - Standard Include.docx
+     Combinations: ["egnyte-to-sharepoint-online","all"]
+
+  30. Box to Box Basic Plan - Basic Include
+     ID: 6960f5f4192eca62e3ac5d5a
+     File: Box to Box Standard Plan - Standard Include.docx
+     Combinations: ["box-to-box","all"]
+
+  31. ShareFile to ShareFile Basic Plan - Basic Include
+     ID: 69610205ece769212d33ccda
+     File: ShareFile to ShareFile Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-sharefile","all"]
+
+  32. ShareFile to OneDrive Basic Plan - Basic Include
+     ID: 696104094dc5d091bc6ed72e
+     File: ShareFile to OneDrive Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-onedrive","all"]
+
+  33. ShareFile to Google MyDrive Basic Plan - Basic Include
+     ID: 696106ab4ef6e2a09b405393
+     File: ShareFile to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+  34. ShareFile to SharePoint Online Basic Plan - Basic Include
+     ID: 6961087c549a926950baf3aa
+     File: ShareFile to SharePoint Online Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-sharepoint","all"]
+
+  35. ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Include
+     ID: 69677e9c092ca2d1d59d54c0
+     File: ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-google-mydrive","sharefile-to-google-sharedrive","all"]
+
+  36. Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 69679bc62f0ef8fcd31a6083
+     File: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","google-mydrive-to-google-sharedrive","all"]
+
+  37. ShareFile to Google Shared Drive Basic Plan - Basic Include
+     ID: 6967c696a7d7c1972a07ea72
+     File: ShareFile to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  38. ShareFile to Google SharedDrive Basic Plan - Basic Included
+     ID: 696f38a6d4801a6e36648227
+     File: ShareFile to Google SharedDrive Standard Plan - Standard Included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  39. ShareFile to Google MyDrive Basic Plan - Basic Included
+     ID: 696f78ffeb26b2aa1cd79fe8
+     File: ShareFile to Google MyDrive Standard Plan - Standard Included.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+  40. Google Shared Drive to Google Shared Drive Basic Plan - Basic Included
+     ID: 696f7900eb26b2aa1cd79fea
+     File: Google Shared Drive to Google Shared Drive Standard Plan - Standard Included.docx
+     Combinations: ["google-sharedrive-to-google-sharedrive","all"]
+
+  41. Google Shared Drive to SharePoint Online Basic Plan - Basic Included
+     ID: 696f7e26f09b5547ac44e2be
+     File: Google Shared Drive to SharePoint Online Standard Plan - Standard Included.docx
+     Combinations: ["google-sharedrive-to-sharepoint","all"]
+
+  42. Google Shared Drive to Egnyte Basic Plan - Basic Included
+     ID: 696f8421f3047be71dccf558
+     File: Google Shared Drive to Egnyte Standard Plan - Standard Included.docx
+     Combinations: ["google-sharedrive-to-egnyte","all"]
+
+  43. Google Shared Drive to OneDrive Basic Plan - Basic Included
+     ID: 696f875d4cdcc4428b8e8f77
+     File: Google Shared Drive to OneDrive Standard Plan - Standard Included.docx
+     Combinations: ["google-sharedrive-to-onedrive","all"]
+
+  44. SharePoint to Google Shared Drive Basic Plan - Basic Included
+     ID: 696f8f5dc2467ec897cdd7f1
+     File: SharePoint to Google Shared Drive Standard Plan - Standard Included.docx
+     Combinations: ["sharepoint-online-to-google-sharedrive","all"]
+
+  45. SharePoint to Google MyDrive Basic Plan - Basic Included
+     ID: 696f926ad5e7e0c7b4e9e302
+     File: SharePoint to Google MyDrive Standard Plan - Standard Included.docx
+     Combinations: ["sharepoint-online-to-google-mydrive","all"]
+
+  46. SharePoint to Egnyte Basic Plan - Basic Included
+     ID: 696f951864f816edff35bf2b
+     File: SharePoint to Egnyte Standard Plan - Standard Included.docx
+     Combinations: ["sharepoint-online-to-egnyte","all"]
+
+
+[=================================================================]
+GROUP 3: ALL
+Plan: basic | Include: notincluded
+Total Exhibits: 46 (Duplicates: 45)
+=================================================================
+
+  1. Dropbox to Box Basic Plan - Basic Not Include
+     ID: 6944d5979e58b1d93f4c9bab
+     File: Dropbox to Box Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-box","all"]
+
+  2. Dropbox to Egnyte Basic Plan - Basic Not Include
+     ID: 6944d8c82d1b6fa686f16232
+     File: Dropbox to Egnyte Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-egnyte","all"]
+
+  3. Dropbox to MyDrive Basic Plan - Basic Not Include
+     ID: 6944e81ee22c1481c5e2a019
+     File: Dropbox to MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  4. Dropbox to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6944ed70a65a4961f72fc94b
+     File: Dropbox to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  5. Box to Dropbox Basic Plan - Basic Not Include
+     ID: 69494606f3df56afd433023b
+     File: Box to Dropbox Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-dropbox","all"]
+
+  6. Box to ShareFile Basic Plan - Basic Not Include
+     ID: 694955efda541709a704e7a2
+     File: Box to ShareFile Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-sharefile","all"]
+
+  7. Box to Google Mydrive $ Shared drive Basic Plan - Basic Not Include
+     ID: 69495b88b21c440653eeca55
+     File: Box to MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-google-mydrive","all"]
+
+  8. Dropbox to OneDrive Basic Plan - Basic Not Include
+     ID: 69495db5bed1e3bc412b0582
+     File: Dropbox to OneDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-onedrive","all"]
+
+  9. Dropbox to SharePoint Online Basic Plan - Basic Not Include
+     ID: 6953bb33f8cdb6db861f7da5
+     File: Dropbox to SharePoint Online Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-sharepoint","all"]
+
+  10. Box to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6953e3eadf6cabde114db8b4
+     File: Box to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-google-sharedrive","all"]
+
+  11. Box to OneDrive Basic Plan - Basic Not Include
+     ID: 6953e3eadf6cabde114db8b7
+     File: Box to OneDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-onedrive","all"]
+
+  12. Box to SharePoint Online Basic Plan - Basic Not Include
+     ID: 6953e75af4446a001225e593
+     File: Box to SharePoint Online Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-sharepoint","all"]
+
+  13. Egnyte to OneDrive Basic Plan - Basic Not Include
+     ID: 6953e96445fdb12e1e8f0c3f
+     File: Egnyte to OneDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["egnyte-to-onedrive","all"]
+
+  14. Egnyte to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6953ea9f041938ef5d1e29aa
+     File: Egnyte to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["egnyte-to-google-sharedrive","all"]
+
+  15. Egnyte to Google MyDrive Basic Plan - Basic Not Include
+     ID: 6953ebbdec22d46e0b0fb484
+     File: Egnyte to Google MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["egnyte-to-google","all"]
+
+  16. OneDrive to Google MyDrive Basic Plan - Basic Not Include
+     ID: 695f65268d84acb0d1e61a38
+     File: OneDrive to Google MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["onedrive-to-google-mydrive","all"]
+
+  17. OneDrive to OneDrive Basic Plan - Not Included Features
+     ID: 695f6a26a70348a8d5e956a8
+     File: onedrive-to-onedrive-standard-plan-notincluded.docx
+     Combinations: ["onedrive-to-onedrive","all"]
+
+  18. NFS to SharePoint Online Basic Plan - Basic Not Include
+     ID: 695f6ec09ebab1306b101f80
+     File: NFS to SharePoint Online Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  19. NFS to OneDrive Basic Plan - Basic Not Include
+     ID: 695f7a1be1fead4fd516f227
+     File: NFS to OneDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  20. NFS to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 696099bc46a4280f356f9350
+     File: NFS to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+  21. NFS to Google MyDrive Basic Plan - Basic Not Include
+     ID: 69609b347990d8f5a5ebe9ba
+     File: NFS to Google MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+  22. Google MyDrive to SharePoint Online Basic Plan - Basic Not Include
+     ID: 6960a03303f2be2e2efb5877
+     File: Google MyDrive to SharePoint Online Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-sharepoint","all"]
+
+  23. Google MyDrive to OneDrive Basic Plan - Basic Not Include
+     ID: 6960a23c07a2cd8303200dea
+     File: Google MyDrive to OneDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-onedrive","all"]
+
+  24. Google MyDrive to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6960a78babe789ae5811ef81
+     File: Google MyDrive to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  25. Google MyDrive to Google MyDrive Basic Plan - Basic Not Include
+     ID: 6960b04b5e2ee52c3b80ec89
+     File: Google MyDrive to Google MyDrive Standard Plan - Standard Not Include (1).docx
+     Combinations: ["google-mydrive-to-google-mydrive","all"]
+
+  26. Google MyDrive to Egnyte Basic Plan - Basic Not Include
+     ID: 6960b21540221a220ce19c30
+     File: Google MyDrive to Egnyte Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-egnyte","all"]
+
+  27. Google MyDrive to Dropbox Basic Plan - Basic Not Include
+     ID: 6960b344ffcb6b9f0c93e6d5
+     File: Google MyDrive to Dropbox Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-dropbox","all"]
+
+  28. Google MyDrive to Box Standard Plan - Standard Not Include
+     ID: 6960b4a433c5a7f666d6c89d
+     File: Google MyDrive to Box Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-box","all"]
+
+  29. Egnyte to SharePoint Online Basic Plan - Basic Not Include
+     ID: 6960cbd5909248c0b552d5e4
+     File: Egnyte to SharePoint Online Standard Plan - Standard Not Include.docx
+     Combinations: ["egnyte-to-sharepoint-online","all"]
+
+  30. Box to Box Basic Plan - Basic Not Include
+     ID: 6960f5f4192eca62e3ac5d5b
+     File: Box to Box Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-box","all"]
+
+  31. ShareFile to ShareFile Basic Plan - Basic Not Include
+     ID: 69610205ece769212d33ccdb
+     File: ShareFile to ShareFile Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-sharefile","all"]
+
+  32. ShareFile to OneDrive Basic Plan - Basic Not Include
+     ID: 696104094dc5d091bc6ed72f
+     File: ShareFile to OneDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-onedrive","all"]
+
+  33. ShareFile to SharePoint Online Basic Plan - Basic Not Include
+     ID: 6961087c549a926950baf3ab
+     File: ShareFile to SharePoint Online Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-sharepoint","all"]
+
+  34. ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Not Include
+     ID: 69677e9c092ca2d1d59d54c1
+     File: ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-google-mydrive","sharefile-to-google-sharedrive","all"]
+
+  35. Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 69679d6e0f005aa81af00acd
+     File: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","google-mydrive-to-google-sharedrive","all"]
+
+  36. ShareFile to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6967c696a7d7c1972a07ea73
+     File: ShareFile to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  37. ShareFile to Google SharedDrive Basic Plan - Basic Not Included
+     ID: 696f38a6d4801a6e36648228
+     File: ShareFile to Google SharedDrive Standard Plan - Standard Not Included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  38. ShareFile to Google MyDrive Basic Plan - Basic Not Included
+     ID: 696f78ffeb26b2aa1cd79fe9
+     File: ShareFile to Google MyDrive Standard Plan - Standard Not Included.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+  39. Google Shared Drive to Google Shared Drive Basic Plan - Basic Not Included
+     ID: 696f7900eb26b2aa1cd79feb
+     File: Google Shared Drive to Google Shared Drive Standard Plan - Standard Not Included.docx
+     Combinations: ["google-sharedrive-to-google-sharedrive","all"]
+
+  40. Google Shared Drive to SharePoint Online Basic Plan - Basic Not Included
+     ID: 696f7e26f09b5547ac44e2bf
+     File: Google Shared Drive to SharePoint Online Standard Plan - Standard Not Included.docx
+     Combinations: ["google-sharedrive-to-sharepoint","all"]
+
+  41. Google Shared Drive to Egnyte Basic Plan - Basic Not Included
+     ID: 696f8421f3047be71dccf559
+     File: Google Shared Drive to Egnyte Standard Plan - Standard Not Included.docx
+     Combinations: ["google-sharedrive-to-egnyte","all"]
+
+  42. Google Shared Drive to OneDrive Basic Plan - Basic Not Included
+     ID: 696f875d4cdcc4428b8e8f78
+     File: Google Shared Drive to OneDrive Standard Plan - Standard Not Included.docx
+     Combinations: ["google-sharedrive-to-onedrive","all"]
+
+  43. SharePoint to Google Shared Drive Basic Plan - Basic Not Included
+     ID: 696f8f5dc2467ec897cdd7f2
+     File: SharePoint to Google Shared Drive Standard Plan - Standard Not Included.docx
+     Combinations: ["sharepoint-online-to-google-sharedrive","all"]
+
+  44. SharePoint to Google MyDrive Basic Plan - Basic Not Included
+     ID: 696f926ad5e7e0c7b4e9e303
+     File: SharePoint to Google MyDrive Standard Plan - Standard Not Included.docx
+     Combinations: ["sharepoint-online-to-google-mydrive","all"]
+
+  45. SharePoint to Egnyte Basic Plan - Basic Not Included
+     ID: 696f951864f816edff35bf2c
+     File: SharePoint to Egnyte Standard Plan - Standard Not Included.docx
+     Combinations: ["sharepoint-online-to-egnyte","all"]
+
+  46. Slack to Google Chat Basic Plan - Basic Not Include
+     ID: 698c5c4482063125b325c48e
+     File: Slack to Google Chat Basic Plan - Basic Not Include.docx
+     Combinations: ["slack-to-google-chat","all"]
+
+
+[=================================================================]
+GROUP 4: ALL
+Plan: standard | Include: notincluded
+Total Exhibits: 41 (Duplicates: 40)
+=================================================================
+
+  1. ShareFile to Google SharedDrive Standard Plan - Standard Not Included
+     ID: 69400400eafb4acacf0b5aab
+     File: Sharefile to Google SharedDrive Standard not included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  2. Dropbox to Box Standard Plan - Standard Not Include
+     ID: 6944d1567c81e01956c7b2a6
+     File: Dropbox to box standard not included (1).docx
+     Combinations: ["dropbox-to-box","all"]
+
+  3. Dropbox to Egnyte Standard Plan - Standard Not Include
+     ID: 6944dd1eb323b3ba931922ea
+     File: Dropbox to Egnyte standard not included (1).docx
+     Combinations: ["dropbox-to-egnyte","all"]
+
+  4. Dropbox to MyDrive Standard Plan - Standard Not Include
+     ID: 6944e0ff93e170a2e67af87b
+     File: Dropbox to Mydrive Standard Plan -  Not Include (1).docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  5. Box to Box Advanced Plan - Advanced Not Include
+     ID: 69494474094bca211f852aa5
+     File: Box to Box Advanced Plan - Advanced Not Include.docx
+     Combinations: ["box-to-box","all"]
+
+  6. Box to Dropbox Standard Plan - Standard Not Include
+     ID: 69494e0d913dc8282303f838
+     File: Box to Dropbox Advanced Plan - Advanced Not Include.docx
+     Combinations: ["box-to-dropbox","all"]
+
+  7. Box to ShareFile Standard Plan - Standard Not Include
+     ID: 694952895489cded3c028aa1
+     File: Box to ShareFile standard not included.docx
+     Combinations: ["box-to-sharefile","all"]
+
+  8. Dropbox to OneDrive Standard Plan - Standard Not Include
+     ID: 69495db5bed1e3bc412b0584
+     File: Dropbox to OneDrive Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-onedrive","all"]
+
+  9. Dropbox to SharePoint Online Standard Plan - Standard Not Include
+     ID: 6953c1ef0ca9a4d254e08ac4
+     File: Dropbox to SharePoint Online Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-sharepoint","all"]
+
+  10. Egnyte to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 695e5afaf6e5474b2c7a1222
+     File: Egnyte to Google Shared Drive not included.docx
+     Combinations: ["egnyte-to-google-sharedrive","all"]
+
+  11. Egnyte to Google MyDrive Standard Plan - Standard Not Include
+     ID: 695e5ecd7321cbc525f47e6c
+     File: Egnyte to Google My Drive not included.docx
+     Combinations: ["egnyte-to-google","all"]
+
+  12. ShareFile to SharePoint Online Standard Plan - Standard Not Include
+     ID: 695e60ff19abab4234dc96de
+     File: Sharefile to SharePoint Online Standard not included.docx
+     Combinations: ["sharefile-to-sharepoint","all"]
+
+  13. ShareFile to ShareFile Standard Plan - Standard Not Include
+     ID: 695e627fd989101704f5c34c
+     File: ShareFile to ShareFile Advanced Plan - Advanced Not Include.docx
+     Combinations: ["sharefile-to-sharefile","all"]
+
+  14. ShareFile to OneDrive Standard Plan - Standard Not Include
+     ID: 695e6401bdd5ea56437abae7
+     File: Sharefile to OneDrive Standard not included.docx
+     Combinations: ["sharefile-to-onedrive","all"]
+
+  15. ShareFile to Google MyDrive Standard Plan - Standard Not Included
+     ID: 695e661ea4cccb2f54de6607
+     File: Sharefile to Google MyDrive Standard not included.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+  16. OneDrive to OneDrive Standard Plan - Standard Not Include
+     ID: 695f6a26a70348a8d5e956aa
+     File: onedrive to onedrive standard not included.docx
+     Combinations: ["onedrive-to-onedrive","all"]
+
+  17. OneDrive to Google MyDrive Standard Plan - Standard Not Include
+     ID: 695f6caedb1e3b250edc8a75
+     File: onedrive to google mydrive standard not included.docx
+     Combinations: ["onedrive-to-google-mydrive","all"]
+
+  18. NFS to SharePoint Online Standard Plan - Standard Not Include
+     ID: 695f7141036b9e315ad4387d
+     File: NFS to SharePoint Online standard not included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  19. NFS to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 6960855cf30deb251a707d1e
+     File: NFS to Google Share Drive standard not included.docx
+     Combinations: ["nfs-to-google","all"]
+
+  20. NFS to Google MyDrive Standard Plan - Standard Not Include
+     ID: 69609ce647c07139a4ebe4f8
+     File: NFS to MyDrive standard not included.docx
+     Combinations: ["nfs-to-google","all"]
+
+  21. Google MyDrive to Google MyDrive Standard Plan - Standard Not Include
+     ID: 6960b77d53b13c182d949de5
+     File: Google My Drive -Google My Drive Standard not included.docx
+     Combinations: ["google-mydrive-to-google-mydrive","all"]
+
+  22. Google MyDrive to OneDrive Standard Plan - Standard Not Include
+     ID: 6960b909017c0edc9d1fe339
+     File: Google My Drive- OneDrive Standard not included.docx
+     Combinations: ["google-mydrive-to-onedrive","all"]
+
+  23. Google MyDrive to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 6960ba75c96ec65811ffbe51
+     File: Google MyDrive to Google Shared Drive Advanced Plan - Advanced Not Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  24. Google MyDrive to Egnyte Standard Plan - Standard Not Include
+     ID: 6960bc110a41c034b416fca2
+     File: Google MyDrive- Egnyte Standard not included.docx
+     Combinations: ["google-mydrive-to-egnyte","all"]
+
+  25. Google MyDrive to Dropbox Standard Plan - Standard Not Include
+     ID: 6960bd3bf6e267b8c3a6d9e0
+     File: Google MyDrive to Dropbox Advanced Plan - Advanced Not Include.docx
+     Combinations: ["google-mydrive-to-dropbox","all"]
+
+  26. Google MyDrive to Box Advanced Plan - Advanced Not Include
+     ID: 6960be510a2b315165727c5c
+     File: Google MyDrive to Box Advanced Plan - Advanced Not Include.docx
+     Combinations: ["google-mydrive-to-box","all"]
+
+  27. Egnyte to SharePoint Online Standard Plan - Standard Not Include
+     ID: 6960cd58301b0ad4710f8b0d
+     File: Egnyte to  SharePoint Online not included.docx
+     Combinations: ["egnyte-to-sharepoint-online","all"]
+
+  28. Google MyDrive to SharePoint Online Standard Plan - Standard Not Include
+     ID: 6960f8383c0a8b035c047a0b
+     File: Google MyDrive- SharePoint Online Standard not included.docx
+     Combinations: ["google-mydrive-to-sharepoint","all"]
+
+  29. NFS to OneDrive Standard Plan - Standard Not Include
+     ID: 6960fa898c5f6d11a5a61b7c
+     File: NFS to onedrive standard not included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  30. SharePoint to SharePoint Online Standard Plan - Standard Not Include
+     ID: 69610cf23547b19ad8d5d7cb
+     File: Share point Online to Share point online standard not included.docx
+     Combinations: ["all"]
+
+  31. Egnyte to OneDrive Standard Plan - Standard Not Include
+     ID: 6961122e248c36af361e6058
+     File: Egnyte to  OneDrive not included.docx
+     Combinations: ["egnyte-to-onedrive","all"]
+
+  32. Gmail to Outlook Standard Plan - Standard Not Include
+     ID: 6966598efe0fbb24853923a5
+     File: Gmail to Outlook Standard Plan - Standard Not Include.docx
+     Combinations: ["gmail-to-outlook","all"]
+
+  33. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 6967906d0d2cb1db2f4aec0c
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  34. Dropbox to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 6967c696a7d7c1972a07ea75
+     File: Dropbox to Shared Drive Standard Plan -  Not Include.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  35. Dropbox to Google MyDrive Standard Plan - Standard Not Include
+     ID: 696a45415d18434d1b410b52
+     File: Dropbox to Google MyDrive Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google","all"]
+
+  36. Google Shared Drive to Egnyte Standard Plan - Standard Not Included
+     ID: 696f8421f3047be71dccf55b
+     File: Google Shared Drive to Egnyte Advanced Plan - Advanced Not Included.docx
+     Combinations: ["google-sharedrive-to-egnyte","all"]
+
+  37. Google Shared Drive to OneDrive Standard Plan - Standard Not Included
+     ID: 696f875d4cdcc4428b8e8f7a
+     File: Google Shared drive to Onedrive standard not included.docx
+     Combinations: ["google-sharedrive-to-onedrive","all"]
+
+  38. SharePoint to Google Shared Drive Standard Plan - Standard Not Included
+     ID: 696f8f5dc2467ec897cdd7f4
+     File: Share Point Online to Google Share Drive standard not included.docx
+     Combinations: ["sharepoint-online-to-google-sharedrive","all"]
+
+  39. SharePoint to Google MyDrive Standard Plan - Standard Not Included
+     ID: 696f926ad5e7e0c7b4e9e305
+     File: Share Point Online to Google MyDrive standard not included.docx
+     Combinations: ["sharepoint-online-to-google-mydrive","all"]
+
+  40. SharePoint to Egnyte Standard Plan - Standard Not Included
+     ID: 696f951964f816edff35bf2e
+     File: SharePoint to Egnyte Advanced Plan - Advanced Not Included.docx
+     Combinations: ["sharepoint-online-to-egnyte","all"]
+
+  41. ShareFile to Google Shared Drive Standard Plan - Not Included Features
+     ID: 69705d085db342c1893897ae
+     File: sharefile-to-google-sharedrive-advanced-plan-notincluded.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 5: ALL
+Plan: (none) | Include: included
+Total Exhibits: 6 (Duplicates: 5)
+=================================================================
+
+  1. Slack to Slack - Included Features
+     ID: 6953a56ab3e393af920b69da
+     File: Slack to Slack - Included.docx.docx
+     Combinations: ["slack-to-slack","all"]
+
+  2. Google Drive to Google(MyDrive & Shared Drive) - Included Features
+     ID: 696794cfefad1346d9b6b87f
+     File: Google Drive to Google(MyDrive & Shared Drive) - Included Features.docx
+     Combinations: ["google-mydrive-to-google-mydrive","google-mydrive-to-google-sharedrive","all"]
+
+  3. Outlook to Gmail - Included Features
+     ID: 6967c696a7d7c1972a07ea6e
+     File: Outlook to Gmail - Included.docx
+     Combinations: ["outlook-to-gmail","all"]
+
+  4. Teams to Google Chat - Included Features
+     ID: 6968e05996a48833c61e2e8f
+     File: Teams to Google Chat - Included Features.docx
+     Combinations: ["teams-to-google-chat","all"]
+
+  5. Meta to Google Chat - Included Features
+     ID: 69690924837643c641dc027e
+     File: Meta to Google Chat - Included Features.docx
+     Combinations: ["meta-to-google-chat","all"]
+
+  6. Google Chat to Google Chat - Included
+     ID: 698b1121a390f014df4ca199
+     File: Google Chat to Google Chat - Included.docx
+     Combinations: ["google-chat-to-google-chat","all"]
+
+
+[=================================================================]
+GROUP 6: ALL
+Plan: (none) | Include: notincluded
+Total Exhibits: 4 (Duplicates: 3)
+=================================================================
+
+  1. Slack to Slack - Not Included Features
+     ID: 6953a56ab3e393af920b69db
+     File: Slack to Slack - Not Included.docx.docx
+     Combinations: ["slack-to-slack","all"]
+
+  2. Google Chat to Google Chat - Not Included
+     ID: 6967fb14233233205ff4bfb2
+     File: Google Chat-to-Google Chat Not Included.docx
+     Combinations: ["google-chat-to-google-chat","all"]
+
+  3. Teams to Google Chat - Not Included Feature
+     ID: 6968e05a96a48833c61e2e90
+     File: Teams to Google Chat - Not Included Feature.docx
+     Combinations: ["teams-to-google-chat","all"]
+
+  4. Meta to Google Chat - Not Included Feature
+     ID: 69690924837643c641dc027f
+     File: Meta to Google Chat - Not Included Feature.docx
+     Combinations: ["meta-to-google-chat","all"]
+
+
+[=================================================================]
+GROUP 7: DROPBOX-TO-GOOGLE
+Plan: standard | Include: included
+Total Exhibits: 4 (Duplicates: 3)
+=================================================================
+
+  1. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 6967906d0d2cb1db2f4aec0b
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  2. Dropbox to Google Shared Drive Standard Plan - Standard Include
+     ID: 6967c696a7d7c1972a07ea74
+     File: Dropbox to shared drive standard included.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  3. Dropbox to Google MyDrive Standard Plan - Standard Include
+     ID: 696a45415d18434d1b410b51
+     File: Dropbox to My Drive standard included.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google","all"]
+
+  4. Dropbox to Google (MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 69f09219b22631a8e06fc9c0
+     File: Dropbox to Google (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx
+     Combinations: ["dropbox-to-google"]
+
+
+[=================================================================]
+GROUP 8: DROPBOX-TO-GOOGLE
+Plan: standard | Include: notincluded
+Total Exhibits: 4 (Duplicates: 3)
+=================================================================
+
+  1. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 6967906d0d2cb1db2f4aec0c
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  2. Dropbox to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 6967c696a7d7c1972a07ea75
+     File: Dropbox to Shared Drive Standard Plan -  Not Include.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  3. Dropbox to Google MyDrive Standard Plan - Standard Not Include
+     ID: 696a45415d18434d1b410b52
+     File: Dropbox to Google MyDrive Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google","all"]
+
+  4. Dropbox to Google (MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 69f09219b22631a8e06fc9c1
+     File: Dropbox to Google (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-google"]
+
+
+[=================================================================]
+GROUP 9: DROPBOX-TO-MYDRIVE
+Plan: standard | Include: included
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. Dropbox to MyDrive Standard Plan - Standard Include
+     ID: 6944e0ff93e170a2e67af87a
+     File: Dropbox to Mydrive standard included.docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  2. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 6967906d0d2cb1db2f4aec0b
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  3. Dropbox to Google MyDrive Standard Plan - Standard Include
+     ID: 696a45415d18434d1b410b51
+     File: Dropbox to My Drive standard included.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google","all"]
+
+
+[=================================================================]
+GROUP 10: DROPBOX-TO-MYDRIVE
+Plan: standard | Include: notincluded
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. Dropbox to MyDrive Standard Plan - Standard Not Include
+     ID: 6944e0ff93e170a2e67af87b
+     File: Dropbox to Mydrive Standard Plan -  Not Include (1).docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  2. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 6967906d0d2cb1db2f4aec0c
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  3. Dropbox to Google MyDrive Standard Plan - Standard Not Include
+     ID: 696a45415d18434d1b410b52
+     File: Dropbox to Google MyDrive Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google","all"]
+
+
+[=================================================================]
+GROUP 11: GOOGLE-MYDRIVE-TO-GOOGLE-SHAREDRIVE
+Plan: basic | Include: included
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. Google MyDrive to Google Shared Drive Basic Plan - Basic Include
+     ID: 6960a78babe789ae5811ef80
+     File: Google MyDrive to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  2. Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 69679bc62f0ef8fcd31a6083
+     File: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","google-mydrive-to-google-sharedrive","all"]
+
+  3. Google My Drive & Share Drive To Google My Drive & Share Drive  Basic Plan - Basic Include
+     ID: 697c8268b9fa6a508e159885
+     File: Google My Drive & Share Drive to Google My Drive & Share  Drive std Inscope.docx
+     Combinations: ["google-mydrive-to-google-sharedrive"]
+
+
+[=================================================================]
+GROUP 12: GOOGLE-MYDRIVE-TO-GOOGLE-SHAREDRIVE
+Plan: basic | Include: notincluded
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. Google MyDrive to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6960a78babe789ae5811ef81
+     File: Google MyDrive to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  2. Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 69679d6e0f005aa81af00acd
+     File: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","google-mydrive-to-google-sharedrive","all"]
+
+  3. Google My Drive & Share Drive To Google My Drive & Share Drive  Basic Plan - Basic Not Include
+     ID: 697c828ab9fa6a508e159886
+     File: Google My Drive & Share Drive to Google My Drive & Share Drive std Outscope.docx
+     Combinations: ["google-mydrive-to-google-sharedrive"]
+
+
+[=================================================================]
+GROUP 13: SHAREFILE-TO-GOOGLE-MYDRIVE
+Plan: basic | Include: included
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. ShareFile to Google MyDrive Basic Plan - Basic Include
+     ID: 696106ab4ef6e2a09b405393
+     File: ShareFile to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+  2. ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Include
+     ID: 69677e9c092ca2d1d59d54c0
+     File: ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-google-mydrive","sharefile-to-google-sharedrive","all"]
+
+  3. ShareFile to Google MyDrive Basic Plan - Basic Included
+     ID: 696f78ffeb26b2aa1cd79fe8
+     File: ShareFile to Google MyDrive Standard Plan - Standard Included.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+
+[=================================================================]
+GROUP 14: SHAREFILE-TO-GOOGLE-SHAREDRIVE
+Plan: basic | Include: included
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Include
+     ID: 69677e9c092ca2d1d59d54c0
+     File: ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-google-mydrive","sharefile-to-google-sharedrive","all"]
+
+  2. ShareFile to Google Shared Drive Basic Plan - Basic Include
+     ID: 6967c696a7d7c1972a07ea72
+     File: ShareFile to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  3. ShareFile to Google SharedDrive Basic Plan - Basic Included
+     ID: 696f38a6d4801a6e36648227
+     File: ShareFile to Google SharedDrive Standard Plan - Standard Included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 15: SHAREFILE-TO-GOOGLE-SHAREDRIVE
+Plan: basic | Include: notincluded
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Not Include
+     ID: 69677e9c092ca2d1d59d54c1
+     File: ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-google-mydrive","sharefile-to-google-sharedrive","all"]
+
+  2. ShareFile to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6967c696a7d7c1972a07ea73
+     File: ShareFile to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  3. ShareFile to Google SharedDrive Basic Plan - Basic Not Included
+     ID: 696f38a6d4801a6e36648228
+     File: ShareFile to Google SharedDrive Standard Plan - Standard Not Included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 16: ALL
+Plan: basic | Include: (none)
+Total Exhibits: 3 (Duplicates: 2)
+=================================================================
+
+  1. Egnyte to Microsoft Basic Exhibit
+     ID: 69806f486e2187fba0c865fa
+     File: egnyte-to-microsoft-standard.docx
+     Combinations: ["egnyte-to-microsoft","all"]
+
+  2. Box to Google MyDrive Basic Plan - Basic Include
+     ID: 69fd77c4bb6ef510f2c2073c
+     File: Box to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["box-to-google-mydrive","all"]
+
+  3. Box to Google MyDrive Basic Plan - Basic Not Include
+     ID: 69fd77c4bb6ef510f2c2073d
+     File: Box to Google MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-google-mydrive","all"]
+
+
+[=================================================================]
+GROUP 17: SHAREFILE-TO-GOOGLE-SHAREDRIVE
+Plan: standard | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. ShareFile to Google SharedDrive Standard Plan - Standard Included
+     ID: 69400400eafb4acacf0b5aaa
+     File: Sharefile to Google SharedDrive Standard Included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  2. ShareFile to Google Shared Drive Standard Plan - Included Features
+     ID: 69705d075db342c1893897ad
+     File: sharefile-to-google-sharedrive-advanced-plan-included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 18: SHAREFILE-TO-GOOGLE-SHAREDRIVE
+Plan: standard | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. ShareFile to Google SharedDrive Standard Plan - Standard Not Included
+     ID: 69400400eafb4acacf0b5aab
+     File: Sharefile to Google SharedDrive Standard not included.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+  2. ShareFile to Google Shared Drive Standard Plan - Not Included Features
+     ID: 69705d085db342c1893897ae
+     File: sharefile-to-google-sharedrive-advanced-plan-notincluded.docx
+     Combinations: ["sharefile-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 19: DROPBOX-TO-MYDRIVE
+Plan: basic | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Dropbox to MyDrive Basic Plan - Basic Include
+     ID: 6944e81de22c1481c5e2a018
+     File: Dropbox to MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  2. Dropbox to Google MyDrive Basic Plan - Basic Include
+     ID: 696f33944eb870c3ba651965
+     File: Dropbox to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-google-mydrive","dropbox-to-mydrive"]
+
+
+[=================================================================]
+GROUP 20: DROPBOX-TO-MYDRIVE
+Plan: basic | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Dropbox to MyDrive Basic Plan - Basic Not Include
+     ID: 6944e81ee22c1481c5e2a019
+     File: Dropbox to MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-mydrive","all"]
+
+  2. Dropbox to Google MyDrive Basic Plan - Basic Not Included
+     ID: 696f33944eb870c3ba651966
+     File: Dropbox to Google MyDrive Standard Plan - Standard Not Included.docx
+     Combinations: ["dropbox-to-google-mydrive","dropbox-to-mydrive"]
+
+
+[=================================================================]
+GROUP 21: DROPBOX-TO-GOOGLE
+Plan: basic | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Dropbox to Google Shared Drive Basic Plan - Basic Include
+     ID: 6944ed70a65a4961f72fc94a
+     File: Dropbox to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  2. Dropbox to Google (MyDrive & Shared Drive) Basic Plan - Basic Include
+     ID: 69f09219b22631a8e06fc9be
+     File: Dropbox to Google (MyDrive & Shared Drive) Standard Plan - Standard Include.docx
+     Combinations: ["dropbox-to-google"]
+
+
+[=================================================================]
+GROUP 22: DROPBOX-TO-GOOGLE
+Plan: basic | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Dropbox to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 6944ed70a65a4961f72fc94b
+     File: Dropbox to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+  2. Dropbox to Google (MyDrive & Shared Drive) Basic Plan - Basic Not Include
+     ID: 69f09219b22631a8e06fc9bf
+     File: Dropbox to Google (MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx
+     Combinations: ["dropbox-to-google"]
+
+
+[=================================================================]
+GROUP 23: NFS-TO-MICROSOFT
+Plan: basic | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to SharePoint Online Basic Plan - Basic Include
+     ID: 695f6ec09ebab1306b101f7f
+     File: NFS to SharePoint Online Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  2. NFS to OneDrive Basic Plan - Basic Include
+     ID: 695f7a1be1fead4fd516f226
+     File: NFS to OneDrive Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+
+[=================================================================]
+GROUP 24: NFS-TO-MICROSOFT
+Plan: basic | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to SharePoint Online Basic Plan - Basic Not Include
+     ID: 695f6ec09ebab1306b101f80
+     File: NFS to SharePoint Online Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  2. NFS to OneDrive Basic Plan - Basic Not Include
+     ID: 695f7a1be1fead4fd516f227
+     File: NFS to OneDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+
+[=================================================================]
+GROUP 25: NFS-TO-MICROSOFT
+Plan: standard | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to SharePoint Online Standard Plan - Standard Include
+     ID: 695f7141036b9e315ad4387c
+     File: NFS to SharePoint Online standard included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  2. NFS to OneDrive Standard Plan - Standard Include
+     ID: 6960fa898c5f6d11a5a61b7b
+     File: NFS to onedrive standard included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+
+[=================================================================]
+GROUP 26: NFS-TO-MICROSOFT
+Plan: standard | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to SharePoint Online Standard Plan - Standard Not Include
+     ID: 695f7141036b9e315ad4387d
+     File: NFS to SharePoint Online standard not included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+  2. NFS to OneDrive Standard Plan - Standard Not Include
+     ID: 6960fa898c5f6d11a5a61b7c
+     File: NFS to onedrive standard not included.docx
+     Combinations: ["nfs-to-microsoft","all"]
+
+
+[=================================================================]
+GROUP 27: ALL
+Plan: advanced | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Slack to Google Chat Advanced Plan - Advanced Include
+     ID: 6960819a8bb27fcc9a384bf9
+     File: Slack to Google Chat Advanced Plan - Advanced Include.docx
+     Combinations: ["slack-to-google-chat","all"]
+
+  2. SharePoint to SharePoint Online Advanced Plan - Advanced Include
+     ID: 69609f072e021e883a77d772
+     File: SharePoint to SharePoint Online Advanced Plan - Advanced Include.docx
+     Combinations: ["all"]
+
+
+[=================================================================]
+GROUP 28: ALL
+Plan: advanced | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Slack to Google Chat Advanced Plan - Advanced Not Include
+     ID: 6960819a8bb27fcc9a384bfa
+     File: Slack to Google Chat Advanced Plan - Advanced Not Include.docx
+     Combinations: ["slack-to-google-chat","all"]
+
+  2. SharePoint to SharePoint Online Advanced Plan - Advanced Not Include
+     ID: 69609f072e021e883a77d773
+     File: SharePoint to SharePoint Online Advanced Plan - Advanced Not Include.docx
+     Combinations: ["all"]
+
+
+[=================================================================]
+GROUP 29: NFS-TO-GOOGLE
+Plan: standard | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to Google Shared Drive Standard Plan - Standard Include
+     ID: 6960855cf30deb251a707d1d
+     File: NFS to Google Share Drive standard included.docx
+     Combinations: ["nfs-to-google","all"]
+
+  2. NFS to Google MyDrive Standard Plan - Standard Include
+     ID: 69609ce647c07139a4ebe4f7
+     File: NFS to Google MyDrive standard included.docx
+     Combinations: ["nfs-to-google","all"]
+
+
+[=================================================================]
+GROUP 30: NFS-TO-GOOGLE
+Plan: standard | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 6960855cf30deb251a707d1e
+     File: NFS to Google Share Drive standard not included.docx
+     Combinations: ["nfs-to-google","all"]
+
+  2. NFS to Google MyDrive Standard Plan - Standard Not Include
+     ID: 69609ce647c07139a4ebe4f8
+     File: NFS to MyDrive standard not included.docx
+     Combinations: ["nfs-to-google","all"]
+
+
+[=================================================================]
+GROUP 31: NFS-TO-GOOGLE
+Plan: basic | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to Google Shared Drive Basic Plan - Basic Include
+     ID: 696099bc46a4280f356f934f
+     File: NFS to Google Shared Drive Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+  2. NFS to Google MyDrive Basic Plan - Basic Include
+     ID: 69609b347990d8f5a5ebe9b9
+     File: NFS to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+
+[=================================================================]
+GROUP 32: NFS-TO-GOOGLE
+Plan: basic | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. NFS to Google Shared Drive Basic Plan - Basic Not Include
+     ID: 696099bc46a4280f356f9350
+     File: NFS to Google Shared Drive Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+  2. NFS to Google MyDrive Basic Plan - Basic Not Include
+     ID: 69609b347990d8f5a5ebe9ba
+     File: NFS to Google MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["nfs-to-google","all"]
+
+
+[=================================================================]
+GROUP 33: GOOGLE-MYDRIVE-TO-GOOGLE-MYDRIVE
+Plan: basic | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Google MyDrive to Google MyDrive Basic Plan - Basic Include
+     ID: 6960b04b5e2ee52c3b80ec88
+     File: Google MyDrive to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","all"]
+
+  2. Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 69679bc62f0ef8fcd31a6083
+     File: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","google-mydrive-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 34: GOOGLE-MYDRIVE-TO-GOOGLE-MYDRIVE
+Plan: basic | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Google MyDrive to Google MyDrive Basic Plan - Basic Not Include
+     ID: 6960b04b5e2ee52c3b80ec89
+     File: Google MyDrive to Google MyDrive Standard Plan - Standard Not Include (1).docx
+     Combinations: ["google-mydrive-to-google-mydrive","all"]
+
+  2. Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 69679d6e0f005aa81af00acd
+     File: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx
+     Combinations: ["google-mydrive-to-google-mydrive","google-mydrive-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 35: GOOGLE-MYDRIVE-TO-GOOGLE-SHAREDRIVE
+Plan: standard | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Google MyDrive to Google Shared Drive Standard Plan - Standard Include
+     ID: 6960ba75c96ec65811ffbe50
+     File: Google MyDrive to Google Shared Drive Advanced Plan - Advanced Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  2. Google My Drive & Share Drive to Google My Drive & Share Drive Standard Plan - Standard Include
+     ID: 697c815ab9fa6a508e159883
+     File: Google My Drive & Share Drive to Google My Drive & Share Drive adv Inscope.docx
+     Combinations: ["google-mydrive-to-google-sharedrive"]
+
+
+[=================================================================]
+GROUP 36: GOOGLE-MYDRIVE-TO-GOOGLE-SHAREDRIVE
+Plan: standard | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Google MyDrive to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 6960ba75c96ec65811ffbe51
+     File: Google MyDrive to Google Shared Drive Advanced Plan - Advanced Not Include.docx
+     Combinations: ["google-mydrive-to-google-sharedrive","all"]
+
+  2. Google My Drive & Share Drive To Google My Drive & Share Drive  Standard Plan - Standard Not Include
+     ID: 697c8184b9fa6a508e159884
+     File: Google My Drive & Share Drive to Google My Drive & Share Drive adv outscope.docx
+     Combinations: ["google-mydrive-to-google-sharedrive"]
+
+
+[=================================================================]
+GROUP 37: SHAREFILE-TO-GOOGLE-MYDRIVE
+Plan: basic | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. ShareFile to Google Drive (MyDrive & Shared Drive) Basic Plan - Basic Not Include
+     ID: 69677e9c092ca2d1d59d54c1
+     File: ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx
+     Combinations: ["sharefile-to-google-mydrive","sharefile-to-google-sharedrive","all"]
+
+  2. ShareFile to Google MyDrive Basic Plan - Basic Not Included
+     ID: 696f78ffeb26b2aa1cd79fe9
+     File: ShareFile to Google MyDrive Standard Plan - Standard Not Included.docx
+     Combinations: ["sharefile-to-google-mydrive","all"]
+
+
+[=================================================================]
+GROUP 38: DROPBOX-TO-GOOGLE-SHAREDRIVE
+Plan: standard | Include: included
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include
+     ID: 6967906d0d2cb1db2f4aec0b
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  2. Dropbox to Google Shared Drive Standard Plan - Standard Include
+     ID: 6967c696a7d7c1972a07ea74
+     File: Dropbox to shared drive standard included.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 39: DROPBOX-TO-GOOGLE-SHAREDRIVE
+Plan: standard | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Dropbox to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include
+     ID: 6967906d0d2cb1db2f4aec0c
+     File: Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx
+     Combinations: ["dropbox-to-mydrive","dropbox-to-google-sharedrive","dropbox-to-google","all"]
+
+  2. Dropbox to Google Shared Drive Standard Plan - Standard Not Include
+     ID: 6967c696a7d7c1972a07ea75
+     File: Dropbox to Shared Drive Standard Plan -  Not Include.docx
+     Combinations: ["dropbox-to-google","dropbox-to-google-sharedrive","all"]
+
+
+[=================================================================]
+GROUP 40: TEAMS-TO-SLACK
+Plan: basic | Include: notincluded
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Teams To Slack Basic Plan - Basic Not Include
+     ID: 69eb7e0d8a28c086110316d9
+     File: outscope Teams to Slack (1).docx
+     Combinations: ["teams-to-slack","teams-to-slack-notincluded-basic"]
+
+  2. Teams to Slack Basic Plan - Basic Not Include
+     ID: 69fd77c7bb6ef510f2c2073e
+     File: Teams to Slack Basic Plan - Basic Not Include.docx
+     Combinations: ["teams-to-slack"]
+
+
+[=================================================================]
+GROUP 41: BOX-TO-GOOGLE-MYDRIVE
+Plan: basic | Include: (none)
+Total Exhibits: 2 (Duplicates: 1)
+=================================================================
+
+  1. Box to Google MyDrive Basic Plan - Basic Include
+     ID: 69fd77c4bb6ef510f2c2073c
+     File: Box to Google MyDrive Standard Plan - Standard Include.docx
+     Combinations: ["box-to-google-mydrive","all"]
+
+  2. Box to Google MyDrive Basic Plan - Basic Not Include
+     ID: 69fd77c4bb6ef510f2c2073d
+     File: Box to Google MyDrive Standard Plan - Standard Not Include.docx
+     Combinations: ["box-to-google-mydrive","all"]
+
+
+═════════════════════════════════════════════════════════════════
+TOTAL DUPLICATE GROUPS: 41
+═════════════════════════════════════════════════════════════════
+
