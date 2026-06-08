@@ -2147,6 +2147,20 @@ Quote ID: ${quoteData.id}
               templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + discountedCustomTotal);
             }
           });
+
+          // Update discount tokens to include BOTH main discount AND custom line items discount
+          if (customLineItemsDiscountAmount > 0) {
+            const existingDiscountStr = templateData['{{discount_amount}}'] || '0';
+            const existingDiscount = Math.abs(parseCurrencyToNumber(existingDiscountStr));
+            const totalDiscountAmount = existingDiscount + customLineItemsDiscountAmount;
+            templateData['{{discount_amount}}'] = totalDiscountAmount > 0 ? `-${formatCurrency(totalDiscountAmount)}` : '';
+            templateData['{{Discount Amount}}'] = totalDiscountAmount > 0 ? `-${formatCurrency(totalDiscountAmount)}` : '';
+            templateData['{{discountAmount}}'] = totalDiscountAmount > 0 ? `-${formatCurrency(totalDiscountAmount)}` : '';
+            // Update discount line with combined discount
+            const combinedDiscountPercent = ((existingDiscount + customLineItemsDiscountAmount) / parseCurrencyToNumber(templateData['{{total price}}'] || '1')) * 100;
+            templateData['{{discount_line}}'] = totalDiscountAmount > 0 ? `Discount - ${formatCurrency(totalDiscountAmount)}` : '';
+            templateData['{{discount_row}}'] = totalDiscountAmount > 0 ? `<tr><td>Discount</td><td>-${formatCurrency(totalDiscountAmount)}</td></tr>` : '';
+          }
         }
 
         // Snapshot the full token map so we can re-render this agreement later with
@@ -8297,10 +8311,24 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + discountedCustomTotal);
             }
           });
+
+          // Update discount amount to include BOTH main discount AND custom line items discount
+          if (customLineItemsDiscountAmount > 0) {
+            const existingDiscountStr = templateData['{{discount_amount}}'] || '0';
+            const existingDiscount = Math.abs(parseCurrencyToNumber(existingDiscountStr));
+            const totalDiscountAmount = existingDiscount + customLineItemsDiscountAmount;
+            templateData['{{discount_amount}}'] = `-${formatCurrency(totalDiscountAmount)}`;
+            templateData['{{discount amount}}'] = `-${formatCurrency(totalDiscountAmount)}`;
+            templateData['{{discountAmount}}'] = `-${formatCurrency(totalDiscountAmount)}`;
+          }
+
           console.log('🧾 Added custom line items to total:', {
             count: customLineItems.length,
             customLineItemsTotal,
+            customLineItemsDiscount,
+            customLineItemsDiscountAmount,
             newTotalPrice: templateData['{{total price}}'],
+            updatedDiscount: templateData['{{discount_amount}}'],
           });
         }
 
