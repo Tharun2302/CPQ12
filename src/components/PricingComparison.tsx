@@ -772,64 +772,8 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       <span className="font-bold text-2xl text-purple-900">{formatCurrency(discountInfo.finalPrice)}</span>
                     </div>
                   </>
-                ) : configuration?.servicePlan === 'Manage' ? (
-                  calc.status === 'custom' ? (
-                    <>
-                      <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-6 text-center">
-                        <p className="text-base font-bold text-amber-900 mb-2">Custom pricing</p>
-                        <p className="text-sm text-amber-800 mb-4">
-                          {calc.message || 'Contact sales for >5000 users'}
-                        </p>
-                        <a
-                          href="mailto:sales@cloudfuze.com"
-                          className="inline-block bg-amber-600 hover:bg-amber-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
-                        >
-                          Contact Sales
-                        </a>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {/* B99 — Per User Cost (Yearly) = totalUserCost / manageUsers */}
-                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                        <span className="text-gray-700 font-medium">Per User Cost (Yearly):</span>
-                        <span className="font-bold text-gray-900">
-                          {(configuration?.manageUsers ?? 0) > 0
-                            ? `${formatCurrency(calc.userCost / (configuration!.manageUsers as number))}/user`
-                            : 'N/A'}
-                        </span>
-                      </div>
-                      {/* B100 — Per GB rate (K13) */}
-                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                        <span className="text-gray-700 font-medium">Per GB Cost:</span>
-                        <span className="font-bold text-gray-900">
-                          ${getManageDataRatePerGB(configuration?.manageDataGB ?? 0).toFixed(4)}/GB
-                        </span>
-                      </div>
-                      {/* B102 — Total user cost */}
-                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                        <span className="text-gray-700 font-medium">Total User Cost:</span>
-                        <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
-                      </div>
-                      {/* B103 — Data cost */}
-                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                        <span className="text-gray-700 font-medium">Data Cost:</span>
-                        <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
-                      </div>
-                      {/* B104 — Total */}
-                      <div className="flex justify-between items-center text-sm bg-teal-50 border border-teal-200 rounded-lg p-4">
-                        <span className="text-gray-900 font-bold">TOTAL COST:</span>
-                        <span className="font-bold text-2xl text-teal-700">{formatCurrency(calc.totalCost)}</span>
-                      </div>
-                    </>
-                  )
-                ) : configuration?.combination === 'overage-agreement' ? (
+                ) : configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement' ? (
                   <>
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
-                      <p className="text-sm text-purple-800 font-medium text-center">
-                        💡 Overage Agreement includes only instance/server costs
-                      </p>
-                    </div>
                     <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                       <span className="text-gray-700 font-medium">Instance Type:</span>
                       <span className="font-bold text-gray-900">{configuration?.instanceType}</span>
@@ -893,7 +837,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   calc.status === 'custom'
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : 'transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group text-white ' +
-                      (configuration?.combination === 'overage-agreement'
+                      ((configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement')
                         ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800'
                         : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700')
                 }`}
@@ -904,7 +848,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                 <span className="relative flex items-center justify-center gap-2">
                   {calc.status === 'custom'
                     ? 'Custom — Contact Sales'
-                    : configuration?.combination === 'overage-agreement'
+                    : (configuration?.combination === 'overage-agreement' || configuration?.migrationType === 'Overage Agreement')
                     ? 'Select Overage Agreement'
                     : configuration?.servicePlan === 'Manage'
                     ? 'Select Manage'
