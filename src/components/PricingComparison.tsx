@@ -382,11 +382,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
           }
           
           const discountInfo = calculateDiscountedPrice(planTotal);
-          const isBelowMinimumMultiCombination =
-            configuration?.migrationType === 'Multi combination' &&
-            originalTotalBeforeMinimum > 0 &&
-            originalTotalBeforeMinimum < 2500;
-          
           // Check if this plan is currently selected
           const isSelected = selectedTier?.tier?.name === calc.tier.name;
           
@@ -444,25 +439,10 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </div>
                 ) : (
                   <div>
-                    {/* When below minimum: show $2,500 (amount charged) as main price; calculated amount as secondary */}
-                    {isBelowMinimumMultiCombination ? (
-                      <>
-                        <div className="text-4xl font-bold mb-2 text-gray-900">
-                          {formatCurrency(2500)}
-                        </div>
-                        <div className="text-sm text-gray-600 font-medium">Total project cost</div>
-                        <div className="text-sm text-red-600 font-medium mt-1">
-                          Calculated: {formatCurrency(originalTotalBeforeMinimum)} (below minimum)
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-4xl font-bold mb-2 text-gray-900">
-                          {formatCurrency(planTotal)}
-                        </div>
-                        <div className="text-sm text-gray-600 font-medium">Total project cost</div>
-                      </>
-                    )}
+                    <div className="text-4xl font-bold mb-2 text-gray-900">
+                      {formatCurrency(planTotal)}
+                    </div>
+                    <div className="text-sm text-gray-600 font-medium">Total project cost</div>
                   </div>
                 )}
               </div>
@@ -845,15 +825,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     : `Select ${calc.tier.name}`}
                 </span>
               </button>
-
-              {/* Informational note when calculated total was below minimum (selection allowed; charge is $2,500) */}
-              {isBelowMinimumMultiCombination && (
-                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-sm text-amber-800 font-medium text-center">
-                    Minimum project total is $2,500. You can select this plan to proceed.
-                  </p>
-                </div>
-              )}
             </div>
           );
         })}
