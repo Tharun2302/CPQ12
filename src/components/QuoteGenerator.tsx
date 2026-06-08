@@ -1446,15 +1446,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   }
 
   const handleSendToDealDesk = async () => {
-    // Validate discount doesn't bring total below $2500
-    if (clientInfo.discount && clientInfo.discount > 0) {
-      const finalTotal = (calculation?.totalCost ?? safeCalculation.totalCost) * (1 - (clientInfo.discount / 100));
-      if (finalTotal < 2500) {
-        alert(`Discount cannot be applied. Final total would be $${finalTotal.toFixed(2)}, which is below the minimum of $2,500.`);
-        return;
-      }
-    }
-    
+    // Discount validation removed - discounts now apply at any amount
     setIsSendingToDealDesk(true);
     
     try {
@@ -2573,15 +2565,8 @@ Template: ${selectedTemplate?.name || 'Default Template'}`;
     
     console.log('🔍 handleSubmit - dealData:', dealData);
 
-    // Validate discount doesn't bring total below $2500
-    if (clientInfo.discount && clientInfo.discount > 0) {
-      const finalTotal = (calculation?.totalCost ?? safeCalculation.totalCost) * (1 - (clientInfo.discount / 100));
-      if (finalTotal < 2500) {
-        alert(`Discount cannot be applied. Final total would be $${finalTotal.toFixed(2)}, which is below the minimum of $2,500.`);
-        return;
-      }
-    }
-    
+    // Discount validation removed - discounts now apply at any amount
+
     if (onGenerateQuote) {
       // CRITICAL: For Multi combination, ensure top-level duration is set to the sum of messaging + content
       const finalConfiguration = { ...configuration };
