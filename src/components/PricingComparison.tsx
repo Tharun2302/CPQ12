@@ -463,11 +463,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         <div className="text-sm text-gray-600 font-medium">Total project cost</div>
                       </>
                     )}
-                    {discount > 0 && planTotal < 2500 && (
-                      <div className="text-xs text-amber-600 mt-1">
-                        Discount available for orders above $2,500
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -850,15 +845,6 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                     : `Select ${calc.tier.name}`}
                 </span>
               </button>
-              
-              {/* Warning when discount won't apply (below $2,500 threshold) */}
-              {discount > 0 && (originalTotalBeforeMinimum < 2500 || (discountInfo.finalPrice < 2500 && originalTotalBeforeMinimum > 0)) && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-700 font-medium text-center">
-                    ⚠️ Discount won't apply here because your amount is below the $2,500 threshold
-                  </p>
-                </div>
-              )}
 
               {/* Informational note when calculated total was below minimum (selection allowed; charge is $2,500) */}
               {isBelowMinimumMultiCombination && (
