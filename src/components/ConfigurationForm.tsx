@@ -106,6 +106,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   // State to track collapsed/expanded sections
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [noteExpanded, setNoteExpanded] = useState<boolean>(false);
+  const [showDiscountRules, setShowDiscountRules] = useState<boolean>(false);
 
   // Combinations from API (user-managed via Combination Manager); fallback to hardcoded if empty
   const [apiCombinations, setApiCombinations] = useState<Array<{ value: string; label: string; migrationType: string }>>([]);
@@ -3537,13 +3538,21 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       placeholder={`Enter discount percentage (max 15%)`}
                     />
                   </div>
-                  <p className="text-xs text-gray-600 mt-2">
-                    <span className="font-medium">Discount Rules:</span>
-                    <br />• Available only for projects with total ≥ $2,500
-                    <br />• Maximum discount: 15%
-                    <br />• Final price after discount must stay ≥ $2,500
-                    <br />• Applied to combined total (all combinations)
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowDiscountRules(!showDiscountRules)}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-2 cursor-pointer flex items-center gap-1"
+                  >
+                    {showDiscountRules ? '▼' : '▶'} Discount Rules
+                  </button>
+                  {showDiscountRules && (
+                    <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
+                      • Available only for projects with total ≥ $2,500
+                      <br />• Maximum discount: 15%
+                      <br />• Final price after discount must stay ≥ $2,500
+                      <br />• Applied to combined total (all combinations)
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -3850,12 +3859,20 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                    className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
                    placeholder={`Enter discount percentage (max 15%)`}
                   />
-                  <p className="text-xs text-gray-600 mt-2">
-                    <span className="font-medium">Discount Rules:</span>
-                    <br />• Available only for projects with total ≥ $2,500
-                    <br />• Maximum discount: 15%
-                    <br />• Final price after discount must stay ≥ $2,500
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowDiscountRules(!showDiscountRules)}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium mt-2 cursor-pointer flex items-center gap-1"
+                  >
+                    {showDiscountRules ? '▼' : '▶'} Discount Rules
+                  </button>
+                  {showDiscountRules && (
+                    <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
+                      • Available only for projects with total ≥ $2,500
+                      <br />• Maximum discount: 15%
+                      <br />• Final price after discount must stay ≥ $2,500
+                    </p>
+                  )}
                 </div>
 
                 {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
