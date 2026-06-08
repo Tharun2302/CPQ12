@@ -2146,9 +2146,10 @@ Quote ID: ${quoteData.id}
           };
           // Apply discount to custom line items when combined total >= $2,500
           let discountedCustomTotal = customLineItemsTotal;
+          let customLineItemsDiscountAmount = 0;
           if (customLineItemsDiscount > 0 && finalTotalAfterDiscount + customLineItemsTotal >= 2500) {
-            const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
-            const finalTotal = customLineItemsTotal - discountAmount;
+            customLineItemsDiscountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
+            const finalTotal = customLineItemsTotal - customLineItemsDiscountAmount;
             // Keep discount only if final combined total stays >= $2,500
             discountedCustomTotal = (finalTotalAfterDiscount + finalTotal) >= 2500 ? finalTotal : customLineItemsTotal;
           }
@@ -2170,7 +2171,10 @@ Quote ID: ${quoteData.id}
         const result = await DocxTemplateProcessor.processDocxTemplate(
           templateFileForEmail as File,
           templateData,
-          { customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })) }
+          {
+            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
+          }
         );
         if (result.success && result.processedDocx) {
           agreementBlob = result.processedDocx;
@@ -8353,6 +8357,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
         // Custom line items: add their total on top of whatever the total tokens currently hold.
         // Apply discount to custom items if set, then add to final total.
+        let customLineItemsDiscountAmount = 0;
         if (customLineItems.length > 0 && customLineItemsTotal > 0) {
           const parseCurrencyToNumber = (s: string | undefined): number => {
             if (!s) return 0;
@@ -8363,8 +8368,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
           let discountedCustomTotal = customLineItemsTotal;
           const currentTotal = parseCurrencyToNumber(templateData['{{total price}}'] || templateData['{{total_price}}']);
           if (customLineItemsDiscount > 0 && currentTotal + customLineItemsTotal >= 2500) {
-            const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
-            const finalTotal = customLineItemsTotal - discountAmount;
+            customLineItemsDiscountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
+            const finalTotal = customLineItemsTotal - customLineItemsDiscountAmount;
             // Keep discount only if final combined total stays >= $2,500
             discountedCustomTotal = (currentTotal + finalTotal) >= 2500 ? finalTotal : customLineItemsTotal;
           }
@@ -8407,7 +8412,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         const result = await DocxTemplateProcessor.processDocxTemplate(
           templateFileForAgreement,
           templateData,
-          { customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })) }
+          {
+            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
+          }
         );
 
         if (result.success && result.processedDocx) {

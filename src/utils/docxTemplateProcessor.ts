@@ -136,6 +136,11 @@ export interface CustomLineItemInput {
 export interface DocxProcessingOptions {
   /** Extra rows to inject into the pricing table just above the "Total Price" row. */
   customLineItems?: CustomLineItemInput[];
+  /** Discount info for custom line items to show as a separate discount row */
+  customLineItemsDiscount?: {
+    percentage: number;
+    amount: number;
+  } | null;
 }
 
 export interface DocxProcessingResult {
@@ -385,8 +390,12 @@ export class DocxTemplateProcessor {
    * "Total Price" row, clones the formatting of an existing 3-cell data row in that table, and
    * fills the cloned row's cells with each custom item's name / description / price.
    */
-  private injectCustomLineItemRows(documentXml: string, items: CustomLineItemInput[]): string {
-    if (!items || items.length === 0) return documentXml;
+  private injectCustomLineItemRows(
+    documentXml: string,
+    items: CustomLineItemInput[],
+    discount?: { percentage: number; amount: number } | null
+  ): string {
+    if ((!items || items.length === 0) && !discount) return documentXml;
 
     const plain = (xml: string) => xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
@@ -438,11 +447,19 @@ export class DocxTemplateProcessor {
         return `<w:tc>${fmt.tcPr}<w:p>${fmt.pPr}<w:r>${fmt.rPr}<w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
       };
 
-      const newRows = items
+      let newRows = items
         .map((it) =>
           `<w:tr>${buildCell(cellFormats[0], it.name)}${buildCell(cellFormats[1], it.description)}${buildCell(cellFormats[2], it.price)}</w:tr>`
         )
         .join('');
+
+      // Add discount row if discount is provided
+      if (discount && discount.percentage > 0) {
+        const { formatCurrency: formatCurrencyFn } = require('./pricing');
+        const discountLabel = `${discount.percentage}% Applied`;
+        const discountAmount = `-${formatCurrencyFn(discount.amount)}`;
+        newRows += `<w:tr>${buildCell(cellFormats[0], 'Discount')}${buildCell(cellFormats[1], discountLabel)}${buildCell(cellFormats[2], discountAmount)}</w:tr>`;
+      }
 
       injected = true;
 
@@ -1524,13 +1541,14 @@ export class DocxTemplateProcessor {
       // Inject custom line-item rows into the pricing table (above "Total Price").
       try {
         const customItems = options?.customLineItems || [];
-        if (customItems.length > 0) {
+        const customDiscount = options?.customLineItemsDiscount;
+        if (customItems.length > 0 || customDiscount) {
           const beforeInject = finalDocumentXml;
-          finalDocumentXml = this.injectCustomLineItemRows(finalDocumentXml, customItems);
+          finalDocumentXml = this.injectCustomLineItemRows(finalDocumentXml, customItems, customDiscount);
           if (finalDocumentXml !== beforeInject) {
-            console.log(`✅ Injected ${customItems.length} custom line-item row(s) into pricing table`);
+            console.log(`✅ Injected ${customItems.length} custom line-item row(s) and${customDiscount ? ' discount row' : ''} into pricing table`);
           } else {
-            console.warn('⚠️ Custom line items provided but no pricing table with a "Total Price" row was found to inject into');
+            console.warn('⚠️ Custom line items or discount provided but no pricing table with a "Total Price" row was found to inject into');
           }
         }
       } catch (injectErr) {
