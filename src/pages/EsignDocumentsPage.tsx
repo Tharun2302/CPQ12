@@ -224,8 +224,8 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
   }, []);
 
   const uploadFile = async (file: File) => {
-    if (!file || file.type !== 'application/pdf') {
-      setUploadError('Please select a PDF file');
+    if (!file) {
+      setUploadError('Please select a file');
       return;
     }
     setUploading(true);
@@ -732,8 +732,12 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
                         <span>{formatBytes(uploadedFileSize)}</span>
                       </>
                     )}
-                    <span>·</span>
-                    <span>PDF</span>
+                    {uploadedDocumentName && (
+                      <>
+                        <span>·</span>
+                        <span>{uploadedDocumentName.split('.').pop()?.toUpperCase() || 'File'}</span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <button
@@ -773,7 +777,6 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
                   )}
                   <input
                     type="file"
-                    accept=".pdf,application/pdf"
                     onChange={handleUpload}
                     className="hidden"
                     disabled={uploading}
@@ -931,7 +934,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
               ) : (
                 <>
                   <p>No drafts in progress.</p>
-                  <p className="text-sm mt-1">Upload a PDF to start, or check <Link to="/esign-tracking" className="text-indigo-600 hover:text-indigo-700 font-medium">e-sign status</Link> for sent &amp; completed agreements.</p>
+                  <p className="text-sm mt-1">Upload a document to start, or check <Link to="/esign-tracking" className="text-indigo-600 hover:text-indigo-700 font-medium">e-sign status</Link> for sent &amp; completed agreements.</p>
                 </>
               )}
             </div>

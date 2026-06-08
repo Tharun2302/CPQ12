@@ -6788,7 +6788,7 @@ async function getEsignDocumentForRecipient(recipient) {
   return db.collection('esign_documents').findOne(filters.length === 1 ? filters[0] : { $or: filters });
 }
 
-// POST /api/esign/documents/upload - Upload PDF to disk, save metadata
+// POST /api/esign/documents/upload - Upload document to disk (converts DOCX to PDF), save metadata
 app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), async (req, res) => {
   let filePath = null;
   let dbInserted = false;
@@ -6797,42 +6797,91 @@ app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), asyn
     if (!req.file) return res.status(400).json({ success: false, error: 'No file provided' });
 
     const uploadedBy = req.body.uploaded_by || 'anonymous';
-    const fileName = req.file.originalname;
-    filePath = path.join(documentsDir, req.file.filename);
+    let fileName = req.file.originalname;
+    const originalFilePath = path.join(documentsDir, req.file.filename);
+    const fileExt = path.extname(fileName).toLowerCase();
 
     // Step 1: Verify multer actually wrote the file to disk before doing anything else.
-    if (!fs.existsSync(filePath)) {
-      console.error('❌ E-sign upload: multer did not produce a file on disk', { filePath });
+    if (!fs.existsSync(originalFilePath)) {
+      console.error('❌ E-sign upload: multer did not produce a file on disk', { originalFilePath });
       return res.status(500).json({
         success: false,
         error: 'Upload failed: file was not written to storage. Please retry.'
       });
     }
 
-    // Step 2: Read and base64-encode for DB-side recovery copy. Failures here
-    // used to be silently swallowed, leaving orphan DB records pointing at files
-    // that could later disappear from disk. Now we fail loudly and clean up.
-    let fileData;
+    // Step 2: Read original file
+    let fileBuffer;
     try {
-      fileData = fs.readFileSync(filePath).toString('base64');
+      fileBuffer = fs.readFileSync(originalFilePath);
     } catch (readErr) {
       console.error('❌ E-sign upload: failed to read uploaded file from disk', readErr);
-      try { fs.unlinkSync(filePath); } catch {}
+      try { fs.unlinkSync(originalFilePath); } catch {}
       return res.status(500).json({
         success: false,
         error: 'Upload failed: could not read uploaded file. Please retry.'
       });
     }
 
-    if (!fileData || fileData.length === 0) {
-      try { fs.unlinkSync(filePath); } catch {}
+    if (!fileBuffer || fileBuffer.length === 0) {
+      try { fs.unlinkSync(originalFilePath); } catch {}
       return res.status(500).json({
         success: false,
-        error: 'Upload failed: uploaded file is empty. Please verify the PDF and retry.'
+        error: 'Upload failed: uploaded file is empty. Please retry.'
       });
     }
 
-    // Step 3: Both disk + base64 confirmed — safe to insert DB record.
+    let filePath = originalFilePath;
+    let fileData = fileBuffer.toString('base64');
+
+    // Step 3: Convert DOCX to PDF if needed
+    if (fileExt === '.docx' || fileExt === '.doc') {
+      try {
+        console.log('📄 Converting DOCX to PDF for e-sign:', fileName);
+        const FormData = require('form-data');
+        const formData = new FormData();
+        formData.append('file', fs.createReadStream(originalFilePath), fileName);
+
+        const convertRes = await axios.post(`http://127.0.0.1:${PORT}/api/convert/docx-to-pdf`, formData, {
+          headers: formData.getHeaders(),
+          timeout: 60000,
+          responseType: 'arraybuffer'
+        });
+
+        if (!convertRes.data || convertRes.data.length === 0) {
+          console.error('❌ DOCX conversion returned empty data');
+          try { fs.unlinkSync(originalFilePath); } catch {}
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to convert DOCX to PDF. Please try again.'
+          });
+        }
+
+        // convertRes.data is already a buffer
+        const pdfFileBuffer = Buffer.isBuffer(convertRes.data) ? convertRes.data : Buffer.from(convertRes.data);
+        const pdfFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`;
+        const pdfFilePath = path.join(documentsDir, pdfFileName);
+        fs.writeFileSync(pdfFilePath, pdfFileBuffer);
+
+        filePath = pdfFilePath;
+        fileData = pdfFileBuffer.toString('base64');
+        fileName = fileName.replace(/\.(docx|doc)$/i, '.pdf');
+
+        // Clean up original DOCX file
+        try { fs.unlinkSync(originalFilePath); } catch {}
+
+        console.log('✅ DOCX converted to PDF for e-sign:', fileName);
+      } catch (convErr) {
+        console.error('❌ E-sign DOCX conversion error:', convErr.message);
+        try { fs.unlinkSync(originalFilePath); } catch {}
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to convert DOCX to PDF. Please try again.'
+        });
+      }
+    }
+
+    // Step 4: Both disk + base64 confirmed — safe to insert DB record.
     const doc = {
       file_name: fileName,
       file_path: filePath,
