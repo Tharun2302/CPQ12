@@ -2138,17 +2138,13 @@ Quote ID: ${quoteData.id}
             const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
             return Number.isFinite(n) ? n : 0;
           };
-          // Apply discount to custom line items when combined total >= $2,500
+          // Apply discount to custom line items at any amount (no minimum required)
           let discountedCustomTotal = customLineItemsTotal;
           let customLineItemsDiscountAmount = 0;
-          if (customLineItemsDiscount > 0 && finalTotalAfterDiscount + customLineItemsTotal >= 2500) {
+          if (customLineItemsDiscount > 0) {
             const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
-            const finalTotal = customLineItemsTotal - discountAmount;
-            // Keep discount only if final combined total stays >= $2,500
-            if ((finalTotalAfterDiscount + finalTotal) >= 2500) {
-              discountedCustomTotal = finalTotal;
-              customLineItemsDiscountAmount = discountAmount;
-            }
+            discountedCustomTotal = customLineItemsTotal - discountAmount;
+            customLineItemsDiscountAmount = discountAmount;
           }
           [
             '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
@@ -8360,18 +8356,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
             const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
             return Number.isFinite(n) ? n : 0;
           };
-          // Apply discount to custom line items when combined total >= $2,500
+          // Apply discount to custom line items at any amount (no minimum required)
           let discountedCustomTotal = customLineItemsTotal;
           customLineItemsDiscountAmount = 0;
-          const currentTotal = parseCurrencyToNumber(templateData['{{total price}}'] || templateData['{{total_price}}']);
-          if (customLineItemsDiscount > 0 && currentTotal + customLineItemsTotal >= 2500) {
+          if (customLineItemsDiscount > 0) {
             const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
-            const finalTotal = customLineItemsTotal - discountAmount;
-            // Keep discount only if final combined total stays >= $2,500
-            if ((currentTotal + finalTotal) >= 2500) {
-              discountedCustomTotal = finalTotal;
-              customLineItemsDiscountAmount = discountAmount;
-            }
+            discountedCustomTotal = customLineItemsTotal - discountAmount;
+            customLineItemsDiscountAmount = discountAmount;
           }
           const totalTokens = [
             '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
