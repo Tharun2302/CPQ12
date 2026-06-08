@@ -10713,8 +10713,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 added to the total (after any discount).
               </p>
 
-              {/* Discount for Custom Line Items - Always show input, but warn if conditions not met */}
-              {customLineItems.length > 0 && (
+              {/* Discount for Custom Line Items - Always show input */}
+              {
                 <div className={`mt-4 p-4 bg-gradient-to-br rounded-xl border-2 ${
                   (finalTotalAfterDiscount + customLineItemsTotal >= 2500)
                     ? 'from-indigo-50 to-purple-50 border-indigo-200'
@@ -10750,6 +10750,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       <br />• Maximum discount: 15%
                       <br />• Final price after discount must stay ≥ $2,500
                       <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
+                    </p>
+                  ) : customLineItems.length === 0 ? (
+                    <p className="text-xs text-blue-700 mt-2">
+                      <span className="font-medium">ℹ️ Add custom items to apply discount</span>
+                      <br />Add custom line items above, then you can set a discount here
                     </p>
                   ) : (
                     <p className="text-xs text-amber-700 mt-2">
