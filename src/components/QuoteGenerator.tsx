@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
 import { formatCurrency, getInstanceTypeCost } from '../utils/pricing';
-import { 
-  FileText, 
-  Download, 
-  Send, 
-  User, 
-  Mail, 
-  Building, 
+import {
+  FileText,
+  Download,
+  Send,
+  User,
+  Mail,
+  Building,
   Check,
   CheckCircle,
   Users,
@@ -25,7 +25,8 @@ import {
   Save,
   Shield,
   UserPlus,
-  Loader2
+  Loader2,
+  ChevronDown
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -757,6 +758,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // into the agreement's pricing table just above the "Total Price" row.
   const [customLineItems, setCustomLineItems] = useState<CustomLineItem[]>([]);
   const [customLineItemsDiscount, setCustomLineItemsDiscount] = useState<number>(0);
+  const [isCustomLineItemsExpanded, setIsCustomLineItemsExpanded] = useState(false);
   const [newCustomItem, setNewCustomItem] = useState<{ name: string; description: string; price: string }>({
     name: '',
     description: '',
@@ -10575,15 +10577,27 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               </div>
             )}
 
-            {/* Custom Line Items - add extra rows to the agreement pricing table */}
+            {/* Custom Line Items - Collapsible Section */}
             <div className="group">
-              <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+              <button
+                type="button"
+                onClick={() => setIsCustomLineItemsExpanded(!isCustomLineItemsExpanded)}
+                className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3 w-full p-3 rounded-xl hover:bg-indigo-50 transition-colors duration-200"
+              >
                 <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <Plus className="w-4 h-4 text-white" />
+                  {isCustomLineItemsExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-white" />
+                  ) : (
+                    <Plus className="w-4 h-4 text-white" />
+                  )}
                 </div>
-                Custom Line Items
+                {isCustomLineItemsExpanded ? '−' : '+'} Custom Line Items
                 <span className="text-xs text-gray-500 font-normal">(optional)</span>
-              </label>
+              </button>
+
+              {/* Content - Show only when expanded */}
+              {isCustomLineItemsExpanded && (
+                <div className="border-2 border-indigo-200 rounded-xl p-4 bg-indigo-50/30">
 
               {/* Existing items list */}
               {customLineItems.length > 0 && (
@@ -10699,7 +10713,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     </p>
                   ) : null}
                 </div>
-              </div>
+                </div>
+              )}
+            </div>
 
             <button
               type="submit"
