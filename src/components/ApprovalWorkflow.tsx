@@ -757,118 +757,54 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                 Upload a document using the file selector above to send it for approval.
               </p>
 
-              {/* Team Approval Group & Approval Roles side by side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Team Approval - Automatic Selection with Edit Option */}
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-purple-600" />
-                    Team Approval Group
-                  </h3>
-                  {userIsAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSettingsModal(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                      Edit Settings
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-gray-600 mb-4">
-                  Team lead is automatically selected. Click "Edit Settings" to configure team leads and add recipients.
-                </p>
-                <div className="bg-white rounded-lg p-3 border border-purple-200 space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Select Team Lead to send this approval to
-                    </label>
-                    <select
-                      value={manualTeamSelection}
-                      onChange={(e) => setManualTeamSelection(e.target.value)}
-                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
-                    >
-                      {teamIds.map((team) => (
-                        <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Selected Team: <span className="text-purple-600 font-semibold">{manualTeamSelection}</span>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Team Lead: {getTeamApprovalEmail(manualTeamSelection) || 'Not configured'}
-                  </div>
-                </div>
-              </div>
-
-                {/* Approval Roles Section */}
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
-                <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-green-600" />
-                  Approval Roles
+              {/* Approval Emails - Simple email input */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-blue-600" />
+                  Send Approval To
                 </h3>
-                <p className="text-xs text-gray-600 mb-4">Configure email addresses for each approval role</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Technical Team Email */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Technical Team Email
-                    </label>
-                    <div className="relative">
-                      <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <p className="text-xs text-gray-600 mb-4">
+                  Add email addresses to send this approval. Documents will be sent in the order listed.
+                </p>
+                <div className="space-y-3">
+                  {formData.approvalEmails?.map((email, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-1 rounded min-w-fit">
+                        #{idx + 1}
+                      </span>
                       <input
                         type="email"
-                        value={formData.role1Email}
-                        onChange={(e) => setFormData(prev => ({ ...prev, role1Email: e.target.value }))}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-                        placeholder="technical@company.com"
+                        value={email}
+                        onChange={(e) => {
+                          const updated = [...(formData.approvalEmails || [])];
+                          updated[idx] = e.target.value;
+                          setFormData(prev => ({ ...prev, approvalEmails: updated }));
+                        }}
+                        placeholder="user@company.com"
+                        className="flex-1 px-4 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
                       />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (formData.approvalEmails || []).filter((_, i) => i !== idx);
+                          setFormData(prev => ({ ...prev, approvalEmails: updated }));
+                        }}
+                        className="text-red-600 hover:text-red-700 text-sm font-semibold px-3 py-2"
+                      >
+                        Remove
+                      </button>
                     </div>
-                  </div>
-
-                  {/* Legal Team Email */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Legal Team Email
-                    </label>
-                    <div className="relative">
-                      <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <input
-                        type="email"
-                        value={formData.role2Email}
-                        onChange={(e) => setFormData(prev => ({ ...prev, role2Email: e.target.value }))}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-                        placeholder="legal@company.com"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Deal Desk Email */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Deal Desk Email
-                    </label>
-                    <div className="relative">
-                      <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <input
-                        type="email"
-                        value={formData.role4Email}
-                        onChange={(e) => setFormData(prev => ({ ...prev, role4Email: e.target.value }))}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white"
-                        placeholder="dealdesk@company.com"
-                      />
-                    </div>
-                  </div>
+                  ))}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, approvalEmails: [...(prev.approvalEmails || []), ''] }))}
+                  className="mt-3 text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-2 px-3 py-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Email
+                </button>
               </div>
-              </div>
-              
-              <p className="text-sm text-gray-500">
-                Workflow order: Team Approval → Technical Team → Legal Team → Deal Desk. Each role will receive the document and can approve or deny it.
-              </p>
 
               {/* Start Workflow Button */}
               <div className="pt-4">
