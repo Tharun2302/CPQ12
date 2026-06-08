@@ -1005,7 +1005,7 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
   }
 
   // OVERAGE AGREEMENT: Only calculate instance cost, no other costs
-  if (config.combination === 'overage-agreement') {
+  if (config.combination === 'overage-agreement' || config.migrationType === 'Overage Agreement') {
     const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
     const totalCost = instanceCost;
 
