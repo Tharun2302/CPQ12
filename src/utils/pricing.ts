@@ -926,7 +926,7 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
       combinedDataCost,
       combinedMigrationCost,
       combinedInstanceCost,
-      finalTotal
+      totalCombined
     );
     return {
       userCost: combinedUserCost,
