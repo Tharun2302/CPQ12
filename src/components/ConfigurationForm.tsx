@@ -3537,7 +3537,13 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       placeholder={`Enter discount percentage (max 15%)`}
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%. Applied to the combined total (Messaging + Content + Email).</p>
+                  <p className="text-xs text-gray-600 mt-2">
+                    <span className="font-medium">Discount Rules:</span>
+                    <br />• Available only for projects with total ≥ $2,500
+                    <br />• Maximum discount: 15%
+                    <br />• Final price after discount must stay ≥ $2,500
+                    <br />• Applied to combined total (all combinations)
+                  </p>
                 </div>
               </div>
 
@@ -3844,7 +3850,12 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                    className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
                    placeholder={`Enter discount percentage (max 15%)`}
                   />
-                  <p className="text-xs text-gray-500 mt-2">Discount is available only for projects above $2,500 and capped at 15%.</p>
+                  <p className="text-xs text-gray-600 mt-2">
+                    <span className="font-medium">Discount Rules:</span>
+                    <br />• Available only for projects with total ≥ $2,500
+                    <br />• Maximum discount: 15%
+                    <br />• Final price after discount must stay ≥ $2,500
+                  </p>
                 </div>
 
                 {/* Messages Field - Show for Messaging, Hide for Content and overage agreement */}
