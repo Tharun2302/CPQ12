@@ -10713,8 +10713,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 added to the total (after any discount).
               </p>
 
-              {/* Discount for Custom Line Items - Same rules as main discount */}
-              {customLineItems.length > 0 && customLineItemsTotal >= 2500 && (
+              {/* Discount for Custom Line Items - Check combined total (main + custom) */}
+              {customLineItems.length > 0 && (calculatedTotalBeforeCustom + customLineItemsTotal >= 2500) && (
                 <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
                   <label className="block text-sm font-semibold text-gray-800 mb-2">
                     Custom Items Discount (%)
@@ -10735,17 +10735,17 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   />
                   <p className="text-xs text-gray-600 mt-2">
                     <span className="font-medium">Discount Rules:</span>
-                    <br />• Available only for custom items with total ≥ $2,500
+                    <br />• Available when combined total ≥ $2,500 (main + custom items)
                     <br />• Maximum discount: 15%
                     <br />• Final price after discount must stay ≥ $2,500
                     <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
                   </p>
                 </div>
               )}
-              {customLineItems.length > 0 && customLineItemsTotal < 2500 && (
+              {customLineItems.length > 0 && (calculatedTotalBeforeCustom + customLineItemsTotal < 2500) && (
                 <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
                   <p className="text-xs text-amber-700 font-medium">
-                    💡 Custom items discount available when total ≥ $2,500. Current total: {formatCurrency(customLineItemsTotal)}
+                    💡 Discount available when combined total ≥ $2,500. Current: {formatCurrency(calculatedTotalBeforeCustom + customLineItemsTotal)}
                   </p>
                 </div>
               )}
