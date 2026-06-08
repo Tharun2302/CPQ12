@@ -462,12 +462,10 @@ export class DocxTemplateProcessor {
         )
         .join('');
 
-      // Add discount row if discount is provided
+      // Don't inject discount row separately - discount is applied to total calculation
+      // The template's discount row will show the combined discount amount
       if (discount && discount.percentage > 0) {
-        const discountLabel = `${discount.percentage}% Applied`;
-        const discountAmount = `-${formatCurrency(discount.amount)}`;
-        newRows += `<w:tr>${buildCell(cellFormats[0], '')}${buildCell(cellFormats[1], discountLabel)}${buildCell(cellFormats[2], discountAmount)}</w:tr>`;
-        console.log('✅ Added discount row:', { percentage: discount.percentage, amount: discount.amount, formatted: discountAmount });
+        console.log('✅ Custom line items discount applied (not shown as separate row):', { percentage: discount.percentage, amount: discount.amount });
       }
 
       injected = true;
