@@ -637,21 +637,16 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   })();
   const discountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
   
-  // Allow discount only when total project cost exceeds $2500
-  const isDiscountAllowed = totalCost >= 2500;
-  
+  // Discount can apply at ANY amount - no minimum threshold
   // Check if user has entered a valid discount (capped at 15% as per business rules)
   const hasValidDiscount = discountPercent > 0 && discountPercent <= 15;
-  
+
   // Calculate final total after discount
   const discountAmount = hasValidDiscount ? totalCost * (discountPercent / 100) : 0;
   const finalTotalAfterDiscount = totalCost - discountAmount;
-  
-  // Check if discount would bring total below $2500 - if so, don't apply
-  const isDiscountValid = hasValidDiscount ? finalTotalAfterDiscount >= 2500 : true;
-  
-  // Should we show and apply the discount?
-  const shouldApplyDiscount = isDiscountAllowed && hasValidDiscount && isDiscountValid;
+
+  // Should we show and apply the discount? (no minimum amount required)
+  const shouldApplyDiscount = hasValidDiscount;
   
   
 
@@ -1726,12 +1721,11 @@ Quote ID: ${quoteData.id}
         
         // Calculate discount for this function scope (use sessionStorage as source of truth)
         const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
-        const localIsDiscountAllowed = totalCost >= 2500;
+        // Discount applies at any amount - no minimum threshold required
         const localHasValidDiscount = localDiscountPercent > 0 && localDiscountPercent <= 15;
         const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
         const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
-        const localIsDiscountValid = localHasValidDiscount ? localFinalTotalAfterDiscount >= 2500 : true;
-        const localShouldApplyDiscount = localIsDiscountAllowed && localHasValidDiscount && localIsDiscountValid;
+        const localShouldApplyDiscount = localHasValidDiscount;
         
         // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
         const combinationNameForPreview = (configuration?.combination || '').toLowerCase();
@@ -4905,13 +4899,12 @@ Total Price: {{total price}}`;
         
         // CRITICAL: Recalculate discount based on the local totalCost value
         // This ensures discount is calculated correctly for the template preview
+        // Discount now applies at ANY amount - no minimum threshold required
         const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
-        const localIsDiscountAllowed = totalCost >= 2500;
-        const localHasValidDiscount = localDiscountPercent > 0 && localDiscountPercent <= 15; // Updated to 15% cap
+        const localHasValidDiscount = localDiscountPercent > 0 && localDiscountPercent <= 15; // Cap at 15%
         const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
         const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
-        const localIsDiscountValid = localHasValidDiscount ? localFinalTotalAfterDiscount >= 2500 : true;
-        const localShouldApplyDiscount = localIsDiscountAllowed && localHasValidDiscount && localIsDiscountValid;
+        const localShouldApplyDiscount = localHasValidDiscount;
         
         console.log('🧮 Discount calculation in handleGenerateAgreement:', {
           totalCost,
