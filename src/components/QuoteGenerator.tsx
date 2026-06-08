@@ -4881,11 +4881,9 @@ Total Price: {{total price}}`;
         console.log('🧮 Discount calculation in handleGenerateAgreement:', {
           totalCost,
           localDiscountPercent,
-          localIsDiscountAllowed,
           localHasValidDiscount,
           localDiscountAmount,
           localFinalTotalAfterDiscount,
-          localIsDiscountValid,
           localShouldApplyDiscount
         });
         
