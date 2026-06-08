@@ -10729,12 +10729,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     max="15"
                     step="0.1"
                     placeholder="Enter discount percentage (max 15%)"
-                    disabled={(finalTotalAfterDiscount + customLineItemsTotal < 2500)}
-                    className={`w-full px-4 py-2 border-2 rounded-lg focus:ring-4 transition-all duration-200 bg-white text-sm ${
-                      (finalTotalAfterDiscount + customLineItemsTotal >= 2500)
-                        ? 'border-indigo-200 focus:border-indigo-500 focus:ring-indigo-500/20'
-                        : 'border-amber-300 bg-amber-50 opacity-60 cursor-not-allowed'
-                    }`}
+                    disabled={customLineItems.length === 0}
+                    className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-4 focus:border-indigo-500 focus:ring-indigo-500/20 transition-all duration-200 bg-white text-sm disabled:border-amber-300 disabled:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={customLineItemsDiscount || ''}
                     onChange={(e) => {
                       const val = e.target.value ? Math.min(15, parseFloat(e.target.value)) : 0;
@@ -10742,12 +10738,11 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     }}
                   />
 
-                  {(finalTotalAfterDiscount + customLineItemsTotal >= 2500) ? (
+                  {customLineItemsDiscount > 0 ? (
                     <p className="text-xs text-gray-600 mt-2">
                       <span className="font-medium">✅ Discount Rules:</span>
-                      <br />• Available when combined total ≥ $2,500 (main + custom items)
+                      <br />• Discount available at any amount (no minimum)
                       <br />• Maximum discount: 15%
-                      <br />• Final price after discount must stay ≥ $2,500
                       <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
                     </p>
                   ) : customLineItems.length === 0 ? (
@@ -10755,13 +10750,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       <span className="font-medium">ℹ️ Add custom items to apply discount</span>
                       <br />Add custom line items above, then you can set a discount here
                     </p>
-                  ) : (
-                    <p className="text-xs text-amber-700 mt-2">
-                      <span className="font-medium">⚠️ Discount Not Available Yet</span>
-                      <br />Discount will only be applied when combined total ≥ $2,500
-                      <br />Current: {formatCurrency(finalTotalAfterDiscount + customLineItemsTotal)} (Need ${(2500 - (finalTotalAfterDiscount + customLineItemsTotal)).toFixed(2)} more)
-                    </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
