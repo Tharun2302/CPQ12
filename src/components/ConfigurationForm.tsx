@@ -3547,9 +3547,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </button>
                   {showDiscountRules && (
                     <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
-                      • Available only when combined total ≥ $2,500 (main + custom items)
+                      • Discount available at any amount (no minimum)
                       <br />• Maximum discount: 15%
-                      <br />• Final price after discount must stay ≥ $2,500
                       <br />• Applied to combined total (all pricing sources)
                     </p>
                   )}
@@ -3868,9 +3867,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   </button>
                   {showDiscountRules && (
                     <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
-                      • Available only when combined total ≥ $2,500 (main + custom items)
+                      • Discount available at any amount (no minimum)
                       <br />• Maximum discount: 15%
-                      <br />• Final price after discount must stay ≥ $2,500
                     </p>
                   )}
                 </div>
