@@ -525,6 +525,13 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const handleStartWorkflow = async () => {
     let effectiveDocumentId = formData.documentId;
 
+    // Validate approval emails
+    const approvalEmails = (formData.approvalEmails || []).filter(e => e.trim());
+    if (approvalEmails.length === 0) {
+      alert('Please add at least one approval email address.');
+      return;
+    }
+
     // If no document ID provided but a file is uploaded, upload it first
     if (!effectiveDocumentId && uploadedFile) {
       const uploadedId = await uploadManualDocument();
@@ -545,13 +552,9 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       const selectedDoc = availableDocuments.find(doc => doc.id === effectiveDocumentId);
       const matchingQuote = quotes?.find(q => q.id === effectiveDocumentId);
 
-      const clientName =
-        contactInfo.clientName?.trim() ||
-        matchingQuote?.clientName ||
-        selectedDoc?.clientName ||
-        'Unknown Client';
-      const companyName = contactInfo.company?.trim() || matchingQuote?.company || selectedDoc?.company || clientName;
-      const clientEmail = contactInfo.clientEmail?.trim() || matchingQuote?.clientEmail || selectedDoc?.clientEmail || undefined;
+      const clientName = matchingQuote?.clientName || selectedDoc?.clientName || 'Unknown Client';
+      const companyName = matchingQuote?.company || selectedDoc?.company || clientName;
+      const clientEmail = matchingQuote?.clientEmail || selectedDoc?.clientEmail || undefined;
 
       const amount =
         matchingQuote?.calculation?.totalCost ??
@@ -559,16 +562,14 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         selectedDoc?.amount ??
         0;
 
-      // User picks the team in the Send for Approval modal — use that selection
-      const autoSelectedTeam = manualTeamSelection;
-      const teamEmail = getTeamApprovalEmail(autoSelectedTeam);
-      if (!teamEmail) {
-        alert('Team Approval email not configured. Please configure team settings.');
-        return;
-      }
-
-      // Get additional recipients for this team (for backward compatibility)
-      const additionalRecipients = teamApprovalSettings.additionalRecipients[autoSelectedTeam] || [];
+      // Build workflow steps from approval emails
+      const workflowSteps = approvalEmails.map((email, idx) => ({
+        step: idx + 1,
+        role: `Approver #${idx + 1}`,
+        email: email.trim(),
+        status: 'pending',
+        comments: ''
+      }));
 
       const newWorkflow = await createWorkflow({
         documentId: effectiveDocumentId,
@@ -580,92 +581,16 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         creatorEmail: loggedInUserEmail || undefined,
         creatorName: currentUser?.name || (loggedInUserEmail ? loggedInUserEmail.split('@')[0] : undefined),
         lastReminderSentAt: null,
-        totalSteps: 4,
-        workflowSteps: [
-          {
-            step: 1,
-            role: 'Team Approval',
-            email: teamEmail,
-            status: 'pending',
-            group: autoSelectedTeam,
-            comments: '',
-            additionalRecipients: additionalRecipients
-          },
-          {
-            step: 2,
-            role: 'Technical Team',
-            email: formData.role1Email,
-            status: 'pending'
-          },
-          {
-            step: 3,
-            role: 'Legal Team',
-            email: formData.role2Email,
-            status: 'pending'
-          },
-          {
-            step: 4,
-            role: 'Deal Desk',
-            email: formData.role4Email,
-            status: 'pending'
-          }
-        ]
+        totalSteps: approvalEmails.length,
+        workflowSteps,
+        sendSequentially: formData.sendSequentially !== false
       });
 
       if (newWorkflow) {
-        // After creating the workflow, send the first email to Team Approval
-        try {
-          const backendUrl = BACKEND_URL || 'http://localhost:3001';
-
-          console.log('📧 Sending Team Approval email for manual workflow...', {
-            teamEmail,
-            workflowId: newWorkflow.id,
-            documentId: effectiveDocumentId
-          });
-
-          const response = await fetch(`${backendUrl}/api/send-team-email`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-              body: JSON.stringify({
-              teamEmail,
-              additionalRecipients: additionalRecipients,
-              workflowData: {
-                documentId: effectiveDocumentId,
-                documentType: formData.documentType,
-                clientName,
-                amount,
-                workflowId: newWorkflow.id,
-                teamGroup: autoSelectedTeam,
-                ...(companyName && { companyName }),
-                ...(clientEmail && { clientEmail })
-              }
-            })
-          });
-
-          let result: any = null;
-          const ct = response.headers.get('content-type') || '';
-          if (ct.includes('application/json')) {
-            result = await response.json();
-          } else {
-            const text = await response.text();
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
-            } else {
-              result = { success: true };
-            }
-          }
-
-          if (result?.success) {
-            alert(`✅ Approval workflow started.\n📧 Team Approval (${autoSelectedTeam}) has been notified for first approval.`);
-          } else {
-            alert('✅ Workflow created but Team Approval email failed.\nPlease notify Team Approval manually.');
-          }
-        } catch (emailError) {
-          console.error('❌ Error sending Team Approval email for manual workflow:', emailError);
-          alert('✅ Workflow created but Team Approval email failed.\nPlease notify Team Approval manually.');
-        }
+        const emailList = approvalEmails.join('\n📧 ');
+        const modeText = formData.sendSequentially !== false ? 'sequentially' : 'in parallel';
+        alert(`✅ Approval workflow started.\n\n📧 Sending to:\n📧 ${emailList}\n\n⏱️ Mode: ${modeText}`);
+        setActiveTab('dashboard');
       } else {
         alert('Approval workflow could not be created. Please try again.');
       }
