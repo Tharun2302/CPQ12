@@ -1005,16 +1005,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   }, [dealData]); // Removed onContactInfoChange from dependencies
 
-  // Load discount value from sessionStorage on component mount
+  // Clear stored discount on mount - user must explicitly enter it each time
   useEffect(() => {
-    try {
-      const savedDiscount = sessionStorage.getItem('cpq_discount_session');
-      if (savedDiscount !== null && savedDiscount !== '') {
-        setDiscountValue(savedDiscount);
-      }
-    } catch {
-      setDiscountValue('');
-    }
+    setDiscountValue('');
+    sessionStorage.removeItem('cpq_discount_session');
+    localStorage.removeItem('cpq_discount');
   }, []);
 
   // Sync combination with config (only use sessionStorage, no localStorage fallback)

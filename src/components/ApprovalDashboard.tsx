@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
-  Calendar,
   CalendarClock,
   Eye,
   FileText,
@@ -54,34 +53,6 @@ const getApprovalCompletedAtMs = (w: any): number | null => {
   const fall = w.updatedAt || w.createdAt;
   const t = max || (fall ? new Date(fall).getTime() : 0);
   return t > 0 && !isNaN(t) ? t : null;
-};
-
-const workflowMatchesDateRange = (w: any, fromStr: string, toStr: string): boolean => {
-  const fromRaw = fromStr.trim();
-  const toRaw = toStr.trim();
-  if (!fromRaw && !toRaw) return true;
-
-  const fromD = fromRaw ? parseDateInputLocal(fromRaw) : null;
-  const toD = toRaw ? parseDateInputLocal(toRaw) : null;
-  if (fromRaw && !fromD) return true;
-  if (toRaw && !toD) return true;
-
-  const fromMs = fromD ? startOfDay(fromD).getTime() : null;
-  const toMs = toD ? endOfDay(toD).getTime() : null;
-
-  const status = w.status || 'pending';
-  let ts: number | null = null;
-  if (status === 'approved') {
-    ts = getApprovalCompletedAtMs(w);
-  } else if (status === 'pending' || status === 'in_progress') {
-    ts = w.createdAt ? new Date(w.createdAt).getTime() : null;
-  } else if (status === 'denied') {
-    ts = w.updatedAt ? new Date(w.updatedAt).getTime() : null;
-  }
-  if (ts === null || isNaN(ts)) return false;
-  if (fromMs !== null && ts < fromMs) return false;
-  if (toMs !== null && ts > toMs) return false;
-  return true;
 };
 
 const badgeClass = (status: string) => {
@@ -194,8 +165,6 @@ const ApprovalDashboard: React.FC = () => {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
   // Tracks which workflow is currently being prepared for eSign (loading state)
   const [processingEsignId, setProcessingEsignId] = useState<string | null>(null);
   // Tracks which workflow's eSign is being reset
@@ -215,6 +184,9 @@ const ApprovalDashboard: React.FC = () => {
   const [isStartingRedline, setIsStartingRedline] = useState<string | null>(null); // documentId being opened
   const [isFinalizingRedline, setIsFinalizingRedline] = useState(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null); // documentId being downloaded
+
+  // Date filter flag (currently unused, but referenced in the UI)
+  const dateFilterActive = false;
 
   const {
     workflows,
@@ -623,11 +595,8 @@ const ApprovalDashboard: React.FC = () => {
   }, [activeView, all, pending, approved, rejected]);
 
   const filteredList = useMemo(() => {
-    if (!filterDateFrom.trim() && !filterDateTo.trim()) return list;
-    return list.filter((w: any) => workflowMatchesDateRange(w, filterDateFrom, filterDateTo));
-  }, [list, filterDateFrom, filterDateTo]);
-
-  const dateFilterActive = Boolean(filterDateFrom.trim() || filterDateTo.trim());
+    return list;
+  }, [list]);
 
   // Use the existing "View Details" behavior by navigating to the modal in other dashboards.
   const revokeObjectUrlIfAny = () => {
@@ -815,46 +784,6 @@ const ApprovalDashboard: React.FC = () => {
                   activeView === 'dashboard' ? '' : 'lg:flex-1 lg:min-w-0'
                 }`}
               >
-                <div
-                  className="flex h-full min-h-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-white border border-gray-200 px-3 py-2.5 sm:px-4 w-full lg:w-max lg:max-w-none"
-                  title="Approved: completion time. Pending: created. Rejected: last update."
-                >
-                  <Calendar className="h-5 w-5 text-gray-400 shrink-0" aria-hidden />
-                  <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Date</span>
-                  <label className="flex flex-1 min-w-0 items-center gap-1.5 sm:flex-initial">
-                    <span className="text-xs text-gray-500 whitespace-nowrap shrink-0">From</span>
-                    <input
-                      type="date"
-                      value={filterDateFrom}
-                      onChange={(e) => setFilterDateFrom(e.target.value)}
-                      className="min-w-0 flex-1 text-sm text-gray-900 border border-gray-200 rounded-md px-2.5 py-2 w-full sm:w-44 md:w-48 bg-white"
-                    />
-                  </label>
-                  <span className="text-gray-400 text-sm px-0.5 hidden sm:inline" aria-hidden>
-                    –
-                  </span>
-                  <label className="flex flex-1 min-w-0 items-center gap-1.5 sm:flex-initial w-full sm:w-auto">
-                    <span className="text-xs text-gray-500 whitespace-nowrap shrink-0">To</span>
-                    <input
-                      type="date"
-                      value={filterDateTo}
-                      onChange={(e) => setFilterDateTo(e.target.value)}
-                      className="min-w-0 flex-1 text-sm text-gray-900 border border-gray-200 rounded-md px-2.5 py-2 w-full sm:w-44 md:w-48 bg-white"
-                    />
-                  </label>
-                  {dateFilterActive && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFilterDateFrom('');
-                        setFilterDateTo('');
-                      }}
-                      className="text-sm font-semibold text-teal-700 hover:text-teal-800 underline underline-offset-2"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
                 <div className="flex min-h-[2.5rem] min-w-0 w-full lg:min-h-0">
                   <div className="flex h-full min-h-[2.5rem] min-w-0 w-full items-center gap-2.5 rounded-lg bg-white border border-gray-200 px-3 py-2.5 sm:px-4 lg:min-h-0">
                     <Search className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
