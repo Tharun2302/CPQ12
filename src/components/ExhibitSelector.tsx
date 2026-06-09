@@ -35,6 +35,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   useEffect(() => { selectedExhibitsRef.current = selectedExhibits; });
   // Exhibit IDs belonging to hidden combinations (kept out of the selection)
   const hiddenExhibitIdsRef = React.useRef<string[]>([]);
+  // Exhibit IDs the user explicitly removed (via the chip's X). The required/auto-select
+  // effects must NOT immediately re-add these, otherwise "remove combination" looks broken.
+  const removedExhibitIdsRef = React.useRef<Set<string>>(new Set());
   const listScrollRef = React.useRef<HTMLDivElement>(null);
 
   // Reset scroll to top whenever the search query changes so the first result is always visible
@@ -62,7 +65,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       // Exclude exhibits belonging to hidden combinations so they are never auto-(re)added
       const hiddenIds = new Set(hiddenExhibitIdsRef.current.map((id: string) => id.toString()));
       const requiredIds = exhibits
-        .filter(ex => ex.isRequired && !hiddenIds.has(ex._id.toString()))
+        .filter(ex => ex.isRequired && !hiddenIds.has(ex._id.toString()) && !removedExhibitIdsRef.current.has(ex._id.toString()))
         .map(ex => ex._id);
       const missingRequired = requiredIds.filter(id => !validSelections.includes(id));
       const needsRequired = missingRequired.length > 0;
@@ -354,6 +357,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
     const matchingIds = exhibits
       .filter(ex => ex.combinations?.some(c => c.toLowerCase() === combination.toLowerCase()))
+      .filter(ex => !removedExhibitIdsRef.current.has(ex._id.toString()))
       .map(ex => ex._id);
 
     if (matchingIds.length === 0) return;
@@ -876,6 +880,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       'google mydrive to dropbox',
       'box to box',
       'google shared drive to egnyte',
+      'box to google mydrive $ shared drive',
     ]);
     // Filter out hidden combinations AND record their exhibit IDs so they can be
     // removed from the current selection. Hiding a combination must also DESELECT it,
@@ -913,6 +918,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     if (selectedExhibits.includes(exhibitId)) {
       onExhibitsChange(selectedExhibits.filter(id => id !== exhibitId));
     } else {
+      removedExhibitIdsRef.current.delete((exhibitId ?? '').toString());
       onExhibitsChange([...selectedExhibits, exhibitId]);
     }
   };
@@ -947,10 +953,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       : null;
     if (!item?.exhibits?.length) return;
     const idsToRemove = item.exhibits.map((ex: any) => (ex?._id ?? '').toString()).filter(Boolean);
-    const requiredIds = new Set(exhibits.filter((ex) => ex.isRequired).map((ex) => ex._id));
-    const newSelection = selectedExhibits.filter(
-      (id) => !idsToRemove.includes(id) || requiredIds.has(id)
-    );
+    // Mark as explicitly removed so the required/auto-select effects don't re-add them.
+    idsToRemove.forEach((id: string) => removedExhibitIdsRef.current.add(id));
+    const newSelection = selectedExhibits.filter((id) => !idsToRemove.includes((id ?? '').toString()));
     onExhibitsChange(newSelection);
   };
 
@@ -1087,6 +1092,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                       } else {
                         // Select ALL exhibits in the group (all Include + Not Include variants for all plans)
                         const allGroupIds = [...requiredIds, ...nonRequiredIds];
+                        // User is re-selecting this combination — clear any prior explicit removal.
+                        allGroupIds.forEach((id) => removedExhibitIdsRef.current.delete((id ?? '').toString()));
                         const newSelection = [...new Set([...selectedExhibits, ...allGroupIds])];
                         onExhibitsChange(newSelection);
                         console.log('✅ Selected all variants in group:', {

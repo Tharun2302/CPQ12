@@ -431,6 +431,50 @@ export async function mergeDocxFiles(
             }
           }
 
+          // GAP FIX: Consecutive feature tables (e.g. "Box to MyDrive" + "Box to Shared
+          // Drive") render touching in Word/OOXML when there is no paragraph — or only a
+          // zero-height empty paragraph — between them. Ensure a small visible gap above a
+          // table when it follows another table directly OR an empty separator paragraph.
+          const prevContent = mainBody.lastChild?.previousSibling as Element | null;
+          const paragraphIsEmpty = (p: Element): boolean => {
+            const tNodes = p.getElementsByTagName('w:t');
+            for (let i = 0; i < tNodes.length; i++) {
+              if ((tNodes[i].textContent || '').trim().length > 0) return false;
+            }
+            return true;
+          };
+          const setParagraphGap = (p: Element): void => {
+            let gapPPr = p.getElementsByTagName('w:pPr')[0];
+            if (!gapPPr) {
+              gapPPr = mainDoc.createElementNS(ns, 'w:pPr');
+              p.insertBefore(gapPPr, p.firstChild);
+            }
+            let gapSpacing = gapPPr.getElementsByTagName('w:spacing')[0];
+            if (!gapSpacing) {
+              gapSpacing = mainDoc.createElementNS(ns, 'w:spacing');
+              gapPPr.appendChild(gapSpacing);
+            }
+            gapSpacing.setAttribute('w:before', '120');
+            gapSpacing.setAttribute('w:after', '120');
+          };
+          if (prevContent && prevContent.nodeName === 'w:tbl') {
+            // Two tables directly adjacent — insert an empty spacer paragraph between them.
+            const spacer = mainDoc.createElementNS(ns, 'w:p');
+            setParagraphGap(spacer);
+            mainBody.insertBefore(spacer, mainBody.lastChild);
+            console.log('   ↔️  Inserted spacer paragraph between adjacent tables');
+          } else if (
+            prevContent &&
+            prevContent.nodeName === 'w:p' &&
+            paragraphIsEmpty(prevContent) &&
+            prevContent.previousSibling?.nodeName === 'w:tbl'
+          ) {
+            // An empty separator paragraph already sits between the two tables but renders
+            // with no height — give it visible spacing so the gap actually shows.
+            setParagraphGap(prevContent);
+            console.log('   ↔️  Added spacing to empty separator paragraph between tables');
+          }
+
           mainBody.insertBefore(importedTable, mainBody.lastChild);
           console.log('   📊 Imported table with overlap-safe properties');
           continue;
