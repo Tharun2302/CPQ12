@@ -670,8 +670,10 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   ← Back to Approval Dashboard
                 </button>
               </div>
-              {/* Document Information */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+              {/* Document Information & Client Details - Side by Side */}
+              <div className="grid grid-cols-2 gap-6">
+                {/* Document Information */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <FileText className="w-5 h-5 text-blue-600" />
                     Document Information
@@ -731,41 +733,42 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   </div>
                 </div>
 
-              {/* Client Details */}
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-200">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-purple-600" />
-                  Client Details
-                </h3>
-                <div className="grid grid-cols-1 gap-4">
-                  {/* Client Name */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Client Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={contactInfo.clientName}
-                      onChange={(e) => setContactInfo({ ...contactInfo, clientName: e.target.value })}
-                      placeholder="Enter client name"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      required
-                    />
-                  </div>
+                {/* Client Details */}
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-purple-600" />
+                    Client Details
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4">
+                    {/* Client Name */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Client Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={contactInfo.clientName}
+                        onChange={(e) => setContactInfo({ ...contactInfo, clientName: e.target.value })}
+                        placeholder="Enter client name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
 
-                  {/* Company Name */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Company Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={contactInfo.company}
-                      onChange={(e) => setContactInfo({ ...contactInfo, company: e.target.value })}
-                      placeholder="Enter company name"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      required
-                    />
+                    {/* Company Name */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Company Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={contactInfo.company}
+                        onChange={(e) => setContactInfo({ ...contactInfo, company: e.target.value })}
+                        placeholder="Enter company name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
