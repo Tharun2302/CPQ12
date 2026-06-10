@@ -10257,7 +10257,7 @@ app.post('/api/approval-workflows', async (req, res) => {
 
           const emailSubject = `Approval Required: ${workflow.clientName || 'Document'} - ${workflow.documentId}`;
 
-          // Hide client details for manual approvals
+          // Hide amount for manual approvals (usually $0), keep client & company
           const isManualApproval = workflow.isManualApproval === true;
 
           const emailHtml = `
@@ -10265,8 +10265,8 @@ app.post('/api/approval-workflows', async (req, res) => {
             <p>Hello,</p>
             <p>You have been requested to approve the following document:</p>
             <ul>
-              ${!isManualApproval && workflow.clientName ? `<li><strong>Client:</strong> ${workflow.clientName}</li>` : ''}
-              ${!isManualApproval && workflow.companyName ? `<li><strong>Company:</strong> ${workflow.companyName}</li>` : ''}
+              ${workflow.clientName ? `<li><strong>Client:</strong> ${workflow.clientName}</li>` : ''}
+              ${workflow.companyName ? `<li><strong>Company:</strong> ${workflow.companyName}</li>` : ''}
               ${!isManualApproval && workflow.amount ? `<li><strong>Amount:</strong> $${workflow.amount.toLocaleString()}</li>` : ''}
               <li><strong>Step:</strong> ${firstStep.role || 'Approver'}</li>
               <li><strong>Document:</strong> ${workflow.documentId}</li>
