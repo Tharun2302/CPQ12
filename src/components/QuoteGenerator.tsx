@@ -6567,23 +6567,34 @@ Total Price: {{total price}}`;
                 }
                 return norm;
               };
-              const seenComboKeys = new Set<string>();
+              const comboKeyToRow = new Map<string, ConfigRow>();
 
               const addRowsFromConfigs = (list: any[] | undefined, category: string) => {
                 if (!Array.isArray(list)) return;
                 for (const cfg of list) {
                   const displayName = (cfg?.exhibitName ?? cfg?.combinationName ?? '').toString().trim();
                   if (!displayName) continue;
-                  // Skip duplicate combinations (same category + normalized combination name)
-                  const dedupeKey = `${category}|${combinationDedupeKey(displayName)}`;
-                  if (seenComboKeys.has(dedupeKey)) {
-                    console.log('⏭️ Skipping duplicate agreement row:', { category, displayName, dedupeKey });
-                    continue;
-                  }
-                  seenComboKeys.add(dedupeKey);
                   const exhibitId = cfg?.exhibitId;
                   const exhibit = exhibitId ? allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId?.toString()) : undefined;
-                  configRows.push({ category, displayName, exhibitConfig: cfg, exhibit: exhibit || undefined });
+                  // Dedupe on the exhibit's BASE COMBINATION when available. The same migration
+                  // can arrive under different name spellings (e.g. the short "Dropbox To Microsoft"
+                  // and the full "Dropbox to Microsoft (OneDrive & SharePoint Online)"), which the
+                  // name-only key fails to collapse — producing two near-identical rows for one
+                  // selected combination. The base combination key collapses them to one row.
+                  // Fall back to the name-normalized key only when no exhibit/base combo is found.
+                  const baseCombo = exhibit ? getBaseCombination(exhibit) : '';
+                  const comboKey = baseCombo || combinationDedupeKey(displayName);
+                  const dedupeKey = `${category}|${comboKey}`;
+                  const existing = comboKeyToRow.get(dedupeKey);
+                  if (existing) {
+                    // Collapse to a single row; keep the more descriptive (longer) display name.
+                    if (displayName.length > existing.displayName.length) existing.displayName = displayName;
+                    console.log('⏭️ Collapsing duplicate agreement row:', { category, displayName, dedupeKey });
+                    continue;
+                  }
+                  const row: ConfigRow = { category, displayName, exhibitConfig: cfg, exhibit: exhibit || undefined };
+                  comboKeyToRow.set(dedupeKey, row);
+                  configRows.push(row);
                 }
               };
 
@@ -7302,6 +7313,7 @@ Total Price: {{total price}}`;
             type ServerItem = {
               kind: 'email' | 'content' | 'messaging';
               exhibitName: string;
+              exhibitId?: string;
               instances: number;
               instanceType: string;
               months: number;
@@ -7311,6 +7323,7 @@ Total Price: {{total price}}`;
               ...(cfgAny.emailConfigs || []).map((c: any) => ({
                 kind: 'email' as const,
                 exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                exhibitId: c?.exhibitId ? c.exhibitId.toString() : undefined,
                 instances: Number(c.numberOfInstances || 0),
                 instanceType: String(c.instanceType || 'Standard'),
                 months: Number(c.duration || 0)
@@ -7318,6 +7331,7 @@ Total Price: {{total price}}`;
               ...(cfgAny.contentConfigs || []).map((c: any) => ({
                 kind: 'content' as const,
                 exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                exhibitId: c?.exhibitId ? c.exhibitId.toString() : undefined,
                 instances: Number(c.numberOfInstances || 0),
                 instanceType: String(c.instanceType || 'Standard'),
                 months: Number(c.duration || 0)
@@ -7325,6 +7339,7 @@ Total Price: {{total price}}`;
               ...(cfgAny.messagingConfigs || []).map((c: any) => ({
                 kind: 'messaging' as const,
                 exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                exhibitId: c?.exhibitId ? c.exhibitId.toString() : undefined,
                 instances: Number(c.numberOfInstances || 0),
                 instanceType: String(c.instanceType || 'Standard'),
                 months: Number(c.duration || 0)
@@ -7382,16 +7397,29 @@ Total Price: {{total price}}`;
               }
               return norm;
             };
-            const seenServerKeys = new Set<string>();
-            const dedupedItems = items.filter((it) => {
+            // Collapse duplicate combinations (same migration under different name spellings)
+            // by normalized name. The real fix for one-combination-becoming-two now lives in
+            // ConfigurationForm (it groups exhibits by a stable base-combination key, so only
+            // one config per combination reaches here). This name-based pass remains as a
+            // lightweight safety net. NOTE: do NOT use getBaseCombination/allExhibits here —
+            // they are not in scope in this "servers" block; referencing them throws and the
+            // catch below silently blanks the entire instance/server section.
+            const keyToDedupedIndex = new Map<string, number>();
+            const dedupedItems: ServerItem[] = [];
+            for (const it of items) {
               const key = `${it.kind}|${serverDedupeKey(it.exhibitName)}`;
-              if (seenServerKeys.has(key)) {
-                console.log('⏭️ Skipping duplicate instance/server row:', { kind: it.kind, exhibitName: it.exhibitName, key });
-                return false;
+              const existingIdx = keyToDedupedIndex.get(key);
+              if (existingIdx !== undefined) {
+                // Collapse to one row; keep the more descriptive (longer) display name.
+                if ((it.exhibitName || '').length > (dedupedItems[existingIdx].exhibitName || '').length) {
+                  dedupedItems[existingIdx] = { ...dedupedItems[existingIdx], exhibitName: it.exhibitName };
+                }
+                console.log('⏭️ Collapsing duplicate instance/server row:', { kind: it.kind, exhibitName: it.exhibitName, key });
+                continue;
               }
-              seenServerKeys.add(key);
-              return true;
-            });
+              keyToDedupedIndex.set(key, dedupedItems.length);
+              dedupedItems.push(it);
+            }
 
             // Build servers array for docxtemplater loop
             const serversArray = dedupedItems.map((it, idx) => {

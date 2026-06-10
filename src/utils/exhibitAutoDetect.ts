@@ -43,6 +43,7 @@ const CONTENT_COMBINATIONS = [
   { value: 'egnyte-to-google-sharedrive', label: 'Egnyte to Google Shared Drive' },
   { value: 'egnyte-to-sharepoint-online', label: 'Egnyte to SharePoint Online' },
   { value: 'egnyte-to-google-mydrive', label: 'Egnyte to Google MyDrive' },
+  { value: 'egnyte-to-google-mydrive-and-sharedrive', label: 'Egnyte to Google (MyDrive & ShareDrive)' },
   { value: 'egnyte-to-microsoft', label: 'Egnyte to Microsoft' },
   { value: 'egnyte-to-google', label: 'Egnyte to Google' },
   { value: 'google-sharedrive-to-egnyte', label: 'Google Shared Drive to Egnyte' },
@@ -62,6 +63,7 @@ const CONTENT_COMBINATIONS = [
   { value: 'sharefile-to-sharefile', label: 'ShareFile to ShareFile' },
   { value: 'nfs-to-google', label: 'NFS to Google' },
   { value: 'nfs-to-microsoft', label: 'NFS to Microsoft' },
+  { value: 'mydrive-sharedrive-onedrive-sharepointonline', label: 'MyDrive/ShareDrive - OneDrive/SharePointOnline' },
   { value: 'testing-to-production', label: 'Testing to Production' },
 ];
 

@@ -35,6 +35,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   useEffect(() => { selectedExhibitsRef.current = selectedExhibits; });
   // Exhibit IDs belonging to hidden combinations (kept out of the selection)
   const hiddenExhibitIdsRef = React.useRef<string[]>([]);
+  // Exhibit IDs the user explicitly removed (via the chip's X). The required/auto-select
+  // effects must NOT immediately re-add these, otherwise "remove combination" looks broken.
+  const removedExhibitIdsRef = React.useRef<Set<string>>(new Set());
   const listScrollRef = React.useRef<HTMLDivElement>(null);
 
   // Reset scroll to top whenever the search query changes so the first result is always visible
@@ -62,7 +65,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       // Exclude exhibits belonging to hidden combinations so they are never auto-(re)added
       const hiddenIds = new Set(hiddenExhibitIdsRef.current.map((id: string) => id.toString()));
       const requiredIds = exhibits
-        .filter(ex => ex.isRequired && !hiddenIds.has(ex._id.toString()))
+        .filter(ex => ex.isRequired && !hiddenIds.has(ex._id.toString()) && !removedExhibitIdsRef.current.has(ex._id.toString()))
         .map(ex => ex._id);
       const missingRequired = requiredIds.filter(id => !validSelections.includes(id));
       const needsRequired = missingRequired.length > 0;
@@ -354,6 +357,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
     const matchingIds = exhibits
       .filter(ex => ex.combinations?.some(c => c.toLowerCase() === combination.toLowerCase()))
+      .filter(ex => !removedExhibitIdsRef.current.has(ex._id.toString()))
       .map(ex => ex._id);
 
     if (matchingIds.length === 0) return;
@@ -679,8 +683,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         // Heuristic: extract "<source> to <destination>" from the exhibit name (the
         // segment before " - " and before " Standard|Basic|Advanced Plan").
         const exhibitNameRaw = (exhibit.name || '').toString();
-        const dashIdx = exhibitNameRaw.indexOf(' - ');
-        const nameBase = (dashIdx > 0 ? exhibitNameRaw.substring(0, dashIdx) : exhibitNameRaw)
+        // Strip the trailing "[Plan] Plan - [Include type]" / "- Included Features" suffix from
+        // the END of the name (instead of splitting on the FIRST " - "). This keeps combinations
+        // whose own name contains " - " (e.g. "MyDrive/ShareDrive - OneDrive/SharePointOnline")
+        // intact instead of truncating them at the first dash — otherwise the Include and
+        // Not-Include files of the SAME combination land in different folders.
+        const nameBase = exhibitNameRaw
+          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+          .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
           .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
           .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
           .trim();
@@ -712,6 +722,13 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         // in one folder.
         if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
           folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+        }
+
+        // Canonicalize "MyDrive/ShareDrive <-> OneDrive/SharePoint Online" regardless of the
+        // spacing around the internal dash (" - " vs "-"), so the Include and Not-Include files
+        // — named inconsistently — collapse into a single folder.
+        if (/^mydrive\s*\/\s*sharedrive\s*-\s*onedrive\s*\/\s*sharepoint\s*online$/.test(folderNameNorm)) {
+          folderName = 'MyDrive/ShareDrive-OneDrive/SharePointOnline';
         }
 
         // Skip rendering these groups entirely in the UI (case-insensitive check)
@@ -876,6 +893,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       'google mydrive to dropbox',
       'box to box',
       'google shared drive to egnyte',
+      'box to google mydrive $ shared drive',
     ]);
     // Filter out hidden combinations AND record their exhibit IDs so they can be
     // removed from the current selection. Hiding a combination must also DESELECT it,
@@ -913,6 +931,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     if (selectedExhibits.includes(exhibitId)) {
       onExhibitsChange(selectedExhibits.filter(id => id !== exhibitId));
     } else {
+      removedExhibitIdsRef.current.delete((exhibitId ?? '').toString());
       onExhibitsChange([...selectedExhibits, exhibitId]);
     }
   };
@@ -946,10 +965,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
       let folderName = formatCombinationForDisplay(baseCombination);
 
-      // Apply the same name override logic as in processedExhibits
+      // Apply the same name override logic as in processedExhibits.
+      // Strip the trailing "[Plan] Plan - [Include type]" suffix from the END so combinations
+      // whose own name contains " - " aren't truncated at the first dash (keeps chip names in
+      // sync with the merged folder).
       const exhibitNameRaw = (exhibit.name || '').toString();
-      const dashIdx = exhibitNameRaw.indexOf(' - ');
-      const nameBase = (dashIdx > 0 ? exhibitNameRaw.substring(0, dashIdx) : exhibitNameRaw)
+      const nameBase = exhibitNameRaw
+        .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+        .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
         .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
         .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
         .trim();
@@ -972,6 +995,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
         folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
       }
+      // Same canonicalization as processedExhibits so chip + folder names match.
+      if (/^mydrive\s*\/\s*sharedrive\s*-\s*onedrive\s*\/\s*sharepoint\s*online$/.test(folderNameNorm)) {
+        folderName = 'MyDrive/ShareDrive-OneDrive/SharePointOnline';
+      }
 
       if (!seen.has(folderName)) {
         seen.add(folderName);
@@ -988,10 +1015,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       : null;
     if (!item?.exhibits?.length) return;
     const idsToRemove = item.exhibits.map((ex: any) => (ex?._id ?? '').toString()).filter(Boolean);
-    const requiredIds = new Set(exhibits.filter((ex) => ex.isRequired).map((ex) => ex._id));
-    const newSelection = selectedExhibits.filter(
-      (id) => !idsToRemove.includes(id) || requiredIds.has(id)
-    );
+    // Mark as explicitly removed so the required/auto-select effects don't re-add them.
+    idsToRemove.forEach((id: string) => removedExhibitIdsRef.current.add(id));
+    const newSelection = selectedExhibits.filter((id) => !idsToRemove.includes((id ?? '').toString()));
     onExhibitsChange(newSelection);
   };
 
@@ -1128,6 +1154,8 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                       } else {
                         // Select ALL exhibits in the group (all Include + Not Include variants for all plans)
                         const allGroupIds = [...requiredIds, ...nonRequiredIds];
+                        // User is re-selecting this combination — clear any prior explicit removal.
+                        allGroupIds.forEach((id) => removedExhibitIdsRef.current.delete((id ?? '').toString()));
                         const newSelection = [...new Set([...selectedExhibits, ...allGroupIds])];
                         onExhibitsChange(newSelection);
                         console.log('✅ Selected all variants in group:', {
@@ -1228,7 +1256,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                             .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
                             .map((ex) => {
                               const isExSelected = selectedExhibits.includes(ex._id);
-                              const dashIndex = ex.name.indexOf(' - ');
+                              // Use the LAST " - " so the child shows just the plan/include part
+                              // (e.g. "Standard Not Include") even when the combination portion of
+                              // the name itself contains " - " (e.g. "MyDrive/ShareDrive - OneDrive/…").
+                              const dashIndex = ex.name.lastIndexOf(' - ');
                               const childLabel = dashIndex > 0 ? ex.name.substring(dashIndex + 3) : ex.name;
                               return (
                                 <button
