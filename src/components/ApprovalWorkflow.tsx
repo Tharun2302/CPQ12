@@ -632,6 +632,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         totalSteps: 3,
         workflowSteps,
         sendSequentially: true, // Always sequential for team-based approval
+        isManualApproval: true, // Flag to hide client details in email for manual uploads
         notificationSettings: {
           notifyOnDeny: true,
           notifyOnApprove: true,

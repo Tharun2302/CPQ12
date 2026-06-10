@@ -10257,19 +10257,17 @@ app.post('/api/approval-workflows', async (req, res) => {
 
           const emailSubject = `Approval Required: ${workflow.clientName || 'Document'} - ${workflow.documentId}`;
 
-          // Only show client details if they're available (not from manual upload)
-          const hasClientDetails = workflow.clientName && workflow.clientName !== 'Unknown Client' && workflow.clientName !== 'Manual Approval';
-          const hasCompanyDetails = workflow.companyName && workflow.companyName !== 'N/A';
-          const hasAmount = workflow.amount && workflow.amount > 0;
+          // Hide client details for manual approvals
+          const isManualApproval = workflow.isManualApproval === true;
 
           const emailHtml = `
             <h2>Approval Request</h2>
             <p>Hello,</p>
             <p>You have been requested to approve the following document:</p>
             <ul>
-              ${hasClientDetails ? `<li><strong>Client:</strong> ${workflow.clientName}</li>` : ''}
-              ${hasCompanyDetails ? `<li><strong>Company:</strong> ${workflow.companyName}</li>` : ''}
-              ${hasAmount ? `<li><strong>Amount:</strong> $${workflow.amount.toLocaleString()}</li>` : ''}
+              ${!isManualApproval && workflow.clientName ? `<li><strong>Client:</strong> ${workflow.clientName}</li>` : ''}
+              ${!isManualApproval && workflow.companyName ? `<li><strong>Company:</strong> ${workflow.companyName}</li>` : ''}
+              ${!isManualApproval && workflow.amount ? `<li><strong>Amount:</strong> $${workflow.amount.toLocaleString()}</li>` : ''}
               <li><strong>Step:</strong> ${firstStep.role || 'Approver'}</li>
               <li><strong>Document:</strong> ${workflow.documentId}</li>
             </ul>
