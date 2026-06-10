@@ -1005,9 +1005,9 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
               <ArrowRight className="w-3.5 h-3.5 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-gray-900 mb-0.5">Search and select combination</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-0.5">Search and select exhibits</h3>
               <p className="text-xs text-gray-600 leading-relaxed">
-                Choose your combination type to configure the project requirements.
+                Choose the exhibits to include in your migration project.
               </p>
             </div>
           </div>
@@ -1038,7 +1038,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search combinations..."
+              placeholder="Search exhibits..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"

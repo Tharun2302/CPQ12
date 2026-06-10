@@ -1746,24 +1746,22 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const selectServicePlan = (plan: 'Migrate' | 'Manage' | 'Bundle') => {
                   setMigrationOrTimeline('migration');
                   setTimelineProjectionCategory('');
-                  // Switching away from Migrate clears migrationType/combination since
-                  // Manage/Bundle don't carry combination-based migration types.
+                  // Clear migrationType/combination when switching plans to avoid state conflicts
                   const newConfig: ConfigurationData = {
                     ...config,
                     servicePlan: plan,
                     timelineProjection: '',
-                    ...(plan !== 'Migrate' ? { migrationType: '' as any, combination: '' } : {})
+                    migrationType: '' as any,
+                    combination: ''
                   };
                   setConfig(newConfig);
-                  if (plan !== 'Migrate') setCombination('');
+                  setCombination('');
                   onConfigurationChange(newConfig);
                   try {
                     sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
                     const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-                    if (plan !== 'Migrate') {
-                      navState.migrationType = '';
-                      navState.combination = '';
-                    }
+                    navState.migrationType = '';
+                    navState.combination = '';
                     sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
                   } catch (err) { console.warn('Could not save to sessionStorage:', err); }
                 };
@@ -1808,53 +1806,66 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 );
               })()}
 
-              {/* Migrate / Bundle: full migration type dropdown (all combinations live here) */}
-              {migrationOrTimeline === 'migration' && (
-                (config.servicePlan || 'Migrate') === 'Migrate' || config.servicePlan === 'Bundle'
-              ) && (
+              {/* Migrate: Show all combinations for Migrate service plan */}
+              {migrationOrTimeline === 'migration' && config.servicePlan === 'Migrate' && (
                 <select
-                  value={config.migrationType}
+                  value={config.combination}
                   onChange={(e) => {
-                    const newMigrationType = e.target.value as 'Multi combination' | 'Messaging' | 'Content' | 'Email' | 'Overage Agreement';
-                    const preservedServicePlan = config.servicePlan === 'Bundle' ? 'Bundle' : 'Migrate';
+                    const newCombination = e.target.value;
+                    // Find the combination to get its migrationType
+                    const selectedCombo = apiCombinations.find(c => c.value === newCombination);
+                    const newMigrationType = selectedCombo?.migrationType || '';
 
-                    // Auto-select the combination when the migration type has exactly one option.
-                    // Applies to Multi combination and Overage Agreement (single-template types).
-                    let autoCombination = '';
-                    if (newMigrationType === 'Multi combination' || newMigrationType === 'Overage Agreement') {
-                      const fromApi = apiCombinations.filter(c => c.migrationType === newMigrationType);
-                      const fallback = newMigrationType === 'Multi combination'
-                        ? [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }]
-                        : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
-                      const options = fromApi.length > 0 ? fromApi : fallback;
-                      if (options.length === 1) autoCombination = options[0].value;
-                    }
-
-                    const newConfig = { ...config, migrationType: newMigrationType, combination: autoCombination, timelineProjection: '', servicePlan: preservedServicePlan as 'Migrate' | 'Bundle' };
+                    const newConfig = { ...config, combination: newCombination, migrationType: newMigrationType as any, timelineProjection: '' };
                     setConfig(newConfig);
-                    setCombination(autoCombination);
+                    setCombination(newCombination);
                     onConfigurationChange(newConfig);
                     try {
                       sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
                       const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
                       navState.migrationType = newMigrationType;
-                      navState.combination = autoCombination;
+                      navState.combination = newCombination;
                       sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
                     } catch (err) { console.warn('Could not save to sessionStorage:', err); }
                   }}
                   className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
                 >
-                  <option value="">Select Migration Type</option>
-                  <option value="Multi combination">Combination</option>
-                  <option value="Overage Agreement">Overage</option>
+                  <option value="">Select Combination</option>
+                  {apiCombinations
+                    .filter(c => c.migrationType === 'Multi combination' || c.migrationType === 'Overage Agreement')
+                    .sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999))
+                    .map(combo => (
+                      <option key={combo.value} value={combo.value}>{combo.label}</option>
+                    ))}
                 </select>
               )}
 
               {/* Manage Standalone — collects E99 (manageUsers) and E100 (manageDataGB).
                   These are intentionally separate from B51/B56 (Migrate inputs). */}
               {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (
-                <div className="rounded-xl border-2 border-slate-200 bg-white px-6 py-6">
-                  <p className="text-sm font-semibold text-slate-800 mb-4">Manage plan inputs</p>
+                <>
+                  <select
+                    value={config.migrationType || ''}
+                    onChange={(e) => {
+                      const newMigrationType = e.target.value;
+                      const newConfig = { ...config, migrationType: newMigrationType as any, combination: 'manage-standalone', timelineProjection: '', servicePlan: 'Manage' as const };
+                      setConfig(newConfig);
+                      onConfigurationChange(newConfig);
+                      try {
+                        sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                        const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                        navState.migrationType = newMigrationType;
+                        navState.combination = 'manage-standalone';
+                        sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                      } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                    }}
+                    className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
+                  >
+                    <option value="">Select Manage Template</option>
+                    <option value="Manage">Manage Plan – SaaS Agreement</option>
+                  </select>
+                  <div className="rounded-xl border-2 border-slate-200 bg-white px-6 py-6 mt-4">
+                    <p className="text-sm font-semibold text-slate-800 mb-4">Manage plan inputs</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
@@ -1893,9 +1904,39 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       />
                     </div>
                   </div>
-                </div>
+                  </div>
+                </>
               )}
-              {/* Bundle: inputs are rendered in the Project Configuration panel below */}
+
+              {/* Bundle: show Bundle type dropdown if templates exist */}
+              {migrationOrTimeline === 'migration' && config.servicePlan === 'Bundle' && (
+                <select
+                  value={config.migrationType || ''}
+                  onChange={(e) => {
+                    const newMigrationType = e.target.value;
+                    if (newMigrationType) {
+                      const newConfig = { ...config, migrationType: newMigrationType as any, timelineProjection: '' };
+                      setConfig(newConfig);
+                      onConfigurationChange(newConfig);
+                      try {
+                        sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                        const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                        navState.migrationType = newMigrationType;
+                        sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                      } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                    }
+                  }}
+                  className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
+                >
+                  <option value="">Select Bundle Type</option>
+                  {apiCombinations
+                    .filter(c => c.migrationType === 'Bundle')
+                    .map(combo => (
+                      <option key={combo.value} value={combo.migrationType}>{combo.label}</option>
+                    ))}
+                </select>
+              )}
+
               {/* When Timeline Projection: show option to select Content, Messaging, or Email projection */}
               {migrationOrTimeline === 'timeline' && (
                 <div className="mt-4">
@@ -2111,8 +2152,9 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
         <form onSubmit={handleSubmit} className="space-y-8">
 
           {/* Template Selection - shown for migration types where users must pick a combination.
-              Hidden for Multi combination and Overage Agreement since those have a single auto-selected combination. */}
-          {config.migrationType && config.migrationType !== 'Multi combination' && config.migrationType !== 'Overage Agreement' && (
+              Hidden for Multi combination, Overage Agreement, and Manage since those have a single auto-selected combination.
+              Also hidden for Migrate service plan since combination selection is handled by dropdown above. */}
+          {config.migrationType && config.migrationType !== 'Manage' && config.servicePlan !== 'Migrate' && (
             <div data-section="template-selection" className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-lg border border-purple-200 p-8">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -2352,8 +2394,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* Exhibits selection - ONLY show for Multi combination after a combination is selected (e.g. Original Multi combination) */}
-          {config.migrationType === 'Multi combination' && config.combination && (
+          {/* Exhibits selection - Show for Migrate service plan (all combination types) and optionally for Manage/Bundle */}
+          {config.servicePlan === 'Migrate' && config.combination && (
             <div data-section="exhibits-selection">
               <ExhibitSelector
                 combination={config.combination || 'multi-combination'}
@@ -3581,8 +3623,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             </div>
           )}
 
-          {/* OTHER MIGRATION TYPES: Standard single configuration */}
-          {config.migrationType && config.migrationType !== 'Multi combination' && !!config.combination && (
+          {/* OTHER MIGRATION TYPES: Standard single configuration (excluding Manage plan) */}
+          {config.migrationType && config.migrationType !== 'Multi combination' && config.servicePlan !== 'Manage' && !!config.combination && (
             <div data-section="project-configuration" className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 rounded-2xl shadow-2xl border border-blue-100/50 p-8 backdrop-blur-sm">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Project Configuration</h3>

@@ -33,7 +33,21 @@ interface Combination {
   fileName?: string;
 }
 
-const MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement'] as const;
+// Map old migration types to new service plan structure
+const SERVICE_PLANS = ['Migrate', 'Manage', 'Bundle'] as const;
+const COMBINATION_TYPES_BY_PLAN: Record<string, string[]> = {
+  'Migrate': ['Combination', 'Overage'],
+  'Manage': ['Manage'],
+  'Bundle': ['Bundle']
+};
+
+// Map between display names and backend migrationType values
+const MIGRATION_TYPE_MAP: Record<string, string> = {
+  'Migrate-Combination': 'Multi combination',
+  'Migrate-Overage': 'Overage Agreement',
+  'Manage-Manage': 'Manage',
+  'Bundle-Bundle': 'Bundle'
+};
 
 const CombinationManager: React.FC = () => {
   const { user } = useAuth();
@@ -51,15 +65,12 @@ const CombinationManager: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [seedSuccess, setSeedSuccess] = useState<string | null>(null);
-  const [seedLoading, setSeedLoading] = useState(false);
 
   const loadCombinations = async () => {
     try {
       setIsLoading(true);
-      const url = filterMigrationType
-        ? `${BACKEND_URL}/api/combinations?migrationType=${encodeURIComponent(filterMigrationType)}`
-        : `${BACKEND_URL}/api/combinations`;
+      // Always load all combinations - filter on client side
+      const url = `${BACKEND_URL}/api/combinations`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
@@ -76,17 +87,27 @@ const CombinationManager: React.FC = () => {
     loadCombinations();
   }, [filterMigrationType]);
 
+  const getServicePlanMigrationTypes = (servicePlan: string): string[] => {
+    // Map service plan to migration types
+    if (servicePlan === 'Migrate') return ['Multi combination', 'Overage Agreement'];
+    if (servicePlan === 'Manage') return ['Manage'];
+    if (servicePlan === 'Bundle') return ['Bundle'];
+    return []; // For legacy types, return empty (will match nothing)
+  };
+
   const filteredList = combinations.filter(
     (c) =>
       (!searchTerm ||
         c.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.value.toLowerCase().includes(searchTerm.toLowerCase())) &&
-      (!filterMigrationType || c.migrationType === filterMigrationType)
+      (!filterMigrationType ||
+        c.migrationType === filterMigrationType ||
+        getServicePlanMigrationTypes(filterMigrationType).includes(c.migrationType))
   );
 
   const openAdd = () => {
     setEditingCombo(null);
-    setFormData({ value: '', label: '', migrationType: 'Content', displayOrder: 999 });
+    setFormData({ value: '', label: '', migrationType: 'Multi combination', displayOrder: 999 });
     setFormFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setSubmitError(null);
@@ -213,24 +234,6 @@ const CombinationManager: React.FC = () => {
     }
   };
 
-  const handleSeed = async () => {
-    setSeedSuccess(null);
-    setSeedLoading(true);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/combinations/seed`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        setSubmitError(data.error || 'Seed failed');
-        return;
-      }
-      setSeedSuccess(data.message || 'Defaults seeded.');
-      loadCombinations();
-    } catch (err: any) {
-      setSubmitError(err.message || 'Seed failed');
-    } finally {
-      setSeedLoading(false);
-    }
-  };
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -259,15 +262,6 @@ const CombinationManager: React.FC = () => {
           <span>{submitSuccess}</span>
         </div>
       )}
-      {seedSuccess && (
-        <div className="mb-4 p-4 rounded-lg bg-blue-50 border border-blue-200 flex items-center gap-2 text-blue-800">
-          <CheckCircle className="w-5 h-5 flex-shrink-0" />
-          <span>{seedSuccess}</span>
-          <button type="button" onClick={() => setSeedSuccess(null)} className="ml-auto p-1 hover:bg-blue-100 rounded">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-200 flex flex-wrap items-center gap-4">
@@ -286,20 +280,16 @@ const CombinationManager: React.FC = () => {
             onChange={(e) => setFilterMigrationType(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="">All migration types</option>
-            {MIGRATION_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
+            <option value="">All service plans</option>
+            {SERVICE_PLANS.map((plan) => (
+              <option key={plan} value={plan}>{plan}</option>
             ))}
+            <optgroup label="Legacy">
+              <option value="Messaging">Messaging (Legacy)</option>
+              <option value="Content">Content (Legacy)</option>
+              <option value="Email">Email (Legacy)</option>
+            </optgroup>
           </select>
-          <button
-            type="button"
-            onClick={handleSeed}
-            disabled={seedLoading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300"
-          >
-            {seedLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Load default combinations
-          </button>
           <button
             type="button"
             onClick={openAdd}
@@ -317,7 +307,7 @@ const CombinationManager: React.FC = () => {
             </div>
           ) : filteredList.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
-              No combinations found. Click &quot;Load default combinations&quot; to seed the list, or &quot;Add combination&quot; to create one.
+              No combinations found. Click &quot;Add combination&quot; to create one.
             </div>
           ) : (
             <table className="w-full">
@@ -410,16 +400,45 @@ const CombinationManager: React.FC = () => {
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Migration type *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Service Plan *</label>
                 <select
                   required
-                  value={formData.migrationType}
-                  onChange={(e) => setFormData((p) => ({ ...p, migrationType: e.target.value }))}
+                  value={formData.migrationType ? Object.entries(MIGRATION_TYPE_MAP).find(([_, v]) => v === formData.migrationType)?.[0]?.split('-')[0] || '' : ''}
+                  onChange={(e) => {
+                    const selectedPlan = e.target.value;
+                    const firstCombinationType = COMBINATION_TYPES_BY_PLAN[selectedPlan]?.[0];
+                    const key = `${selectedPlan}-${firstCombinationType}`;
+                    setFormData((p) => ({ ...p, migrationType: MIGRATION_TYPE_MAP[key] || '' }));
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 >
-                  {MIGRATION_TYPES.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                  <option value="">Select Service Plan</option>
+                  {SERVICE_PLANS.map((plan) => (
+                    <option key={plan} value={plan}>{plan}</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Combination Type *</label>
+                <select
+                  required
+                  value={formData.migrationType ? Object.entries(MIGRATION_TYPE_MAP).find(([_, v]) => v === formData.migrationType)?.[0]?.split('-')[1] || '' : ''}
+                  onChange={(e) => {
+                    const selectedType = e.target.value;
+                    const selectedPlan = Object.entries(MIGRATION_TYPE_MAP).find(([_, v]) => v === formData.migrationType)?.[0]?.split('-')[0] || '';
+                    const key = `${selectedPlan}-${selectedType}`;
+                    setFormData((p) => ({ ...p, migrationType: MIGRATION_TYPE_MAP[key] || '' }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Select Combination Type</option>
+                  {(() => {
+                    const selectedPlan = Object.entries(MIGRATION_TYPE_MAP).find(([_, v]) => v === formData.migrationType)?.[0]?.split('-')[0] || '';
+                    return COMBINATION_TYPES_BY_PLAN[selectedPlan]?.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    )) || [];
+                  })()}
                 </select>
               </div>
               <div>

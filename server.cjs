@@ -2290,7 +2290,7 @@ app.get('/api/combinations/:id/file', async (req, res) => {
   }
 });
 
-const ALLOWED_MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement'];
+const ALLOWED_MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement', 'Manage', 'Bundle'];
 
 // Create combination (optional file upload - e.g. DOCX template for this combination)
 app.post('/api/combinations', upload.single('file'), async (req, res) => {
