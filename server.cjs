@@ -3453,8 +3453,32 @@ app.post('/api/documents', async (req, res) => {
     });
 
     // Convert base64 to Buffer (same as templates)
-    const fileBuffer = Buffer.from(fileData, 'base64');
+    let fileBuffer = Buffer.from(fileData, 'base64');
+    let finalFileName = fileName;
     const docxBuffer = docxFileData ? Buffer.from(docxFileData, 'base64') : null;
+
+    // Auto-convert office documents to PDF if uploaded
+    const officeFormats = ['.docx', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods', '.odp'];
+    const fileExt = fileName.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+    const isOfficeFile = officeFormats.includes(fileExt);
+
+    if (isOfficeFile && libre) {
+      try {
+        console.log(`🔄 Converting ${fileExt.toUpperCase()} to PDF:`, fileName);
+        const pdfBuffer = await libre.convertAsync(fileBuffer, '.pdf', undefined);
+
+        if (pdfBuffer && pdfBuffer.length > 0) {
+          fileBuffer = pdfBuffer;
+          finalFileName = fileName.replace(/\.[^.]+$/i, '.pdf'); // Replace any extension with .pdf
+          console.log('✅ Document converted to PDF:', finalFileName);
+        } else {
+          console.warn('⚠️ Conversion returned empty output, using original file');
+        }
+      } catch (e) {
+        console.warn(`⚠️ ${fileExt.toUpperCase()} to PDF conversion failed:`, e.message, '- using original file');
+        // Continue with original file if conversion fails
+      }
+    }
 
     // Generate document ID with client and company names
     const sanitizeForId = (str) => {
@@ -3471,9 +3495,9 @@ app.post('/api/documents', async (req, res) => {
     
     const document = {
       id: `${sanitizedCompany}_${sanitizedClient}_${timestamp}`,
-      fileName,
+      fileName: finalFileName, // Use converted filename if DOCX was converted to PDF
       fileData: fileBuffer, // Store as Buffer like templates
-      fileSize,
+      fileSize: fileBuffer.length, // Update file size after potential conversion
       clientName,
       clientEmail,
       company,
