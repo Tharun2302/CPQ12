@@ -3453,8 +3453,32 @@ app.post('/api/documents', async (req, res) => {
     });
 
     // Convert base64 to Buffer (same as templates)
-    const fileBuffer = Buffer.from(fileData, 'base64');
+    let fileBuffer = Buffer.from(fileData, 'base64');
+    let finalFileName = fileName;
     const docxBuffer = docxFileData ? Buffer.from(docxFileData, 'base64') : null;
+
+    // Auto-convert office documents to PDF if uploaded
+    const officeFormats = ['.docx', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods', '.odp'];
+    const fileExt = fileName.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+    const isOfficeFile = officeFormats.includes(fileExt);
+
+    if (isOfficeFile && libre) {
+      try {
+        console.log(`🔄 Converting ${fileExt.toUpperCase()} to PDF:`, fileName);
+        const pdfBuffer = await libre.convertAsync(fileBuffer, '.pdf', undefined);
+
+        if (pdfBuffer && pdfBuffer.length > 0) {
+          fileBuffer = pdfBuffer;
+          finalFileName = fileName.replace(/\.[^.]+$/i, '.pdf'); // Replace any extension with .pdf
+          console.log('✅ Document converted to PDF:', finalFileName);
+        } else {
+          console.warn('⚠️ Conversion returned empty output, using original file');
+        }
+      } catch (e) {
+        console.warn(`⚠️ ${fileExt.toUpperCase()} to PDF conversion failed:`, e.message, '- using original file');
+        // Continue with original file if conversion fails
+      }
+    }
 
     // Generate document ID with client and company names
     const sanitizeForId = (str) => {
@@ -3471,9 +3495,9 @@ app.post('/api/documents', async (req, res) => {
     
     const document = {
       id: `${sanitizedCompany}_${sanitizedClient}_${timestamp}`,
-      fileName,
+      fileName: finalFileName, // Use converted filename if DOCX was converted to PDF
       fileData: fileBuffer, // Store as Buffer like templates
-      fileSize,
+      fileSize: fileBuffer.length, // Update file size after potential conversion
       clientName,
       clientEmail,
       company,
@@ -10206,7 +10230,7 @@ app.post('/api/approval-workflows', async (req, res) => {
 
     // Generate unique ID
     const workflowId = `WF-${Date.now()}`;
-    
+
     const workflow = {
       id: workflowId,
       ...workflowData,
@@ -10220,13 +10244,78 @@ app.post('/api/approval-workflows', async (req, res) => {
     console.log('💾 Attempting to save workflow to database...');
     console.log('💾 Database object:', !!db);
     console.log('💾 Collection exists:', !!db?.collection);
-    
+
     const result = await db.collection('approval_workflows').insertOne(workflow);
     console.log('💾 Insert result:', result);
-    
+
     if (result.insertedId) {
       console.log('✅ Approval workflow created:', workflowId);
-      
+
+      // Send approval request email to first step approver
+      try {
+        const firstStep = workflow.workflowSteps?.[0];
+        if (firstStep && firstStep.email) {
+          console.log('📧 Sending approval request to first step:', firstStep.email);
+
+          const approvalToken = crypto.randomBytes(32).toString('hex');
+          const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+
+          // Store token in workflow
+          await db.collection('approval_workflows').updateOne(
+            { id: workflowId },
+            {
+              $set: {
+                approvalToken,
+                tokenExpiry,
+                updatedAt: new Date().toISOString()
+              }
+            }
+          );
+
+          // Determine role based on step
+          let roleParam = 'teamlead';
+          if (firstStep.role === 'Technical Team') roleParam = 'technical';
+          else if (firstStep.role === 'Legal Team') roleParam = 'legal';
+
+          const approvalLink = `${process.env.APP_BASE_URL || 'http://localhost:3001'}/approval/${workflowId}?role=${roleParam}&token=${approvalToken}`;
+
+          const emailSubject = `Approval Required: ${workflow.clientName || 'Document'} - ${workflow.documentId}`;
+
+          // Hide amount for manual approvals (usually $0), keep client & company
+          const isManualApproval = workflow.isManualApproval === true;
+
+          const emailHtml = `
+            <h2>Approval Request</h2>
+            <p>Hello,</p>
+            <p>You have been requested to approve the following document:</p>
+            <ul>
+              ${workflow.clientName ? `<li><strong>Client:</strong> ${workflow.clientName}</li>` : ''}
+              ${workflow.companyName ? `<li><strong>Company:</strong> ${workflow.companyName}</li>` : ''}
+              ${!isManualApproval && workflow.amount ? `<li><strong>Amount:</strong> $${workflow.amount.toLocaleString()}</li>` : ''}
+              <li><strong>Step:</strong> ${firstStep.role || 'Approver'}</li>
+              <li><strong>Document:</strong> ${workflow.documentId}</li>
+            </ul>
+            <p><a href="${approvalLink}" style="display:inline-block;padding:10px 20px;background-color:#3B82F6;color:white;text-decoration:none;border-radius:5px;">View & Approve</a></p>
+            <p>This link expires in 7 days.</p>
+            <p>Best regards,<br>CPQ System</p>
+          `;
+
+          if (isEmailConfigured) {
+            const emailResult = await sendEmail(firstStep.email, emailSubject, emailHtml);
+            if (emailResult?.success) {
+              console.log('✅ Approval email sent to:', firstStep.email);
+            } else {
+              console.error('❌ Failed to send approval email to:', firstStep.email, 'Error:', emailResult?.error);
+            }
+          } else {
+            console.warn('⚠️ Email not configured (SENDGRID_API_KEY missing). Approval email NOT sent to:', firstStep.email);
+          }
+        }
+      } catch (emailError) {
+        console.error('❌ Failed to send approval email:', emailError.message, emailError.stack);
+        // Don't fail the workflow creation if email fails
+      }
+
       res.json({
         success: true,
         workflowId: workflowId,
@@ -10575,26 +10664,26 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
       } else {
         newStatus = 'approved';
       }
-      
+
       // Check if all approval steps (Team, Tech, Legal) are approved
       // Deal Desk is just a notification, so it doesn't block approval status
       const approvalRoles = ['Team Approval', 'Technical Team', 'Legal Team'];
-      
+
       // Get all approval steps (excluding Deal Desk)
-      const approvalSteps = updatedSteps.filter(s => 
+      const approvalSteps = updatedSteps.filter(s =>
         approvalRoles.includes(s.role)
       );
-      
+
       // Check if all required approval steps (Team, Tech, Legal) are approved
       // Note: Some workflows might not have Team Approval (manual workflows), so we check what exists
       const teamStep = approvalSteps.find(s => s.role === 'Team Approval');
       const techStep = approvalSteps.find(s => s.role === 'Technical Team');
       const legalStep = approvalSteps.find(s => s.role === 'Legal Team');
-      
+
       const hasTeamApproval = !!teamStep;
       const hasTechApproval = !!techStep;
       const hasLegalApproval = !!legalStep;
-      
+
       // If Team Approval exists, all three must be approved. Otherwise, just Tech and Legal.
       const allRequiredApprovalsComplete = hasTeamApproval
         ? (teamStep?.status === 'approved' &&
@@ -10602,7 +10691,7 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
            legalStep?.status === 'approved')
         : (techStep?.status === 'approved' &&
            legalStep?.status === 'approved');
-      
+
       if (allRequiredApprovalsComplete) {
         // Mark as approved when all required approval steps are approved
         // Deal Desk notification can still be sent, but doesn't block approval
@@ -10615,6 +10704,68 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
           legalStatus: legalStep?.status,
           allComplete: allRequiredApprovalsComplete
         });
+
+        // Send approval completion email to creator
+        try {
+          const creatorEmail = workflow.creatorEmail;
+          if (creatorEmail && isEmailConfigured) {
+            const subject = `✅ Approval Complete - ${workflow.clientName || workflow.documentId}`;
+            const html = `
+              <h2>Approval Complete</h2>
+              <p>Hello,</p>
+              <p>The document has been approved by all required approvers:</p>
+              <ul>
+                <li><strong>Client:</strong> ${workflow.clientName || 'N/A'}</li>
+                <li><strong>Company:</strong> ${workflow.companyName || 'N/A'}</li>
+                <li><strong>Amount:</strong> $${(workflow.amount || 0).toLocaleString()}</li>
+                <li><strong>Document:</strong> ${workflow.documentId}</li>
+              </ul>
+              <p>The workflow is now complete and ready for next steps.</p>
+              <p>Best regards,<br>CPQ System</p>
+            `;
+            sendEmail(creatorEmail, subject, html)
+              .then(() => console.log('✅ Approval complete email sent to creator:', creatorEmail))
+              .catch(err => console.error('❌ Failed to send approval complete email:', err));
+          }
+        } catch (e) {
+          console.error('❌ Error sending approval complete notification:', e);
+        }
+      } else if (parseInt(stepNumber) < workflow.totalSteps) {
+        // Send email to next approver
+        try {
+          const nextStep = updatedSteps.find(s => s.step === parseInt(stepNumber) + 1);
+          if (nextStep && nextStep.email && isEmailConfigured) {
+            const currentStepRole = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber))?.role;
+
+            // Determine role param for next approver
+            let roleParam = 'teamlead';
+            if (nextStep.role === 'Technical Team') roleParam = 'technical';
+            else if (nextStep.role === 'Legal Team') roleParam = 'legal';
+
+            const approvalLink = `${process.env.APP_BASE_URL || 'http://localhost:3001'}/approval/${workflow.id}?role=${roleParam}&token=${workflow.approvalToken}`;
+
+            const subject = `Approval Needed: ${workflow.clientName || workflow.documentId}`;
+            const html = `
+              <h2>Approval Request</h2>
+              <p>Hello,</p>
+              <p>The document has been approved by the ${currentStepRole} and now requires your approval:</p>
+              <ul>
+                <li><strong>Client:</strong> ${workflow.clientName || 'N/A'}</li>
+                <li><strong>Company:</strong> ${workflow.companyName || 'N/A'}</li>
+                <li><strong>Amount:</strong> $${(workflow.amount || 0).toLocaleString()}</li>
+                <li><strong>Step:</strong> ${nextStep.role || 'Approver'}</li>
+                <li><strong>Document:</strong> ${workflow.documentId}</li>
+              </ul>
+              <p><a href="${approvalLink}" style="display:inline-block;padding:10px 20px;background-color:#3B82F6;color:white;text-decoration:none;border-radius:5px;">View & Approve</a></p>
+              <p>Best regards,<br>CPQ System</p>
+            `;
+            sendEmail(nextStep.email, subject, html)
+              .then(() => console.log('✅ Next approver email sent to:', nextStep.email))
+              .catch(err => console.error('❌ Failed to send next approver email:', err));
+          }
+        } catch (e) {
+          console.error('❌ Error sending next approver notification:', e);
+        }
       }
     } else if (stepUpdates.status === 'denied') {
       newStatus = 'denied';

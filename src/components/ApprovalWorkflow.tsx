@@ -258,6 +258,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
 
   // Team picked by the user in the Send for Approval modal
   const [manualTeamSelection, setManualTeamSelection] = useState<string>('SMB');
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
 
   // Approval Admins modal — manages who can edit Team Approval Settings
   const [showApprovalAdminsModal, setShowApprovalAdminsModal] = useState(false);
@@ -525,13 +526,6 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
   const handleStartWorkflow = async () => {
     let effectiveDocumentId = formData.documentId;
 
-    // Validate approval emails
-    const approvalEmails = (formData.approvalEmails || []).filter(e => e.trim());
-    if (approvalEmails.length === 0) {
-      alert('Please add at least one approval email address.');
-      return;
-    }
-
     // If no document ID provided but a file is uploaded, upload it first
     if (!effectiveDocumentId && uploadedFile) {
       const uploadedId = await uploadManualDocument();
@@ -543,33 +537,87 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
     }
 
     if (!effectiveDocumentId) {
-      alert('Please enter a Document ID or upload a file before starting the workflow.');
+      alert('Please upload a document first.');
+      return;
+    }
+
+    // Move to Send for Approval tab
+    setActiveTab('sendApproval');
+  };
+
+  const handleSendForApproval = async () => {
+    let effectiveDocumentId = formData.documentId;
+
+    if (!effectiveDocumentId && uploadedFile) {
+      const uploadedId = await uploadManualDocument();
+      if (!uploadedId) {
+        alert('Failed to upload document. Please try again.');
+        return;
+      }
+      effectiveDocumentId = uploadedId;
+    }
+
+    if (!effectiveDocumentId) {
+      alert('Please upload a document first.');
+      return;
+    }
+
+    if (!manualTeamSelection) {
+      alert('Please select a team lead.');
       return;
     }
 
     try {
-      // Try to enrich workflow with data from the selected document / quote
+      setIsSubmittingApproval(true);
+
+      // Build workflow steps: Team Lead → Technical → Legal (sequential)
+      const selectedTeamLeadEmail = teamApprovalSettings.teamLeads[manualTeamSelection];
+      if (!selectedTeamLeadEmail) {
+        alert('Team lead email not configured.');
+        return;
+      }
+
+      const technicalEmail = teamApprovalSettings.teamLeads['Technical'] || formData.role1Email;
+      const legalEmail = teamApprovalSettings.teamLeads['Legal'] || formData.role2Email;
+
+      const workflowSteps = [
+        {
+          step: 1,
+          role: 'Team Approval',
+          email: selectedTeamLeadEmail,
+          status: 'pending',
+          comments: '',
+          group: manualTeamSelection // Store the team selection separately
+        },
+        {
+          step: 2,
+          role: 'Technical Team',
+          email: technicalEmail,
+          status: 'pending',
+          comments: ''
+        },
+        {
+          step: 3,
+          role: 'Legal Team',
+          email: legalEmail,
+          status: 'pending',
+          comments: ''
+        }
+      ];
+
+      // Try to enrich workflow with data
       const selectedDoc = availableDocuments.find(doc => doc.id === effectiveDocumentId);
       const matchingQuote = quotes?.find(q => q.id === effectiveDocumentId);
 
-      const clientName = matchingQuote?.clientName || selectedDoc?.clientName || 'Unknown Client';
-      const companyName = matchingQuote?.company || selectedDoc?.company || clientName;
-      const clientEmail = matchingQuote?.clientEmail || selectedDoc?.clientEmail || undefined;
+      const clientName = matchingQuote?.clientName || selectedDoc?.clientName || contactInfo.clientName || 'Unknown Client';
+      const companyName = matchingQuote?.company || selectedDoc?.company || contactInfo.company || clientName;
+      const clientEmail = matchingQuote?.clientEmail || selectedDoc?.clientEmail || contactInfo.clientEmail || undefined;
 
       const amount =
         matchingQuote?.calculation?.totalCost ??
         matchingQuote?.totalCost ??
         selectedDoc?.amount ??
         0;
-
-      // Build workflow steps from approval emails
-      const workflowSteps = approvalEmails.map((email, idx) => ({
-        step: idx + 1,
-        role: `Approver #${idx + 1}`,
-        email: email.trim(),
-        status: 'pending',
-        comments: ''
-      }));
 
       const newWorkflow = await createWorkflow({
         documentId: effectiveDocumentId,
@@ -581,22 +629,28 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
         creatorEmail: loggedInUserEmail || undefined,
         creatorName: currentUser?.name || (loggedInUserEmail ? loggedInUserEmail.split('@')[0] : undefined),
         lastReminderSentAt: null,
-        totalSteps: approvalEmails.length,
+        totalSteps: 3,
         workflowSteps,
-        sendSequentially: formData.sendSequentially !== false
+        sendSequentially: true, // Always sequential for team-based approval
+        isManualApproval: true, // Flag to hide client details in email for manual uploads
+        notificationSettings: {
+          notifyOnDeny: true,
+          notifyOnApprove: true,
+          creatorEmail: loggedInUserEmail
+        }
       });
 
       if (newWorkflow) {
-        const emailList = approvalEmails.join('\n📧 ');
-        const modeText = formData.sendSequentially !== false ? 'sequentially' : 'in parallel';
-        alert(`✅ Approval workflow started.\n\n📧 Sending to:\n📧 ${emailList}\n\n⏱️ Mode: ${modeText}`);
+        alert(`✅ Approval workflow started for ${manualTeamSelection} team.\n\n📊 Approval chain:\n1️⃣ ${manualTeamSelection} Team Lead\n2️⃣ Technical Team\n3️⃣ Legal Team\n\nNotification will be sent to: ${loggedInUserEmail}`);
         setActiveTab('dashboard');
       } else {
         alert('Approval workflow could not be created. Please try again.');
       }
     } catch (error) {
-      console.error('Error starting workflow:', error);
-      alert('Failed to start approval workflow. Please try again.');
+      console.error('Error sending for approval:', error);
+      alert('Failed to send for approval. Please try again.');
+    } finally {
+      setIsSubmittingApproval(false);
     }
   };
 
@@ -616,8 +670,10 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   ← Back to Approval Dashboard
                 </button>
               </div>
-              {/* Document Information */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+              {/* Document Information & Client Details - Side by Side */}
+              <div className="grid grid-cols-2 gap-6">
+                {/* Document Information */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <FileText className="w-5 h-5 text-blue-600" />
                     Document Information
@@ -677,87 +733,160 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
                   </div>
                 </div>
 
-              <p className="text-sm text-gray-500">
-                Upload a document using the file selector above to send it for approval.
-              </p>
-
-              {/* Approval Emails - Simple email input */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <Mail className="w-5 h-5 text-blue-600" />
-                  Send Approval To
-                </h3>
-                <p className="text-xs text-gray-600 mb-4">
-                  Add email addresses to send this approval. Documents will be sent in the order listed.
-                </p>
-                <div className="space-y-3">
-                  {formData.approvalEmails?.map((email, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-1 rounded min-w-fit">
-                        #{idx + 1}
-                      </span>
+                {/* Client Details */}
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-purple-600" />
+                    Client Details
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4">
+                    {/* Client Name */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Client Name *
+                      </label>
                       <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => {
-                          const updated = [...(formData.approvalEmails || [])];
-                          updated[idx] = e.target.value;
-                          setFormData(prev => ({ ...prev, approvalEmails: updated }));
-                        }}
-                        placeholder="user@company.com"
-                        className="flex-1 px-4 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                        type="text"
+                        value={contactInfo.clientName}
+                        onChange={(e) => setContactInfo({ ...contactInfo, clientName: e.target.value })}
+                        placeholder="Enter client name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        required
                       />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = (formData.approvalEmails || []).filter((_, i) => i !== idx);
-                          setFormData(prev => ({ ...prev, approvalEmails: updated }));
-                        }}
-                        className="text-red-600 hover:text-red-700 text-sm font-semibold px-3 py-2"
-                      >
-                        Remove
-                      </button>
                     </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, approvalEmails: [...(prev.approvalEmails || []), ''] }))}
-                  className="mt-3 text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-2 px-3 py-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Email
-                </button>
 
-                {/* Sequential vs Parallel Toggle */}
-                <div className="mt-4 pt-4 border-t border-blue-200">
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={formData.sendSequentially !== false}
-                      onChange={(e) => setFormData(prev => ({ ...prev, sendSequentially: e.target.checked }))}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700">
-                      Send Sequentially <span className="text-gray-500">(#1 approves first, then #2, etc.)</span>
-                    </span>
-                  </label>
-                  <p className="text-xs text-gray-500 mt-2 ml-7">
-                    {formData.sendSequentially !== false
-                      ? '✓ Approvers will receive documents one at a time in order'
-                      : '✓ All approvers will receive documents at the same time'}
-                  </p>
+                    {/* Company Name */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Company Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={contactInfo.company}
+                        onChange={(e) => setContactInfo({ ...contactInfo, company: e.target.value })}
+                        placeholder="Enter company name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Start Workflow Button */}
+              <p className="text-sm text-gray-500">
+                Upload a document using the file selector above and enter client details to send it for approval.
+              </p>
+
+              {/* Send for Approval Button */}
               <div className="pt-4">
                 <button
-                  onClick={handleStartWorkflow}
-                  className="w-full max-w-sm mx-auto flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-lg font-semibold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 shadow-md hover:shadow-lg"
+                  onClick={() => setActiveTab('sendApproval')}
+                  className="w-full max-w-sm mx-auto flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-lg font-semibold text-sm hover:from-green-700 hover:to-emerald-700 transition-all duration-300 shadow-md hover:shadow-lg"
                 >
-                  <Rocket className="w-4 h-4" />
-                  Start Manual Approval Workflow
+                  <Mail className="w-4 h-4" />
+                  Send for Approval
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Send for Approval Tab */}
+        {activeTab === 'sendApproval' && (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-6 h-6 text-green-600" />
+                  <h2 className="text-xl font-extrabold text-gray-900">Send for Approval</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('start')}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 space-y-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-gray-700">
+                    Team lead is automatically selected. Technical Team, Legal Team, and Deal Desk recipients will use the default emails.
+                  </p>
+                </div>
+
+                {/* Team Approval Group */}
+                <div className="space-y-4">
+                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-purple-600" />
+                    Team Approval Group
+                  </h3>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Select Team Lead to send this approval to
+                    </label>
+                    <select
+                      value={manualTeamSelection}
+                      onChange={(e) => setManualTeamSelection(e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-900 font-medium"
+                    >
+                      {Object.entries(teamApprovalSettings.teamLeads || {}).map(([team, email]) => (
+                        <option key={team} value={team}>
+                          {team} ({email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Approval Chain Display */}
+                  <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
+                    <h4 className="text-sm font-bold text-gray-700">Approval Chain (Sequential):</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3 p-2 bg-gray-50 rounded">
+                        <span className="text-xs font-semibold bg-green-100 text-green-700 px-2 py-1 rounded">Step 1</span>
+                        <span className="text-sm text-gray-700 font-medium">{manualTeamSelection} ({teamApprovalSettings.teamLeads[manualTeamSelection]})</span>
+                      </div>
+                      <div className="flex items-center gap-3 p-2 bg-gray-50 rounded">
+                        <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-1 rounded">Step 2</span>
+                        <span className="text-sm text-gray-700 font-medium">Technical Team</span>
+                      </div>
+                      <div className="flex items-center gap-3 p-2 bg-gray-50 rounded">
+                        <span className="text-xs font-semibold bg-purple-100 text-purple-700 px-2 py-1 rounded">Step 3</span>
+                        <span className="text-sm text-gray-700 font-medium">Legal Team</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notification Info */}
+                  <div className="mt-6 pt-4 border-t border-gray-200">
+                    <p className="text-xs text-gray-600">
+                      <strong>Notification:</strong> If any approver denies, or if all approve, notification will be sent to {loggedInUserEmail}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('start')}
+                  className="px-5 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendForApproval}
+                  disabled={isSubmittingApproval}
+                  className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition-colors font-semibold text-sm flex items-center gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  {isSubmittingApproval ? 'Sending...' : 'Send for Approval'}
                 </button>
               </div>
             </div>
