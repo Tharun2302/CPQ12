@@ -683,8 +683,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         // Heuristic: extract "<source> to <destination>" from the exhibit name (the
         // segment before " - " and before " Standard|Basic|Advanced Plan").
         const exhibitNameRaw = (exhibit.name || '').toString();
-        const dashIdx = exhibitNameRaw.indexOf(' - ');
-        const nameBase = (dashIdx > 0 ? exhibitNameRaw.substring(0, dashIdx) : exhibitNameRaw)
+        // Strip the trailing "[Plan] Plan - [Include type]" / "- Included Features" suffix from
+        // the END of the name (instead of splitting on the FIRST " - "). This keeps combinations
+        // whose own name contains " - " (e.g. "MyDrive/ShareDrive - OneDrive/SharePointOnline")
+        // intact instead of truncating them at the first dash — otherwise the Include and
+        // Not-Include files of the SAME combination land in different folders.
+        const nameBase = exhibitNameRaw
+          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+          .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
           .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
           .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
           .trim();
@@ -716,6 +722,13 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         // in one folder.
         if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
           folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+        }
+
+        // Canonicalize "MyDrive/ShareDrive <-> OneDrive/SharePoint Online" regardless of the
+        // spacing around the internal dash (" - " vs "-"), so the Include and Not-Include files
+        // — named inconsistently — collapse into a single folder.
+        if (/^mydrive\s*\/\s*sharedrive\s*-\s*onedrive\s*\/\s*sharepoint\s*online$/.test(folderNameNorm)) {
+          folderName = 'MyDrive/ShareDrive-OneDrive/SharePointOnline';
         }
 
         // Skip rendering these groups entirely in the UI (case-insensitive check)
@@ -952,10 +965,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
       let folderName = formatCombinationForDisplay(baseCombination);
 
-      // Apply the same name override logic as in processedExhibits
+      // Apply the same name override logic as in processedExhibits.
+      // Strip the trailing "[Plan] Plan - [Include type]" suffix from the END so combinations
+      // whose own name contains " - " aren't truncated at the first dash (keeps chip names in
+      // sync with the merged folder).
       const exhibitNameRaw = (exhibit.name || '').toString();
-      const dashIdx = exhibitNameRaw.indexOf(' - ');
-      const nameBase = (dashIdx > 0 ? exhibitNameRaw.substring(0, dashIdx) : exhibitNameRaw)
+      const nameBase = exhibitNameRaw
+        .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+        .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
         .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
         .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
         .trim();
@@ -977,6 +994,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       }
       if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
         folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+      }
+      // Same canonicalization as processedExhibits so chip + folder names match.
+      if (/^mydrive\s*\/\s*sharedrive\s*-\s*onedrive\s*\/\s*sharepoint\s*online$/.test(folderNameNorm)) {
+        folderName = 'MyDrive/ShareDrive-OneDrive/SharePointOnline';
       }
 
       if (!seen.has(folderName)) {
@@ -1235,7 +1256,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
                             .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
                             .map((ex) => {
                               const isExSelected = selectedExhibits.includes(ex._id);
-                              const dashIndex = ex.name.indexOf(' - ');
+                              // Use the LAST " - " so the child shows just the plan/include part
+                              // (e.g. "Standard Not Include") even when the combination portion of
+                              // the name itself contains " - " (e.g. "MyDrive/ShareDrive - OneDrive/…").
+                              const dashIndex = ex.name.lastIndexOf(' - ');
                               const childLabel = dashIndex > 0 ? ex.name.substring(dashIndex + 3) : ex.name;
                               return (
                                 <button

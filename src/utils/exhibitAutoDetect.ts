@@ -63,6 +63,7 @@ const CONTENT_COMBINATIONS = [
   { value: 'sharefile-to-sharefile', label: 'ShareFile to ShareFile' },
   { value: 'nfs-to-google', label: 'NFS to Google' },
   { value: 'nfs-to-microsoft', label: 'NFS to Microsoft' },
+  { value: 'mydrive-sharedrive-onedrive-sharepointonline', label: 'MyDrive/ShareDrive - OneDrive/SharePointOnline' },
   { value: 'testing-to-production', label: 'Testing to Production' },
 ];
 
