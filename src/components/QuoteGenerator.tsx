@@ -10907,29 +10907,29 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 : 'max-w-[98vw] max-h-[99vh] rounded-3xl'
             }`}>
               {/* Header - Ultra Compact */}
-              <div className="bg-gradient-to-r from-green-600 via-green-700 to-emerald-600 text-white p-2 flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <div className="bg-gradient-to-r from-green-600 via-green-700 to-emerald-600 text-white p-2 flex items-center justify-center flex-shrink-0 relative">
+                <div className="absolute left-2 flex items-center space-x-2 flex-shrink-0">
+                  <div className="w-6 h-6 bg-white bg-opacity-20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-bold">🎉 Agreement Generated!</h2>
-                    <p className="text-green-100 text-xs">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-bold leading-tight">🎉 Agreement Generated!</h2>
+                    <p className="text-green-100 text-xs leading-tight">
                       {getSelectedTemplateDisplayName()} | {clientInfo.clientName}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {/* Essential action buttons in header for agreement preview */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Essential action buttons centered in header */}
                   {showAgreementPreview && (
                     <>
                       <button
                         type="button"
                         onClick={handleSaveAgreementToMongoDB}
                         disabled={!processedAgreement || isSavingAgreementToMongo}
-                        className={`text-white bg-white/15 border border-white/40 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-md hover:bg-white/25 transition-colors flex items-center gap-1 ${
+                        className={`text-white bg-white/25 border-2 border-white/60 rounded-lg px-3 py-1.5 text-xs font-bold shadow-md hover:bg-white/35 hover:border-white/80 hover:shadow-lg transition-all duration-200 flex items-center gap-1.5 ring-2 ring-white/40 whitespace-nowrap ${
                           !processedAgreement || isSavingAgreementToMongo ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                         title="Save agreement to documents page"
@@ -10937,11 +10937,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                         <Save className="w-3.5 h-3.5" />
                         {isSavingAgreementToMongo ? 'Saving…' : 'Save'}
                       </button>
-                      {/* Word and PDF download buttons hidden to match main; OnlyOffice Edit kept (redline feature). */}
                       <button
                         onClick={handleOpenOnlyOffice}
                         disabled={!processedAgreement || isDownloadBlocked || isStartingOnlyOffice}
-                        className={`text-white bg-white/15 border border-white/40 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-md hover:bg-white/25 transition-colors flex items-center gap-1 ${
+                        className={`text-white bg-white/25 border-2 border-white/60 rounded-lg px-3 py-1.5 text-xs font-bold shadow-md hover:bg-white/35 hover:border-white/80 hover:shadow-lg transition-all duration-200 flex items-center gap-1.5 ring-2 ring-white/40 whitespace-nowrap ${
                           !processedAgreement || isDownloadBlocked || isStartingOnlyOffice ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                         title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Open in Word-style editor'}
@@ -10951,14 +10950,16 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       <button
                         onClick={() => setShowApprovalModal(true)}
                         disabled={isStartingWorkflow}
-                        className="text-white bg-white/20 border-2 border-white/50 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-lg shadow-green-900/40 ring-2 ring-green-300/50 hover:bg-white/30 hover:border-white/70 hover:ring-green-200/60 hover:shadow-green-400/40 transition-all duration-300"
+                        className="text-white bg-white/30 border-2 border-white/70 rounded-lg px-3 py-1.5 text-xs font-bold shadow-md shadow-green-900/50 ring-2 ring-green-200/60 hover:bg-white/40 hover:border-white/90 hover:ring-green-100/80 hover:shadow-green-400/60 transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap"
                         title="Send for Approval"
                       >
-                        <Workflow className="w-3 h-3 inline mr-1" />
+                        <Workflow className="w-3.5 h-3.5" />
                         {isStartingWorkflow ? 'Sending for Approval…' : 'Send for Approval'}
                       </button>
                     </>
                   )}
+                </div>
+                <div className="absolute top-2 right-2 flex items-center gap-2">
                   <button
                     onClick={() => setIsFullscreen(!isFullscreen)}
                     className="text-white hover:text-green-200 transition-colors p-2 hover:bg-white hover:bg-opacity-10 rounded-full"
