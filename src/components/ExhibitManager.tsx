@@ -1043,36 +1043,48 @@ const ExhibitManager: React.FC = () => {
   // Extract unique folders from existing exhibits
   const availableFolders = useMemo(() => {
     const folderSet = new Set<string>();
-    const folderMap = new Map<string, string>(); // Maps combination value to clean folder name
-    
+
     exhibits.forEach(exhibit => {
       if (exhibit.combinations && exhibit.combinations.length > 0) {
         const primaryCombination = exhibit.combinations[0];
         if (primaryCombination && primaryCombination !== 'all') {
           // Extract base combination (remove include/notinclude and plan type)
           const base = primaryCombination
-            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '')
-            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '');
-          
-          if (base && base.length >= 3) {
+            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '')
+            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '');
+
+          if (base && base.length >= 1) {
             // Try to match with predefined combinations to get clean name
             const allCombos = getCombinationsForCategory(exhibit.category || 'content');
             const matchingCombo = allCombos.find(c => c.value === base);
-            
+
             let folderName: string;
             if (matchingCombo) {
               // Use clean label from predefined list
               folderName = matchingCombo.label;
             } else {
-              // Format for display (might have typos if not predefined)
-              folderName = base
-                .split('-')
-                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
+              // Format for display - try to match exhibit name pattern first
+              // For custom folders, extract from exhibit name (more reliable than reconstructing from key)
+              const dashIdx = (exhibit.name || '').indexOf(' - ');
+              let nameBase = '';
+              if (dashIdx > 0) {
+                nameBase = exhibit.name.substring(0, dashIdx)
+                  .replace(/\s+(Basic|Standard|Advanced)\s+Plan\s*$/i, '')
+                  .replace(/\s+(std|adv|basic|standard|advanced)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
+                  .trim();
+              }
+
+              // Use exhibit name base if available, otherwise reconstruct from key
+              if (nameBase && nameBase.length >= 1) {
+                folderName = nameBase;
+              } else {
+                folderName = base
+                  .split('-')
+                  .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                  .join(' ');
+              }
             }
-            
-            // Store mapping and add to set
-            folderMap.set(base, folderName);
+
             folderSet.add(folderName);
           }
         }

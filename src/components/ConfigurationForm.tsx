@@ -291,7 +291,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   // Apply UI-folder alias rules so exhibits in the same UI group resolve to the same key.
                   base = applyCombinationAliases(base);
 
-                  if (base && base !== 'all' && base.length >= 3) {
+                  if (base && base !== 'all' && base.length >= 1) {
                     const baseKey = normalizeBaseCombinationKey(base);
                     comboLabel = baseKeyToDisplayLabel(baseKey) || base.trim();
                   }
