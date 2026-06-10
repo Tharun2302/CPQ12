@@ -343,7 +343,35 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
               return cleaned.trim() || exhibitName;
             };
-            
+
+            // Stable grouping key for a combination, derived ONLY from the exhibit's base
+            // combination (combinations field + alias rules) — NOT the display label. The
+            // display label can vary across files of the SAME combination (some carry a
+            // parenthetical destination in their name, e.g. "Dropbox to Microsoft (OneDrive &
+            // SharePoint Online)", some resolve to the shorter "Dropbox To Microsoft"), which
+            // previously split one selected combination into two config panels. Grouping by
+            // this stable key keeps all of a combination's exhibit files in a single panel;
+            // the display name is chosen separately (the most descriptive label in the group).
+            const extractCombinationKey = (exhibit: any): string => {
+              if (exhibit.combinations && exhibit.combinations.length > 0) {
+                const nonAll = (exhibit.combinations as string[]).filter((c) => c && c !== 'all');
+                const primary = nonAll.length > 0
+                  ? nonAll.reduce((longest, c) => (String(c).length > String(longest).length ? String(c) : String(longest)), String(nonAll[0]))
+                  : exhibit.combinations[0];
+                if (primary && primary !== 'all') {
+                  let base = String(primary)
+                    .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '')
+                    .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '');
+                  base = applyCombinationAliases(base);
+                  if (base && base !== 'all' && base.length >= 3) {
+                    return normalizeBaseCombinationKey(base);
+                  }
+                }
+              }
+              // No usable combinations field — fall back to the normalized display label.
+              return extractCombinationName(exhibit).toLowerCase().replace(/\s+/g, ' ').trim();
+            };
+
             // Build per-combination config arrays (group exhibits by combination)
             const messagingCombinationMap = new Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>();
             const contentCombinationMap = new Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>();
@@ -359,21 +387,31 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               if (exhibit) {
                 const rawCategory = (exhibit.category || 'content');
                 const category = rawCategory.toLowerCase();
-                // Extract base combination name (prioritizes combinations field over name)
-                const combinationName = extractCombinationName(exhibit);
-                
+                // Group by a STABLE base-combination key so all files of one selected
+                // combination land in a single panel. The display label is chosen separately
+                // (the most descriptive label among the grouped files).
+                const combinationKey = extractCombinationKey(exhibit);
+                const displayName = extractCombinationName(exhibit);
+
+                const addToMap = (map: Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>) => {
+                  const group = map.get(combinationKey);
+                  if (!group) {
+                    map.set(combinationKey, { exhibitIds: [exhibitId], exhibitName: displayName, category });
+                  } else {
+                    group.exhibitIds.push(exhibitId);
+                    // Keep the most descriptive (longest) display label for the panel.
+                    if ((displayName || '').length > (group.exhibitName || '').length) {
+                      group.exhibitName = displayName;
+                    }
+                  }
+                };
+
                 if (category === 'messaging' || category === 'message') {
                   hasMessaging = true;
-                  if (!messagingCombinationMap.has(combinationName)) {
-                    messagingCombinationMap.set(combinationName, { exhibitIds: [], exhibitName: combinationName, category });
-                  }
-                  messagingCombinationMap.get(combinationName)!.exhibitIds.push(exhibitId);
+                  addToMap(messagingCombinationMap);
                 } else if (category === 'content') {
                   hasContent = true;
-                  if (!contentCombinationMap.has(combinationName)) {
-                    contentCombinationMap.set(combinationName, { exhibitIds: [], exhibitName: combinationName, category });
-                  }
-                  contentCombinationMap.get(combinationName)!.exhibitIds.push(exhibitId);
+                  addToMap(contentCombinationMap);
                 } else if (
                   category === 'email' ||
                   category === 'mail' ||
@@ -383,10 +421,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   category.includes('gmail')
                 ) {
                   hasEmail = true;
-                  if (!emailCombinationMap.has(combinationName)) {
-                    emailCombinationMap.set(combinationName, { exhibitIds: [], exhibitName: combinationName, category });
-                  }
-                  emailCombinationMap.get(combinationName)!.exhibitIds.push(exhibitId);
+                  addToMap(emailCombinationMap);
                 }
               }
             });
@@ -397,7 +432,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             const newEmailConfigs: ConfigurationData['emailConfigs'] = [];
             
             // Build messaging configs (one per combination)
-            messagingCombinationMap.forEach((group, combinationName) => {
+            messagingCombinationMap.forEach((group) => {
+              // The map is keyed by the stable base-combination key; the human-facing label
+              // lives on the group (most descriptive label among the grouped files).
+              const combinationName = group.exhibitName;
               // Use first exhibit ID as the primary ID, but store all IDs in the name or use combination name
               const primaryExhibitId = group.exhibitIds[0];
               const primaryExhibit = exhibits.find((ex: any) => ex._id === primaryExhibitId);
@@ -436,10 +474,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             });
             
             // Build content configs (one per combination)
-            contentCombinationMap.forEach((group, combinationName) => {
+            contentCombinationMap.forEach((group) => {
+              const combinationName = group.exhibitName;
               const primaryExhibitId = group.exhibitIds[0];
               const primaryExhibit = exhibits.find((ex: any) => ex._id === primaryExhibitId);
-              const existing = (config.contentConfigs || []).find(c => 
+              const existing = (config.contentConfigs || []).find(c =>
                 c.exhibitId === primaryExhibitId || c.exhibitName === combinationName
               );
               
@@ -474,9 +513,10 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             });
             
             // Build email configs (one per combination)
-            emailCombinationMap.forEach((group, combinationName) => {
+            emailCombinationMap.forEach((group) => {
+              const combinationName = group.exhibitName;
               const primaryExhibitId = group.exhibitIds[0];
-              const existing = (config.emailConfigs || []).find(c => 
+              const existing = (config.emailConfigs || []).find(c =>
                 c.exhibitId === primaryExhibitId || c.exhibitName === combinationName
               );
               
@@ -1005,16 +1045,11 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     }
   }, [dealData]); // Removed onContactInfoChange from dependencies
 
-  // Load discount value from sessionStorage on component mount
+  // Clear stored discount on mount - user must explicitly enter it each time
   useEffect(() => {
-    try {
-      const savedDiscount = sessionStorage.getItem('cpq_discount_session');
-      if (savedDiscount !== null && savedDiscount !== '') {
-        setDiscountValue(savedDiscount);
-      }
-    } catch {
-      setDiscountValue('');
-    }
+    setDiscountValue('');
+    sessionStorage.removeItem('cpq_discount_session');
+    localStorage.removeItem('cpq_discount');
   }, []);
 
   // Sync combination with config (only use sessionStorage, no localStorage fallback)
