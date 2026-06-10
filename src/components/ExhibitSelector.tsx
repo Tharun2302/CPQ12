@@ -556,11 +556,11 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       }
       
       // Search in the formatted combination name (what would be displayed as group name)
-      const primaryCombination = exhibit.combinations && exhibit.combinations.length > 0 
-        ? exhibit.combinations[0] 
+      const primaryCombination = exhibit.combinations && exhibit.combinations.length > 0
+        ? exhibit.combinations[0]
         : 'all';
       const baseCombination = extractBaseCombination(primaryCombination);
-      if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 3) {
+      if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 1) {
         const formattedName = formatCombinationForDisplay(baseCombination);
         const formattedMatch = formattedName.toLowerCase().includes(query) ||
           formattedName.toLowerCase().replace(/[\/\-\s]+/g, ' ').includes(normalizedQuery);
@@ -932,20 +932,61 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const hasAnyExhibits = filteredExhibits.length > 0;
 
   // Names of migration types that have at least one exhibit selected (for display below search)
+  // Calculate based on ALL exhibits, not just filtered ones, so the count stays visible during search
   const selectedMigrationNames = useMemo(() => {
     const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
+    if (selectedSet.size === 0) return [];
+
     const names: string[] = [];
-    if (Array.isArray(processedExhibits)) {
-      for (const item of processedExhibits) {
-        if (!item?.name) continue;
-        const anySelected = item.isGroup
-          ? (item.exhibits || []).some((ex: any) => selectedSet.has((ex?._id ?? '').toString()))
-          : (item.exhibits?.[0] && selectedSet.has((item.exhibits[0]._id ?? '').toString()));
-        if (anySelected) names.push(item.name);
+    const seen = new Set<string>();
+
+    // Find all selected exhibits and map them to their combination folders
+    selectedExhibits.forEach(selectedId => {
+      const exhibit = exhibits.find(ex => ex._id === selectedId);
+      if (!exhibit?.combinations?.length) return;
+
+      // Extract the combination folder name
+      const primaryCombination = exhibit.combinations[0];
+      const baseCombination = extractBaseCombination(primaryCombination);
+      if (!baseCombination || baseCombination === 'all' || baseCombination.length < 1) return;
+
+      let folderName = formatCombinationForDisplay(baseCombination);
+
+      // Apply the same name override logic as in processedExhibits
+      const exhibitNameRaw = (exhibit.name || '').toString();
+      const dashIdx = exhibitNameRaw.indexOf(' - ');
+      const nameBase = (dashIdx > 0 ? exhibitNameRaw.substring(0, dashIdx) : exhibitNameRaw)
+        .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
+        .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
+        .trim();
+
+      if (nameBase) {
+        const comboNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+        const nameNorm = nameBase.toLowerCase().replace(/\s+/g, ' ').trim();
+        const isMoreSpecific = nameNorm !== comboNorm && nameNorm.length > comboNorm.length;
+        const namesAgree = nameNorm === comboNorm || nameNorm.startsWith(comboNorm + ' ') || comboNorm.startsWith(nameNorm + ' ');
+        if (isMoreSpecific || !namesAgree) {
+          folderName = nameBase;
+        }
       }
-    }
+
+      // Canonicalize folder names
+      const folderNameNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (/^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint$/.test(folderNameNorm)) {
+        folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+      }
+      if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
+        folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+      }
+
+      if (!seen.has(folderName)) {
+        seen.add(folderName);
+        names.push(folderName);
+      }
+    });
+
     return names;
-  }, [selectedExhibits, processedExhibits]);
+  }, [selectedExhibits, exhibits]);
 
   const handleRemoveMigrationType = (migrationName: string) => {
     const item = Array.isArray(processedExhibits)
