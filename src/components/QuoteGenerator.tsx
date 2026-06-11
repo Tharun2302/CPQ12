@@ -2404,6 +2404,34 @@ Quote ID: ${quoteData.id}
                 });
               }
 
+              // Create detailed diagnostic report
+              const diagnosticReport = {
+                timestamp: new Date().toISOString(),
+                selectedExhibits: selectedExhibits,
+                selectedExhibitsCount: selectedExhibits?.length || 0,
+                uniqueSelectedCount: uniqueSelectedExhibitsForMerge.length,
+                expandedCount: expandedUniqueSelectedExhibitsForMerge.length,
+                dedupCount: dedupedIds.length,
+                sortedCount: sortedExhibits.length,
+                sortedIds: sortedExhibits,
+                sortedNames: sortedExhibits.map((id) => {
+                  const ex = allExhibits.find((e: any) => e?._id?.toString?.() === id);
+                  return ex ? `${ex.name} (${ex.includeType || 'generic'})` : `Unknown ID: ${id}`;
+                }),
+                exhibitDetails: sortedExhibits.map((id) => {
+                  const ex = allExhibits.find((e: any) => e?._id?.toString?.() === id);
+                  return {
+                    id,
+                    name: ex?.name || 'NOT FOUND',
+                    category: ex?.category || 'unknown',
+                    includeType: ex?.includeType || 'generic',
+                    planType: ex?.planType || 'generic',
+                    combinations: ex?.combinations || []
+                  };
+                })
+              };
+
+              console.log('📋 DIAGNOSTIC REPORT - Sorted exhibits for merge:', diagnosticReport);
               console.log('📋 Sorted exhibits for merge:', {
                 count: sortedExhibits.length,
                 ids: sortedExhibits,
@@ -8883,6 +8911,18 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
 
               // De-dupe exhibits by stable "migration key" before fetching/merging blobs
               // Use the same key format as the expansion above to ensure consistency
+
+              // FIRST: Check if expandedUniqueSelectedExhibitsForMerge itself has duplicates
+              const expandedSet = new Set(expandedUniqueSelectedExhibitsForMerge);
+              if (expandedSet.size !== expandedUniqueSelectedExhibitsForMerge.length) {
+                const expandedDuplicates = expandedUniqueSelectedExhibitsForMerge.filter((id, idx) => expandedUniqueSelectedExhibitsForMerge.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: expandedUniqueSelectedExhibitsForMerge has duplicates:', {
+                  duplicateIds: [...new Set(expandedDuplicates)],
+                  total: expandedUniqueSelectedExhibitsForMerge.length,
+                  unique: expandedSet.size
+                });
+              }
+
               const seenKeys = new Set<string>();
               const dedupedIds: string[] = [];
               for (const id of expandedUniqueSelectedExhibitsForMerge) {
@@ -8896,10 +8936,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 const baseCombo = getNormalizedBaseCombination(ex);
                 const planLower = getPlanLowerFromExhibit(ex);
                 const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
-                
+
                 // Use the same unique key format as the expansion above
                 const uniqueKey = `${category}|${baseCombo}|${planLower}|${includeType}`;
-                
+
                 if (seenKeys.has(uniqueKey)) {
                   console.warn('⚠️ Skipping duplicate exhibit for merge (same unique key)', {
                     id,
@@ -8914,6 +8954,17 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                 }
                 seenKeys.add(uniqueKey);
                 dedupedIds.push(id);
+              }
+
+              // SECOND: Check if dedupedIds has duplicates (shouldn't but let's verify)
+              const dedupedSet = new Set(dedupedIds);
+              if (dedupedSet.size !== dedupedIds.length) {
+                const dedupedDuplicates = dedupedIds.filter((id, idx) => dedupedIds.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: dedupedIds has duplicates after dedup loop:', {
+                  duplicateIds: [...new Set(dedupedDuplicates)],
+                  total: dedupedIds.length,
+                  unique: dedupedSet.size
+                });
               }
 
               // FINAL FILTER: drop "combined" exhibits whose body covers combinations the
