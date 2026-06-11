@@ -8761,7 +8761,10 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   for (const ex of allExhibits) {
                     const exBase = extractNameBase(ex?.name || '');
                     if (!exBase || !canonicalNames.has(exBase)) continue;
-                    const exPlan = (ex?.planType || '').toString().toLowerCase();
+                    // Use getPlanLowerFromExhibit (falls back to name detection) so exhibits
+                    // with undefined planType but "Standard"/"Basic" in their name are NOT
+                    // treated as generic and included for every plan.
+                    const exPlan = getPlanLowerFromExhibit(ex);
                     if (selectedPlanLowerForFilter) {
                       const isGenericPlan = !exPlan;
                       if (!isGenericPlan && exPlan !== selectedPlanLowerForFilter) continue;
