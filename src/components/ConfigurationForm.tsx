@@ -141,7 +141,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     if ((mt !== 'Multi combination' && mt !== 'Overage Agreement') || config.combination) return;
     const fromApi = apiCombinations.filter(c => c.migrationType === mt);
     const fallback = mt === 'Multi combination'
-      ? [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }]
+      ? [{ value: 'multi-combination', label: 'Combination' }]
       : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
     const options = fromApi.length > 0 ? fromApi : fallback;
     if (options.length !== 1) return;
@@ -669,7 +669,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
       'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)',
       'overage-agreement': 'OVERAGE AGREEMENT',
-      'multi-combination': 'ORIGINAL MULTI COMBINATION',
+      'multi-combination': 'Combination',
       'slack-to-teams': 'SLACK TO TEAMS',
       'slack-to-google-chat': 'SLACK TO GOOGLE CHAT',
       'teams-to-slack': 'TEAMS TO SLACK'
@@ -2362,7 +2362,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       {config.migrationType === 'Multi combination' && (() => {
                         const fromApi = apiCombinations.filter(c => c.migrationType === 'Multi combination');
                         const multiCombinationOptions = fromApi.length > 0 ? fromApi : [
-                          { value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }
+                          { value: 'multi-combination', label: 'Combination' }
                         ];
                         const filtered = multiCombinationOptions.filter(combo =>
                           combo.label.toLowerCase().includes(combinationSearch.toLowerCase())
@@ -2386,7 +2386,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                           const ov = apiCombinations.filter(c => c.migrationType === 'Overage Agreement');
                           const overageCombinations = ov.length > 0 ? ov : [{ value: 'overage-agreement', label: 'OVERAGE AGREEMENT' }];
                           const multi = apiCombinations.filter(c => c.migrationType === 'Multi combination');
-                          const multiCombinationOptions = multi.length > 0 ? multi : [{ value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION' }];
+                          const multiCombinationOptions = multi.length > 0 ? multi : [{ value: 'multi-combination', label: 'Combination' }];
                           let allCombinations: { value: string; label: string }[] = [];
                           if (config.migrationType === 'Messaging') allCombinations = messagingCombinations;
                           else if (config.migrationType === 'Content') allCombinations = contentCombinations;

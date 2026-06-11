@@ -2440,7 +2440,7 @@ app.post('/api/combinations/seed', async (req, res) => {
       { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK', migrationType: 'Email', displayOrder: 3 },
       { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL', migrationType: 'Email', displayOrder: 4 },
       { value: 'overage-agreement', label: 'OVERAGE AGREEMENT', migrationType: 'Overage Agreement', displayOrder: 1 },
-      { value: 'multi-combination', label: 'ORIGINAL MULTI COMBINATION', migrationType: 'Multi combination', displayOrder: 1 },
+      { value: 'multi-combination', label: 'Combination', migrationType: 'Multi combination', displayOrder: 1 },
       { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)', migrationType: 'Content', displayOrder: 1 },
       { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)', migrationType: 'Content', displayOrder: 2 },
       { value: 'dropbox-to-box', label: 'DROPBOX TO BOX', migrationType: 'Content', displayOrder: 3 },
