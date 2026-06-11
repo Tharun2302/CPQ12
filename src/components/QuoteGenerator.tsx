@@ -2336,9 +2336,10 @@ Quote ID: ${quoteData.id}
 
               // De-dupe exhibits by a stable "migration key" so we don't merge the same exhibit content twice
               // when the UI selection contains multiple IDs representing the same migration.
+              // IMPORTANT: Deduplicate the EXPANDED list, not the original selection
               const seenKeys = new Set<string>();
               const dedupedIds: string[] = [];
-              for (const id of uniqueSelectedExhibitsForMerge) {
+              for (const id of expandedUniqueSelectedExhibitsForMerge) {
                 const ex = lookup.get(id);
                 if (!ex) {
                   dedupedIds.push(id);
@@ -2391,7 +2392,36 @@ Quote ID: ${quoteData.id}
 
               const sortedExhibits = sortIds(dedupedIds);
 
+              // Detect if the same ID appears multiple times
+              const sortedExhibitsSet = new Set(sortedExhibits);
+              if (sortedExhibitsSet.size !== sortedExhibits.length) {
+                const duplicateIds = sortedExhibits.filter((id, idx) => sortedExhibits.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: Duplicate exhibit IDs in sortedExhibits:', {
+                  duplicates: [...new Set(duplicateIds)],
+                  sortedExhibits,
+                  count: sortedExhibits.length,
+                  unique: sortedExhibitsSet.size
+                });
+              }
+
+              console.log('📋 Sorted exhibits for merge:', {
+                count: sortedExhibits.length,
+                ids: sortedExhibits,
+                dedupCount: dedupedIds.length,
+                expandedCount: expandedUniqueSelectedExhibitsForMerge.length,
+                uniqueSelectedCount: uniqueSelectedExhibitsForMerge.length
+              });
+
+              const fetchedExhibitIds = new Set<string>();
               for (const exhibitId of sortedExhibits) {
+                if (fetchedExhibitIds.has(exhibitId)) {
+                  console.error(`❌ CRITICAL: Exhibit ${exhibitId} is being fetched twice! This will cause duplicates.`, {
+                    exhibitName: allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId)?.name
+                  });
+                  continue; // Skip the second occurrence
+                }
+                fetchedExhibitIds.add(exhibitId);
+
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
                 // Bypass HTTP cache so admin-side exhibit edits show up on the next email send.
                 const cacheBuster = `?t=${Date.now()}`;
@@ -2400,7 +2430,7 @@ Quote ID: ${quoteData.id}
                 if (response.ok) {
                   const blob = await response.blob();
                   exhibitBlobs.push(blob);
-                  
+
                   // Get exhibit metadata (includeType from upload selection; used by merger)
                   const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
                   if (exhibit) {
@@ -2409,20 +2439,27 @@ Quote ID: ${quoteData.id}
                       category: exhibit.category || '',
                       includeType: (exhibit.includeType === 'notincluded' || exhibit.includeType === 'included') ? exhibit.includeType : undefined
                     });
+                    console.log(`   ✅ Exhibit meta: "${exhibit.name}" (${exhibit.includeType || 'undefined'})`);
                   }
-                  
+
                   console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
                 } else {
                   console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
                 }
               }
-              
+
+              console.log('📊 Final exhibitBlobs & metadata before merge:', {
+                blobsCount: exhibitBlobs.length,
+                metadataCount: exhibitMetadata.length,
+                metadata: exhibitMetadata.map(m => ({ name: m.name, includeType: m.includeType }))
+              });
+
               if (exhibitBlobs.length > 0) {
                 console.log(`📎 Merging ${exhibitBlobs.length} exhibits into email document...`);
                 const { mergeDocxFiles } = await import('../utils/docxMerger');
-                
+
                 agreementBlob = await mergeDocxFiles(agreementBlob, exhibitBlobs, exhibitMetadata);
-                
+
                 console.log('✅ Exhibits merged successfully for email!', {
                   totalExhibits: exhibitBlobs.length,
                   finalSize: agreementBlob.size
@@ -7035,8 +7072,13 @@ Total Price: {{total price}}`;
           templateData['{{exhibits_summary}}'] = 'None';
           templateData['{{exhibits_list_text}}'] = 'None';
           templateData['{{exhibits_count}}'] = '0';
-          // Fallback: use original selectedExhibits if expansion failed
-          expandedExhibitIdsForMerge = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
+          // Fallback: use deduplicated expandedExhibitIdsForMerge if available, otherwise use selectedExhibits
+          // CRITICAL: Do NOT reset to original selectedExhibits which may contain duplicates!
+          // Only use undeduplicated list to prevent same exhibit from appearing twice
+          if (expandedExhibitIdsForMerge.length === 0) {
+            // Deduplicate selectedExhibits before fallback
+            expandedExhibitIdsForMerge = Array.from(new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean)));
+          }
           // Ensure totalUserCountFromExhibits has a fallback value in case of error
           if (totalUserCountFromExhibits === undefined || totalUserCountFromExhibits === 0) {
             totalUserCountFromExhibits = userCount || 1;
@@ -9005,7 +9047,25 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               notIncluded.sort(sorter);
               const sortedExhibits = [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
 
+              // Detect if the same ID appears multiple times
+              const sortedExhibitsSet = new Set(sortedExhibits);
+              if (sortedExhibitsSet.size !== sortedExhibits.length) {
+                const duplicateIds = sortedExhibits.filter((id, idx) => sortedExhibits.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: Duplicate exhibit IDs in sorted exhibits for merge:', {
+                  duplicates: [...new Set(duplicateIds)],
+                  totalCount: sortedExhibits.length,
+                  uniqueCount: sortedExhibitsSet.size
+                });
+              }
+
+              const fetchedExhibitIds = new Set<string>();
               for (const exhibitId of sortedExhibits) {
+                if (fetchedExhibitIds.has(exhibitId)) {
+                  console.error(`❌ CRITICAL: Exhibit ${exhibitId} is being fetched twice for merge! This will cause duplicates.`);
+                  continue; // Skip the second occurrence
+                }
+                fetchedExhibitIds.add(exhibitId);
+
                 console.log(`📎 Fetching exhibit: ${exhibitId}`);
 
                 // Get exhibit metadata FIRST (before fetching file)

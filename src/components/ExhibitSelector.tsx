@@ -10,6 +10,7 @@ interface Exhibit {
   combinations: string[];
   category?: string;
   planType?: string; // 'basic' | 'standard' | 'advanced' | ''
+  includeType?: 'included' | 'notincluded'; // Separate included vs not included exhibits
   isRequired: boolean;
   displayOrder: number;
 }
@@ -241,15 +242,20 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
 
     const tierName = selectedTier.tier.name.toLowerCase();
-    
-    // Find ALL exhibits that match the selected tier (both Include and Not Include variants)
+
+    // Find ALL exhibits that match the selected tier (both Include and Not Include variants separately)
     const matchingExhibitIds = exhibits
       .filter(ex => {
         // First check planType field (most reliable)
         if (ex.planType) {
-          return ex.planType.toLowerCase() === tierName;
+          const matchesTier = ex.planType.toLowerCase() === tierName;
+          if (!matchesTier) return false;
+          // Include this exhibit ONLY if:
+          // 1. It has an explicit includeType (separate Include/Not Include variants), OR
+          // 2. It doesn't have a plan type in its name (it's a generic exhibit for this tier)
+          return true;
         }
-        
+
         // Fallback: Check exhibit name for plan type
         const exhibitName = ex.name.toLowerCase();
         // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
@@ -258,7 +264,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         const hasBasic = exhibitName.includes('basic');
         const hasPremium = exhibitName.includes('premium');
         const hasEnterprise = exhibitName.includes('enterprise');
-        
+
         // If exhibit has a plan type in name, check if it matches selected tier
         if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
           if (tierName === 'basic') {
@@ -274,7 +280,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           }
           return false;
         }
-        
+
         // Don't auto-select exhibits without explicit plan type (generic exhibits)
         // User must manually select these
         return false;
@@ -296,7 +302,7 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         // Check for "std" as abbreviation for "standard"
         const hasStd = name.includes('-std') || name.includes('_std') || name.endsWith('std');
         const hasPlanInName = name.includes('basic') || name.includes('standard') || hasStd ||
-                             name.includes('advanced') || name.includes('premium') || 
+                             name.includes('advanced') || name.includes('premium') ||
                              name.includes('enterprise');
         return !hasPlanInName;
       }
@@ -314,8 +320,13 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     if (JSON.stringify(finalSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
       const matchingExhibitNames = exhibits
         .filter(ex => matchingExhibitIds.includes(ex._id))
-        .map(ex => ({ name: ex.name, planType: ex.planType, id: ex._id }));
-      
+        .map(ex => ({
+          name: ex.name,
+          planType: ex.planType,
+          includeType: ex.includeType,
+          id: ex._id
+        }));
+
       console.log('✅ Auto-selecting exhibits for tier:', tierName, {
         matchingCount: matchingExhibitIds.length,
         requiredCount: requiredExhibitIds.length,
@@ -323,25 +334,25 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
         totalSelected: finalSelection.length,
         previousSelectionCount: selectedExhibits.length,
         matchingExhibits: matchingExhibitNames.slice(0, 10), // Show first 10 for debugging
-        allMatchingExhibitNames: matchingExhibitNames.map(e => e.name)
+        allMatchingExhibitNames: matchingExhibitNames.map(e => ({ name: e.name, includeType: e.includeType }))
       });
-      
+
       // Log which exhibits are being added/removed
       const added = finalSelection.filter(id => !selectedExhibits.includes(id));
       const removed = selectedExhibits.filter(id => !finalSelection.includes(id));
       if (added.length > 0) {
         console.log('➕ Adding exhibits:', added.map(id => {
           const ex = exhibits.find(e => e._id === id);
-          return ex ? ex.name : id;
+          return ex ? `${ex.name} (${ex.includeType || 'generic'})` : id;
         }));
       }
       if (removed.length > 0) {
         console.log('➖ Removing exhibits:', removed.map(id => {
           const ex = exhibits.find(e => e._id === id);
-          return ex ? ex.name : id;
+          return ex ? `${ex.name} (${ex.includeType || 'generic'})` : id;
         }));
       }
-      
+
       onExhibitsChange(finalSelection);
     } else {
       console.log('✅ Exhibits already match selected tier:', tierName, {
@@ -824,11 +835,12 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     // Add groups (display as groups even if they have only 1 exhibit, to ensure proper formatting)
     groups.forEach((exhibits, folderName) => {
       if (exhibits.length > 1) {
-        // Deduplicate exhibits within the group by their display label (the part after " - ")
+        // Deduplicate exhibits within the group by their display label (the part after " - ") AND includeType
         // Keep the most specific exhibit (prefer exhibits specific to this combination over merged ones)
+        // IMPORTANT: Keep separate entries for "Included" and "Not Included" variants - they must not be deduplicated
         const deduplicatedExhibits: Exhibit[] = [];
         const seenLabels = new Map<string, Exhibit>();
-        
+
         // Sort exhibits to process more specific ones first (non-merged before merged)
         const sortedExhibits = [...exhibits].sort((a, b) => {
           const aIsMerged = a.name.includes('(MyDrive & Shared Drive)');
@@ -837,19 +849,21 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
           if (!aIsMerged && bIsMerged) return -1;
           return 0;
         });
-        
+
         sortedExhibits.forEach(exhibit => {
           const dashIndex = exhibit.name.indexOf(' - ');
           const label = dashIndex > 0 ? exhibit.name.substring(dashIndex + 3) : exhibit.name;
-          
-          // Only add if we haven't seen this label before, or if this one is more specific
-          if (!seenLabels.has(label)) {
-            seenLabels.set(label, exhibit);
+          // Key includes BOTH the label AND the includeType to keep included/notincluded separate
+          const dedupeKey = `${label}|${exhibit.includeType || 'generic'}`;
+
+          // Only add if we haven't seen this label + includeType combination before
+          if (!seenLabels.has(dedupeKey)) {
+            seenLabels.set(dedupeKey, exhibit);
             deduplicatedExhibits.push(exhibit);
           }
-          // If label already exists, skip this exhibit (we already have a more specific one)
+          // If key already exists, skip this exhibit (we already have a more specific one)
         });
-        
+
         result.push({
           id: `group-${folderName}`,
           name: folderName,
