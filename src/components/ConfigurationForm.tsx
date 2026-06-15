@@ -425,7 +425,41 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 }
               }
             });
-            
+
+            // Safety net: collapse any groups that resolve to the SAME display label into one.
+            // The combination-key grouping above keeps files of one combination together even
+            // when their display labels differ. This handles the INVERSE case: files the user
+            // selected as a single UI combination whose underlying combination TAGS are
+            // inconsistent (e.g. 'nfs-to-google' on some files, 'nfs-to-google-sharedrive' on
+            // others) but which all resolve to one display label ("NFS to Google Shared Drive").
+            // Without this they render as two identical config panels for one selected combination.
+            const mergeGroupsBySameLabel = (
+              map: Map<string, { exhibitIds: string[]; exhibitName: string; category: string }>
+            ) => {
+              const labelToKey = new Map<string, string>();
+              for (const [key, group] of Array.from(map.entries())) {
+                const label = (group.exhibitName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                if (!label) continue;
+                const canonicalKey = labelToKey.get(label);
+                if (canonicalKey === undefined) {
+                  labelToKey.set(label, key);
+                } else {
+                  const target = map.get(canonicalKey)!;
+                  group.exhibitIds.forEach((id) => {
+                    if (!target.exhibitIds.includes(id)) target.exhibitIds.push(id);
+                  });
+                  // Keep the most descriptive (longest) display label for the merged panel.
+                  if ((group.exhibitName || '').length > (target.exhibitName || '').length) {
+                    target.exhibitName = group.exhibitName;
+                  }
+                  map.delete(key);
+                }
+              }
+            };
+            mergeGroupsBySameLabel(messagingCombinationMap);
+            mergeGroupsBySameLabel(contentCombinationMap);
+            mergeGroupsBySameLabel(emailCombinationMap);
+
             // Convert maps to config arrays (one config per combination, not per exhibit)
             const newMessagingConfigs: ConfigurationData['messagingConfigs'] = [];
             const newContentConfigs: ConfigurationData['contentConfigs'] = [];

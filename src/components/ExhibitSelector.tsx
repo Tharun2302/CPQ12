@@ -603,27 +603,33 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     });
   }, [filteredExhibits, searchQuery]);
 
-  // Process exhibits for flat list display (handle grouping)
-  const processedExhibits = useMemo(() => {
-    // Defensive check: ensure searchFilteredExhibits is an array
-    if (!Array.isArray(searchFilteredExhibits)) {
-      console.warn('⚠️ ExhibitSelector: searchFilteredExhibits is not an array', searchFilteredExhibits);
-      return [];
+  // Shared grouping logic: turn a flat exhibit list into the grouped/folder list shown
+  // in the UI. Used both for the rendered list (search-filtered) AND for the selected-
+  // combination chips (full exhibit set), so the two can never disagree about which folder
+  // an exhibit belongs to. Returns the visible groups plus the IDs hidden from the UI.
+  const buildExhibitGroups = (sourceList: Exhibit[]): {
+    visibleResult: Array<{ id: string; name: string; exhibits: Exhibit[]; isGroup: boolean; displayOrder: number }>;
+    hiddenIds: string[];
+  } => {
+    // Defensive check: ensure sourceList is an array
+    if (!Array.isArray(sourceList)) {
+      console.warn('⚠️ ExhibitSelector: sourceList is not an array', sourceList);
+      return { visibleResult: [], hiddenIds: [] };
     }
-    
+
     // Filter out generic "Included Features" / "Not Included Features" exhibits only when
     // plan-specific versions (Standard/Advanced/etc.) exist for the same combination.
     // If a combination has NO plan-specific exhibits, keep the generic ones — they are the only option.
     const planTypeRegex = /\b(Basic|Standard|Advanced|Premium|Enterprise)\s+(Plan\s*-)?\s*(Included|Not Included|Include|Not Include)/i;
     const combosWithPlanExhibits = new Set<string>();
-    searchFilteredExhibits.forEach(exhibit => {
+    sourceList.forEach(exhibit => {
       if (planTypeRegex.test(exhibit.name || '')) {
         const combo = exhibit.combinations?.[0] || 'all';
         combosWithPlanExhibits.add(combo);
       }
     });
 
-    const filtered = searchFilteredExhibits.filter(exhibit => {
+    const filtered = sourceList.filter(exhibit => {
       const name = exhibit.name || '';
       const endsWithIncludedFeatures = / - (Included|Not Included) Features$/i.test(name);
       if (endsWithIncludedFeatures && !planTypeRegex.test(name)) {
@@ -922,10 +928,16 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
       }
       return true;
     });
-    hiddenExhibitIdsRef.current = hiddenIds;
 
     // Sort by display order
-    return visibleResult.sort((a, b) => a.displayOrder - b.displayOrder);
+    return { visibleResult: visibleResult.sort((a, b) => a.displayOrder - b.displayOrder), hiddenIds };
+  };
+
+  // Process exhibits for flat list display (handle grouping)
+  const processedExhibits = useMemo(() => {
+    const { visibleResult, hiddenIds } = buildExhibitGroups(searchFilteredExhibits);
+    hiddenExhibitIdsRef.current = hiddenIds;
+    return visibleResult;
   }, [searchFilteredExhibits]);
 
   // Deselect any exhibits that belong to a hidden combination (keeps the agreement in
@@ -958,62 +970,28 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
   const hasAnyExhibits = filteredExhibits.length > 0;
 
-  // Names of migration types that have at least one exhibit selected (for display below search)
-  // Calculate based on ALL exhibits, not just filtered ones, so the count stays visible during search
+  // Names of migration types that have at least one exhibit selected (for display below search).
+  // Built from the SAME grouping function as the rendered list (run over ALL exhibits, not just
+  // search-filtered ones, so the chips stay visible during search). Mapping each selected exhibit
+  // to the exact folder it lands in guarantees chips can never disagree with the list.
   const selectedMigrationNames = useMemo(() => {
     const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
     if (selectedSet.size === 0) return [];
 
+    // Group the full exhibit set exactly as the list does, then build an id -> folder-name map.
+    const { visibleResult } = buildExhibitGroups(exhibits);
+    const idToFolderName = new Map<string, string>();
+    visibleResult.forEach((group) => {
+      (group.exhibits || []).forEach((ex) => {
+        if (ex?._id) idToFolderName.set(ex._id.toString(), group.name);
+      });
+    });
+
     const names: string[] = [];
     const seen = new Set<string>();
-
-    // Find all selected exhibits and map them to their combination folders
-    selectedExhibits.forEach(selectedId => {
-      const exhibit = exhibits.find(ex => ex._id === selectedId);
-      if (!exhibit?.combinations?.length) return;
-
-      // Extract the combination folder name
-      const primaryCombination = exhibit.combinations[0];
-      const baseCombination = extractBaseCombination(primaryCombination);
-      if (!baseCombination || baseCombination === 'all' || baseCombination.length < 1) return;
-
-      let folderName = formatCombinationForDisplay(baseCombination);
-
-      // Apply the same name override logic as in processedExhibits.
-      // Strip the trailing "[Plan] Plan - [Include type]" suffix from the END so combinations
-      // whose own name contains " - " aren't truncated at the first dash (keeps chip names in
-      // sync with the merged folder).
-      const exhibitNameRaw = (exhibit.name || '').toString();
-      const nameBase = exhibitNameRaw
-        .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
-        .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
-        .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
-        .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
-        .trim();
-
-      if (nameBase) {
-        const comboNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
-        const nameNorm = nameBase.toLowerCase().replace(/\s+/g, ' ').trim();
-        const isMoreSpecific = nameNorm !== comboNorm && nameNorm.length > comboNorm.length;
-        const namesAgree = nameNorm === comboNorm || nameNorm.startsWith(comboNorm + ' ') || comboNorm.startsWith(nameNorm + ' ');
-        if (isMoreSpecific || !namesAgree) {
-          folderName = nameBase;
-        }
-      }
-
-      // Canonicalize folder names
-      const folderNameNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
-      if (/^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint$/.test(folderNameNorm)) {
-        folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
-      }
-      if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
-        folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
-      }
-      // Same canonicalization as processedExhibits so chip + folder names match.
-      if (/^mydrive\s*\/\s*sharedrive\s*-\s*onedrive\s*\/\s*sharepoint\s*online$/.test(folderNameNorm)) {
-        folderName = 'MyDrive/ShareDrive-OneDrive/SharePointOnline';
-      }
-
+    selectedExhibits.forEach((selectedId) => {
+      const folderName = idToFolderName.get((selectedId ?? '').toString());
+      if (!folderName) return; // hidden or unknown exhibit -> no chip
       if (!seen.has(folderName)) {
         seen.add(folderName);
         names.push(folderName);
