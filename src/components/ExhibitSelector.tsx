@@ -937,8 +937,37 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
   const processedExhibits = useMemo(() => {
     const { visibleResult, hiddenIds } = buildExhibitGroups(searchFilteredExhibits);
     hiddenExhibitIdsRef.current = hiddenIds;
-    return visibleResult;
-  }, [searchFilteredExhibits]);
+
+    // With no active search, keep the curated displayOrder ordering.
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return visibleResult;
+
+    // Rank search results by how the query matches each group's display name, using the
+    // EARLIEST occurrence of the query:
+    //   0 exact      — the whole name equals the query ("Box")
+    //   1 prefix     — name starts with the query ("Box to Google Drive")
+    //   2 word-prefix— a later word starts with the query ("Google Drive to Box")
+    //   3 contains   — query appears only mid-word ("Dropbox to Box" via "Drop[box]")
+    //   4 other      — name doesn't contain the query (matched via combination/description)
+    // This keeps prefix matches ahead of substring matches like "Dropbox". Within each rank,
+    // results are ordered alphabetically.
+    const rankName = (name: string): number => {
+      const n = (name || '').toLowerCase();
+      const idx = n.indexOf(q);
+      if (idx === -1) return 4;
+      if (idx === 0) return n.length === q.length ? 0 : 1;
+      const prevChar = n.charAt(idx - 1);
+      const isWordBoundary = /[\s\-\/(),&]/.test(prevChar);
+      return isWordBoundary ? 2 : 3;
+    };
+
+    return [...visibleResult].sort((a, b) => {
+      const ra = rankName(a.name);
+      const rb = rankName(b.name);
+      if (ra !== rb) return ra - rb;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }, [searchFilteredExhibits, searchQuery]);
 
   // Deselect any exhibits that belong to a hidden combination (keeps the agreement in
   // sync with what the user can actually see/select).
