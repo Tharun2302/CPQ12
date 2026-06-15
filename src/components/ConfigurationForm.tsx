@@ -179,7 +179,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       }
 
       try {
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+       
         const response = await fetch(`${BACKEND_URL}/api/exhibits`);
         if (response.ok) {
           const data = await response.json();
@@ -742,7 +742,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
     // Fetch exhibit details to determine categories
     const fetchExhibitCategories = async () => {
       try {
-        const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        
         const response = await fetch(`${BACKEND_URL}/api/exhibits`);
         if (response.ok) {
           const data = await response.json();
