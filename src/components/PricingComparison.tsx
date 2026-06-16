@@ -775,6 +775,15 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                         </div>
                       </>
                     ) : null}
+                    {/* Per GB cost — shown for no-users Manage agreements */}
+                    {configuration?.servicePlan === 'Manage' && configuration?.manageRequiresUsers === false && (configuration?.manageDataGB ?? 0) > 0 && (
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">Per GB cost:</span>
+                        <span className="font-bold text-gray-900">
+                          {`${formatCurrency(calc.dataCost / (configuration.manageDataGB ?? 1))}/GB`}
+                        </span>
+                      </div>
+                    )}
                     {/* Data costs */}
                     <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                       <span className="text-gray-700 font-medium">Data costs:</span>

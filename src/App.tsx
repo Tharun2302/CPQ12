@@ -1237,7 +1237,11 @@ function App() {
       // numberOfUsers / overage / multi-combination check applies.
       const isManage = configuration.servicePlan === 'Manage';
       const hasCoreConfig = isManage
-        ? (configuration.manageUsers ?? 0) > 0
+        // For no-users agreements (e.g. Data Sprawl), manageDataGB > 0 is sufficient.
+        // For user-based agreements, manageUsers > 0 is required.
+        ? (configuration.manageRequiresUsers === false
+            ? (configuration.manageDataGB ?? 0) > 0
+            : (configuration.manageUsers ?? 0) > 0)
         : configuration.migrationType && (
             configuration.numberOfUsers > 0 ||
             configuration.combination === 'overage-agreement' ||

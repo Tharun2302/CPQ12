@@ -1940,7 +1940,17 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         const newMigrationType = e.target.value;
                         const selected = options.find(o => o.value === newMigrationType);
                         const newRequiresUsers = selected ? selected.requiresUsers !== false : true;
-                        const newConfig = { ...config, migrationType: newMigrationType as any, combination: 'manage-standalone', timelineProjection: '', servicePlan: 'Manage' as const, manageRequiresUsers: newRequiresUsers };
+                        const newConfig = {
+                          ...config,
+                          migrationType: newMigrationType as any,
+                          combination: 'manage-standalone',
+                          timelineProjection: '',
+                          servicePlan: 'Manage' as const,
+                          manageRequiresUsers: newRequiresUsers,
+                          // Clear manageUsers when switching to a no-users agreement
+                          // so the pricing calculation doesn't use a stale value
+                          manageUsers: newRequiresUsers ? config.manageUsers : 0,
+                        };
                         setConfig(newConfig);
                         onConfigurationChange(newConfig);
                         try {
@@ -1989,7 +1999,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             type="number"
                             min="0"
                             step="1"
-                            value={config.manageDataGB ?? ''}
+                            value={config.manageDataGB || ''}
                             onChange={(e) => {
                               const v = e.target.value;
                               handleChange('manageDataGB', v === '' ? 0 : (parseInt(v) || 0));
