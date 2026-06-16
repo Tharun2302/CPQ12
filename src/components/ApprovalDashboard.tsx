@@ -199,8 +199,7 @@ const ApprovalDashboard: React.FC = () => {
     window.setTimeout(() => setActionToast((m) => (m === msg ? null : m)), 3000);
   };
 
-  const handleCopyApprovalLink = async (workflow: any) => {
-    const url = `${window.location.origin}/approval?id=${encodeURIComponent(workflow.id)}`;
+  const copyToClipboard = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
     } catch {
@@ -213,7 +212,25 @@ const ApprovalDashboard: React.FC = () => {
       document.execCommand('copy');
       document.body.removeChild(ta);
     }
-    flashToast('Approval link copied');
+  };
+
+  const handleCopyApprovalLink = async (workflow: any) => {
+    // Ask the backend for a secure portal link for the current pending step. This mints a
+    // fresh token and points at /approval/:workflowId?role=..&token=.. (the role-based approval
+    // portal). Building the URL client-side as /approval?id=.. would just reopen the dashboard,
+    // and would lack the role+token the portal requires — so always go through the API.
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/approval-workflows/${encodeURIComponent(workflow.id)}/portal-link`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success || !data?.link) {
+        flashToast(data?.error || 'Could not generate approval link');
+        return;
+      }
+      await copyToClipboard(data.link);
+      flashToast('Approval link copied');
+    } catch {
+      flashToast('Could not generate approval link');
+    }
   };
 
   // Download the approval agreement as a PDF. Works for every workflow status:

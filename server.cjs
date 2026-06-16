@@ -10899,6 +10899,49 @@ app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
   }
 });
 
+// Returns a secure, ready-to-share approval portal link for the workflow's current pending step.
+// Mints a fresh 7-day token (same shape as the reminder email link) so whoever opens the link
+// lands on the role-based approval portal (/approval/:workflowId?role=..&token=..) — NOT the dashboard.
+app.get('/api/approval-workflows/:workflowId/portal-link', async (req, res) => {
+  if (!db) return res.status(503).json({ success: false, error: 'Database unavailable' });
+
+  const { workflowId } = req.params;
+
+  try {
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow) {
+      return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+
+    if (!['pending', 'in_progress'].includes(workflow.status)) {
+      return res.status(400).json({ success: false, error: 'Workflow is not awaiting approval' });
+    }
+
+    const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
+    const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
+    if (!pendingStep) {
+      return res.status(400).json({ success: false, error: 'No pending step found' });
+    }
+
+    const role = pendingStep.role;
+    const roleKeyMap = {
+      'Team Approval':   'teamlead',
+      'Technical Team':  'technical',
+      'Legal Team':      'legal',
+    };
+    const tokenRole = roleKeyMap[role] || String(role || '').toLowerCase().replace(/\s+/g, '-');
+
+    const token = await createApprovalAccessToken(db, workflowId, tokenRole);
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+    const link = `${baseUrl}/approval/${workflowId}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
+
+    res.json({ success: true, link, role, tokenRole, email: pendingStep.email || null });
+  } catch (err) {
+    console.error('❌ Error building approval portal link:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Legacy route: previously emailed client-signature-form links backed by signature_forms (removed).
 app.post('/api/approval-workflows/send-esign', (req, res) => {
   res.status(410).json({
