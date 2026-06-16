@@ -1580,6 +1580,18 @@ Quote ID: ${quoteData.id}
       const fetchLatestTemplateFile = async (): Promise<File | null> => {
         try {
           if (!selectedTemplate?.id) return null;
+          // Combo-attached templates (id starts with 'combo-') live in /api/combinations, not /api/templates.
+          if (selectedTemplate.id.startsWith('combo-')) {
+            if (selectedTemplate.file) return selectedTemplate.file;
+            const comboId = selectedTemplate.id.slice('combo-'.length);
+            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
+            if (!comboRes.ok) {
+              console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
+              return null;
+            }
+            const comboBlob = await comboRes.blob();
+            return new File([comboBlob], selectedTemplate.fileName || 'agreement.docx', { type: comboBlob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+          }
           const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
             cache: 'no-store'
           });
@@ -1587,7 +1599,7 @@ Quote ID: ${quoteData.id}
             console.warn(`⚠️ Template fetch failed with status ${fr.status}: ${fr.statusText}`);
             return null;
           }
-          
+
           // Check if the response is actually a file (not JSON error)
           const contentType = fr.headers.get('content-type') || '';
           if (contentType.includes('application/json')) {
@@ -1783,6 +1795,8 @@ Quote ID: ${quoteData.id}
           '{{price_data}}': formatCurrency((userCost || 0) + (dataCost || 0)),
           '{{data_cost}}': formatCurrency(dataCost),
           '{{dataCost}}': formatCurrency(dataCost),
+          '{{manag_data_size}}': (configuration?.manageDataGB ?? 0).toString(),
+          '{{manag_data_cost}}': formatCurrency(dataCost),
           '{{price_migration}}': formatCurrency(migrationCost || 0),
           '{{migration_cost}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
@@ -4678,6 +4692,19 @@ Total Price: {{total price}}`;
       const fetchLatestTemplateFile = async (): Promise<File | null> => {
         try {
           if (!selectedTemplate?.id) return null;
+          // Combo-attached templates (id starts with 'combo-') live in /api/combinations, not /api/templates.
+          // Return the already-loaded file if present, otherwise fetch from the combinations endpoint.
+          if (selectedTemplate.id.startsWith('combo-')) {
+            if (selectedTemplate.file) return selectedTemplate.file;
+            const comboId = selectedTemplate.id.slice('combo-'.length); // e.g. 'combo-1234-abc'
+            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
+            if (!comboRes.ok) {
+              console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
+              return null;
+            }
+            const comboBlob = await comboRes.blob();
+            return new File([comboBlob], selectedTemplate.fileName || 'agreement.docx', { type: comboBlob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+          }
           // Retry once on transient 5xx (MongoDB Atlas can momentarily fail individual ops
           // right after backend start or during brief network/replica blips).
           let fr: Response | null = null;
@@ -4840,11 +4867,13 @@ Total Price: {{total price}}`;
           : (quoteData.configuration?.numberOfUsers || 1);
         const userCost = quoteData.calculation?.userCost || 0;
         const migrationCost = quoteData.calculation?.migrationCost || 0;
-        // Apply $2,500 minimum to total cost for agreement generation (overage: use actual total)
         const calculatedTotalCost = quoteData.calculation?.totalCost || 0;
         const isOverageAgreementQuote =
           (quoteData.configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
           (quoteData.configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+        // For Manage plans, totalCost must be recomputed after dataCost is recalculated
+        // to avoid stale values from previous configurations bleeding into the agreement.
+        // dataCost is declared below — use a forward reference via a thunk resolved after dataCost.
         const totalCost = calculatedTotalCost;
         const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
         const migrationType = quoteData.configuration?.migrationType || 'Content';
@@ -4922,7 +4951,14 @@ Total Price: {{total price}}`;
         
         // CRITICAL: Create comprehensive template data with ALL tokens for your template
         // Calculate comprehensive pricing breakdown for consistency
-        const dataCost = quoteData.calculation?.dataCost || 0;
+        const dataCost = (() => {
+          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+          // Manage Standalone: recalculate from manageDataGB × $0.13 to avoid stale calculation values
+          if (cfg?.servicePlan === 'Manage') {
+            return Number(cfg?.manageDataGB ?? 0) * 0.13;
+          }
+          return quoteData.calculation?.dataCost || 0;
+        })();
         const instanceCost = quoteData.calculation?.instanceCost || 0;
         const tierName = quoteData.calculation?.tier?.name || 'Advanced';
         const instanceType = quoteData.configuration?.instanceType || 'Standard';
@@ -4937,16 +4973,16 @@ Total Price: {{total price}}`;
           (String(quoteData.configuration?.combination || '').toLowerCase().includes('outlook'));
 
         const dataSizeGB = (() => {
-          // For email agreements, use the actual dataSizeGB from configuration (not force to 0)
-          // This allows email templates to show data size when configured
           const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
-          
+          // Manage Standalone stores data size in manageDataGB, not dataSizeGB
+          if (cfg?.servicePlan === 'Manage') {
+            return Number(cfg?.manageDataGB ?? 0);
+          }
           if (cfg?.migrationType === 'Multi combination') {
             const fromContentConfig = Number(cfg?.contentConfig?.dataSizeGB ?? 0);
             const fromContentConfigs = Number(cfg?.contentConfigs?.[0]?.dataSizeGB ?? 0);
             return fromContentConfig > 0 ? fromContentConfig : fromContentConfigs;
           }
-          // Use actual dataSizeGB value (can be > 0 for email agreements)
           return Number(cfg?.dataSizeGB ?? 0);
         })();
         
@@ -5081,7 +5117,12 @@ Total Price: {{total price}}`;
           // Pricing: price_data + price_migration + instance_cost must equal total (user+data+migration+instance).
           '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
           '{{user_cost}}': formatCurrency(userCost || 0),
+          '{{userCost}}': formatCurrency(userCost || 0),
           '{{price_data}}': formatCurrency((userCost || 0) + (dataCost || 0)),
+          '{{data_cost}}': formatCurrency(dataCost || 0),
+          '{{dataCost}}': formatCurrency(dataCost || 0),
+          '{{manag_data_size}}': (configuration?.manageDataGB ?? 0).toString(),
+          '{{manag_data_cost}}': formatCurrency(dataCost || 0),
           '{{price_migration}}': formatCurrency(migrationCost || 0),
           '{{migration_price}}': formatCurrency(migrationCost || 0),
           
@@ -5398,14 +5439,22 @@ Total Price: {{total price}}`;
             return formatCurrency(perDataCost);
           })(),
           
-          // Total pricing
-          '{{total price}}': formatCurrency(totalCost || 0),
-          '{{total_price}}': formatCurrency(totalCost || 0),
-          '{{totalPrice}}': formatCurrency(totalCost || 0),
-          '{{prices}}': formatCurrency(totalCost || 0),
-          '{{subtotal}}': formatCurrency(totalCost || 0),
-          '{{sub_total}}': formatCurrency(totalCost || 0),
-          
+          // Total pricing — for Manage plans recalculate from fresh userCost + dataCost
+          // to avoid stale totalCost from a previous configuration.
+          ...((() => {
+            const effectiveTotal = (finalConfiguration || quoteData.configuration)?.servicePlan === 'Manage'
+              ? (userCost || 0) + (dataCost || 0)
+              : (totalCost || 0);
+            return {
+              '{{total price}}': formatCurrency(effectiveTotal),
+              '{{total_price}}': formatCurrency(effectiveTotal),
+              '{{totalPrice}}': formatCurrency(effectiveTotal),
+              '{{prices}}': formatCurrency(effectiveTotal),
+              '{{subtotal}}': formatCurrency(effectiveTotal),
+              '{{sub_total}}': formatCurrency(effectiveTotal),
+            };
+          })()),
+
           // Discount information - hide discount tokens when discount is 0
         // CRITICAL: Use local discount variables calculated from local totalCost
         '{{discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',

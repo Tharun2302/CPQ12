@@ -109,7 +109,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
   const [showDiscountRules, setShowDiscountRules] = useState<boolean>(false);
 
   // Combinations from API (user-managed via Combination Manager); fallback to hardcoded if empty
-  const [apiCombinations, setApiCombinations] = useState<Array<{ value: string; label: string; migrationType: string }>>([]);
+  const [apiCombinations, setApiCombinations] = useState<Array<{ value: string; label: string; migrationType: string; requiresUsers?: boolean }>>([]);
   const fetchCombinations = () => {
     fetch(`${BACKEND_URL}/api/combinations`)
       .then((res) => res.json())
@@ -119,7 +119,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
             data.combinations.map((c: any) => ({
               value: c.value || '',
               label: c.label || c.value || '',
-              migrationType: c.migrationType || ''
+              migrationType: c.migrationType || '',
+              requiresUsers: c.requiresUsers !== false
             }))
           );
         }
@@ -1285,12 +1286,19 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
 
     // Manage Standalone has its own input set (manageUsers / manageDataGB) and
     // does NOT use migrationType / combination / numberOfUsers / instance / duration
-    // / dataSizeGB. Validate manageUsers only, then skip the rest.
+    // / dataSizeGB. Validate manageUsers only if the selected agreement requires it.
     if (config.servicePlan === 'Manage') {
-      const mu = config.manageUsers;
-      if (mu === undefined || mu === null || mu <= 0) {
-        alert('Please enter the number of users for the Manage plan');
-        return;
+      const manageCombinations = apiCombinations.filter(c => c.migrationType === 'Manage');
+      const fallback = [{ value: 'Manage', label: 'Manage Plan – SaaS Agreement', migrationType: 'Manage', requiresUsers: true }];
+      const options = manageCombinations.length > 0 ? manageCombinations : fallback;
+      const selectedOption = options.find(o => o.value === config.migrationType);
+      const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
+      if (showUsersField) {
+        const mu = config.manageUsers;
+        if (mu === undefined || mu === null || mu <= 0) {
+          alert('Please enter the number of users for the Manage plan');
+          return;
+        }
       }
       // manageDataGB = 0 is valid (no data cost). No further checks needed.
       console.log('✅ Manage validation passed, submitting configuration');
@@ -1915,72 +1923,87 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
               )}
 
               {/* Manage Standalone — collects E99 (manageUsers) and E100 (manageDataGB).
-                  These are intentionally separate from B51/B56 (Migrate inputs). */}
-              {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (
-                <>
-                  <select
-                    value={config.migrationType || ''}
-                    onChange={(e) => {
-                      const newMigrationType = e.target.value;
-                      const newConfig = { ...config, migrationType: newMigrationType as any, combination: 'manage-standalone', timelineProjection: '', servicePlan: 'Manage' as const };
-                      setConfig(newConfig);
-                      onConfigurationChange(newConfig);
-                      try {
-                        sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
-                        const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
-                        navState.migrationType = newMigrationType;
-                        navState.combination = 'manage-standalone';
-                        sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
-                      } catch (err) { console.warn('Could not save to sessionStorage:', err); }
-                    }}
-                    className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
-                  >
-                    <option value="">Select Manage Template</option>
-                    <option value="Manage">Manage Plan – SaaS Agreement</option>
-                  </select>
-                  <div className="rounded-xl border-2 border-slate-200 bg-white px-6 py-6 mt-4">
-                    <p className="text-sm font-semibold text-slate-800 mb-4">Manage plan inputs</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-2">
-                        Number of Users
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={config.manageUsers ?? ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          handleChange('manageUsers', v === '' ? 0 : (parseInt(v) || 0));
-                        }}
-                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
-                        placeholder="Enter number of users"
-                        autoComplete="off"
-                      />
+                  These are intentionally separate from B51/B56 (Migrate inputs).
+                  Dropdown is driven by API combinations (migrationType === 'Manage').
+                  requiresUsers flag on each combination controls whether Number of Users is shown. */}
+              {migrationOrTimeline === 'migration' && config.servicePlan === 'Manage' && (() => {
+                const manageCombinations = apiCombinations.filter(c => c.migrationType === 'Manage');
+                const fallback = [{ value: 'Manage', label: 'Manage Plan – SaaS Agreement', migrationType: 'Manage', requiresUsers: true }];
+                const options = manageCombinations.length > 0 ? manageCombinations : fallback;
+                const selectedOption = options.find(o => o.value === config.migrationType);
+                const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
+                return (
+                  <>
+                    <select
+                      value={config.migrationType || ''}
+                      onChange={(e) => {
+                        const newMigrationType = e.target.value;
+                        const selected = options.find(o => o.value === newMigrationType);
+                        const newRequiresUsers = selected ? selected.requiresUsers !== false : true;
+                        const newConfig = { ...config, migrationType: newMigrationType as any, combination: 'manage-standalone', timelineProjection: '', servicePlan: 'Manage' as const, manageRequiresUsers: newRequiresUsers };
+                        setConfig(newConfig);
+                        onConfigurationChange(newConfig);
+                        try {
+                          sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                          const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                          navState.migrationType = newMigrationType;
+                          navState.combination = 'manage-standalone';
+                          sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                        } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                      }}
+                      className="w-full px-6 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white hover:border-slate-300 text-base font-medium"
+                    >
+                      <option value="">Select Manage Template</option>
+                      {options.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    <div className="rounded-xl border-2 border-slate-200 bg-white px-6 py-6 mt-4">
+                      <p className="text-sm font-semibold text-slate-800 mb-4">Manage plan inputs</p>
+                      <div className={`grid grid-cols-1 ${showUsersField ? 'md:grid-cols-2' : ''} gap-4`}>
+                        {showUsersField && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-2">
+                              Number of Users
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={config.manageUsers ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                handleChange('manageUsers', v === '' ? 0 : (parseInt(v) || 0));
+                              }}
+                              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
+                              placeholder="Enter number of users"
+                              autoComplete="off"
+                            />
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">
+                            Content data size in GB
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={config.manageDataGB ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              handleChange('manageDataGB', v === '' ? 0 : (parseInt(v) || 0));
+                            }}
+                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
+                            placeholder="0 is valid (no data cost)"
+                            autoComplete="off"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-2">
-                        Content data size in GB
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={config.manageDataGB ?? ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          handleChange('manageDataGB', v === '' ? 0 : (parseInt(v) || 0));
-                        }}
-                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
-                        placeholder="0 is valid (no data cost)"
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
-                  </div>
-                </>
-              )}
+                  </>
+                );
+              })()}
 
               {/* Bundle: show Bundle type dropdown if templates exist */}
               {migrationOrTimeline === 'migration' && config.servicePlan === 'Bundle' && (
@@ -2228,7 +2251,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
           {/* Template Selection - shown for migration types where users must pick a combination.
               Hidden for Multi combination, Overage Agreement, and Manage since those have a single auto-selected combination.
               Also hidden for Migrate service plan since combination selection is handled by dropdown above. */}
-          {config.migrationType && config.migrationType !== 'Manage' && config.servicePlan !== 'Migrate' && (
+          {config.migrationType && config.migrationType !== 'Manage' && config.servicePlan !== 'Migrate' && config.servicePlan !== 'Manage' && (
             <div data-section="template-selection" className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl shadow-lg border border-purple-200 p-8">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">

@@ -165,14 +165,23 @@ class TemplateService {
     }
   }
 
-  // Convert DOCX blob to PDF via backend
+  // Convert DOCX blob to PDF via backend.
+  // Tries with preprocessing first (fixes floating logo layouts), then retries
+  // without preprocessing if the first attempt fails (preprocessor can corrupt
+  // some DOCX structures such as those from Combination Manager templates).
   async convertDocxToPdf(file: Blob): Promise<Blob> {
-    const form = new FormData();
-    form.append('file', file, 'agreement.docx');
-    const response = await fetch(`${this.baseUrl}/convert/docx-to-pdf`, {
-      method: 'POST',
-      body: form
-    });
+    const tryConvert = async (skipPreprocess: boolean): Promise<Response> => {
+      const form = new FormData();
+      form.append('file', file, 'agreement.docx');
+      const url = `${this.baseUrl}/convert/docx-to-pdf${skipPreprocess ? '?skipPreprocess=true' : ''}`;
+      return fetch(url, { method: 'POST', body: form });
+    };
+
+    let response = await tryConvert(false);
+    if (!response.ok) {
+      console.warn('⚠️ DOCX→PDF conversion failed with preprocessing, retrying without preprocessor...');
+      response = await tryConvert(true);
+    }
     if (!response.ok) {
       const msg = await response.text().catch(() => 'Conversion failed');
       throw new Error(msg || 'Conversion failed');

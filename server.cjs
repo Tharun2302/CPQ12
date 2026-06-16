@@ -2298,7 +2298,7 @@ app.post('/api/combinations', upload.single('file'), async (req, res) => {
     if (!db) {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
-    const { value, label, migrationType, displayOrder } = req.body || {};
+    const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
     if (!value || !String(value).trim()) {
       return res.status(400).json({ success: false, error: 'value is required' });
     }
@@ -2323,6 +2323,7 @@ app.post('/api/combinations', upload.single('file'), async (req, res) => {
       label: String(label).trim(),
       migrationType: mt,
       displayOrder: typeof displayOrder === 'number' ? displayOrder : (parseInt(displayOrder, 10) || 999),
+      requiresUsers: mt === 'Manage' ? (requiresUsers === false || requiresUsers === 'false' ? false : true) : undefined,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -2349,12 +2350,16 @@ app.put('/api/combinations/:id', async (req, res) => {
       return res.status(500).json({ success: false, error: 'Database not available' });
     }
     const { id } = req.params;
-    const { value, label, migrationType, displayOrder } = req.body || {};
+    const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
     const update = { updatedAt: new Date() };
     if (value !== undefined) update.value = String(value).trim().toLowerCase().replace(/\s+/g, '-');
     if (label !== undefined) update.label = String(label).trim();
     if (migrationType !== undefined) update.migrationType = String(migrationType).trim();
     if (displayOrder !== undefined) update.displayOrder = typeof displayOrder === 'number' ? displayOrder : parseInt(displayOrder, 10) || 999;
+    const mt = migrationType !== undefined ? String(migrationType).trim() : null;
+    if (requiresUsers !== undefined && mt === 'Manage') {
+      update.requiresUsers = requiresUsers === false || requiresUsers === 'false' ? false : true;
+    }
     const result = await db.collection('combinations').updateOne(
       { id },
       { $set: update }

@@ -200,10 +200,14 @@ function App() {
   // CRITICAL: Clear template if combination doesn't match to prevent wrong template persistence
   useEffect(() => {
     if (selectedTemplate && templates.length > 0) {
-      // CRITICAL CHECK: Verify template combination matches current configuration
-      const currentCombination = (configuration?.combination || '').toLowerCase();
+      // CRITICAL CHECK: Verify template combination matches current configuration.
+      // For Manage plans, config.combination is always 'manage-standalone' regardless of which
+      // agreement is selected — use migrationType (the agreement slug) for comparison instead.
+      const currentCombination = configuration?.servicePlan === 'Manage'
+        ? (configuration?.migrationType || '').toLowerCase()
+        : (configuration?.combination || '').toLowerCase();
       const templateCombination = (selectedTemplate?.combination || '').toLowerCase();
-      
+
       if (currentCombination && templateCombination && templateCombination !== currentCombination) {
         console.log('🔄 Combination mismatch detected - clearing old template:', {
           currentCombination,
@@ -1157,12 +1161,21 @@ function App() {
     }
   }, [templates.length]); // Trigger when templates array changes from empty to populated
 
-  // When Multi combination or Overage Agreement + combination selected but no DB template: use combination-attached file as template
+  // When Multi combination, Overage Agreement, or Manage (specific agreement) + no DB template:
+  // use the combination-attached file from Combination Manager as the template.
+  // For Manage plans, look up by migrationType (the agreement slug) since combination is always 'manage-standalone'.
   useEffect(() => {
     const migrationType = configuration?.migrationType;
+    const servicePlan = configuration?.servicePlan;
     const combination = (configuration?.combination || '').trim().toLowerCase();
-    const isCombinationTemplateType = migrationType === 'Multi combination' || migrationType === 'Overage Agreement';
-    if (!isCombinationTemplateType || !combination || selectedTemplate) return;
+    const isManage = servicePlan === 'Manage';
+    const isCombinationTemplateType = migrationType === 'Multi combination' || migrationType === 'Overage Agreement' || isManage;
+    if (!isCombinationTemplateType || selectedTemplate) return;
+    // For Manage plans, use migrationType as the lookup key (the specific agreement slug)
+    const lookupValue = isManage
+      ? (migrationType || '').trim().toLowerCase()
+      : combination;
+    if (!lookupValue) return;
 
     let cancelled = false;
     (async () => {
@@ -1171,7 +1184,7 @@ function App() {
         const data = await res.json();
         if (!res.ok || !data.success || cancelled) return;
         const combos = data.combinations || [];
-        const combo = combos.find((c: any) => (c.value || '').toLowerCase() === combination && c.hasFile);
+        const combo = combos.find((c: any) => (c.value || '').toLowerCase() === lookupValue && c.hasFile);
         if (!combo || cancelled) return;
         const fileRes = await fetch(`${BACKEND_URL}/api/combinations/${combo.id}/file`);
         if (!fileRes.ok || cancelled) return;
@@ -1302,24 +1315,28 @@ function App() {
       }
     }
     
-    // If combination changed, trigger template re-selection
-    if (combinationChanged && selectedTier) {
-      console.log('🔄 Combination changed, re-selecting template for current tier:', {
+    // If combination changed, trigger template re-selection.
+    // For Manage plans, migrationType is the effective "combination" (combination is always 'manage-standalone').
+    const manageAgreementChanged = config.servicePlan === 'Manage' && migrationTypeChanged;
+    if ((combinationChanged || manageAgreementChanged) && selectedTier) {
+      console.log('🔄 Combination/agreement changed, re-selecting template:', {
         oldCombination: configuration?.combination,
         newCombination: config.combination,
+        migrationType: config.migrationType,
         currentTier: selectedTier.tier.name
       });
-      
-      // Re-select template based on current tier and new combination
+      // Clear template so the combination-file auto-use effect can re-run
+      setSelectedTemplate(null);
+      // Also try template manager auto-selection
       const auto = autoSelectTemplateForPlan(selectedTier.tier.name, config);
       if (auto) {
-        console.log('✅ Auto-selected new template for combination change:', {
+        console.log('✅ Auto-selected new template for combination/agreement change:', {
           combination: config.combination,
           template: { id: auto.id, name: auto.name, hasFile: !!auto.file }
         });
         setSelectedTemplate(auto);
       } else {
-        console.log('⚠️ No matching template found for new combination, keeping current selection.');
+        console.log('⚠️ No matching template found for new combination, combination-file effect will handle it.');
       }
     }
     
@@ -1441,10 +1458,22 @@ function App() {
     // PRIORITY 0.5: Manage Standalone — driven by servicePlan, not pricing tier.
     // Tier names are Basic/Standard/Advanced, so the planType match below would never
     // pick a Manage-tagged template. Match by planType === 'manage' instead.
+    // Try to match the specific agreement (migrationType slug) before falling back to any manage template.
     if (config?.servicePlan === 'Manage') {
+      const agreeSlug = (config?.migrationType || '').toLowerCase();
+      if (agreeSlug) {
+        const exactMatch = templates.find(t =>
+          (t?.planType || '').toLowerCase() === 'manage' &&
+          (t?.combination || '').toLowerCase() === agreeSlug
+        );
+        if (exactMatch) {
+          console.log('✅ Found exact Manage template for agreement:', agreeSlug, exactMatch.name);
+          return exactMatch;
+        }
+      }
       const manageMatch = templates.find(t => (t?.planType || '').toLowerCase() === 'manage');
       if (manageMatch) {
-        console.log('✅ Found Manage Standalone template:', manageMatch.name);
+        console.log('✅ Found Manage Standalone template (fallback):', manageMatch.name);
         return manageMatch;
       }
       console.log('❌ servicePlan=Manage but no template with planType=manage found');

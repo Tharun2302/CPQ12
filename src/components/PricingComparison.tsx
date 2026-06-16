@@ -756,20 +756,25 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </>
                 ) : (
                   <>
-                    {/* Per-user cost */}
-                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                      <span className="text-gray-700 font-medium">Per user cost:</span>
-                      <span className="font-bold text-gray-900">
-                        {configuration && configuration.numberOfUsers > 0
-                          ? `${formatCurrency(calc.userCost / configuration.numberOfUsers)}/user`
-                          : 'N/A'}
-                      </span>
-                    </div>
-                    {/* User costs */}
-                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
-                      <span className="text-gray-700 font-medium">User costs:</span>
-                      <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
-                    </div>
+                    {/* Per-user cost and User costs — hidden for Manage agreements without a users field */}
+                    {configuration?.servicePlan !== 'Manage' || configuration?.manageRequiresUsers !== false ? (
+                      <>
+                        <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                          <span className="text-gray-700 font-medium">Per user cost:</span>
+                          <span className="font-bold text-gray-900">
+                            {configuration && configuration.numberOfUsers > 0
+                              ? `${formatCurrency(calc.userCost / configuration.numberOfUsers)}/user`
+                              : configuration?.servicePlan === 'Manage' && (configuration?.manageUsers ?? 0) > 0
+                                ? `${formatCurrency(calc.userCost / (configuration.manageUsers ?? 1))}/user`
+                                : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                          <span className="text-gray-700 font-medium">User costs:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
+                        </div>
+                      </>
+                    ) : null}
                     {/* Data costs */}
                     <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
                       <span className="text-gray-700 font-medium">Data costs:</span>

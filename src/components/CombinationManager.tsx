@@ -27,6 +27,7 @@ interface Combination {
   label: string;
   migrationType: string;
   displayOrder: number;
+  requiresUsers?: boolean;
   createdAt?: string;
   updatedAt?: string;
   hasFile?: boolean;
@@ -59,7 +60,7 @@ const CombinationManager: React.FC = () => {
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingCombo, setEditingCombo] = useState<Combination | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ value: '', label: '', migrationType: 'Content', displayOrder: 999 });
+  const [formData, setFormData] = useState({ value: '', label: '', migrationType: 'Content', displayOrder: 999, requiresUsers: true });
   const [formFile, setFormFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -107,7 +108,7 @@ const CombinationManager: React.FC = () => {
 
   const openAdd = () => {
     setEditingCombo(null);
-    setFormData({ value: '', label: '', migrationType: 'Multi combination', displayOrder: 999 });
+    setFormData({ value: '', label: '', migrationType: 'Multi combination', displayOrder: 999, requiresUsers: true });
     setFormFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setSubmitError(null);
@@ -121,7 +122,8 @@ const CombinationManager: React.FC = () => {
       value: c.value,
       label: c.label,
       migrationType: c.migrationType,
-      displayOrder: c.displayOrder ?? 999
+      displayOrder: c.displayOrder ?? 999,
+      requiresUsers: c.requiresUsers !== false
     });
     setFormFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -146,11 +148,12 @@ const CombinationManager: React.FC = () => {
       const label = formData.label.trim();
       const migrationType = formData.migrationType;
       const displayOrder = formData.displayOrder;
+      const requiresUsers = migrationType === 'Manage' ? formData.requiresUsers : undefined;
       if (editingCombo) {
         const res = await fetch(`${BACKEND_URL}/api/combinations/${editingCombo.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value, label, migrationType, displayOrder })
+          body: JSON.stringify({ value, label, migrationType, displayOrder, requiresUsers })
         });
         const data = await res.json();
         if (!res.ok) {
@@ -180,6 +183,7 @@ const CombinationManager: React.FC = () => {
           fd.append('label', label);
           fd.append('migrationType', migrationType);
           fd.append('displayOrder', String(displayOrder));
+          if (requiresUsers !== undefined) fd.append('requiresUsers', String(requiresUsers));
           fd.append('file', formFile);
           const res = await fetch(`${BACKEND_URL}/api/combinations`, {
             method: 'POST',
@@ -197,7 +201,7 @@ const CombinationManager: React.FC = () => {
           const res = await fetch(`${BACKEND_URL}/api/combinations`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value, label, migrationType, displayOrder })
+            body: JSON.stringify({ value, label, migrationType, displayOrder, requiresUsers })
           });
           const data = await res.json();
           if (!res.ok) {
@@ -474,6 +478,21 @@ const CombinationManager: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
+
+              {formData.migrationType === 'Manage' && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <input
+                    type="checkbox"
+                    id="requiresUsers"
+                    checked={formData.requiresUsers}
+                    onChange={(e) => setFormData((p) => ({ ...p, requiresUsers: e.target.checked }))}
+                    className="w-4 h-4 text-indigo-600 rounded"
+                  />
+                  <label htmlFor="requiresUsers" className="text-sm font-medium text-gray-700 cursor-pointer">
+                    Show "Number of Users" field for this agreement
+                  </label>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   <Upload className="w-4 h-4 inline mr-1" />

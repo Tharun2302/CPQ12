@@ -95,6 +95,9 @@ export interface ConfigurationData {
   // Maps to COST ESTIMATOR E99 (managed users) and E100 (managed data GB).
   manageUsers?: number;
   manageDataGB?: number;
+  // Driven by the selected agreement's requiresUsers flag (set in CombinationManager).
+  // false = hide Number of Users field and user cost rows in pricing display.
+  manageRequiresUsers?: boolean;
 }
 
 export interface PricingCalculation {
