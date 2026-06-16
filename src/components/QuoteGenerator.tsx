@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency, getInstanceTypeCost } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost, manageUserCost, MANAGE_STANDALONE_DATA_RATE } from '../utils/pricing';
 import {
   FileText,
   Download,
@@ -718,6 +718,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const [isGeneratingAgreement, setIsGeneratingAgreement] = useState(false);
   const [showInlinePreview, setShowInlinePreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [iframeKey, setIframeKey] = useState(0);
   /** True when iframe shows application/pdf (browser PDF viewer); false for docx-preview div or HTML blob. */
   const [agreementPreviewIsPdf, setAgreementPreviewIsPdf] = useState(false);
   /** PDF from DOCX conversion — reused for download / e-sign / View Document. */
@@ -4017,6 +4018,7 @@ Total Price: {{total price}}`;
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         const url = URL.createObjectURL(pdfBlob);
         setPreviewUrl(url);
+        setIframeKey(k => k + 1);
         setAgreementPreviewIsPdf(true);
         setShowInlinePreview(true);
         setShowOnlyOfficeEditor(false);
@@ -4335,6 +4337,7 @@ Total Price: {{total price}}`;
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       const url = URL.createObjectURL(pdfBlob);
       setPreviewUrl(url);
+      setIframeKey(k => k + 1);
       setAgreementPreviewIsPdf(true);
       setShowInlinePreview(true);
       setIsEditingAgreement(false);
@@ -4865,7 +4868,16 @@ Total Price: {{total price}}`;
         const userCount = quoteData.configuration?.servicePlan === 'Manage'
           ? (quoteData.configuration?.manageUsers || 1)
           : (quoteData.configuration?.numberOfUsers || 1);
-        const userCost = quoteData.calculation?.userCost || 0;
+        const userCost = (() => {
+          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+          if (cfg?.servicePlan === 'Manage') {
+            // If this agreement doesn't require users (e.g. Data Sprawl), userCost is always 0
+            if (cfg?.manageRequiresUsers === false) return 0;
+            const raw = manageUserCost(cfg?.manageUsers ?? 0);
+            return raw === 'CUSTOM' ? (quoteData.calculation?.userCost || 0) : (raw as number);
+          }
+          return quoteData.calculation?.userCost || 0;
+        })();
         const migrationCost = quoteData.calculation?.migrationCost || 0;
         const calculatedTotalCost = quoteData.calculation?.totalCost || 0;
         const isOverageAgreementQuote =
@@ -11243,7 +11255,8 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                       previewUrl ? (
                         <div className="flex-1 min-h-0 w-full relative min-w-0">
                           <iframe
-                            src={previewUrl}
+                            key={iframeKey}
+                            src={`${previewUrl}#page=1`}
                             className="absolute inset-0 w-full h-full border-0 bg-[#525659]"
                             title="Agreement Document Preview"
                           />
