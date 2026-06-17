@@ -757,9 +757,50 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Custom line items — extra rows the user adds to the agreement pricing table.
   // Added on top of the standard CloudFuze pricing (after any discount), and injected
   // into the agreement's pricing table just above the "Total Price" row.
-  const [customLineItems, setCustomLineItems] = useState<CustomLineItem[]>([]);
-  const [customLineItemsDiscount, setCustomLineItemsDiscount] = useState<number>(0);
-  const [isCustomLineItemsExpanded, setIsCustomLineItemsExpanded] = useState(false);
+  // Persisted to localStorage so they survive navigating away from and back to the Quote page.
+  const [customLineItems, setCustomLineItems] = useState<CustomLineItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('cpq_quote_custom_line_items');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((it) => it && typeof it === 'object')
+            .map((it: any) => ({
+              id: it.id || `${it.name || 'item'}-${it.price || 0}`,
+              name: String(it.name || ''),
+              description: String(it.description || ''),
+              price: Number(it.price) || 0,
+            }));
+        }
+      }
+    } catch {}
+    return [];
+  });
+  const [customLineItemsDiscount, setCustomLineItemsDiscount] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('cpq_quote_custom_line_items_discount');
+      if (saved !== null && saved !== '' && !isNaN(Number(saved))) return Number(saved);
+    } catch {}
+    return 0;
+  });
+
+  // Persist custom line items and their discount so they remain across navigation
+  useEffect(() => {
+    try {
+      localStorage.setItem('cpq_quote_custom_line_items', JSON.stringify(customLineItems));
+    } catch {}
+  }, [customLineItems]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('cpq_quote_custom_line_items_discount', String(customLineItemsDiscount));
+    } catch {}
+  }, [customLineItemsDiscount]);
+  // Start expanded if there are already saved custom line items or a discount, so returning
+  // to the Quote page shows the previously entered values immediately (no need to click "+").
+  const [isCustomLineItemsExpanded, setIsCustomLineItemsExpanded] = useState(
+    () => customLineItems.length > 0 || customLineItemsDiscount > 0
+  );
   const [newCustomItem, setNewCustomItem] = useState<{ name: string; description: string; price: string }>({
     name: '',
     description: '',
