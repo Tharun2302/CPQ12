@@ -724,7 +724,11 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
     // Clear localStorage
     localStorage.removeItem('cpq_user');
     localStorage.removeItem('cpq_token');
-   
+
+    // Clear Quote-page session data so it does not carry over to the next sign-in
+    localStorage.removeItem('cpq_quote_custom_line_items');
+    localStorage.removeItem('cpq_quote_custom_line_items_discount');
+
     // Update state
     setUser(null);
     setIsAuthenticated(false);
