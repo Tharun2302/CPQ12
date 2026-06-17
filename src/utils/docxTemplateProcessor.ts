@@ -1971,6 +1971,46 @@ export class DocxTemplateProcessor {
                 }
               }
 
+              // Run-split / standalone fallback: some templates (e.g. Data Sprawl) render
+              // "Total Price {{total_price}}" as a standalone paragraph AFTER the pricing
+              // table, with the words split across multiple <w:r> runs. The contiguous
+              // lastIndexOf('Total Price') above misses it (so insertAt stays -1) and the
+              // generic last-table fallback below would dump the validity line on the very
+              // last page. Find the Total Price paragraph by its visible text (run-split
+              // tolerant) and insert the validity line as a standalone paragraph directly
+              // ABOVE it. This only runs when the table-row path above placed nothing, so
+              // templates that already work are untouched.
+              if (insertAt === -1) {
+                const pRe = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+                let pm;
+                let tpParaStart = -1;
+                while ((pm = pRe.exec(xmlNoValidity)) !== null) {
+                  const paraText = pm[0].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+                  if (/total\s*price/i.test(paraText)) tpParaStart = pm.index; // keep last match
+                }
+                if (tpParaStart !== -1) {
+                  const validityPara =
+                    `<w:p>` +
+                    `<w:pPr><w:jc w:val="left"/><w:spacing w:before="80" w:after="80"/></w:pPr>` +
+                    `<w:r>` +
+                    `<w:rPr><w:color w:val="000000"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>` +
+                    `<w:t xml:space="preserve">${quoteValidityLine}</w:t>` +
+                    `</w:r>` +
+                    `</w:p>`;
+                  insertAt = tpParaStart;
+                  const finalVXml =
+                    xmlNoValidity.slice(0, tpParaStart) +
+                    validityPara +
+                    xmlNoValidity.slice(tpParaStart);
+                  vZip.file('word/document.xml', finalVXml);
+                  buffer = vZip.generate({
+                    type: 'blob',
+                    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  });
+                  console.log('✅ Quote validity line inserted as standalone paragraph above Total Price (run-split tolerant)');
+                }
+              }
+
               // Fallback: if we couldn't find the Total Price table, append a standalone
               // paragraph after the last table in the document so the text still appears.
               if (insertAt === -1) {

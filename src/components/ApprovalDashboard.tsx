@@ -158,6 +158,8 @@ const ApprovalDashboard: React.FC = () => {
 
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [query, setQuery] = useState('');
+  // Filter the list to a single requester (the user who generated the agreement). '' = all.
+  const [requesterFilter, setRequesterFilter] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
   const [editDatesDocId, setEditDatesDocId] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -611,9 +613,43 @@ const ApprovalDashboard: React.FC = () => {
     }
   }, [activeView, all, pending, approved, rejected]);
 
-  const filteredList = useMemo(() => {
-    return list;
+  // Unique requesters (agreement generators) present in the current list, for the dropdown.
+  const requesterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const w of list as any[]) {
+      const key = String(w?.creatorEmail || w?.creatorName || '').trim().toLowerCase();
+      if (!key) continue;
+      const label = String(w?.creatorName || w?.creatorEmail || '').trim();
+      if (!map.has(key)) map.set(key, label || key);
+    }
+    return Array.from(map.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [list]);
+
+  const filteredList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (list as any[]).filter((w) => {
+      // Requester dropdown filter
+      if (requesterFilter) {
+        const key = String(w?.creatorEmail || w?.creatorName || '').trim().toLowerCase();
+        if (key !== requesterFilter) return false;
+      }
+      // Free-text search across deal / quote ID / client / requester
+      if (q) {
+        const haystack = [
+          w?.documentId,
+          w?.clientName,
+          w?.creatorName,
+          w?.creatorEmail,
+        ]
+          .map((v) => String(v ?? '').toLowerCase())
+          .join(' ');
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [list, query, requesterFilter]);
 
   // Use the existing "View Details" behavior by navigating to the modal in other dashboards.
   const revokeObjectUrlIfAny = () => {
@@ -812,9 +848,24 @@ const ApprovalDashboard: React.FC = () => {
                     />
                   </div>
                 </div>
+                <div className="flex min-h-[2.5rem] min-w-0 w-full lg:min-h-0">
+                  <select
+                    value={requesterFilter}
+                    onChange={(e) => setRequesterFilter(e.target.value)}
+                    title="Filter by who generated the agreement"
+                    className="h-full min-h-[2.5rem] min-w-0 w-full rounded-lg bg-white border border-gray-200 px-3 py-2.5 text-base leading-snug text-gray-900 sm:px-4 lg:min-h-0"
+                  >
+                    <option value="">All requesters</option>
+                    {requesterOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex h-full min-h-0 shrink-0 items-center justify-center text-sm text-gray-600 sm:text-base whitespace-nowrap lg:justify-self-end">
                   Showing <span className="text-gray-900 font-semibold tabular-nums mx-0.5">{filteredList.length}</span>
-                  {dateFilterActive && list.length !== filteredList.length && (
+                  {(dateFilterActive || query.trim() || requesterFilter) && list.length !== filteredList.length && (
                     <span className="text-gray-500"> of {list.length}</span>
                   )}
                   {' '}items
