@@ -112,6 +112,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                   documentId: wf?.documentId,
                   documentType: wf?.documentType,
                   clientName: wf?.clientName,
+                  companyName: (wf as any)?.companyName,
                   amount: wf?.amount,
                   workflowId: wf?.id
                 }
@@ -140,6 +141,7 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
                   documentId: wf?.documentId,
                   documentType: wf?.documentType,
                   clientName: wf?.clientName,
+                  companyName: (wf as any)?.companyName,
                   amount: wf?.amount,
                   workflowId: wf?.id,
                   creatorEmail: (wf as any)?.creatorEmail,
@@ -440,26 +442,25 @@ const TeamApprovalDashboard: React.FC<TeamApprovalDashboardProps> = ({ initialWo
       return;
     }
 
-    // Fallback: fetch specific workflow if not in store yet
-    if (workflows.length > 0) {
-      console.error('❌ Workflow not found in loaded workflows:', workflowId);
-    } else {
-      console.log('🔄 Workflows not loaded yet, fetching specific workflow:', workflowId);
-      (async () => {
-        try {
-          const resp = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
-          if (resp.ok) {
-            const result = await resp.json();
-            if (result.success && result.workflow) {
-              console.log('📋 Team viewing workflow from API:', result.workflow);
-              handleViewWorkflow(result.workflow);
-            }
+    // Fallback: fetch specific workflow directly from API (handles workflows not in the local store,
+    // e.g. already past step 1, or store not yet loaded)
+    console.log('🔄 Fetching specific workflow from API:', workflowId);
+    (async () => {
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/approval-workflows/${workflowId}`);
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result.success && result.workflow) {
+            console.log('📋 Team viewing workflow from API:', result.workflow);
+            handleViewWorkflow(result.workflow);
+          } else {
+            console.error('❌ Workflow not found in API:', workflowId);
           }
-        } catch (error) {
-          console.error('❌ Error fetching workflow from email link:', error);
         }
-      })();
-    }
+      } catch (error) {
+        console.error('❌ Error fetching workflow from email link:', error);
+      }
+    })();
   }, [workflows, initialWorkflowId]);
 
   const renderTabContent = () => {

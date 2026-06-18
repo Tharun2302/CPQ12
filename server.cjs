@@ -698,7 +698,7 @@ function generateTeamEmailHTML(workflowData, token) {
     </html>
   `;
 }
-function generateManagerEmailHTML(workflowData, token) {
+function generateTechnicalTeamEmailHTML(workflowData, token) {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const approvalLink = token
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=technical&token=${encodeURIComponent(token)}`
@@ -750,7 +750,7 @@ function generateManagerEmailHTML(workflowData, token) {
   `;
 }
 
-function generateCEOEmailHTML(workflowData, token) {
+function generateLegalTeamEmailHTML(workflowData, token) {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const approvalLink = token
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=legal&token=${encodeURIComponent(token)}`
@@ -962,6 +962,10 @@ async function sendEmail(to, subject, html, attachments = []) {
       to: to,
       subject: subject,
       html: html,
+      text: html.replace(/<style[\s\S]*?<\/style>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim(),
       attachments: attachments.map(att => ({
         content: att.content.toString('base64'),
         filename: att.filename,
@@ -5773,7 +5777,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     sendEmail(
       resolvedManagerEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-      generateManagerEmailHTML(workflowData, token),
+      generateTechnicalTeamEmailHTML(workflowData, token),
       attachments
     )
       .then(result => {
@@ -5966,7 +5970,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     sendEmail(
       resolvedCeoEmail,
       `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-      generateCEOEmailHTML(workflowData, token),
+      generateLegalTeamEmailHTML(workflowData, token),
       attachments
     )
       .then(result => {
@@ -6154,30 +6158,19 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
       }
     }
 
-    // Send notification email to Deal Desk
-    const dealDeskResult = await sendEmail(
-      resolvedDealDeskEmail,
-      `Approval Workflow Completed: ${workflowData.documentId}`,
-      generateDealDeskEmailHTML(workflowData),
-      attachments
-    );
+    // Send notification email to Deal Desk (fire-and-forget, same pattern as other endpoints)
+    const completionSubject = `Approval Workflow Completed: ${workflowData.documentId}`;
+    const completionHtml = generateDealDeskEmailHTML(workflowData);
 
-    console.log('✅ Deal Desk notification email sent:', dealDeskResult.success);
+    sendEmail(resolvedDealDeskEmail, completionSubject, completionHtml, attachments)
+      .then(r => console.log('✅ Deal Desk notification email sent:', r.success))
+      .catch(err => console.error('❌ Failed to send Deal Desk email:', err));
 
     // Best-effort notification email to workflow creator (if available)
     if (creatorEmailForNotification) {
-      try {
-        const creatorResult = await sendEmail(
-          creatorEmailForNotification,
-          `Approval Workflow Completed: ${workflowData.documentId}`,
-          generateDealDeskEmailHTML(workflowData),
-          attachments
-        );
-        console.log('✅ Workflow creator completion email sent:', creatorResult.success);
-      } catch (creatorEmailError) {
-        // Do not fail the whole request if creator email fails; just log
-        console.error('❌ Error sending workflow creator completion email:', creatorEmailError);
-      }
+      sendEmail(creatorEmailForNotification, completionSubject, completionHtml, attachments)
+        .then(r => console.log('✅ Workflow creator completion email sent:', r.success))
+        .catch(err => console.error('❌ Error sending workflow creator completion email:', err));
     }
 
     // Auto-send e-sign document to signers when workflow has esignDocumentId (no creator action needed)
@@ -6199,12 +6192,12 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     }
 
     res.json({
-      success: dealDeskResult.success,
+      success: true,
       message: creatorEmailForNotification
-        ? 'Deal Desk and creator notification emails sent successfully'
-        : 'Deal Desk notification email sent successfully',
+        ? 'Deal Desk and creator notification emails queued for sending'
+        : 'Deal Desk notification email queued for sending',
       result: {
-        dealDesk: { role: 'Deal Desk', email: resolvedDealDeskEmail, success: dealDeskResult.success },
+        dealDesk: { role: 'Deal Desk', email: resolvedDealDeskEmail, success: true },
         creator: creatorEmailForNotification ? { role: 'Creator', email: creatorEmailForNotification } : null
       },
       workflowData: workflowData,
@@ -6245,7 +6238,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
       const managerResult = await sendEmail(
         managerEmail,
         `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-        generateManagerEmailHTML(workflowData)
+        generateTechnicalTeamEmailHTML(workflowData)
       );
       results.push({ role: 'Manager', email: managerEmail, success: managerResult.success });
     } catch (error) {
@@ -6258,7 +6251,7 @@ app.post('/api/send-approval-emails', async (req, res) => {
       const ceoResult = await sendEmail(
         ceoEmail,
         `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
-        generateCEOEmailHTML(workflowData)
+        generateLegalTeamEmailHTML(workflowData)
       );
       results.push({ role: 'CEO', email: ceoEmail, success: ceoResult.success });
     } catch (error) {
@@ -10645,67 +10638,9 @@ app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
           allComplete: allRequiredApprovalsComplete
         });
 
-        // Send approval completion email to creator
-        try {
-          const creatorEmail = workflow.creatorEmail;
-          if (creatorEmail && isEmailConfigured) {
-            const subject = `✅ Approval Complete - ${workflow.clientName || workflow.documentId}`;
-            const html = `
-              <h2>Approval Complete</h2>
-              <p>Hello,</p>
-              <p>The document has been approved by all required approvers:</p>
-              <ul>
-                <li><strong>Client:</strong> ${workflow.clientName || 'N/A'}</li>
-                <li><strong>Company:</strong> ${workflow.companyName || 'N/A'}</li>
-                <li><strong>Amount:</strong> $${(workflow.amount || 0).toLocaleString()}</li>
-                <li><strong>Document:</strong> ${workflow.documentId}</li>
-              </ul>
-              <p>The workflow is now complete and ready for next steps.</p>
-              <p>Best regards,<br>CPQ System</p>
-            `;
-            sendEmail(creatorEmail, subject, html)
-              .then(() => console.log('✅ Approval complete email sent to creator:', creatorEmail))
-              .catch(err => console.error('❌ Failed to send approval complete email:', err));
-          }
-        } catch (e) {
-          console.error('❌ Error sending approval complete notification:', e);
-        }
-      } else if (parseInt(stepNumber) < workflow.totalSteps) {
-        // Send email to next approver
-        try {
-          const nextStep = updatedSteps.find(s => s.step === parseInt(stepNumber) + 1);
-          if (nextStep && nextStep.email && isEmailConfigured) {
-            const currentStepRole = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber))?.role;
-
-            // Determine role param for next approver
-            let roleParam = 'teamlead';
-            if (nextStep.role === 'Technical Team') roleParam = 'technical';
-            else if (nextStep.role === 'Legal Team') roleParam = 'legal';
-
-            const approvalLink = `${process.env.APP_BASE_URL || 'http://localhost:3001'}/approval/${workflow.id}?role=${roleParam}&token=${workflow.approvalToken}`;
-
-            const subject = `Approval Needed: ${workflow.clientName || workflow.documentId}`;
-            const html = `
-              <h2>Approval Request</h2>
-              <p>Hello,</p>
-              <p>The document has been approved by the ${currentStepRole} and now requires your approval:</p>
-              <ul>
-                <li><strong>Client:</strong> ${workflow.clientName || 'N/A'}</li>
-                <li><strong>Company:</strong> ${workflow.companyName || 'N/A'}</li>
-                <li><strong>Amount:</strong> $${(workflow.amount || 0).toLocaleString()}</li>
-                <li><strong>Step:</strong> ${nextStep.role || 'Approver'}</li>
-                <li><strong>Document:</strong> ${workflow.documentId}</li>
-              </ul>
-              <p><a href="${approvalLink}" style="display:inline-block;padding:10px 20px;background-color:#3B82F6;color:white;text-decoration:none;border-radius:5px;">View & Approve</a></p>
-              <p>Best regards,<br>CPQ System</p>
-            `;
-            sendEmail(nextStep.email, subject, html)
-              .then(() => console.log('✅ Next approver email sent to:', nextStep.email))
-              .catch(err => console.error('❌ Failed to send next approver email:', err));
-          }
-        } catch (e) {
-          console.error('❌ Error sending next approver notification:', e);
-        }
+        // Email notifications (Deal Desk, creator, next-step) are sent by the
+        // frontend via dedicated endpoints (/api/send-deal-desk-email, etc.)
+        // to avoid duplicate emails. This handler only updates DB state.
       }
     } else if (stepUpdates.status === 'denied') {
       newStatus = 'denied';
@@ -10842,8 +10777,8 @@ app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
     // 8. Build HTML using existing role-specific generators
     let baseHtml;
     if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
-    else if (role === 'Technical Team') baseHtml = generateManagerEmailHTML(workflowData, token);
-    else if (role === 'Legal Team')     baseHtml = generateCEOEmailHTML(workflowData, token);
+    else if (role === 'Technical Team') baseHtml = generateTechnicalTeamEmailHTML(workflowData, token);
+    else if (role === 'Legal Team')     baseHtml = generateLegalTeamEmailHTML(workflowData, token);
     else {
       // Generic fallback for any other role
       const baseUrl      = process.env.BASE_URL || 'http://localhost:5173';
@@ -11954,8 +11889,8 @@ async function runAutoReminderJob() {
         // Build HTML
         let baseHtml;
         if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
-        else if (role === 'Technical Team') baseHtml = generateManagerEmailHTML(workflowData, token);
-        else if (role === 'Legal Team')     baseHtml = generateCEOEmailHTML(workflowData, token);
+        else if (role === 'Technical Team') baseHtml = generateTechnicalTeamEmailHTML(workflowData, token);
+        else if (role === 'Legal Team')     baseHtml = generateLegalTeamEmailHTML(workflowData, token);
         else {
           const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
           const approvalLink = `${baseUrl}/approval/${workflow.id}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;

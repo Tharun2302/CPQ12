@@ -63,12 +63,9 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
           console.log('🔗 Opening document preview from Gmail link for workflow:', workflowId);
           handleViewDocument(foundWorkflow);
         }
-      } else if (workflows.length > 0) {
-        // If workflows are loaded but this one not found, it doesn't exist
-        console.error('❌ Workflow not found in loaded workflows:', workflowId);
       } else {
-        // If workflows not loaded yet, fetch this specific workflow directly
-        console.log('🔄 Workflows not loaded yet, fetching specific workflow:', workflowId);
+        // Fetch directly from API (handles workflows not in local store, or store not yet loaded)
+        console.log('🔄 Fetching specific workflow from API:', workflowId);
         fetchSpecificWorkflow(workflowId);
       }
     }
@@ -231,6 +228,7 @@ const TechnicalTeamApprovalDashboard: React.FC<TechnicalTeamApprovalDashboardPro
               documentId: workflow.documentId,
               documentType: workflow.documentType,
               clientName: workflow.clientName,
+              companyName: (workflow as any)?.companyName,
               amount: workflow.amount,
               workflowId: workflow.id,
               creatorEmail: (workflow as any)?.creatorEmail,
