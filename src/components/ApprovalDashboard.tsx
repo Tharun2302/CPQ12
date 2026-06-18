@@ -16,6 +16,7 @@ import {
   Copy,
   Lock,
   Download,
+  Upload,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -908,6 +909,16 @@ const ApprovalDashboard: React.FC = () => {
                             >
                               {statusLabel}
                             </span>
+                            {workflow.isManualApproval && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-xs font-bold text-violet-700 whitespace-nowrap"
+                                title="This approval was started from a manually uploaded agreement"
+                                aria-label="Uploaded agreement"
+                              >
+                                <Upload className="w-3 h-3 shrink-0" />
+                                Uploaded Agreement
+                              </span>
+                            )}
                           </div>
                           <div className="mt-1 text-sm text-gray-700">
                             Requested by <span className="text-gray-900 font-semibold">{requestedBy}</span>

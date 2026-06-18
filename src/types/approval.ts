@@ -10,6 +10,9 @@ export interface ApprovalWorkflow {
   creatorName?: string;
   // Optional flag to indicate special handling (e.g. overage agreement workflows)
   isOverage?: boolean;
+  // True when the workflow was created from a manually uploaded agreement (Approval Workflow form)
+  // rather than a quote generated in the app. Used to show an "Uploaded Agreement" badge in the dashboard.
+  isManualApproval?: boolean;
   // E-sign document id when agreement was sent via "Add e-sign fields first" flow
   esignDocumentId?: string;
   // Auto-reminder: number of days between reminder emails (0 or undefined = disabled)
