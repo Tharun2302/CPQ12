@@ -639,8 +639,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   const discountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
   
   // Discount can apply at ANY amount - no minimum threshold
-  // Check if user has entered a valid discount (capped at 15% as per business rules)
-  const hasValidDiscount = discountPercent > 0 && discountPercent <= 15;
+  const hasValidDiscount = discountPercent > 0;
 
   // Calculate final total after discount
   const discountAmount = hasValidDiscount ? totalCost * (discountPercent / 100) : 0;
@@ -3368,7 +3367,8 @@ Total Price: {{total price}}`;
               workflowId: newWorkflow.id,
               teamGroup: autoSelectedTeam,
               creatorEmail: workflowData.creatorEmail,
-              requestedByName: workflowData.creatorName || workflowData.creatorEmail
+              requestedByName: workflowData.creatorName || workflowData.creatorEmail,
+              discountPercent: discountPercent || 0
             }
           })
         });
@@ -10877,14 +10877,13 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                   <input
                     type="number"
                     min="0"
-                    max="15"
                     step="0.1"
-                    placeholder="Enter discount percentage (max 15%)"
+                    placeholder="Enter discount percentage"
                     disabled={customLineItems.length === 0}
                     className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-4 focus:border-indigo-500 focus:ring-indigo-500/20 transition-all duration-200 bg-white text-sm disabled:border-amber-300 disabled:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={customLineItemsDiscount || ''}
                     onChange={(e) => {
-                      const val = e.target.value ? Math.min(15, parseFloat(e.target.value)) : 0;
+                      const val = e.target.value ? parseFloat(e.target.value) : 0;
                       setCustomLineItemsDiscount(val);
                     }}
                   />

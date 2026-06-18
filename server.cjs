@@ -651,6 +651,13 @@ function generateTeamEmailHTML(workflowData, token) {
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=teamlead&token=${encodeURIComponent(token)}`
     : `${baseUrl}/team-approval?workflow=${workflowData.workflowId}`;
   const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
+  const discountPercent = Number(workflowData.discountPercent) || 0;
+  const highDiscountNote = discountPercent > 15
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
+        This quote includes a discount exceeding 15%. Approval is required from: <strong>Team Lead, Technical Team, and Legal</strong>.</p>
+      </div>`
+    : '';
   return `
     <!DOCTYPE html>
     <html>
@@ -663,12 +670,14 @@ function generateTeamEmailHTML(workflowData, token) {
         <div style="background: linear-gradient(135deg, #0ea5e9, #0369a1); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
           <h1>🧩 Team Approval Required${teamLabel ? ` - ${teamLabel}` : ''}</h1>
         </div>
-        
+
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
           <h2>Hello Team${teamLabel ? ` (${teamLabel})` : ''},</h2>
-          
+
           <p>A new document requires your <strong>Team Approval</strong>:</p>
-          
+
+          ${highDiscountNote}
+
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
             ${teamLabel ? `<p><strong>Team Group:</strong> ${teamLabel}</p>` : ''}
@@ -703,6 +712,13 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
   const approvalLink = token
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=technical&token=${encodeURIComponent(token)}`
     : `${baseUrl}/technical-approval?workflow=${workflowData.workflowId}`;
+  const discountPercent = Number(workflowData.discountPercent) || 0;
+  const highDiscountNote = discountPercent > 15
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
+        This quote includes a discount exceeding 15%. Approval is required from: <strong>Team Lead, Technical Team, and Legal</strong>.</p>
+      </div>`
+    : '';
   return `
     <!DOCTYPE html>
     <html>
@@ -715,12 +731,14 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
         <div style="background: linear-gradient(135deg, #3B82F6, #1E40AF); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
           <h1>🔔 Technical Team Approval Required</h1>
         </div>
-        
+
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
           <h2>Hello Technical Team,</h2>
-          
+
           <p>A new document requires your <strong>Technical Team</strong> approval:</p>
-          
+
+          ${highDiscountNote}
+
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
@@ -755,6 +773,13 @@ function generateLegalTeamEmailHTML(workflowData, token) {
   const approvalLink = token
     ? `${baseUrl}/approval/${workflowData.workflowId}?role=legal&token=${encodeURIComponent(token)}`
     : `${baseUrl}/legal-approval?workflow=${workflowData.workflowId}`;
+  const discountPercent = Number(workflowData.discountPercent) || 0;
+  const highDiscountNote = discountPercent > 15
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
+        This quote includes a discount exceeding 15%. Approval is required from: <strong>Team Lead, Technical Team, and Legal</strong>.</p>
+      </div>`
+    : '';
   return `
     <!DOCTYPE html>
     <html>
@@ -767,12 +792,14 @@ function generateLegalTeamEmailHTML(workflowData, token) {
         <div style="background: linear-gradient(135deg, #8B5CF6, #7C3AED); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
           <h1>👑 Legal Team Approval Required</h1>
         </div>
-        
+
         <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
           <h2>Hello Legal Team,</h2>
-          
+
           <p>A new document requires your <strong>Legal Team</strong> approval:</p>
-          
+
+          ${highDiscountNote}
+
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
             <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
