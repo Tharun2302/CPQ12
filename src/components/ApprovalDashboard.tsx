@@ -993,7 +993,17 @@ const ApprovalDashboard: React.FC = () => {
                         >
                           <Eye className="h-5 w-5 text-gray-500" />
                         </button>
-                        {/* More Actions ⋮ — Reminder, Copy Link, Edit/View Dates, Cancel Approval, Reset (creator only) */}
+                        {/* Copy Link — surfaced directly in the UI (creator only) */}
+                        <button
+                          type="button"
+                          onClick={() => { if (!canManage) { alert('Only the requester can copy the approval link.'); return; } handleCopyApprovalLink(workflow); }}
+                          title={canManage ? 'Copy approval link' : 'Only the requester can copy the approval link'}
+                          aria-label="Copy approval link"
+                          className={`inline-flex items-center justify-center w-9 h-9 rounded-md bg-white border border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50 transition-all ${canManage ? 'text-gray-600 hover:bg-gray-50 hover:border-gray-400' : 'text-gray-400 cursor-not-allowed'}`}
+                        >
+                          <Copy className="h-5 w-5" />
+                        </button>
+                        {/* More Actions ⋮ — Reminder, Edit/View Dates, Cancel Approval, Reset (creator only) */}
                         <div className="relative">
                           <button
                             type="button"
@@ -1027,16 +1037,6 @@ const ApprovalDashboard: React.FC = () => {
                                       {lock}
                                     </button>
                                   )}
-                                  <button
-                                    type="button"
-                                    onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester can copy the approval link.'); return; } handleCopyApprovalLink(workflow); }}
-                                    className={itemCls}
-                                    title={canManage ? undefined : 'Only the requester can copy the approval link'}
-                                  >
-                                    <Copy className="h-4 w-4 shrink-0" />
-                                    Copy Link
-                                    {lock}
-                                  </button>
                                   {workflow.documentId && (
                                     <button
                                       type="button"

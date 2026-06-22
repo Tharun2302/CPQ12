@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Rnd } from 'react-rnd';
 import { v4 as uuidv4 } from 'uuid';
-import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, FileText, BookOpen, CheckCircle2, UserPlus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, FileText, BookOpen, CheckCircle2, UserPlus, Trash2, ArrowUp, ArrowDown, ArrowLeft, Circle } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
 import {
@@ -935,6 +935,28 @@ const EsignPlaceFieldsPage: React.FC = () => {
     ? getRecipientEffectiveAction(selectedRecipientForPlacement) === 'reviewer'
     : false;
 
+  // ── Validation checklist (drives the sidebar "Validation" section + Review & Send button) ──
+  const signerRecipients = recipients.filter((r) => getRecipientEffectiveAction(r) === 'signer');
+  const reviewerRecipients = recipients.filter((r) => getRecipientEffectiveAction(r) === 'reviewer');
+  const hasAssignedFields = signatureFields.some((f) => f.recipient_id);
+  const signersMissingSignature = signerRecipients.filter((s) => {
+    const rf = hasAssignedFields ? signatureFields.filter((f) => !f.recipient_id || f.recipient_id === s.id) : signatureFields;
+    return !rf.some((f) => (f.type || 'signature') === 'signature');
+  });
+  const reviewersMissingField = reviewerRecipients.filter((rv) => !signatureFields.some((f) => f.recipient_id === rv.id));
+  const validationItems: { label: string; done: boolean }[] = [
+    { label: recipients.length > 0 ? `${recipients.length} recipient${recipients.length === 1 ? '' : 's'} added` : 'Add at least one recipient', done: recipients.length > 0 },
+    { label: 'At least one field placed', done: signatureFields.length > 0 },
+    {
+      label: signerRecipients.length === 0 ? 'No signers to verify' : 'Signature placed for each signer',
+      done: signerRecipients.length === 0 || signersMissingSignature.length === 0,
+    },
+    ...(reviewerRecipients.length > 0
+      ? [{ label: 'Field placed for each reviewer', done: reviewersMissingField.length === 0 }]
+      : []),
+  ];
+  const allValidationPassed = validationItems.every((v) => v.done) && recipients.length > 0;
+
   if (loading || !doc) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -996,42 +1018,70 @@ const EsignPlaceFieldsPage: React.FC = () => {
         </div>
       )}
       <div className="flex flex-col flex-1 min-h-0 w-full max-w-7xl mx-auto">
-        <div className="mb-2 sm:mb-3 shrink-0 flex flex-row flex-wrap items-start justify-between gap-3 gap-y-2">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Place Fields</h1>
-            <p className="text-slate-600 mt-0.5 sm:mt-1 text-xs sm:text-sm leading-snug">Drag signature, name, title, date, and text fields onto the document.</p>
+        {/* Header: Back · Step indicator · Guide */}
+        <div className="mb-2 sm:mb-3 shrink-0 flex flex-row flex-wrap items-center justify-between gap-3 gap-y-2">
+          <button
+            type="button"
+            onClick={() => navigate('/esign')}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 -ml-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+            Back
+          </button>
+
+          {/* Step indicator: 1 Recipients · 2 Place Fields · 3 Review & Send */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {[
+              { n: 1, label: 'Recipients' },
+              { n: 2, label: 'Place Fields' },
+              { n: 3, label: 'Review & Send' },
+            ].map((step, i) => {
+              const isCurrent = step.n === 2;
+              const isDone = step.n < 2;
+              return (
+                <React.Fragment key={step.n}>
+                  {i > 0 && <span className="h-px w-4 sm:w-6 bg-slate-300" aria-hidden />}
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                        isCurrent
+                          ? 'bg-indigo-600 text-white'
+                          : isDone
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-slate-100 text-slate-400'
+                      }`}
+                    >
+                      {step.n}
+                    </span>
+                    <span className={`hidden md:inline text-xs font-medium ${isCurrent ? 'text-slate-900' : 'text-slate-400'}`}>
+                      {step.label}
+                    </span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
           </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                if (placeFieldsTourTimeoutRef.current) {
-                  window.clearTimeout(placeFieldsTourTimeoutRef.current);
-                  placeFieldsTourTimeoutRef.current = null;
-                }
-                placeFieldsTourAutoStartedRef.current = true;
-                startEsignPlaceFieldsTour();
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              <BookOpen className="h-4 w-4 shrink-0 text-indigo-600" aria-hidden />
-              Guide
-            </button>
-            <button
-              type="button"
-              id="esign-tour-send-signature"
-              onClick={handleSendForSignature}
-              disabled={saving || sending}
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 shadow-md hover:shadow-lg transition-shadow"
-            >
-              {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Send for Signature</>}
-            </button>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (placeFieldsTourTimeoutRef.current) {
+                window.clearTimeout(placeFieldsTourTimeoutRef.current);
+                placeFieldsTourTimeoutRef.current = null;
+              }
+              placeFieldsTourAutoStartedRef.current = true;
+              startEsignPlaceFieldsTour();
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <BookOpen className="h-4 w-4 shrink-0 text-indigo-600" aria-hidden />
+            <span className="hidden sm:inline">Guide</span>
+          </button>
         </div>
 
         <div className="flex gap-4 lg:gap-6 flex-col lg:flex-row flex-1 min-h-0 lg:items-stretch">
-          {/* Document area first (left / full width on mobile) */}
-          <div className="flex flex-1 flex-col min-w-0 order-2 lg:order-1 min-h-[280px] lg:min-h-0">
+          {/* Document area first (left / full width on mobile) — ~70% width */}
+          <div className="flex flex-1 lg:flex-[7] flex-col min-w-0 order-2 lg:order-1 min-h-[280px] lg:min-h-0">
             <div
               id="esign-tour-pdf-preview"
               ref={scrollContainerRef}
@@ -1380,46 +1430,60 @@ const EsignPlaceFieldsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Right panel: recipients & fields */}
-          <div className="w-full lg:w-80 shrink-0 order-1 lg:order-2 flex flex-col min-h-0 max-h-[min(52vh,420px)] lg:max-h-none lg:h-full">
+          {/* Right panel: recipient · fields · validation — ~30% width */}
+          <div className="w-full lg:flex-[3] lg:max-w-sm shrink-0 order-1 lg:order-2 flex flex-col min-h-0 max-h-[min(52vh,420px)] lg:max-h-none lg:h-full">
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-3 sm:p-4 space-y-4 sm:space-y-5 overflow-y-auto flex-1 min-h-0">
-              <div id="esign-tour-recipients-panel">
-                <h2 className="text-sm font-semibold text-slate-800 mb-0.5">Recipients ({recipients.length})</h2>
-                <p className="text-xs text-slate-500 mb-3">Add Reviewer or Signer. Signers need a Signature field; Reviewers use Name, Title, Date, or Text only, then mark as Reviewed.</p>
+              <div className="p-3 sm:p-4 space-y-5 overflow-y-auto flex-1 min-h-0">
+
+              {/* ── Recipient ── */}
+              <section id="esign-tour-recipients-panel">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900">Recipient</h2>
+                  <span className="text-xs font-medium text-slate-400">{recipients.length}</span>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">Select who you're placing fields for. Signers need a Signature field; Reviewers use Name, Title, Date, or Text.</p>
                 {recipients.length > 0 && (
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                  <div id="esign-tour-place-for-select" className="space-y-2 max-h-52 overflow-y-auto pr-0.5 scroll-mt-24">
                     {recipients.map((r, index) => {
                       const isSelected = selectedRecipientId === r.id;
                       const recipientColor = getRecipientColor(r.id, recipients);
                       const effectiveAction = r.action ?? (r.role === 'Technical Team' || r.role === 'Legal Team' ? 'reviewer' : (r.role?.toLowerCase() === 'reviewer' ? 'reviewer' : 'signer'));
                       const isReviewer = effectiveAction === 'reviewer';
                       return (
-                        <div key={r.id} className={`rounded-lg overflow-hidden border-2 ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-300 bg-white'}`}>
-                          <div className="flex items-start justify-between gap-1 p-2.5">
-                            <div className="min-w-0 flex-1 flex items-start gap-2">
-                              <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color" />
-                              <div className="min-w-0 flex-1">
+                        <div
+                          key={r.id}
+                          onClick={() => setSelectedRecipientId(r.id)}
+                          title={getPlaceFieldsDropdownLabel(r)}
+                          className={`cursor-pointer rounded-lg border-2 p-2.5 transition-colors ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {/* radio */}
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${isSelected ? 'border-indigo-600' : 'border-slate-300'}`} aria-hidden>
+                              {isSelected && <span className="h-2 w-2 rounded-full bg-indigo-600" />}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color" />
                                 <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
-                                <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
-                                <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                                  <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                                    {isReviewer ? 'Review' : 'Sign'}
-                                  </span>
-                                  <span className="text-[9px] text-slate-500">Action:</span>
-                                  <select
-                                    value={effectiveAction}
-                                    onChange={(e) => updateRecipientAction(r.id, e.target.value as 'signer' | 'reviewer')}
-                                    className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
-                                    title="Sign or Review"
-                                  >
-                                    <option value="signer">Sign</option>
-                                    <option value="reviewer">Review</option>
-                                  </select>
-                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
+                              <div className="mt-1.5 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                                <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                                  {isReviewer ? 'Review' : 'Sign'}
+                                </span>
+                                <span className="text-[9px] text-slate-500">Action:</span>
+                                <select
+                                  value={effectiveAction}
+                                  onChange={(e) => updateRecipientAction(r.id, e.target.value as 'signer' | 'reviewer')}
+                                  className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
+                                  title="Sign or Review"
+                                >
+                                  <option value="signer">Sign</option>
+                                  <option value="reviewer">Review</option>
+                                </select>
                               </div>
                             </div>
-                            <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end">
+                            <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
                               {recipients.length > 1 && (
                                 <>
                                   <button type="button" onClick={() => moveRecipientUp(index)} disabled={index === 0} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
@@ -1434,7 +1498,7 @@ const EsignPlaceFieldsPage: React.FC = () => {
                     })}
                   </div>
                 )}
-                <div className="mt-2 pt-2 border-t border-slate-200">
+                <div className="mt-3 pt-3 border-t border-slate-200">
                   <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
                   <input
                     type="email"
@@ -1467,67 +1531,94 @@ const EsignPlaceFieldsPage: React.FC = () => {
                     {addingRecipient ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add recipient
                   </button>
                 </div>
-              </div>
-              <p className="text-xs text-slate-500">Place fields for:</p>
-              <select
-                id="esign-tour-place-for-select"
-                value={selectedRecipientId || ''}
-                onChange={(e) => setSelectedRecipientId(e.target.value || null)}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 scroll-mt-24"
-              >
-                <option value="">— None —</option>
-                {recipients.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name || r.email} ({getPlaceFieldsDropdownLabel(r)})
-                  </option>
-                ))}
-              </select>
-              {selectedRecipientId && placingFieldsForReviewer && (
-                <p className="text-xs text-slate-600 mt-1">
-                  For reviewers, <strong className="font-medium text-slate-800">Signature</strong> is not used. Drag <strong className="font-medium text-slate-800">Name</strong>, <strong className="font-medium text-slate-800">Title</strong>, <strong className="font-medium text-slate-800">Date</strong>, or <strong className="font-medium text-slate-800">Text</strong> onto the PDF. They complete those fields and mark as Reviewed from their link.
+              </section>
+
+              {/* ── Fields ── */}
+              <section id="esign-tour-field-palette" className="border-t border-slate-200 pt-4">
+                <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900 mb-1">Fields</h2>
+                {selectedRecipientForPlacement ? (
+                  <p className="text-xs text-slate-500 mb-2">Drag onto the document for <strong className="font-medium text-slate-700">{selectedRecipientForPlacement.name || selectedRecipientForPlacement.email}</strong>.</p>
+                ) : (
+                  <p className="text-xs text-amber-600 mb-2">Select a recipient above before placing fields.</p>
+                )}
+                {selectedRecipientId && placingFieldsForReviewer && (
+                  <p className="text-xs text-slate-600 mb-2">
+                    For reviewers, <strong className="font-medium text-slate-800">Signature</strong> is not used. Drag <strong className="font-medium text-slate-800">Name</strong>, <strong className="font-medium text-slate-800">Title</strong>, <strong className="font-medium text-slate-800">Date</strong>, or <strong className="font-medium text-slate-800">Text</strong> onto the PDF.
+                  </p>
+                )}
+                <div className="space-y-2">
+                  {FIELD_DEFS.map(({ type, label, Icon }) => {
+                    const signatureBlockedForReviewer = placingFieldsForReviewer && type === 'signature';
+                    return (
+                    <div
+                      key={type}
+                      draggable={!signatureBlockedForReviewer}
+                      onDragStart={(e) => {
+                        if (signatureBlockedForReviewer) {
+                          e.preventDefault();
+                          return;
+                        }
+                        setDragSource(type);
+                        e.dataTransfer.setData('text/plain', type);
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      onDragEnd={() => setDragSource(null)}
+                      title={signatureBlockedForReviewer ? 'Reviewers cannot be assigned signature fields' : undefined}
+                      className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 transition-colors ${
+                        signatureBlockedForReviewer
+                          ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
+                          : dragSource === type
+                            ? 'border-indigo-400 bg-indigo-50 cursor-grab active:cursor-grabbing'
+                            : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50 cursor-grab active:cursor-grabbing'
+                      }`}
+                    >
+                      <Icon className={`h-5 w-5 shrink-0 ${signatureBlockedForReviewer ? 'text-slate-400' : 'text-indigo-600'}`} />
+                      <span className={`font-medium text-sm ${signatureBlockedForReviewer ? 'text-slate-500' : 'text-slate-800'}`}>{label}</span>
+                    </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+                  <strong className="font-medium text-slate-600">Text fields:</strong> drag <strong>Text</strong> onto the PDF, use the color swatch and font list in the box, type your wording, then resize/move.
                 </p>
-              )}
-            <div id="esign-tour-field-palette">
-              <p className="text-xs text-slate-500 mb-2">Drag onto the document to place</p>
-              <div className="space-y-2">
-                {FIELD_DEFS.map(({ type, label, Icon }) => {
-                  const signatureBlockedForReviewer = placingFieldsForReviewer && type === 'signature';
-                  return (
-                  <div
-                    key={type}
-                    draggable={!signatureBlockedForReviewer}
-                    onDragStart={(e) => {
-                      if (signatureBlockedForReviewer) {
-                        e.preventDefault();
-                        return;
-                      }
-                      setDragSource(type);
-                      e.dataTransfer.setData('text/plain', type);
-                      e.dataTransfer.effectAllowed = 'copy';
-                    }}
-                    onDragEnd={() => setDragSource(null)}
-                    title={signatureBlockedForReviewer ? 'Reviewers cannot be assigned signature fields' : undefined}
-                    className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 transition-colors ${
-                      signatureBlockedForReviewer
-                        ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
-                        : dragSource === type
-                          ? 'border-indigo-400 bg-indigo-50 cursor-grab active:cursor-grabbing'
-                          : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50 cursor-grab active:cursor-grabbing'
-                    }`}
-                  >
-                    <Icon className={`h-5 w-5 shrink-0 ${signatureBlockedForReviewer ? 'text-slate-400' : 'text-indigo-600'}`} />
-                    <span className={`font-medium text-sm ${signatureBlockedForReviewer ? 'text-slate-500' : 'text-slate-800'}`}>{label}</span>
-                  </div>
-                  );
-                })}
+              </section>
+
+              {/* ── Validation ── */}
+              <section className="border-t border-slate-200 pt-4">
+                <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900 mb-2">Validation</h2>
+                <ul className="space-y-1.5">
+                  {validationItems.map((v) => (
+                    <li key={v.label} className="flex items-center gap-2 text-xs">
+                      {v.done
+                        ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                        : <Circle className="h-4 w-4 shrink-0 text-slate-300" />}
+                      <span className={v.done ? 'text-slate-700' : 'text-slate-400'}>{v.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
               </div>
-              <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
-                <strong className="font-medium text-slate-600">Text fields:</strong> drag <strong>Text</strong> onto the PDF. Use the color swatch and font list in the box, type your wording, then resize/move. The same look is used when signing and on the final PDF.
-              </p>
-              <p className="text-xs text-slate-500 mt-3">
-                Scroll to the page you want, then drag fields onto the document.
-              </p>
-            </div>
+
+              {/* Footer action bar: Back · Review & Send */}
+              <div className="shrink-0 border-t border-slate-200 bg-white p-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/esign')}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </button>
+                <button
+                  type="button"
+                  id="esign-tour-send-signature"
+                  onClick={handleSendForSignature}
+                  disabled={saving || sending || !allValidationPassed}
+                  title={allValidationPassed ? 'Save fields and send for signature' : 'Complete the validation checklist first'}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-shadow"
+                >
+                  {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Review &amp; Send</>}
+                </button>
               </div>
             </div>
           </div>

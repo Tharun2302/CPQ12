@@ -907,6 +907,23 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                                 </button>
                               </>
                             )}
+                            {ag.status === 'sent' && (() => {
+                              const isCreator = isCurrentUserCreator(ag);
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={isCreator
+                                    ? () => handleCopyLink(ag.id)
+                                    : () => alert('Only the agreement creator can copy the signing link.')}
+                                  disabled={isCreator && copyingId === ag.id}
+                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-50 ${isCreator ? 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
+                                  title={isCreator ? 'Copy signing link' : 'Only the agreement creator can copy the signing link.'}
+                                  aria-label="Copy signing link"
+                                >
+                                  {isCreator && copyingId === ag.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                                </button>
+                              );
+                            })()}
                             {hasMenuActions && (
                               <div className="relative">
                                 <button
@@ -996,21 +1013,6 @@ const EsignAgreementStatusDashboard: React.FC = () => {
                       style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {status === 'sent' && (
-                        <button
-                          type="button"
-                          onClick={isCreator
-                            ? () => { handleCopyLink(openAgreement.id); closeActionsMenu(); }
-                            : () => denyAction('Only the agreement creator can copy the signing link.')}
-                          disabled={isCreator && copyingId === openAgreement.id}
-                          className={mgmtBtnClass}
-                          title={isCreator ? undefined : 'Only the agreement creator can copy the signing link.'}
-                        >
-                          {isCreator && copyingId === openAgreement.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Copy className="h-4 w-4 shrink-0" />}
-                          Copy Link
-                          {!isCreator && <Lock className="h-3 w-3 ml-auto shrink-0" />}
-                        </button>
-                      )}
                       {status === 'sent' && (
                         <button
                           type="button"
