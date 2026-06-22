@@ -2,6 +2,7 @@
  * Document Service - MongoDB Backend Version
  * Saves PDFs to MongoDB via API endpoints
  */
+import { BACKEND_URL } from '../config/api';
 
 export type DealDocumentsApprovalFilter = 'all' | 'in_workflow' | 'no_workflow';
 
@@ -39,17 +40,7 @@ export interface SavedDocument {
 }
 
 class DocumentServiceMongoDB {
-  // Match the same backend resolution strategy as templateService
-  private baseUrl: string = (() => {
-    const envUrl = (import.meta as any)?.env?.VITE_BACKEND_URL as string | undefined;
-    if (envUrl && envUrl.trim() !== '') return `${envUrl}/api`;
-    // Dev: Vite runs on 5173 and backend typically on 3001
-    if (typeof window !== 'undefined' && window.location.origin.includes('localhost:5173')) {
-      return 'http://localhost:3001/api';
-    }
-    // Prod: same origin
-    return '/api';
-  })();
+  private baseUrl: string = `${BACKEND_URL}/api`;
   private apiUrl = `${this.baseUrl}/documents`;
 
   /**

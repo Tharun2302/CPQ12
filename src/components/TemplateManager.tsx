@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { 
+import {
   Upload, 
   FileText, 
   Eye, 
@@ -219,7 +219,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
             const createLoadFile = (templateId: string, fileName: string, fileType: string) => {
               return async () => {
                 try {
-                  const fr = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/templates/${templateId}/file`);
+                  const fr = await fetch(`${BACKEND_URL}/api/templates/${templateId}/file`);
                   if (!fr.ok) return null;
                   const blob = await fr.blob();
                   return new File([blob], fileName || 'template.docx', {
@@ -1695,7 +1695,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
         [template.id]: processedTemplate
       }));
 
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const esignOrigin = window.location.origin.replace(/\/$/, '');
       console.log('📧 Sending template via email...');
 

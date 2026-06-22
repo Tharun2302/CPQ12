@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Bot } from 'lucide-react';
+import { BACKEND_URL } from '../config/api';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = `${BACKEND_URL}/api`;
 
 const WELCOME: Message = {
   role: 'assistant',

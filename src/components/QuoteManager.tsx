@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Quote } from '../types/pricing';
+import { BACKEND_URL } from '../config/api';
 import { formatCurrency } from '../utils/pricing';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import { 
@@ -987,7 +988,7 @@ ZENOP Pro Solutions Team`
     
     try {
       const quoteNumber = `CPQ-${quote.id.split('-')[1]}`;
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
 
       console.log('📧 Generating merged template PDF...');
       let pdfBlob: Blob;

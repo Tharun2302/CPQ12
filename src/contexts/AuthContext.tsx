@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useNavigate } from 'react-router-dom';
 import { User, AuthContextType, SignUpData, AuthProvider as AuthProviderType } from '../types/auth';
 import { track, identify } from '../analytics/clarity';
+import { BACKEND_URL } from '../config/api';
  
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -68,7 +69,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
           } else {
             // Regular JWT token - verify with backend
             const looksLikeJwt = (t: string) => t.split('.').length === 3;
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+            const backendUrl = BACKEND_URL;
            
             if (looksLikeJwt(storedToken)) {
             // Verify token with backend
@@ -160,7 +161,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
         return false;
       }
      
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const backendUrl = BACKEND_URL;
       const response = await fetch(`${backendUrl}/api/auth/login`, {
         method: 'POST',
         headers: {
@@ -485,7 +486,7 @@ export const AuthProvider: React.FC<AuthProviderComponentProps> = ({ children })
               return;
             }
             
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+            const backendUrl = BACKEND_URL;
            
             try {
               const response = await fetch(`${backendUrl}/api/auth/microsoft`, {

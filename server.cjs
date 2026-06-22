@@ -124,13 +124,18 @@ async function actorCanEditSourceDocumentDates(doc, actorEmail) {
 }
 
 // Helper: returns true for any localhost / 127.0.0.1 origin (any port) or known prod domains.
+// Configure allowed production origins via env vars:
+//   APP_BASE_URL=https://cpq.cftools.live
+//   ALLOWED_ORIGINS=https://cpq.cftools.live,https://zenop.ai,https://www.zenop.ai
 function isAllowedOrigin(origin) {
   if (!origin) return false;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  const extraOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(o => o.trim().replace(/\/$/, ''))
+    .filter(Boolean);
   const prodOrigins = new Set([
-    'https://zenop.ai',
-    'https://www.zenop.ai',
-    'https://159.89.175.168',
+    ...extraOrigins,
     (process.env.APP_BASE_URL || '').replace(/\/$/, ''),
   ].filter(Boolean));
   return prodOrigins.has(origin);
@@ -203,13 +208,31 @@ app.get('/assets/:filename', (req, res) => {
   stream.pipe(res);
 });
 
-// Serve index.html with Vite's inline modulepreload data URL fixed (Vite uses application/octet-stream, browser requires application/javascript)
+// Serve index.html with two fixes:
+// 1. Vite emits modulepreload hints as data:application/octet-stream — browsers need application/javascript.
+// 2. Strict CSP (script-src without data:) blocks those data: modulepreload hints entirely.
+//    Strip them; the actual bundle <script src="/assets/..."> still loads fine.
 function sendIndexHtml(res) {
   const indexPath = path.join(__dirname, 'dist', 'index.html');
   let html = fs.readFileSync(indexPath, 'utf8');
+  // Fix MIME type first so the strip regex matches consistently
   html = html.replace(/data:application\/octet-stream/g, 'data:application/javascript');
+  // Remove <link rel="modulepreload" href="data:..."> tags that strict CSP blocks
+  html = html.replace(/<link[^>]+rel=["']modulepreload["'][^>]+href=["']data:[^"']*["'][^>]*\/?>/gi, '');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  // Set a permissive CSP that allows Google Fonts (fonts.googleapis.com / fonts.gstatic.com).
+  // The proxy may override this — if it does, update the proxy's CSP directly instead.
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "connect-src 'self' ws: wss: https:",
+    "img-src 'self' data: blob: https:",
+    "frame-src 'self' blob:",
+    "worker-src 'self' blob:",
+  ].join('; '));
   res.send(html);
 }
 

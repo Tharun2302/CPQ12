@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { TrendingUp, Users, DollarSign, FileText, Star, MessageCircle, RefreshCw } from 'lucide-react';
+import { BACKEND_URL } from '../config/api';
 
 interface ChatQuestion {
   question: string;
@@ -13,7 +14,7 @@ interface ChatLog {
   timestamp: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = `${BACKEND_URL}/api`;
 
 const Analytics: React.FC = () => {
   const [chatQuestions, setChatQuestions] = useState<ChatQuestion[]>([]);
