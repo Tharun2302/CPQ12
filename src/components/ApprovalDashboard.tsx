@@ -885,7 +885,6 @@ const ApprovalDashboard: React.FC = () => {
                 const teamStep = getStep(workflow, 'Team Approval');
                 const technicalStep = getStep(workflow, 'Technical Team');
                 const legalStep = getStep(workflow, 'Legal Team');
-                const dealDeskStep = getStep(workflow, 'Deal Desk');
                 const migrationManagerStep = getStep(workflow, 'Migration Manager');
                 const accountManagerStep = getStep(workflow, 'Account Manager');
 
@@ -1112,23 +1111,17 @@ const ApprovalDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Approval step summary: Team, Tech, Legal, [Recipient 1, Recipient 2, ...], Deal Desk */}
+                    {/* Approval step summary: Team, Tech, Legal, [Recipient 1, Recipient 2, ...] */}
                     {(() => {
-                      const dealDeskExtra = dealDeskStep?.comments === 'Notified'
-                        ? 'Email sent'
-                        : dealDeskStep?.comments === 'Notification failed'
-                          ? 'Email failed'
-                          : (dealDeskStep?.comments || '');
                       const isStandard = hasRole(workflow, 'Team Approval');
 
-                      // Core quote/SOW approval is Team → Tech → Legal → Deal Desk. MM/AM only appear when
+                      // Core quote/SOW approval is Team → Tech → Legal. MM/AM only appear when
                       // those roles exist on this workflow (migration-style flows), not for every deal.
                       const steps = isStandard
                         ? [
                             { label: 'Team', step: teamStep, extra: teamStep ? [teamStep.group, teamStep.comments].filter(Boolean).join(' · ') : '' },
                             { label: 'Tech', step: technicalStep, extra: technicalStep?.comments || '' },
                             { label: 'Legal', step: legalStep, extra: legalStep?.comments || '' },
-                            { label: 'Deal Desk', step: dealDeskStep, extra: dealDeskExtra },
                             ...(hasRole(workflow, 'Migration Manager')
                               ? [{ label: 'MM', step: migrationManagerStep, extra: migrationManagerStep?.comments || '' }]
                               : []),
@@ -1155,18 +1148,19 @@ const ApprovalDashboard: React.FC = () => {
                         ? `${currentItem.label}: ${currentItem.extra}`
                         : `${currentItem?.label || 'Current'}: —`;
 
-                      const totalDisplayed = Math.max(
-                        Number(workflow.totalSteps || 0),
-                        Array.isArray(workflow.workflowSteps) ? workflow.workflowSteps.length : 0,
-                        steps.length
-                      );
+                      // Count stored steps excluding Deal Desk (it's no longer part of the visible
+                      // approval chain) so existing workflows don't display "/ 4".
+                      const storedNonDealDesk = Array.isArray(workflow.workflowSteps)
+                        ? workflow.workflowSteps.filter((s: any) => s?.role !== 'Deal Desk').length
+                        : 0;
+                      const totalDisplayed = Math.max(storedNonDealDesk, steps.length);
 
                       return (
                         <div className="mt-2.5 min-w-0 max-w-full overflow-x-auto rounded-lg bg-gray-50/80 border border-gray-200 px-3 py-2">
                           <div className="flex items-center justify-between gap-2">
                             <div className="text-xs font-bold uppercase tracking-wide text-gray-600">Approvals</div>
                             <div className="text-xs tabular-nums text-gray-500">
-                              Step {workflow.currentStep || resolvedCurrentIdx + 1} / {totalDisplayed || steps.length || 1}
+                              Step {Math.min(workflow.currentStep || resolvedCurrentIdx + 1, totalDisplayed || steps.length || 1)} / {totalDisplayed || steps.length || 1}
                             </div>
                           </div>
 

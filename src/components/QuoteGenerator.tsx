@@ -1768,8 +1768,8 @@ Quote ID: ${quoteData.id}
         
         // Calculate discount for this function scope (use sessionStorage as source of truth)
         const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
-        // Discount applies at any amount - no minimum threshold required
-        const localHasValidDiscount = localDiscountPercent > 0 && localDiscountPercent <= 15;
+        // Discount applies at any amount - no minimum threshold and no maximum cap
+        const localHasValidDiscount = localDiscountPercent > 0;
         const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
         const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
         const localShouldApplyDiscount = localHasValidDiscount;
@@ -5043,7 +5043,7 @@ Total Price: {{total price}}`;
         // This ensures discount is calculated correctly for the template preview
         // Discount now applies at ANY amount - no minimum threshold required
         const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
-        const localHasValidDiscount = localDiscountPercent > 0 && localDiscountPercent <= 15; // Cap at 15%
+        const localHasValidDiscount = localDiscountPercent > 0; // No cap
         const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
         const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
         const localShouldApplyDiscount = localHasValidDiscount;
@@ -10892,7 +10892,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     <p className="text-xs text-gray-600 mt-2">
                       <span className="font-medium">✅ Discount Rules:</span>
                       <br />• Discount available at any amount (no minimum)
-                      <br />• Maximum discount: 15%
+                      <br />• No maximum limit (discounts above 15% require additional approval)
                       <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
                     </p>
                   ) : customLineItems.length === 0 ? (

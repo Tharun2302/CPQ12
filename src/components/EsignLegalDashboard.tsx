@@ -116,7 +116,7 @@ const EsignLegalDashboard: React.FC = () => {
                 </div>
                 <h1 className="text-4xl font-bold text-gray-900">Legal Dashboard</h1>
               </div>
-              <p className="text-xl text-gray-600">Sign or review documents (Team → Tech → Legal → Deal Desk)</p>
+              <p className="text-xl text-gray-600">Sign or review documents (Team → Tech → Legal)</p>
               {userEmail && <p className="text-sm text-gray-500 mt-1">Logged in as: {userEmail}</p>}
             </div>
           </div>

@@ -3637,7 +3637,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     <input
                       type="number"
                       min={0}
-                      max={15}
                       step={0.01}
                       value={discountValue}
                       onChange={(e) => {
@@ -3654,11 +3653,6 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         }
 
                         const numValue = Number(raw);
-
-                        if (numValue > 15) {
-                          alert('Discount cannot be more than 15%');
-                          return;
-                        }
 
                         if (numValue < 0) {
                           setDiscountValue('0');
@@ -3679,7 +3673,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                         } catch {}
                       }}
                       className="no-spinner flex-1 min-w-0 px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                      placeholder={`Enter discount percentage (max 15%)`}
+                      placeholder={`Enter discount percentage`}
                     />
                   </div>
                   <button
@@ -3692,7 +3686,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   {showDiscountRules && (
                     <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
                       • Discount available at any amount (no minimum)
-                      <br />• Maximum discount: 15%
+                      <br />• No maximum limit
+                      <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
                       <br />• Applied to combined total (all pricing sources)
                     </p>
                   )}
@@ -3954,30 +3949,23 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   <input
                     type="number"
                     min={0}
-                    max={15}
                     step={0.01}
                     value={discountValue}
                     onChange={(e) => {
                       const raw = e.target.value;
-                      
+
                       // Allow empty value for clearing
                       if (raw === '') {
                         setDiscountValue('');
-                        try { 
+                        try {
                           localStorage.setItem('cpq_discount', '');
                           window.dispatchEvent(new CustomEvent('discountUpdated'));
                         } catch {}
                         return;
                       }
-                      
+
                       const numValue = Number(raw);
-                      
-                      // Check if value exceeds 15%
-                      if (numValue > 15) {
-                        alert('Discount cannot be more than 15%');
-                        return; // Don't update the value
-                      }
-                      
+
                       // Ensure value is not negative
                       if (numValue < 0) {
                         setDiscountValue('0');
@@ -4000,7 +3988,7 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                       } catch {}
                     }}
                    className="w-full px-5 py-4 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-lg font-medium border-gray-200 focus:ring-blue-500/20 focus:border-blue-500 hover:border-blue-300"
-                   placeholder={`Enter discount percentage (max 15%)`}
+                   placeholder={`Enter discount percentage`}
                   />
                   <button
                     type="button"
@@ -4012,7 +4000,8 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                   {showDiscountRules && (
                     <p className="text-xs text-gray-600 mt-2 ml-4 border-l-2 border-blue-300 pl-3">
                       • Discount available at any amount (no minimum)
-                      <br />• Maximum discount: 15%
+                      <br />• No maximum limit
+                      <br />• Discounts above 15% require additional approval (Team Lead, Technical, Legal)
                     </p>
                   )}
                 </div>

@@ -814,7 +814,7 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
               <div className="p-6 space-y-6">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <p className="text-sm text-gray-700">
-                    Team lead is automatically selected. Technical Team, Legal Team, and Deal Desk recipients will use the default emails.
+                    Team lead is automatically selected. Technical Team and Legal Team recipients will use the default emails.
                   </p>
                 </div>
 

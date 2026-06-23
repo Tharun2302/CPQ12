@@ -852,12 +852,11 @@ const EsignPlaceFieldsPage: React.FC = () => {
         creatorName: pendingApproval.creatorName,
         isOverage: pendingApproval.isOverage ?? false,
         esignDocumentId: documentId,
-        totalSteps: 4,
+        totalSteps: 3,
         workflowSteps: [
           { step: 1, role: 'Team Approval', email: pendingApproval.teamEmail, status: 'pending' as const, group: pendingApproval.teamId, comments: '', additionalRecipients: pendingApproval.additionalRecipients ?? [] },
           { step: 2, role: 'Technical Team', email: pendingApproval.approvalEmails.role1, status: 'pending' as const },
           { step: 3, role: 'Legal Team', email: pendingApproval.approvalEmails.role2, status: 'pending' as const },
-          { step: 4, role: 'Deal Desk', email: pendingApproval.approvalEmails.role4, status: 'pending' as const },
         ],
       };
       const createRes = await fetch(`${BACKEND_URL}/api/approval-workflows`, {

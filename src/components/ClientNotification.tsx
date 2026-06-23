@@ -192,7 +192,7 @@ const ClientNotification: React.FC<ClientNotificationProps> = () => {
         console.error('❌ Error sending Deal Desk email:', emailError);
       }
       
-      alert('✅ Request approved successfully!\n\nYour approval has been recorded and Deal Desk has been notified. The workflow is now complete.');
+      alert('✅ Request approved successfully!\n\nYour approval has been recorded. The workflow is now complete.');
       
       // Reset form and close document preview
       setComment('');

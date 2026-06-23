@@ -244,13 +244,13 @@ const LegalTeamApprovalDashboard: React.FC<LegalTeamApprovalDashboardProps> = ({
           } catch (e) {
             // best-effort; do not block UI
           }
-          showSuccessToast('Workflow approved successfully! Deal Desk has been notified.');
+          showSuccessToast('Workflow approved successfully! Legal approval was the final step.');
         } else {
           try {
-            // Even if email fails, approvals are complete; mark workflow as approved
-            await updateWorkflowStep(workflowId, 4, { status: 'approved', comments: 'Notification failed' });
+            // Even if completion call fails, approvals are complete; mark workflow as approved
+            await updateWorkflowStep(workflowId, 4, { status: 'approved', comments: 'Finalization failed' });
           } catch (e) {}
-          showSuccessToast('Workflow approved but Deal Desk email failed. Please notify Deal Desk manually.');
+          showSuccessToast('Workflow approved. (Completion step reported an issue — e-sign may need a manual nudge.)');
         }
       } else {
         showSuccessToast('Workflow approved successfully!');

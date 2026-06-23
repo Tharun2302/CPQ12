@@ -678,7 +678,7 @@ function generateTeamEmailHTML(workflowData, token) {
   const highDiscountNote = discountPercent > 15
     ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
         <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
-        This quote includes a discount exceeding 15%. Approval is required from: <strong>Team Lead, Technical Team, and Legal</strong>.</p>
+        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as <strong>Team Lead</strong>.</p>
       </div>`
     : '';
   return `
@@ -739,7 +739,7 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
   const highDiscountNote = discountPercent > 15
     ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
         <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
-        This quote includes a discount exceeding 15%. Approval is required from: <strong>Team Lead, Technical Team, and Legal</strong>.</p>
+        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Technical Team</strong>.</p>
       </div>`
     : '';
   return `
@@ -800,7 +800,7 @@ function generateLegalTeamEmailHTML(workflowData, token) {
   const highDiscountNote = discountPercent > 15
     ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
         <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
-        This quote includes a discount exceeding 15%. Approval is required from: <strong>Team Lead, Technical Team, and Legal</strong>.</p>
+        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Legal Team</strong>.</p>
       </div>`
     : '';
   return `
@@ -6208,13 +6208,11 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
       }
     }
 
-    // Send notification email to Deal Desk (fire-and-forget, same pattern as other endpoints)
+    // Deal Desk notification email is disabled — the approval workflow now ends at Legal.
+    // This endpoint is still the completion trigger: it notifies the creator and auto-sends
+    // the e-sign document below, then finalizes the workflow.
     const completionSubject = `Approval Workflow Completed: ${workflowData.documentId}`;
     const completionHtml = generateDealDeskEmailHTML(workflowData);
-
-    sendEmail(resolvedDealDeskEmail, completionSubject, completionHtml, attachments)
-      .then(r => console.log('✅ Deal Desk notification email sent:', r.success))
-      .catch(err => console.error('❌ Failed to send Deal Desk email:', err));
 
     // Best-effort notification email to workflow creator (if available)
     if (creatorEmailForNotification) {
@@ -6244,10 +6242,9 @@ app.post('/api/send-deal-desk-email', async (req, res) => {
     res.json({
       success: true,
       message: creatorEmailForNotification
-        ? 'Deal Desk and creator notification emails queued for sending'
-        : 'Deal Desk notification email queued for sending',
+        ? 'Creator completion email queued; workflow finalized'
+        : 'Workflow finalized',
       result: {
-        dealDesk: { role: 'Deal Desk', email: resolvedDealDeskEmail, success: true },
         creator: creatorEmailForNotification ? { role: 'Creator', email: creatorEmailForNotification } : null
       },
       workflowData: workflowData,

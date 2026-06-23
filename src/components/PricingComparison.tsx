@@ -261,7 +261,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
 
   // Helper function to apply discount calculations
   const calculateDiscountedPrice = (totalCost: number) => {
-    const isDiscountValid = discount > 0 && discount <= 15;
+    const isDiscountValid = discount > 0;
 
     if (isDiscountValid) {
       const discountAmount = totalCost * (discount / 100);
