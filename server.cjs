@@ -225,12 +225,12 @@ function sendIndexHtml(res) {
   // The proxy may override this — if it does, update the proxy's CSP directly instead.
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://zenop.ai:8443",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "connect-src 'self' ws: wss: https:",
     "img-src 'self' data: blob: https:",
-    "frame-src 'self' blob:",
+    "frame-src 'self' blob: https://zenop.ai:8443",
     "worker-src 'self' blob:",
   ].join('; '));
   res.send(html);
