@@ -668,6 +668,22 @@ async function createApprovalAccessToken(db, workflowId, role) {
   return token;
 }
 
+// Backfill fields the triggering dashboard may not have forwarded (discountPercent,
+// hasCustomLineItems, amount) from the persisted workflow record, so approval-email
+// alert banners render consistently on every step regardless of which UI fired it.
+async function enrichWorkflowDataFromRecord(workflowData) {
+  if (!workflowData || !db || !workflowData.workflowId) return;
+  try {
+    const wf = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
+    if (!wf) return;
+    if (workflowData.amount == null) workflowData.amount = wf.amount;
+    if (workflowData.discountPercent == null) workflowData.discountPercent = wf.discountPercent;
+    if (workflowData.hasCustomLineItems == null) workflowData.hasCustomLineItems = wf.hasCustomLineItems;
+  } catch (e) {
+    console.error('⚠️ enrichWorkflowDataFromRecord failed:', e.message);
+  }
+}
+
 function generateTeamEmailHTML(workflowData, token) {
   const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
   const approvalLink = token
@@ -679,6 +695,20 @@ function generateTeamEmailHTML(workflowData, token) {
     ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
         <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
         This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as <strong>Team Lead</strong>.</p>
+      </div>`
+    : '';
+  const HIGH_VALUE_THRESHOLD = 30000;
+  const amountNum = Number(workflowData.amount) || 0;
+  const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Value Deal ($${formatUsdAmount(amountNum)})</strong><br>
+        This quote total exceeds $30,000 and requires your careful review.</p>
+      </div>`
+    : '';
+  const customLineItemsNote = workflowData.hasCustomLineItems
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ Custom Line Items Added</strong><br>
+        This quote includes manually added custom line items. Please review them carefully.</p>
       </div>`
     : '';
   return `
@@ -700,6 +730,8 @@ function generateTeamEmailHTML(workflowData, token) {
           <p>A new document requires your <strong>Team Approval</strong>:</p>
 
           ${highDiscountNote}
+          ${highValueNote}
+          ${customLineItemsNote}
 
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
@@ -742,6 +774,20 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
         This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Technical Team</strong>.</p>
       </div>`
     : '';
+  const HIGH_VALUE_THRESHOLD = 30000;
+  const amountNum = Number(workflowData.amount) || 0;
+  const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Value Deal ($${formatUsdAmount(amountNum)})</strong><br>
+        This quote total exceeds $30,000 and requires your careful review.</p>
+      </div>`
+    : '';
+  const customLineItemsNote = workflowData.hasCustomLineItems
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ Custom Line Items Added</strong><br>
+        This quote includes manually added custom line items. Please review them carefully.</p>
+      </div>`
+    : '';
   return `
     <!DOCTYPE html>
     <html>
@@ -761,6 +807,8 @@ function generateTechnicalTeamEmailHTML(workflowData, token) {
           <p>A new document requires your <strong>Technical Team</strong> approval:</p>
 
           ${highDiscountNote}
+          ${highValueNote}
+          ${customLineItemsNote}
 
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
@@ -803,6 +851,20 @@ function generateLegalTeamEmailHTML(workflowData, token) {
         This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Legal Team</strong>.</p>
       </div>`
     : '';
+  const HIGH_VALUE_THRESHOLD = 30000;
+  const amountNum = Number(workflowData.amount) || 0;
+  const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Value Deal ($${formatUsdAmount(amountNum)})</strong><br>
+        This quote total exceeds $30,000 and requires your careful review.</p>
+      </div>`
+    : '';
+  const customLineItemsNote = workflowData.hasCustomLineItems
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ Custom Line Items Added</strong><br>
+        This quote includes manually added custom line items. Please review them carefully.</p>
+      </div>`
+    : '';
   return `
     <!DOCTYPE html>
     <html>
@@ -822,6 +884,8 @@ function generateLegalTeamEmailHTML(workflowData, token) {
           <p>A new document requires your <strong>Legal Team</strong> approval:</p>
 
           ${highDiscountNote}
+          ${highValueNote}
+          ${customLineItemsNote}
 
           <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>📄 Document Details</h3>
@@ -5770,6 +5834,7 @@ app.post('/api/send-manager-email', async (req, res) => {
     }
 
     const { managerEmail, workflowData } = req.body;
+    await enrichWorkflowDataFromRecord(workflowData);
     const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'cpq.zenop.ai.technical@cloudfuze.com';
     
     console.log('📧 Sending email to Manager only (sequential approval)...');
@@ -5866,6 +5931,7 @@ app.post('/api/send-team-email', async (req, res) => {
     }
 
     const { teamEmail, workflowData } = req.body;
+    await enrichWorkflowDataFromRecord(workflowData);
     const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
     const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
     
@@ -5963,6 +6029,7 @@ app.post('/api/send-ceo-email', async (req, res) => {
     }
 
     const { ceoEmail, workflowData } = req.body;
+    await enrichWorkflowDataFromRecord(workflowData);
     const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'cpq.zenop.ai.legal@cloudfuze.com';
     
     console.log('📧 Sending email to CEO (after Technical Team approval)...');

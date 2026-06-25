@@ -1456,46 +1456,82 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
   };
 
 
-  const handleDownloadTemplate = (template: Template) => {
+  const handleDownloadTemplate = async (template: Template) => {
     try {
-      console.log('🔍 Downloading template:', template.name);
-      console.log('🔍 Template file details:', {
-        hasFile: !!template.file,
-        fileType: template.file?.type,
-        fileName: template.file?.name
-      });
-      
-      // Check if template has a valid file, if not try to find it in templates array
-      let templateToUse = template;
-      if (!template.file) {
-        console.log('⚠️ Template file missing, looking for template in templates array...');
-        const templateFromArray = templates.find(t => t.id === template.id);
-        if (templateFromArray && templateFromArray.file) {
-          templateToUse = templateFromArray;
-          console.log('✅ Found template with file in templates array');
-      } else {
-          console.error('❌ Template does not have a valid file for download');
-          alert('Template file is not available for download. Please re-upload the template.');
-          return;
+      console.log('🔍 Downloading template as PDF:', template.name);
+
+      // 1. Resolve the source file (cache → in-memory → lazy-load from backend → templates array)
+      let templateFile: File | null = template.file || null;
+
+      if (!templateFile && fileCache[template.id]) {
+        console.log('⚡ Using cached file - INSTANT!');
+        templateFile = fileCache[template.id];
+      }
+
+      if (!templateFile && template.loadFile) {
+        console.log('📥 File not loaded, fetching from backend database...');
+        try {
+          templateFile = await template.loadFile();
+          if (templateFile) {
+            setFileCache(prev => ({ ...prev, [template.id]: templateFile! }));
+          }
+        } catch (error) {
+          console.error('❌ Error loading file from backend:', error);
         }
       }
-      
-      if (!templateToUse.file) {
-        console.error('❌ Template file is null');
-        alert('Template file could not be loaded.');
+
+      if (!templateFile) {
+        const templateFromArray = templates.find(t => t.id === template.id);
+        if (templateFromArray?.file) {
+          templateFile = templateFromArray.file;
+        } else if (templateFromArray?.loadFile) {
+          try {
+            templateFile = await templateFromArray.loadFile();
+          } catch (error) {
+            console.error('❌ Error loading file from array template:', error);
+          }
+        }
+      }
+
+      if (!templateFile) {
+        console.error('❌ Template file could not be loaded from backend');
+        alert('Template file is not available for download. The file may not exist in the database.');
         return;
       }
-      
-      const url = URL.createObjectURL(templateToUse.file);
-    const a = document.createElement('a');
-    a.href = url;
-      a.download = templateToUse.name + '.pdf';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-      
-      console.log('✅ Template downloaded successfully');
+
+      // 2. If it's a DOCX, convert to a real PDF (reuse cache) instead of renaming bytes
+      let pdfFile = templateFile;
+      const isDocx = templateFile.type.includes('wordprocessingml') || templateFile.name.endsWith('.docx');
+
+      if (isDocx) {
+        if (convertedPdfCache[template.id]) {
+          console.log('⚡ Using cached converted PDF - INSTANT!');
+          pdfFile = convertedPdfCache[template.id];
+        } else {
+          console.log('🔄 Converting DOCX to PDF for download...');
+          try {
+            const pdfBlob = await templateService.convertDocxToPdf(templateFile);
+            pdfFile = new File([pdfBlob], template.name + '.pdf', { type: 'application/pdf' });
+            setConvertedPdfCache(prev => ({ ...prev, [template.id]: pdfFile }));
+          } catch (conversionError) {
+            console.error('❌ Error converting DOCX to PDF:', conversionError);
+            alert('Failed to convert template to PDF for download. Please try again.');
+            return;
+          }
+        }
+      }
+
+      // 3. Trigger the download
+      const url = URL.createObjectURL(pdfFile);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = template.name + '.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      console.log('✅ Template downloaded successfully as PDF');
     } catch (error) {
       console.error('❌ Error downloading template:', error);
       alert('Failed to download template. Please try again.');

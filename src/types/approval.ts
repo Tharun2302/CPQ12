@@ -10,6 +10,10 @@ export interface ApprovalWorkflow {
   creatorName?: string;
   // Optional flag to indicate special handling (e.g. overage agreement workflows)
   isOverage?: boolean;
+  // Discount percentage applied to the quote (used to show the High Discount Alert in approval emails)
+  discountPercent?: number;
+  // True when the quote includes manually added custom line items (used to show an alert in approval emails)
+  hasCustomLineItems?: boolean;
   // True when the workflow was created from a manually uploaded agreement (Approval Workflow form)
   // rather than a quote generated in the app. Used to show an "Uploaded Agreement" badge in the dashboard.
   isManualApproval?: boolean;

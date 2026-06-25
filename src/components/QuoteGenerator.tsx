@@ -3325,6 +3325,9 @@ Total Price: {{total price}}`;
         creatorEmail,
         creatorName: requestedByName || undefined,
         isOverage: isOverageWorkflow,
+        // Persist so approval emails can show the High Discount / Custom Line Items alerts on every step
+        discountPercent: discountPercent || 0,
+        hasCustomLineItems: customLineItems.length > 0,
         totalSteps: 4,
         workflowSteps: [
           { step: 1, role: 'Team Approval', email: teamEmail, status: 'pending' as const, group: autoSelectedTeam, comments: '', additionalRecipients: additionalRecipients },
@@ -9745,7 +9748,18 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
     setIsSavingAgreementToMongo(true);
     try {
       const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
-      const base64Data = await documentServiceMongoDB.blobToBase64(processedAgreement);
+      // Resolve a real PDF before saving (same logic as the approval path) so we never store
+      // raw DOCX bytes under a .pdf name — that produces "We can't open this file / 0 of 0".
+      const { templateService } = await import('../utils/templateService');
+      let pdfBlob: Blob;
+      if (processedAgreement.type === 'application/pdf') {
+        pdfBlob = processedAgreement;
+      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
+        pdfBlob = cachedPdfAgreement;
+      } else {
+        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      }
+      const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
       const finalCompanyName = clientInfo.company || 'Unknown Company';
       const clientName = clientInfo.clientName || 'Unknown';
       const clientEmail = clientInfo.clientEmail || '';
@@ -9753,7 +9767,7 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
       const savedDoc: Record<string, unknown> = {
         fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
         fileData: base64Data,
-        fileSize: processedAgreement.size,
+        fileSize: pdfBlob.size,
         clientName,
         clientEmail,
         company: finalCompanyName,
@@ -9761,7 +9775,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         generatedDate: new Date().toISOString(),
         quoteId,
         metadata: {
-          totalCost: calc.totalCost,
+          // Store the same total the PDF shows (effective total minus discount) so the
+          // card/email amount always matches the agreement PDF. Path A (approval) does the same.
+          totalCost: Number(finalTotalAfterDiscount) || 0,
           duration: getEffectiveDurationMonths(configuration) || configuration?.duration,
           migrationType: configuration?.migrationType,
           numberOfUsers: configuration?.numberOfUsers,
