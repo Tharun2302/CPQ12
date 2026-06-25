@@ -795,6 +795,16 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       localStorage.setItem('cpq_quote_custom_line_items_discount', String(customLineItemsDiscount));
     } catch {}
   }, [customLineItemsDiscount]);
+
+  // Grand total that matches the agreement PDF: base total (after the main discount) PLUS the
+  // discounted custom line items. The PDF adds the discounted custom-items block on top of the
+  // base total (see the {{total price}} merge), so the saved card amount and approval emails must
+  // do the same — otherwise the card/email under-reports vs the PDF whenever custom items exist.
+  const customLineItemsTotalForTotal = customLineItems.reduce((sum, item) => sum + (item.price || 0), 0);
+  const customLineItemsDiscountAmountForTotal =
+    customLineItemsDiscount > 0 ? customLineItemsTotalForTotal * (customLineItemsDiscount / 100) : 0;
+  const finalTotalWithCustomItems =
+    finalTotalAfterDiscount + (customLineItemsTotalForTotal - customLineItemsDiscountAmountForTotal);
   // Start expanded if there are already saved custom line items or a discount, so returning
   // to the Quote page shows the previously entered values immediately (no need to click "+").
   const [isCustomLineItemsExpanded, setIsCustomLineItemsExpanded] = useState(
@@ -3217,14 +3227,8 @@ Total Price: {{total price}}`;
       const isOverageAgreementApproval =
         (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
         (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
-      const baseApprovalAmount = totalCost;
-
-      // Apply discount if applicable
-      let approvalAmount = baseApprovalAmount;
-      if (shouldApplyDiscount) {
-        const discountAmount = baseApprovalAmount * (discountPercent / 100);
-        approvalAmount = baseApprovalAmount - discountAmount;
-      }
+      // Approval amount now comes from finalTotalWithCustomItems (base after main discount,
+      // plus discounted custom line items) so the card, emails, and PDF all show the same total.
 
       // First, save the PDF to MongoDB if not already saved
       const { templateService } = await import('../utils/templateService');
@@ -3251,8 +3255,8 @@ Total Price: {{total price}}`;
           generatedDate: new Date().toISOString(),
           quoteId: quoteId,
           metadata: {
-            // Store the effective approval amount so approvals/emails match the PDF total shown to the user
-            totalCost: Number(approvalAmount) || 0,
+            // Store the effective approval amount (incl. discounted custom line items) so approvals/emails match the PDF total shown to the user
+            totalCost: Number(finalTotalWithCustomItems) || 0,
             duration: configuration?.duration || 0,
             migrationType: configuration?.migrationType || 'Messaging',
             numberOfUsers: configuration?.numberOfUsers || 0
@@ -3320,8 +3324,8 @@ Total Price: {{total price}}`;
         documentId: documentId,
         documentType: 'PDF Agreement',
         clientName: clientInfo.clientName || 'Unknown Client',
-        // IMPORTANT: Must match the PDF "Total Price" (post-discount when applicable)
-        amount: Number(approvalAmount) || 0,
+        // IMPORTANT: Must match the PDF "Total Price" (post-discount, incl. custom line items)
+        amount: Number(finalTotalWithCustomItems) || 0,
         creatorEmail,
         creatorName: requestedByName || undefined,
         isOverage: isOverageWorkflow,
@@ -3365,8 +3369,8 @@ Total Price: {{total price}}`;
               documentId: documentId,
               documentType: 'PDF Agreement',
               clientName: clientInfo.clientName || 'Unknown Client',
-              // IMPORTANT: Must match the PDF "Total Price" (post-discount when applicable)
-              amount: Number(approvalAmount) || 0,
+              // IMPORTANT: Must match the PDF "Total Price" (post-discount, incl. custom line items)
+              amount: Number(finalTotalWithCustomItems) || 0,
               workflowId: newWorkflow.id,
               teamGroup: autoSelectedTeam,
               creatorEmail: workflowData.creatorEmail,
@@ -9775,9 +9779,9 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
         generatedDate: new Date().toISOString(),
         quoteId,
         metadata: {
-          // Store the same total the PDF shows (effective total minus discount) so the
-          // card/email amount always matches the agreement PDF. Path A (approval) does the same.
-          totalCost: Number(finalTotalAfterDiscount) || 0,
+          // Store the same total the PDF shows (effective total minus discount, plus discounted
+          // custom line items) so the card/email amount always matches the agreement PDF.
+          totalCost: Number(finalTotalWithCustomItems) || 0,
           duration: getEffectiveDurationMonths(configuration) || configuration?.duration,
           migrationType: configuration?.migrationType,
           numberOfUsers: configuration?.numberOfUsers,
