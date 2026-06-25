@@ -641,7 +641,49 @@ const ApprovalWorkflow: React.FC<ApprovalWorkflowProps> = ({
       });
 
       if (newWorkflow) {
-        alert(`✅ Approval workflow started for ${manualTeamSelection} team.\n\n📊 Approval chain:\n1️⃣ ${manualTeamSelection} Team Lead\n2️⃣ Technical Team\n3️⃣ Legal Team\n\nNotification will be sent to: ${loggedInUserEmail}`);
+        // Trigger the first approval email (Team Lead). createWorkflow only saves the
+        // record to MongoDB — the email must be sent explicitly, same as the quote flow.
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/send-team-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              teamEmail: selectedTeamLeadEmail,
+              workflowData: {
+                documentId: effectiveDocumentId,
+                documentType: formData.documentType,
+                clientName,
+                amount: Number(amount) || 0,
+                workflowId: newWorkflow.id,
+                teamGroup: manualTeamSelection,
+                creatorEmail: loggedInUserEmail || undefined,
+                requestedByName: currentUser?.name || loggedInUserEmail,
+                isManualApproval: true
+              }
+            })
+          });
+
+          // Tolerate non-JSON (e.g. 404 HTML) responses
+          let result: any = null;
+          const ct = response.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            result = await response.json();
+          } else if (response.ok) {
+            result = { success: true };
+          } else {
+            const text = await response.text();
+            throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+          }
+
+          if (result?.success) {
+            alert(`✅ Approval workflow started for ${manualTeamSelection} team.\n\n📊 Approval chain:\n1️⃣ ${manualTeamSelection} Team Lead\n2️⃣ Technical Team\n3️⃣ Legal Team\n\n📧 Approval email sent to: ${selectedTeamLeadEmail}\nNotification will be sent to: ${loggedInUserEmail}`);
+          } else {
+            alert(`✅ Workflow created but the Team Lead email failed to send.\nPlease notify ${selectedTeamLeadEmail} manually.`);
+          }
+        } catch (emailError) {
+          console.error('❌ Error sending Team Lead approval email:', emailError);
+          alert(`✅ Workflow created but the Team Lead email failed to send.\nPlease notify ${selectedTeamLeadEmail} manually.`);
+        }
         setActiveTab('dashboard');
       } else {
         alert('Approval workflow could not be created. Please try again.');
