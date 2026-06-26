@@ -20,82 +20,94 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
   templates = []
 }) => {
   const [discount, setDiscount] = useState<number>(0);
-  
-  // Track selected tier per combination (key: combinationName, value: tier name)
-  // Load from sessionStorage on mount to persist across navigation
+
+  // EXHIBIT plan per combination (key: combinationName, value: plan name). This drives which
+  // plan's EXHIBITS each combination pulls into the agreement — independent of pricing.
+  // Load from sessionStorage on mount to persist across navigation.
   const [selectedTiersPerCombination, setSelectedTiersPerCombination] = useState<Record<string, 'Basic' | 'Standard' | 'Advanced'>>(() => {
     try {
       const saved = sessionStorage.getItem('cpq_selected_tiers_per_combination');
       if (saved) {
         const parsed = JSON.parse(saved);
-        console.log('📋 Restored per-combination tier selections:', parsed);
+        console.log('📋 Restored per-combination exhibit plans:', parsed);
         return parsed;
       }
     } catch (e) {
-      console.warn('Could not load per-combination tiers:', e);
+      console.warn('Could not load per-combination exhibit plans:', e);
     }
     return {};
   });
 
-  // Save per-combination tier selections to sessionStorage whenever they change
+  // Save per-combination exhibit plans to sessionStorage whenever they change
   useEffect(() => {
     try {
       sessionStorage.setItem('cpq_selected_tiers_per_combination', JSON.stringify(selectedTiersPerCombination));
-      console.log('💾 Saved per-combination tier selections:', selectedTiersPerCombination);
+      console.log('💾 Saved per-combination exhibit plans:', selectedTiersPerCombination);
     } catch (e) {
-      console.warn('Could not save per-combination tiers:', e);
+      console.warn('Could not save per-combination exhibit plans:', e);
     }
   }, [selectedTiersPerCombination]);
 
-  // Initialize selected tiers with the current calculation tier (Standard by default)
+  // GLOBAL pricing plan: the single plan used to price the WHOLE quote (same for all
+  // combinations). Independent of the per-combination exhibit plans above.
+  const [pricingPlan, setPricingPlan] = useState<'Basic' | 'Standard' | 'Advanced'>(() => {
+    try {
+      const saved = sessionStorage.getItem('cpq_pricing_plan');
+      if (saved === 'Basic' || saved === 'Standard' || saved === 'Advanced') return saved;
+    } catch (e) {
+      console.warn('Could not load pricing plan:', e);
+    }
+    return 'Standard';
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('cpq_pricing_plan', pricingPlan);
+    } catch (e) {
+      console.warn('Could not save pricing plan:', e);
+    }
+  }, [pricingPlan]);
+
+  // Initialize each combination's plan to Standard by default, preserving any plan already
+  // chosen (each combination keeps its own plan — mixing is allowed).
   useEffect(() => {
     if (configuration?.migrationType === 'Multi combination' && calculations.length > 0) {
-      const defaultTier = calculations.find(c => c.tier.name === 'Standard')?.tier.name || 'Standard';
-      const initialTiers: Record<string, 'Basic' | 'Standard' | 'Advanced'> = {};
-      
-      // Initialize all combinations with Standard tier
-      calculations[0]?.messagingCombinationBreakdowns?.forEach(b => {
-        initialTiers[b.combinationName] = defaultTier;
-      });
-      calculations[0]?.contentCombinationBreakdowns?.forEach(b => {
-        initialTiers[b.combinationName] = defaultTier;
-      });
-      calculations[0]?.emailCombinationBreakdowns?.forEach(b => {
-        initialTiers[b.combinationName] = defaultTier;
-      });
-      
+      const allNames: string[] = [];
+      calculations[0]?.messagingCombinationBreakdowns?.forEach(b => allNames.push(b.combinationName));
+      calculations[0]?.contentCombinationBreakdowns?.forEach(b => allNames.push(b.combinationName));
+      calculations[0]?.emailCombinationBreakdowns?.forEach(b => allNames.push(b.combinationName));
+      if (allNames.length === 0) return;
+
       setSelectedTiersPerCombination(prev => {
-        // Only set if not already set (preserve user selections from sessionStorage)
+        // Only fill in combinations that have no plan yet; never overwrite a user's choice.
+        const missing = allNames.filter(n => !prev[n]);
+        if (missing.length === 0) return prev;
         const updated = { ...prev };
-        Object.keys(initialTiers).forEach(key => {
-          if (!updated[key]) {
-            updated[key] = initialTiers[key];
-          }
-        });
+        missing.forEach(n => { updated[n] = 'Standard'; });
         return updated;
       });
     }
   }, [calculations, configuration]);
 
-  // Calculate custom total based on selected tiers per combination
+  // Calculate custom total — ALL combinations are priced at the single GLOBAL pricing plan
+  // (per-combination exhibit plans do NOT affect pricing).
   const customTotal = useMemo(() => {
     if (!configuration || configuration.migrationType !== 'Multi combination') {
       return null;
     }
 
+    const pricingTier = PRICING_TIERS.find(t => t.name === pricingPlan) || PRICING_TIERS[1];
     let total = 0;
     const breakdown: Array<{ combinationName: string; tier: string; cost: number; type: string }> = [];
-    
+
     // Calculate messaging combinations
     if (configuration.messagingConfigs && configuration.messagingConfigs.length > 0) {
       configuration.messagingConfigs.forEach(cfg => {
-        const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
-        const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
-        const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, tier);
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, pricingTier);
         total += pricing.totalCost;
         breakdown.push({
           combinationName: cfg.exhibitName,
-          tier: selectedTierName,
+          tier: pricingPlan,
           cost: pricing.totalCost,
           type: 'messaging'
         });
@@ -105,13 +117,11 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     // Calculate content combinations
     if (configuration.contentConfigs && configuration.contentConfigs.length > 0) {
       configuration.contentConfigs.forEach(cfg => {
-        const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
-        const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
-        const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, tier);
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, pricingTier);
         total += pricing.totalCost;
         breakdown.push({
           combinationName: cfg.exhibitName,
-          tier: selectedTierName,
+          tier: pricingPlan,
           cost: pricing.totalCost,
           type: 'content'
         });
@@ -121,13 +131,11 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     // Calculate email combinations
     if (configuration.emailConfigs && configuration.emailConfigs.length > 0) {
       configuration.emailConfigs.forEach(cfg => {
-        const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
-        const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
-        const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, tier);
+        const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, pricingTier);
         total += pricing.totalCost;
         breakdown.push({
           combinationName: cfg.exhibitName,
-          tier: selectedTierName,
+          tier: pricingPlan,
           cost: pricing.totalCost,
           type: 'email'
         });
@@ -138,11 +146,37 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
     console.log('🔧 Custom Total Calculation:', {
       breakdown,
       total,
-      selectedTiers: selectedTiersPerCombination
+      pricingPlan,
+      exhibitPlans: selectedTiersPerCombination
     });
-    
+
     return total;
-  }, [configuration, selectedTiersPerCombination]);
+  }, [configuration, pricingPlan]);
+
+  // Each combination keeps its OWN plan (mixing allowed). Setting the plan applies it to the
+  // currently selected combination only.
+  const setTierForCombination = (combinationName: string, newTier: 'Basic' | 'Standard' | 'Advanced') => {
+    setSelectedTiersPerCombination(prev => ({ ...prev, [combinationName]: newTier }));
+  };
+
+  // Flat list of every combination (across messaging/content/email) for the combination filter.
+  const allCombinations = useMemo(() => ([
+    ...((calculations[0]?.messagingCombinationBreakdowns || []).map(b => ({ type: 'messaging' as const, label: 'Messaging', name: b.combinationName, breakdown: b }))),
+    ...((calculations[0]?.contentCombinationBreakdowns || []).map(b => ({ type: 'content' as const, label: 'Content', name: b.combinationName, breakdown: b }))),
+    ...((calculations[0]?.emailCombinationBreakdowns || []).map(b => ({ type: 'email' as const, label: 'Email', name: b.combinationName, breakdown: b }))),
+  ]), [calculations]);
+
+  // Which combination is currently selected in the combination filter.
+  const [selectedCombinationView, setSelectedCombinationView] = useState<string>('');
+  const activeCombination =
+    allCombinations.find(c => c.name === selectedCombinationView) || allCombinations[0];
+
+  // The EXHIBIT plan of the currently selected combination (defaults to Standard).
+  const activeCombinationPlan: 'Basic' | 'Standard' | 'Advanced' =
+    (activeCombination && selectedTiersPerCombination[activeCombination.name]) || 'Standard';
+
+  // The global pricing tier object (used to price each combination's contribution).
+  const pricingTierObj = PRICING_TIERS.find(t => t.name === pricingPlan) || PRICING_TIERS[1];
 
   // Get pricing for a specific combination with selected tier
   const getCombinationPricing = (
@@ -844,90 +878,101 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
             🔧 Customize Individual Combinations
           </h3>
           <p className="text-sm text-purple-700 mb-4 text-center">
-            Select different plans for each combination to see a custom total
+            One pricing plan prices the whole quote; choose the exhibit plan separately per combination
           </p>
-          
+
           <div className="space-y-4">
-            {/* Messaging Combinations */}
-            {calculations[0]?.messagingCombinationBreakdowns?.map((breakdown) => {
-              const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
-              return (
-                <div key={breakdown.combinationName} className="bg-white rounded-lg p-4 border border-purple-200">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">
-                      Messaging: {breakdown.combinationName}
-                    </span>
-                    <select
-                      value={selectedTier}
-                      onChange={(e) => {
-                        setSelectedTiersPerCombination(prev => ({
-                          ...prev,
-                          [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
-                        }));
-                      }}
-                      className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    >
-                      <option value="Basic">Basic Plan</option>
-                      <option value="Standard">Standard Plan</option>
-                    </select>
-                  </div>
-                </div>
-              );
-            })}
+            {/* Global PRICING plan — same for all combinations, drives the total. */}
+            <div className="bg-white rounded-lg p-4 border border-purple-200">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-gray-700">Pricing Plan (applies to all)</span>
+                <select
+                  title="Pricing plan"
+                  aria-label="Pricing plan"
+                  value={pricingPlan}
+                  onChange={(e) => setPricingPlan(e.target.value as 'Basic' | 'Standard' | 'Advanced')}
+                  className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="Basic">Basic Plan</option>
+                  <option value="Standard">Standard Plan</option>
+                </select>
+              </div>
+              <p className="text-xs text-purple-600 mt-2">This plan prices the entire quote (all combinations).</p>
+            </div>
 
-            {/* Content Combinations */}
-            {calculations[0]?.contentCombinationBreakdowns?.map((breakdown) => {
-              const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
-              return (
-                <div key={breakdown.combinationName} className="bg-white rounded-lg p-4 border border-purple-200">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">
-                      Content: {breakdown.combinationName}
-                    </span>
-                    <select
-                      value={selectedTier}
-                      onChange={(e) => {
-                        setSelectedTiersPerCombination(prev => ({
-                          ...prev,
-                          [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
-                        }));
-                      }}
-                      className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    >
-                      <option value="Basic">Basic Plan</option>
-                      <option value="Standard">Standard Plan</option>
-                    </select>
-                  </div>
+            {/* Per-combination EXHIBIT plan — which plan's exhibits each combination includes. */}
+            {allCombinations.length > 0 && (
+              <div className="bg-white rounded-lg p-4 border border-purple-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-700">Combination</span>
+                  <select
+                    title="Combination"
+                    aria-label="Combination"
+                    value={activeCombination?.name || ''}
+                    onChange={(e) => setSelectedCombinationView(e.target.value)}
+                    className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500 max-w-[60%] truncate"
+                  >
+                    {allCombinations.map(c => (
+                      <option key={`${c.type}-${c.name}`} value={c.name}>{c.label}: {c.name}</option>
+                    ))}
+                  </select>
                 </div>
-              );
-            })}
 
-            {/* Email Combinations */}
-            {calculations[0]?.emailCombinationBreakdowns?.map((breakdown) => {
-              const selectedTier = selectedTiersPerCombination[breakdown.combinationName] || 'Standard';
-              return (
-                <div key={breakdown.combinationName} className="bg-white rounded-lg p-4 border border-purple-200">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">
-                      Email: {breakdown.combinationName}
-                    </span>
-                    <select
-                      value={selectedTier}
-                      onChange={(e) => {
-                        setSelectedTiersPerCombination(prev => ({
-                          ...prev,
-                          [breakdown.combinationName]: e.target.value as 'Basic' | 'Standard' | 'Advanced'
-                        }));
-                      }}
-                      className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    >
-                      <option value="Basic">Basic Plan</option>
-                      <option value="Standard">Standard Plan</option>
-                    </select>
-                  </div>
+                <div className="flex items-center justify-between mt-3">
+                  <span className="font-medium text-gray-700">Exhibit plan for this combination</span>
+                  <select
+                    title="Exhibit plan for this combination"
+                    aria-label="Exhibit plan for this combination"
+                    value={activeCombinationPlan}
+                    onChange={(e) => activeCombination && setTierForCombination(activeCombination.name, e.target.value as 'Basic' | 'Standard' | 'Advanced')}
+                    className="px-3 py-1.5 border border-purple-300 rounded-lg bg-white text-sm font-medium text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Basic">Basic Plan</option>
+                    <option value="Standard">Standard Plan</option>
+                  </select>
                 </div>
-              );
-            })}
+
+                {/* Reflection: exhibits this combination includes (at its exhibit plan), priced at the global plan. */}
+                {activeCombination && (() => {
+                  const pricing = getCombinationPricing(
+                    activeCombination.name,
+                    activeCombination.type,
+                    activeCombination.breakdown,
+                    pricingTierObj
+                  );
+                  return (
+                    <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm">
+                      <div className="flex justify-between mb-2">
+                        <span className="text-gray-600">Priced at {pricingPlan} Plan:</span>
+                        <span className="font-semibold text-purple-900">{formatCurrency(pricing.totalCost)}</span>
+                      </div>
+                      <div className="text-gray-600 mb-1">Exhibits included ({activeCombinationPlan} Plan):</div>
+                      <ul className="list-disc list-inside text-gray-700 space-y-0.5">
+                        <li>{activeCombination.name} — {activeCombinationPlan} Plan (In-scope / Included)</li>
+                        <li>{activeCombination.name} — {activeCombinationPlan} Plan (Out-scope / Not Included)</li>
+                      </ul>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Summary — exhibit plan chosen for each combination (so the mix is visible). */}
+            {allCombinations.length > 0 && (
+              <div className="bg-white rounded-lg p-4 border border-purple-200">
+                <span className="font-medium text-gray-700">Exhibit plan per combination</span>
+                <ul className="mt-2 space-y-1 text-sm">
+                  {allCombinations.map(c => (
+                    <li key={`sum-${c.type}-${c.name}`} className="flex justify-between">
+                      <span className="text-gray-700">{c.label}: {c.name}</span>
+                      <span className="font-semibold text-purple-900">
+                        {(selectedTiersPerCombination[c.name] || 'Standard')} Plan
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Custom Total Display */}
@@ -943,61 +988,60 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               {/* Button to proceed with custom selection */}
               <button
                 onClick={() => {
-                  // Create a custom PricingCalculation from the selected tiers
+                  // Create a custom PricingCalculation. ALL combinations are PRICED at the single
+                  // global pricing plan; per-combination exhibit plans only affect which exhibits
+                  // are pulled (handled downstream).
                   if (!configuration) return;
-                  
+
+                  const pricingTier = PRICING_TIERS.find(t => t.name === pricingPlan) || PRICING_TIERS[1];
                   let combinedUserCost = 0;
                   let combinedDataCost = 0;
                   let combinedMigrationCost = 0;
                   let combinedInstanceCost = 0;
-                  
+
                   // Calculate messaging combinations
                   if (configuration.messagingConfigs && configuration.messagingConfigs.length > 0) {
                     configuration.messagingConfigs.forEach(cfg => {
-                      const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
-                      const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
-                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, tier);
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'messaging', configuration, pricingTier);
                       combinedUserCost += pricing.userCost;
                       combinedDataCost += pricing.dataCost;
                       combinedMigrationCost += pricing.migrationCost;
                       combinedInstanceCost += pricing.instanceCost;
                     });
                   }
-                  
+
                   // Calculate content combinations
                   if (configuration.contentConfigs && configuration.contentConfigs.length > 0) {
                     configuration.contentConfigs.forEach(cfg => {
-                      const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
-                      const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
-                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, tier);
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'content', configuration, pricingTier);
                       combinedUserCost += pricing.userCost;
                       combinedDataCost += pricing.dataCost;
                       combinedMigrationCost += pricing.migrationCost;
                       combinedInstanceCost += pricing.instanceCost;
                     });
                   }
-                  
+
                   // Calculate email combinations
                   if (configuration.emailConfigs && configuration.emailConfigs.length > 0) {
                     configuration.emailConfigs.forEach(cfg => {
-                      const selectedTierName = selectedTiersPerCombination[cfg.exhibitName] || 'Standard';
-                      const tier = PRICING_TIERS.find(t => t.name === selectedTierName) || PRICING_TIERS[1];
-                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, tier);
+                      const pricing = calculateCombinationPricing(cfg.exhibitName, 'email', configuration, pricingTier);
                       combinedUserCost += pricing.userCost;
                       combinedDataCost += pricing.dataCost;
                       combinedMigrationCost += pricing.migrationCost;
                       combinedInstanceCost += pricing.instanceCost;
                     });
                   }
-                  
-                  // Create custom calculation (use Standard tier as base, but with custom totals)
+
+                  // Create custom calculation: priced at the global pricing plan; per-combination
+                  // exhibit plans are read downstream (sessionStorage) to pull each combination's
+                  // own-plan exhibits.
                   const customCalculation: PricingCalculation = {
                     userCost: combinedUserCost,
                     dataCost: combinedDataCost,
                     migrationCost: combinedMigrationCost,
                     instanceCost: combinedInstanceCost,
                     totalCost: customTotal,
-                    tier: PRICING_TIERS[1], // Use Standard as base tier
+                    tier: pricingTier, // Global pricing plan (drives total + label)
                     // Include the original calculations for reference
                     messagingCalculation: calculations[0]?.messagingCalculation,
                     contentCalculation: calculations[0]?.contentCalculation,

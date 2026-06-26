@@ -6141,6 +6141,42 @@ Total Price: {{total price}}`;
               const selectedPlanName = (calculation || safeCalculation)?.tier?.name ?? '';
               const selectedPlanLower = selectedPlanName.toLowerCase();
 
+              // Per-combination plan overrides. Each combination can use a DIFFERENT plan
+              // (e.g. OneDrive→OneDrive = Standard, Outlook→Gmail = Basic). The choice is keyed
+              // by combination/exhibit name and saved in sessionStorage. Build a
+              // (category|baseCombination) -> plan map so the exhibit filter below honors the
+              // plan chosen for EACH combination. A single plan still covers BOTH in-scope and
+              // out-scope variants because scope (includeType) is a separate dimension.
+              const perCombinationPlanByKey = new Map<string, string>();
+              try {
+                const rawPerCombo = typeof sessionStorage !== 'undefined'
+                  ? sessionStorage.getItem('cpq_selected_tiers_per_combination')
+                  : null;
+                if (rawPerCombo && isMultiCombination) {
+                  const perCombo = JSON.parse(rawPerCombo) as Record<string, string>;
+                  const allCfgs = [
+                    ...((cfgAny.messagingConfigs as any[]) || []),
+                    ...((cfgAny.contentConfigs as any[]) || []),
+                    ...((cfgAny.emailConfigs as any[]) || []),
+                  ];
+                  for (const cfg of allCfgs) {
+                    const chosen = perCombo[cfg?.exhibitName];
+                    if (!chosen) continue;
+                    const cfgExhibit = allExhibits.find(
+                      (e: any) => (e?._id?.toString?.() ?? '') === (cfg?.exhibitId?.toString?.() ?? '')
+                    );
+                    if (!cfgExhibit) continue;
+                    const cat = (cfgExhibit.category || 'content').toString().toLowerCase();
+                    const base = getBaseCombination(cfgExhibit);
+                    if (!base) continue;
+                    perCombinationPlanByKey.set(`${cat}|${base}`, chosen.toString().toLowerCase());
+                  }
+                  console.log('🔧 Per-combination plan overrides:', Object.fromEntries(perCombinationPlanByKey));
+                }
+              } catch (e) {
+                console.warn('Could not parse per-combination tier selections:', e);
+              }
+
               console.log('🔍 Exhibit expansion debug:', {
                 selectedPlanName,
                 selectedPlanLower,
@@ -6451,8 +6487,11 @@ Total Price: {{total price}}`;
                   // IMPORTANT: Allow exhibits without plan types (generic exhibits) to be included
                   // These are combination-specific but not plan-specific (e.g., "Google Chat to Google Chat")
                   const isGenericExhibit = !exhibitPlan || exhibitPlan === '';
-                  if (!isGenericExhibit && exhibitPlan.toLowerCase() !== selectedPlanLower) {
-                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${selectedPlanLower}` });
+                  // Honor a per-combination plan override for this exhibit's combination;
+                  // otherwise fall back to the single global plan.
+                  const effectivePlanLower = perCombinationPlanByKey.get(`${category}|${baseCombo}`) || selectedPlanLower;
+                  if (!isGenericExhibit && exhibitPlan.toLowerCase() !== effectivePlanLower) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${effectivePlanLower}` });
                     continue; // Skip if plan doesn't match (only for plan-specific exhibits)
                   }
                   expandedIds.add(ex._id?.toString?.() ?? '');
