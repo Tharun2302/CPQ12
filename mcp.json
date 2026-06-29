@@ -1,0 +1,35 @@
+{
+  "mcpServers": {
+    "git": {
+      "command": "git",
+      "description": "Git version control — read commit history, diffs, branches, create commits",
+      "tools": [
+        "git log",
+        "git diff",
+        "git status",
+        "git show",
+        "git blame",
+        "git branch",
+        "git log --oneline"
+      ],
+      "when_to_use": "When you need to understand code changes, review history, or verify commits"
+    },
+    "mongodb": {
+      "command": "mongodb",
+      "uri": "mongodb://localhost:27017",
+      "database": "cpq12",
+      "description": "MongoDB database — query exhibits, combinations, templates, pricing data",
+      "collections": [
+        "userQuotes",
+        "exhibitCombinations",
+        "templates",
+        "users",
+        "pricingPlans",
+        "discountRules",
+        "cloudIntegrations"
+      ],
+      "when_to_use": "When you need to verify data, check combinations, audit pricing changes, or test migrations"
+    }
+  },
+  "notes": "These integrations allow Claude to read git history and query MongoDB directly for testing and verification. Both are read-focused by default (no write access recommended for safety)."
+}

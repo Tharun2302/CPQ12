@@ -1,0 +1,80 @@
+{
+  "permissions": {
+    "read": [
+      "src/**",
+      "server.cjs",
+      "package.json",
+      "CLAUDE.md",
+      "AGENTS.md",
+      ".env",
+      "pricing-logic.js",
+      "public/**",
+      "scripts/**"
+    ],
+    "write": [
+      "src/**",
+      "server.cjs",
+      "pricing-logic.js",
+      "scripts/**",
+      ".claude/**"
+    ],
+    "execute": [
+      "npm install",
+      "npm run dev",
+      "npm run dev:all",
+      "npm run build",
+      "npm run lint",
+      "npm start",
+      "git add",
+      "git commit",
+      "git status",
+      "git diff",
+      "git log",
+      "node scripts/**"
+    ]
+  },
+  "denyList": {
+    "read": [
+      "node_modules/**",
+      ".git/objects/**",
+      "dist/**",
+      "postgres-data/**",
+      "onlyoffice-data/**"
+    ],
+    "write": [
+      ".env",
+      ".env.local",
+      "secrets/**",
+      ".git/**",
+      "node_modules/**",
+      "postgres-data/**",
+      "onlyoffice-data/**",
+      "package.json",
+      "package-lock.json"
+    ],
+    "execute": [
+      "rm -rf",
+      "git push",
+      "git reset --hard",
+      "npm publish",
+      "docker rm",
+      "docker rmi"
+    ]
+  },
+  "tools": {
+    "enabled": [
+      "git",
+      "mongodb",
+      "bash",
+      "node",
+      "npm"
+    ]
+  },
+  "model": "claude-opus-4-8",
+  "hooks": {
+    "before_write": "validate-code",
+    "after_edit": "auto-format",
+    "before_commit": "pre-commit-checks"
+  },
+  "notes": "These permissions ensure Claude can develop code safely without breaking system files or pushing unwanted commits. Person A and Person B both use the same settings."
+}
