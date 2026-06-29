@@ -3,11 +3,11 @@ import { Quote } from '../types/pricing';
 import { BACKEND_URL } from '../config/api';
 import { formatCurrency } from '../utils/pricing';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
-import { 
-  FileText, 
-  Download, 
-  Eye, 
-  Trash2, 
+import {
+  FileText,
+  Download,
+  Eye,
+  Trash2,
   User,
   Building,
   Mail,
@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Palette,
   FileDown,
-  Search
+  Search,
+  Edit
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -188,6 +189,78 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     }
   };
   
+  // Download a saved document for redlining in Word
+  const handleDownloadForRedline = async (doc: SavedDocument) => {
+    try {
+      // Fetch full document with fileData if not already present
+      let documentToDownload = doc;
+      if (!doc.fileData) {
+        const fullDoc = await documentServiceMongoDB.getDocument(doc.id);
+        if (!fullDoc || !fullDoc.fileData) {
+          alert('Unable to download document. File data not available.');
+          return;
+        }
+        documentToDownload = fullDoc;
+      }
+
+      // Check if we have stored DOCX file (preferred for redlining)
+      if (documentToDownload.docxFileData && documentToDownload.docxFileName) {
+        console.log('📥 Downloading DOCX file for redlining...');
+        const docxBlob = documentServiceMongoDB.base64ToBlob(
+          documentToDownload.docxFileData,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        );
+
+        // Create download link for DOCX
+        const url = URL.createObjectURL(docxBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        // Add "REDLINE" prefix to filename
+        link.download = `REDLINE-${documentToDownload.docxFileName}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        console.log('✅ Document downloaded for redlining');
+        alert('✅ Document downloaded for redlining!\n\nTips:\n• Use Word Track Changes (Review > Track Changes) to mark edits\n• All changes will be visible to reviewers\n• Re-upload the redlined version when ready');
+        return;
+      }
+
+      // Fallback: Convert PDF to Word for redlining
+      console.log('⚠️ No stored DOCX found, converting PDF to Word format for redlining...');
+
+      try {
+        const pdfBlob = documentServiceMongoDB.base64ToBlob(documentToDownload.fileData);
+        const pdfFile = new File([pdfBlob], documentToDownload.fileName || 'document.pdf', {
+          type: 'application/pdf'
+        });
+
+        console.log('🔄 Converting PDF to Word format...');
+        const wordFile = await convertPdfToWord(pdfFile);
+
+        if (wordFile.size < 1000) {
+          throw new Error('PDF to Word conversion produced an empty file.');
+        }
+
+        const clientName = (documentToDownload.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+        const dateStr = new Date(documentToDownload.generatedDate).toISOString().split('T')[0];
+        const wordFileName = `REDLINE-${clientName}_${dateStr}.docx`;
+
+        downloadWordFile(wordFile, wordFileName);
+        console.log('✅ Document converted and downloaded for redlining');
+        alert('✅ Document converted and downloaded for redlining!\n\nTips:\n• Use Word Track Changes (Review > Track Changes) to mark edits\n• All changes will be visible to reviewers\n• Re-upload the redlined version when ready');
+      } catch (conversionError: any) {
+        console.error('❌ PDF to Word conversion failed:', conversionError);
+        alert('Unable to convert PDF to Word for redlining. Please use the PDF download option instead.');
+        throw conversionError;
+      }
+    } catch (error) {
+      console.error('❌ Error downloading document for redlining:', error);
+      alert('Error downloading document. Please try again.');
+    }
+  };
+
   // Download a saved document as Word format
   const handleDownloadWordDocument = async (doc: SavedDocument) => {
     try {
@@ -1527,6 +1600,14 @@ ZENOP Pro Solutions Team`;
                   >
                     <Download className="w-4 h-4 flex-shrink-0" />
                     <span>PDF</span>
+                  </button>
+                  <button
+                    onClick={() => handleDownloadForRedline(doc)}
+                    className="flex-1 min-w-[80px] px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    title="Download for redlining with Track Changes in Word"
+                  >
+                    <Edit className="w-4 h-4 flex-shrink-0" />
+                    <span>Redline</span>
                   </button>
                   {/* Only show Word download button if DOCX data is available */}
                   {(doc.docxFileData || doc.docxFileName) && (
