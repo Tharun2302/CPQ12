@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Quote } from '../types/pricing';
 import { BACKEND_URL } from '../config/api';
+import OnlyOfficeEditor from './OnlyOfficeEditor';
 import { formatCurrency } from '../utils/pricing';
 import { getEffectiveDurationMonths } from '../utils/configDuration';
 import {
@@ -19,7 +20,8 @@ import {
   Palette,
   FileDown,
   Search,
-  Edit
+  Edit,
+  MoreVertical
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -98,6 +100,13 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
   const [mergePreviewPdfBlob, setMergePreviewPdfBlob] = useState<Blob | null>(null);
   const [mergePreviewFileName, setMergePreviewFileName] = useState<string>('');
   const [showPdfViewer, setShowPdfViewer] = useState<boolean>(false);
+  const [redlineDocId, setRedlineDocId] = useState<string | null>(null);
+  const [redlineSessionId, setRedlineSessionId] = useState<string | null>(null);
+  const [redlineEditorUrl, setRedlineEditorUrl] = useState<string>('');
+  const [redlineConfig, setRedlineConfig] = useState<any>(null);
+  const [isStartingRedline, setIsStartingRedline] = useState<string | null>(null);
+  const [isFinalizingRedline, setIsFinalizingRedline] = useState(false);
+  const [openMenuDocId, setOpenMenuDocId] = useState<string | null>(null);
 
   const loadSavedDocuments = useCallback(async () => {
     setLoadingDocuments(true);
@@ -189,75 +198,81 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
     }
   };
   
-  // Download a saved document for redlining in Word
+  // Open a saved document for redlining in OnlyOffice
   const handleDownloadForRedline = async (doc: SavedDocument) => {
+    if (!doc.id) return;
+    setIsStartingRedline(doc.id);
     try {
-      // Fetch full document with fileData if not already present
-      let documentToDownload = doc;
-      if (!doc.fileData) {
-        const fullDoc = await documentServiceMongoDB.getDocument(doc.id);
-        if (!fullDoc || !fullDoc.fileData) {
-          alert('Unable to download document. File data not available.');
-          return;
-        }
-        documentToDownload = fullDoc;
-      }
+      const resp = await fetch(
+        `${BACKEND_URL}/api/onlyoffice/start-session-from-document/${encodeURIComponent(doc.id)}`,
+        { method: 'POST' }
+      );
+      const data = await resp.json();
+      if (!resp.ok || !data?.success) throw new Error(data?.error || 'Failed to open the editor');
+      setRedlineDocId(doc.id);
+      setRedlineSessionId(data.sessionId);
+      setRedlineEditorUrl(data.editorUrl);
+      setRedlineConfig(data.config);
+    } catch (e) {
+      alert(
+        e instanceof Error
+          ? e.message
+          : 'Could not open the redline editor. Make sure OnlyOffice is running.'
+      );
+    } finally {
+      setIsStartingRedline(null);
+    }
+  };
 
-      // Check if we have stored DOCX file (preferred for redlining)
-      if (documentToDownload.docxFileData && documentToDownload.docxFileName) {
-        console.log('📥 Downloading DOCX file for redlining...');
-        const docxBlob = documentServiceMongoDB.base64ToBlob(
-          documentToDownload.docxFileData,
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        );
+  const closeRedline = () => {
+    setRedlineDocId(null);
+    setRedlineSessionId(null);
+    setRedlineConfig(null);
+    setRedlineEditorUrl('');
+  };
 
-        // Create download link for DOCX
-        const url = URL.createObjectURL(docxBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        // Add "REDLINE" prefix to filename
-        link.download = `REDLINE-${documentToDownload.docxFileName}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        console.log('✅ Document downloaded for redlining');
-        alert('✅ Document downloaded for redlining!\n\nTips:\n• Use Word Track Changes (Review > Track Changes) to mark edits\n• All changes will be visible to reviewers\n• Re-upload the redlined version when ready');
-        return;
-      }
-
-      // Fallback: Convert PDF to Word for redlining
-      console.log('⚠️ No stored DOCX found, converting PDF to Word format for redlining...');
-
+  // Save the redlined document changes back to MongoDB
+  const handleFinalizeRedline = async () => {
+    if (!redlineSessionId) return;
+    setIsFinalizingRedline(true);
+    try {
       try {
-        const pdfBlob = documentServiceMongoDB.base64ToBlob(documentToDownload.fileData);
-        const pdfFile = new File([pdfBlob], documentToDownload.fileName || 'document.pdf', {
-          type: 'application/pdf'
-        });
-
-        console.log('🔄 Converting PDF to Word format...');
-        const wordFile = await convertPdfToWord(pdfFile);
-
-        if (wordFile.size < 1000) {
-          throw new Error('PDF to Word conversion produced an empty file.');
-        }
-
-        const clientName = (documentToDownload.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
-        const dateStr = new Date(documentToDownload.generatedDate).toISOString().split('T')[0];
-        const wordFileName = `REDLINE-${clientName}_${dateStr}.docx`;
-
-        downloadWordFile(wordFile, wordFileName);
-        console.log('✅ Document converted and downloaded for redlining');
-        alert('✅ Document converted and downloaded for redlining!\n\nTips:\n• Use Word Track Changes (Review > Track Changes) to mark edits\n• All changes will be visible to reviewers\n• Re-upload the redlined version when ready');
-      } catch (conversionError: any) {
-        console.error('❌ PDF to Word conversion failed:', conversionError);
-        alert('Unable to convert PDF to Word for redlining. Please use the PDF download option instead.');
-        throw conversionError;
+        await fetch(`${BACKEND_URL}/api/onlyoffice/force-save/${redlineSessionId}`, { method: 'POST' });
+      } catch {
+        /* still poll for any auto-saved version */
       }
-    } catch (error) {
-      console.error('❌ Error downloading document for redlining:', error);
-      alert('Error downloading document. Please try again.');
+
+      const start = Date.now();
+      let data: any = null;
+      while (Date.now() - start < 30000) {
+        const r = await fetch(`${BACKEND_URL}/api/onlyoffice/result/${redlineSessionId}`);
+        if (r.ok) {
+          data = await r.json();
+          if (data?.status === 'ready') break;
+          if (data?.status === 'no-changes' || data?.status === 'editor-error' || data?.status === 'pdf-failed') break;
+        }
+        await new Promise((res) => setTimeout(res, 1500));
+      }
+
+      if (data?.status === 'ready') {
+        const persist = await fetch(
+          `${BACKEND_URL}/api/onlyoffice/persist-to-document/${redlineSessionId}`,
+          { method: 'POST' }
+        );
+        const pdata = await persist.json();
+        if (!persist.ok || !pdata?.success) throw new Error(pdata?.error || 'Failed to save the edited document');
+        alert('✅ Redline saved — document updated with your changes');
+        closeRedline();
+      } else if (data?.status === 'no-changes') {
+        alert('No changes to save');
+        closeRedline();
+      } else {
+        alert('Saving the edited document timed out. Click Save in the editor first, then try Done again.');
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save the edited document.');
+    } finally {
+      setIsFinalizingRedline(false);
     }
   };
 
@@ -1601,14 +1616,6 @@ ZENOP Pro Solutions Team`;
                     <Download className="w-4 h-4 flex-shrink-0" />
                     <span>PDF</span>
                   </button>
-                  <button
-                    onClick={() => handleDownloadForRedline(doc)}
-                    className="flex-1 min-w-[80px] px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
-                    title="Download for redlining with Track Changes in Word"
-                  >
-                    <Edit className="w-4 h-4 flex-shrink-0" />
-                    <span>Redline</span>
-                  </button>
                   {/* Only show Word download button if DOCX data is available */}
                   {(doc.docxFileData || doc.docxFileName) && (
                     <button
@@ -2071,6 +2078,86 @@ ZENOP Pro Solutions Team`;
               <p className="text-xs text-gray-500 mt-1">
                 Use the browser's built-in PDF controls to zoom, scroll, and navigate
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OnlyOffice Redline Editor Modal */}
+      {redlineDocId && redlineSessionId && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[95vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-red-50">
+              <div className="flex items-center gap-3">
+                <FileText className="w-6 h-6 text-orange-600" />
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Redline Editor</h2>
+                  <p className="text-sm text-gray-600">Make edits using comments and track changes</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeRedline}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Close Editor"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Editor Container */}
+            <div className="flex-1 overflow-hidden bg-gray-50">
+              {redlineConfig && redlineEditorUrl ? (
+                <OnlyOfficeEditor
+                  editorUrl={redlineEditorUrl}
+                  config={redlineConfig}
+                  onError={(msg) => alert(`Editor error: ${msg}`)}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-600 font-medium">Loading editor...</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-3">
+              <p className="text-sm text-gray-600">
+                Make your edits and click <strong>Save</strong> in the editor before clicking Done.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={closeRedline}
+                  className="px-5 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFinalizeRedline}
+                  disabled={isFinalizingRedline}
+                  className="px-6 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-semibold text-sm flex items-center gap-2"
+                >
+                  {isFinalizingRedline ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Saving Changes...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Done & Save
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

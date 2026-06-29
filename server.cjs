@@ -5208,14 +5208,27 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     };
     const isDocx = (b) => b && b.length > 1 && b[0] === 0x50 && b[1] === 0x4b;
 
-    // Prefer the stored Word file; fall back to fileData if it is itself a DOCX.
+    // Prefer the stored Word file; fall back to fileData if it is itself a DOCX or PDF.
     let docx = toBuf(document.docxFileData);
+    let fileType = 'docx';
+    let documentType = 'word';
+
     if (!isDocx(docx)) {
       const fd = toBuf(document.fileData);
-      docx = isDocx(fd) ? fd : null;
+      if (isDocx(fd)) {
+        docx = fd;
+      } else if (fd && fd.length > 4 && fd[0] === 0x25 && fd[1] === 0x50 && fd[2] === 0x44 && fd[3] === 0x46) {
+        // PDF file detected (starts with %PDF)
+        docx = fd;
+        fileType = 'pdf';
+        documentType = 'pdf';
+      } else {
+        docx = null;
+      }
     }
-    if (!isDocx(docx)) {
-      return res.status(400).json({ success: false, error: 'No editable Word (DOCX) version is available for this document, so it cannot be redlined.' });
+
+    if (!docx) {
+      return res.status(400).json({ success: false, error: 'No editable version (DOCX or PDF) is available for this document.' });
     }
 
     const sessionId = uuidv4();
@@ -5236,11 +5249,11 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     const fileUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/file/${sessionId}`;
     const callbackUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/callback/${sessionId}`;
     const config = {
-      documentType: 'word',
+      documentType: documentType,
       document: {
-        fileType: 'docx',
+        fileType: fileType,
         key: sessionId,
-        title: (document.fileName || 'agreement').replace(/\.[^.]+$/, '') + '.docx',
+        title: (document.fileName || 'agreement').replace(/\.[^.]+$/, '') + (fileType === 'pdf' ? '.pdf' : '.docx'),
         url: fileUrl,
       },
       editorConfig: {
