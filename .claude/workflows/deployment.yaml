@@ -1,0 +1,193 @@
+# Deployment Workflow
+
+## Description
+Pipeline for deploying code to staging and production environments.
+
+## Pre-Deployment Checklist
+
+- [ ] All tests passing
+- [ ] Code review approved
+- [ ] Security review passed
+- [ ] Database migrations tested
+- [ ] No breaking changes documented
+- [ ] Backups created
+- [ ] Team notified
+
+## Phases
+
+### Phase 1: Build
+
+- Build Docker image
+- Run tests in Docker
+- Verify build succeeds
+- Tag image with version
+
+### Phase 2: Staging Deployment
+
+- Deploy to staging environment
+- Run smoke tests
+- Verify all services running
+- Check database migrations
+- Test critical workflows
+- Monitor error logs
+
+### Phase 3: Staging Verification
+
+- Perform manual testing
+- Verify features working
+- Check performance metrics
+- Verify integrations working
+- Verify no regressions
+
+### Phase 4: Production Deployment
+
+- Create backup of production database
+- Deploy to production
+- Run health checks
+- Verify services started
+- Monitor for errors
+
+### Phase 5: Post-Deployment Verification
+
+- Smoke test production
+- Monitor error logs
+- Check performance metrics
+- Verify critical features
+- Monitor for 1 hour minimum
+
+### Phase 6: Rollback (if needed)
+
+- Identify issue
+- Rollback to previous version
+- Verify rollback successful
+- Investigate root cause
+- Plan fix
+
+## Deployment Environments
+
+### Staging
+- For testing before production
+- Uses same config as production
+- Same data structure as production
+- No real user data
+
+### Production
+- Live environment
+- Real user data
+- Monitored 24/7
+- Backup before deployment
+
+## Deployment Commands
+
+```bash
+# Build image
+docker build -t cpq12:v1.0.0 .
+
+# Test locally
+docker-compose up
+
+# Push to registry
+docker push cpq12:v1.0.0
+
+# Deploy to staging
+./scripts/deploy-staging.sh v1.0.0
+
+# Deploy to production
+./scripts/deploy-production.sh v1.0.0
+
+# Rollback production
+./scripts/rollback-production.sh
+```
+
+## Timeline
+
+- Staging deployment: 15-30 minutes
+- Staging verification: 30 minutes - 1 hour
+- Production deployment: 15-30 minutes
+- Post-deployment monitoring: 1+ hour
+
+## Monitoring After Deployment
+
+### First 30 minutes
+- Monitor error logs continuously
+- Check CPU/Memory usage
+- Verify API endpoints responding
+- Check database connections
+
+### First hour
+- Monitor customer reports
+- Check performance metrics
+- Verify all features working
+- Review application logs
+
+### First 24 hours
+- Continue monitoring
+- Watch for trends
+- Monitor database backups
+- Verify data integrity
+
+## Communication
+
+### Before Deployment
+- Notify team of deployment time
+- Estimated downtime (if any)
+- Features being deployed
+
+### During Deployment
+- Update progress channel
+- Alert team to any issues
+- Rollback decision if needed
+
+### After Deployment
+- Confirm successful deployment
+- List deployed features
+- Known issues (if any)
+- Next steps
+
+## Rollback Decision
+
+Rollback if:
+- [ ] Critical feature not working
+- [ ] Database corruption detected
+- [ ] Performance significantly degraded
+- [ ] Security issue detected
+- [ ] Large number of errors in logs
+
+Do NOT rollback for:
+- [ ] Minor UI issues
+- [ ] Non-critical feature bugs
+- [ ] Single error log entry
+
+## Deployment Checklist
+
+### Pre-Deployment
+- [ ] Code merged to main branch
+- [ ] Tests passing in CI/CD
+- [ ] Security review cleared
+- [ ] Code review approved
+- [ ] Database migrations tested
+- [ ] Backups created
+- [ ] Team notified
+
+### During Deployment
+- [ ] Staging tests passing
+- [ ] Production build successful
+- [ ] Services starting correctly
+- [ ] Health checks passing
+- [ ] Database migrations running
+
+### Post-Deployment
+- [ ] Production health checks passing
+- [ ] Error logs clean
+- [ ] Performance metrics normal
+- [ ] Customer reports none
+- [ ] Team confirms success
+
+## Success Criteria
+
+- [ ] All services running
+- [ ] Health checks passing
+- [ ] No critical errors in logs
+- [ ] Performance metrics normal
+- [ ] Features working as expected
+- [ ] No customer complaints

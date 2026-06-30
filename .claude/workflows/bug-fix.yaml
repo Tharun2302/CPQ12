@@ -1,0 +1,83 @@
+# Bug Fix Workflow
+
+## Description
+Streamlined pipeline for fixing bugs, skipping design phase.
+
+## Phases
+
+### Phase 1: Bug Analysis
+- Understand the bug
+- Identify root cause
+- Identify affected areas
+- List required fixes
+
+### Phase 2: Fix Implementation
+- Backend Engineer OR Frontend Engineer fixes code
+  - If backend bug: Backend Engineer codes fix
+  - If frontend bug: Frontend Engineer codes fix
+  - If both: Both work in parallel
+- Write/update tests
+- Verify fix works
+
+### Phase 3: Testing
+- QA Engineer tests the fix
+- Verify bug is resolved
+- Verify no new bugs introduced
+- Test edge cases
+
+### Phase 4: Security Check (if applicable)
+- Security Reviewer checks fix
+- Especially if security-related bug
+- Ensure fix doesn't introduce vulnerabilities
+
+### Phase 5: Code Review
+- Code Reviewer reviews fix code
+- Check code quality
+- Check test coverage
+
+### Phase 6: Documentation Update
+- Documentation Engineer updates docs
+- Update CHANGELOG with bug fix
+- Update relevant docs if behavior changed
+
+### Phase 7: Deployment
+- DevOps Engineer deploys hotfix
+- Deploy to production ASAP
+- Monitor for issues
+
+## Success Criteria
+
+- [ ] Bug reproduced and understood
+- [ ] Fix implemented
+- [ ] Tests passing
+- [ ] QA verified bug is fixed
+- [ ] No new bugs introduced
+- [ ] Code review approved
+- [ ] Deployed to production
+
+## Timeline
+
+Estimated time: 2-8 hours depending on complexity
+
+- Analysis: 15-30 minutes
+- Implementation: 1-4 hours
+- Testing: 30 minutes - 2 hours
+- Code Review: 15-30 minutes
+- Deployment: 15-30 minutes
+
+## Critical Bug Hotfix
+
+If critical bug in production:
+1. Fix immediately (skip some reviews if necessary)
+2. Deploy to production
+3. Complete reviews post-deployment
+4. Monitor closely
+
+## Bug Severity
+
+| Severity | Timeline | Process |
+|---|---|---|
+| **Critical** | Immediate | Fix → Deploy → Review |
+| **High** | Same day | Standard process |
+| **Medium** | Within 2 days | Standard process |
+| **Low** | Next sprint | Batch with other fixes |
