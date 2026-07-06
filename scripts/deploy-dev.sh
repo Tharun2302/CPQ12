@@ -32,9 +32,9 @@ setup_ssh_key() {
         exit 1
     fi
 
-    # Create SSH key file from environment variable
+    # Create SSH key file from environment variable (decode base64)
     mkdir -p ~/.ssh
-    echo "$DEPLOY_SSH_KEY" > ~/"$SSH_KEY_FILE"
+    echo "$DEPLOY_SSH_KEY" | base64 -d > ~/"$SSH_KEY_FILE"
     chmod 600 ~/"$SSH_KEY_FILE"
 
     log "INFO" "${GREEN}✅ SSH key file created${NC}"
