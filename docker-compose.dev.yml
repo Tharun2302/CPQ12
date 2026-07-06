@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cpq12-dev
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongo:27017/cpq12
+      - POSTGRES_URI=postgresql://cpq12:cpq12pass@postgres:5432/cpq12_signatures
+      - JWT_SECRET=dev-secret-key-change-in-production
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./CPQ12:/app/CPQ12
+      - ./backend-uploads:/app/uploads
+      - ./backend-exhibits:/app/exhibits
+    networks:
+      - cpq-network
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.example.description=CPQ12 Development Backend"
+      - "com.example.version=dev"
+
+  mongo:
+    image: mongo:5
+    container_name: cpq12-mongo-dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-dev-data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=cpq12pass
+    networks:
+      - cpq-network
+    restart: on-failure
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "com.example.description=MongoDB Development"
+
+  postgres:
+    image: postgres:15
+    container_name: cpq12-postgres-dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=cpq12
+      - POSTGRES_PASSWORD=cpq12pass
+      - POSTGRES_DB=cpq12_signatures
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    networks:
+      - cpq-network
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpq12"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "com.example.description=PostgreSQL Development"
+
+volumes:
+  mongo-dev-data:
+    driver: local
+  postgres-dev-data:
+    driver: local
+
+networks:
+  cpq-network:
+    driver: bridge
+    name: cpq-network
