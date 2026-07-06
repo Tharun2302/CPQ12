@@ -1,0 +1,185 @@
+╔═════════════════════════════════════════════════════════════════╗
+║                 DUPLICATE EXHIBITS - FOR REVIEW                   ║
+╚═════════════════════════════════════════════════════════════════╝
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMBINATION: "dropbox-to-mydrive"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Plan/Include: BASIC/INCLUDED
+
+   1. NAME: Dropbox to MyDrive Basic Plan - Basic Include
+      ID:   6944e81de22c1481c5e2a018
+      TAGS: dropbox-to-mydrive | all
+
+   2. NAME: Dropbox to Google MyDrive Basic Plan - Basic Include
+      ID:   696f33944eb870c3ba651965
+      TAGS: dropbox-to-google-mydrive | dropbox-to-mydrive
+
+📋 Plan/Include: BASIC/NOTINCLUDED
+
+   1. NAME: Dropbox to MyDrive Basic Plan - Basic Not Include
+      ID:   6944e81ee22c1481c5e2a019
+      TAGS: dropbox-to-mydrive | all
+
+   2. NAME: Dropbox to Google MyDrive Basic Plan - Basic Not Included
+      ID:   696f33944eb870c3ba651966
+      TAGS: dropbox-to-google-mydrive | dropbox-to-mydrive
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMBINATION: "google-mydrive-to-google-mydrive"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Plan/Include: BASIC/INCLUDED
+
+   1. NAME: Google MyDrive to Google MyDrive Basic Plan - Basic Include
+      ID:   6960b04b5e2ee52c3b80ec88
+      TAGS: google-mydrive-to-google-mydrive | all
+
+   2. NAME: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include
+      ID:   69679bc62f0ef8fcd31a6083
+      TAGS: google-mydrive-to-google-mydrive | google-mydrive-to-google-sharedrive | all
+
+📋 Plan/Include: BASIC/NOTINCLUDED
+
+   1. NAME: Google MyDrive to Google MyDrive Basic Plan - Basic Not Include
+      ID:   6960b04b5e2ee52c3b80ec89
+      TAGS: google-mydrive-to-google-mydrive | all
+
+   2. NAME: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include
+      ID:   69679d6e0f005aa81af00acd
+      TAGS: google-mydrive-to-google-mydrive | google-mydrive-to-google-sharedrive | all
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMBINATION: "google-mydrive-to-google-sharedrive"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Plan/Include: BASIC/INCLUDED
+
+   1. NAME: Google MyDrive to Google Shared Drive Basic Plan - Basic Include
+      ID:   6960a78babe789ae5811ef80
+      TAGS: google-mydrive-to-google-sharedrive | all
+
+   2. NAME: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include
+      ID:   69679bc62f0ef8fcd31a6083
+      TAGS: google-mydrive-to-google-mydrive | google-mydrive-to-google-sharedrive | all
+
+   3. NAME: Google My Drive & Share Drive To Google My Drive & Share Drive  Basic Plan - Basic Include
+      ID:   697c8268b9fa6a508e159885
+      TAGS: google-mydrive-to-google-sharedrive
+
+📋 Plan/Include: BASIC/NOTINCLUDED
+
+   1. NAME: Google MyDrive to Google Shared Drive Basic Plan - Basic Not Include
+      ID:   6960a78babe789ae5811ef81
+      TAGS: google-mydrive-to-google-sharedrive | all
+
+   2. NAME: Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include
+      ID:   69679d6e0f005aa81af00acd
+      TAGS: google-mydrive-to-google-mydrive | google-mydrive-to-google-sharedrive | all
+
+   3. NAME: Google My Drive & Share Drive To Google My Drive & Share Drive  Basic Plan - Basic Not Include
+      ID:   697c828ab9fa6a508e159886
+      TAGS: google-mydrive-to-google-sharedrive
+
+📋 Plan/Include: STANDARD/INCLUDED
+
+   1. NAME: Google MyDrive to Google Shared Drive Standard Plan - Standard Include
+      ID:   6960ba75c96ec65811ffbe50
+      TAGS: google-mydrive-to-google-sharedrive | all
+
+   2. NAME: Google My Drive & Share Drive to Google My Drive & Share Drive Standard Plan - Standard Include
+      ID:   697c815ab9fa6a508e159883
+      TAGS: google-mydrive-to-google-sharedrive
+
+📋 Plan/Include: STANDARD/NOTINCLUDED
+
+   1. NAME: Google MyDrive to Google Shared Drive Standard Plan - Standard Not Include
+      ID:   6960ba75c96ec65811ffbe51
+      TAGS: google-mydrive-to-google-sharedrive | all
+
+   2. NAME: Google My Drive & Share Drive To Google My Drive & Share Drive  Standard Plan - Standard Not Include
+      ID:   697c8184b9fa6a508e159884
+      TAGS: google-mydrive-to-google-sharedrive
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMBINATION: "sharefile-to-google-mydrive"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Plan/Include: BASIC/INCLUDED
+
+   1. NAME: ShareFile to Google MyDrive Basic Plan - Basic Include
+      ID:   696106ab4ef6e2a09b405393
+      TAGS: sharefile-to-google-mydrive | all
+
+   2. NAME: ShareFile to Google MyDrive Basic Plan - Basic Included
+      ID:   696f78ffeb26b2aa1cd79fe8
+      TAGS: sharefile-to-google-mydrive | all
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMBINATION: "sharefile-to-google-sharedrive"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Plan/Include: STANDARD/INCLUDED
+
+   1. NAME: ShareFile to Google SharedDrive Standard Plan - Standard Included
+      ID:   69400400eafb4acacf0b5aaa
+      TAGS: sharefile-to-google-sharedrive | all
+
+   2. NAME: ShareFile to Google Shared Drive Standard Plan - Included Features
+      ID:   69705d075db342c1893897ad
+      TAGS: sharefile-to-google-sharedrive | all
+
+📋 Plan/Include: STANDARD/NOTINCLUDED
+
+   1. NAME: ShareFile to Google SharedDrive Standard Plan - Standard Not Included
+      ID:   69400400eafb4acacf0b5aab
+      TAGS: sharefile-to-google-sharedrive | all
+
+   2. NAME: ShareFile to Google Shared Drive Standard Plan - Not Included Features
+      ID:   69705d085db342c1893897ae
+      TAGS: sharefile-to-google-sharedrive | all
+
+📋 Plan/Include: BASIC/INCLUDED
+
+   1. NAME: ShareFile to Google Shared Drive Basic Plan - Basic Include
+      ID:   6967c696a7d7c1972a07ea72
+      TAGS: sharefile-to-google-sharedrive | all
+
+   2. NAME: ShareFile to Google SharedDrive Basic Plan - Basic Included
+      ID:   696f38a6d4801a6e36648227
+      TAGS: sharefile-to-google-sharedrive | all
+
+📋 Plan/Include: BASIC/NOTINCLUDED
+
+   1. NAME: ShareFile to Google Shared Drive Basic Plan - Basic Not Include
+      ID:   6967c696a7d7c1972a07ea73
+      TAGS: sharefile-to-google-sharedrive | all
+
+   2. NAME: ShareFile to Google SharedDrive Basic Plan - Basic Not Included
+      ID:   696f38a6d4801a6e36648228
+      TAGS: sharefile-to-google-sharedrive | all
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMBINATION: "teams-to-slack"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Plan/Include: BASIC/NOTINCLUDED
+
+   1. NAME: Teams To Slack Basic Plan - Basic Not Include
+      ID:   69eb7e0d8a28c086110316d9
+      TAGS: teams-to-slack | teams-to-slack-notincluded-basic
+
+   2. NAME: Teams to Slack Basic Plan - Basic Not Include
+      ID:   69fd77c7bb6ef510f2c2073e
+      TAGS: teams-to-slack
+
+
+═════════════════════════════════════════════════════════════════
+TOTAL DUPLICATE ENTRIES: 30

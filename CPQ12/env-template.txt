@@ -1,0 +1,95 @@
+# ===========================================
+# COPY THIS TO .env FILE IN YOUR PROJECT ROOT
+# ===========================================
+
+# ===========================================
+# MICROSOFT AUTHENTICATION CONFIGURATION
+# ===========================================
+# Get this from Azure App Registration
+# Go to: https://portal.azure.com > Azure Active Directory > App registrations
+# If not set, Microsoft sign-in is disabled; users can still sign in with email/password.
+VITE_MSAL_CLIENT_ID=your-microsoft-client-id-here
+VITE_MSAL_REDIRECT_URI=
+
+# ===========================================
+# DATABASE CONFIGURATION (Optional)
+# ===========================================
+# For MySQL/MariaDB
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=root
+DB_NAME=cpq_database1
+DB_PORT=3306
+
+# For MongoDB (if using MongoDB instead)
+MONGODB_URI=mongodb://localhost:27017
+DB_NAME=cpq_database
+
+# ===========================================
+# EMAIL CONFIGURATION (Optional)
+# ===========================================
+# For sending emails (Gmail example)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-password
+
+# ===========================================
+# HUBSPOT INTEGRATION (Optional)
+# ===========================================
+# For HubSpot CRM integration
+HUBSPOT_ACCESS_TOKEN=your-hubspot-token-here
+
+# ===========================================
+# SERVER CONFIGURATION
+# ===========================================
+# Port for your backend server
+PORT=3001
+
+# Backend URL (for frontend API calls)
+# Local: http://localhost:3001
+# Production: https://zenop.ai
+VITE_BACKEND_URL=http://localhost:3001
+
+# Frontend URL (for email links and redirects)
+# Local: http://localhost:5173
+# Production: https://zenop.ai
+BASE_URL=http://localhost:5173
+
+# Backend Base URL (for CORS and email links)
+# Local: http://localhost:3001
+# Production: https://zenop.ai
+APP_BASE_URL=http://localhost:3001
+
+# JWT Secret for authentication tokens (CHANGE IN PRODUCTION!)
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+
+# ===========================================
+# DEVELOPMENT vs PRODUCTION
+# ===========================================
+# Set to 'production' when deploying
+NODE_ENV=development
+
+# ===========================================
+# MICROSOFT CLARITY ANALYTICS
+# ===========================================
+# Get your Clarity Project ID from: https://clarity.microsoft.com/
+# Create a project and copy the Project ID
+VITE_CLARITY_ID=your-clarity-project-id-here
+
+# Enable Clarity in development mode (set to '1' to enable, '0' or leave empty to disable)
+# In production, Clarity automatically works (no need to set this)
+VITE_CLARITY_ENABLE_DEV=0
+
+# ===========================================
+# APPROVAL WORKFLOW DEFAULT RECIPIENTS
+# ===========================================
+# Frontend defaults (Vite requires VITE_ prefix)
+VITE_APPROVAL_TECH_EMAIL=
+VITE_APPROVAL_LEGAL_EMAIL=
+VITE_APPROVAL_DEALDESK_EMAIL=
+
+# Backend defaults (fallbacks if frontend doesn't provide addresses)
+TECHNICAL_TEAM_EMAIL=
+LEGAL_TEAM_EMAIL=
+DEAL_DESK_EMAIL=

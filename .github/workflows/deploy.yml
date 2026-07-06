@@ -12,24 +12,30 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          submodules: recursive
 
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
 
+      - name: Verify CPQ12 structure
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Repository structure:"
+          ls -la CPQ12/package.json || echo "ERROR: CPQ12/package.json not found!"
+          echo "Verifying npm can find package.json..."
+          npm list 2>&1 | head -5 || true
+
       - name: Install dependencies
-        run: npm install
+        run: npm install --prefix CPQ12
 
       - name: Run linter
-        run: npm run lint 2>/dev/null || echo "Linting skipped"
+        run: npm run lint --prefix CPQ12 2>/dev/null || echo "Linting skipped"
 
       - name: Run tests
-        run: npm test -- --coverage 2>/dev/null || echo "Tests skipped"
+        run: npm test --prefix CPQ12 -- --coverage 2>/dev/null || echo "Tests skipped"
 
       - name: Build frontend
-        run: npm run build:frontend 2>/dev/null || echo "Frontend build skipped"
+        run: npm run build --prefix CPQ12 2>/dev/null || echo "Frontend build skipped"
 
       - name: Build Docker image
         run: docker build -t cpq12:${{ github.sha }} .
@@ -49,6 +55,13 @@ jobs:
 
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Verify deployment script exists
+        run: |
+          echo "Checking for deployment script..."
+          ls -la CPQ12/scripts/deploy-dev.sh || echo "ERROR: deploy-dev.sh not found!"
+          echo "Repository structure:"
+          find CPQ12/scripts -type f -name "deploy-*.sh" | head -10
 
       - name: Deploy to development server
         env:

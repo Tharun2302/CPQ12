@@ -1,0 +1,1324 @@
+import React, { useMemo, useState, useEffect } from 'react';
+import { Check, ChevronRight, Search, ArrowRight, RefreshCw, X } from 'lucide-react';
+import { BACKEND_URL } from '../config/api';
+
+interface Exhibit {
+  _id: string;
+  name: string;
+  description: string;
+  fileName: string;
+  combinations: string[];
+  category?: string;
+  planType?: string; // 'basic' | 'standard' | 'advanced' | ''
+  includeType?: 'included' | 'notincluded'; // Separate included vs not included exhibits
+  isRequired: boolean;
+  displayOrder: number;
+}
+
+interface ExhibitSelectorProps {
+  combination: string;
+  selectedExhibits: string[];
+  onExhibitsChange: (exhibitIds: string[]) => void;
+  selectedTier?: { tier: { name: string } } | null;
+}
+
+const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
+  combination,
+  selectedExhibits,
+  onExhibitsChange,
+  selectedTier
+}) => {
+  const [exhibits, setExhibits] = useState<Exhibit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const selectedExhibitsRef = React.useRef(selectedExhibits);
+  useEffect(() => { selectedExhibitsRef.current = selectedExhibits; });
+  // Exhibit IDs belonging to hidden combinations (kept out of the selection)
+  const hiddenExhibitIdsRef = React.useRef<string[]>([]);
+  // Exhibit IDs the user explicitly removed (via the chip's X). The required/auto-select
+  // effects must NOT immediately re-add these, otherwise "remove combination" looks broken.
+  const removedExhibitIdsRef = React.useRef<Set<string>>(new Set());
+  const listScrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Reset scroll to top whenever the search query changes so the first result is always visible
+  useEffect(() => {
+    if (listScrollRef.current) {
+      listScrollRef.current.scrollTop = 0;
+    }
+  }, [searchQuery]);
+
+  useEffect(() => {
+    loadExhibits();
+  }, []); // Load all exhibits once on mount, regardless of combination
+
+  // Validate restored selectedExhibits against loaded exhibits
+  // This ensures restored selections are preserved even if they're restored after exhibits load
+  useEffect(() => {
+    // Only validate if we have both selections and exhibits loaded
+    if (selectedExhibits.length > 0 && exhibits.length > 0) {
+      const allExhibitIds = exhibits.map(ex => ex._id);
+      const validSelections = selectedExhibits.filter(id => allExhibitIds.includes(id));
+      const invalidSelections = selectedExhibits.filter(id => !allExhibitIds.includes(id));
+      
+      // Check if validation is needed
+      const needsCleanup = invalidSelections.length > 0;
+      // Exclude exhibits belonging to hidden combinations so they are never auto-(re)added
+      const hiddenIds = new Set(hiddenExhibitIdsRef.current.map((id: string) => id.toString()));
+      const requiredIds = exhibits
+        .filter(ex => ex.isRequired && !hiddenIds.has(ex._id.toString()) && !removedExhibitIdsRef.current.has(ex._id.toString()))
+        .map(ex => ex._id);
+      const missingRequired = requiredIds.filter(id => !validSelections.includes(id));
+      const needsRequired = missingRequired.length > 0;
+      
+      if (needsCleanup || needsRequired) {
+        console.log('📎 ExhibitSelector: Validating restored selectedExhibits:', {
+          count: selectedExhibits.length,
+          validCount: validSelections.length,
+          invalidCount: invalidSelections.length,
+          missingRequiredCount: missingRequired.length,
+          totalExhibitsLoaded: exhibits.length
+        });
+        
+        if (needsCleanup) {
+          console.log('⚠️ Removing invalid exhibit IDs:', invalidSelections);
+        }
+        if (needsRequired) {
+          console.log('➕ Adding missing required exhibits:', missingRequired);
+        }
+        
+        // Build final selection: valid selections + missing required
+        const finalSelection = [...new Set([...validSelections, ...missingRequired])];
+        
+        // Only update if selection actually changed
+        if (JSON.stringify(finalSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
+          onExhibitsChange(finalSelection);
+          console.log('✅ Validated and updated exhibit selection');
+        }
+      } else {
+        // All selections are valid and required are included - no action needed
+        console.log('✅ All selected exhibits are valid and required exhibits are included');
+      }
+    }
+  }, [selectedExhibits, exhibits.length, onExhibitsChange]); // Re-validate when either changes
+
+  const loadExhibits = async () => {
+    try {
+      setLoading(true);
+      console.log('📎 Loading ALL exhibits from backend (no combination filter)');
+      
+      // Fetch ALL exhibits without filtering by combination
+      const response = await fetch(
+        `${BACKEND_URL}/api/exhibits`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`✅ Loaded ${data.exhibits?.length || 0} total exhibits from backend`);
+        
+        if (data.success) {
+          // Always set exhibits (even if empty array)
+          setExhibits(data.exhibits || []);
+          
+          // Auto-select required exhibits and clean up previously selected exhibits that are no longer required
+          if (data.exhibits && data.exhibits.length > 0) {
+            const requiredIds: string[] = data.exhibits
+              .filter((ex: Exhibit) => ex.isRequired)
+              .map((ex: Exhibit) => ex._id);
+            
+            const allExhibitIds = data.exhibits.map((ex: Exhibit) => ex._id);
+            
+            // Remove any selected exhibits that no longer exist
+            const validSelections = selectedExhibits.filter(id => allExhibitIds.includes(id));
+            
+            // Check if user has manually selected exhibits (not just required ones)
+            // If they have selections beyond required exhibits, preserve them
+            const hasUserSelections = validSelections.length > 0 && 
+              validSelections.some(id => !requiredIds.includes(id));
+            
+            // Add required exhibits to the selection (always include required)
+            const newSelection = [...new Set([...validSelections, ...requiredIds])];
+            
+            // Only update if:
+            // 1. Selection actually changed AND
+            // 2. Either there are no user selections OR we're just adding required exhibits
+            const selectionChanged = JSON.stringify(newSelection.sort()) !== JSON.stringify(selectedExhibits.sort());
+            
+            // IMPORTANT: If user has selections (restored or manually selected), preserve them
+            if (hasUserSelections) {
+              // User has selections - preserve them but ensure required are included
+              console.log('📎 Preserving user selections during exhibit load:', {
+                userSelections: validSelections,
+                requiredIds,
+                newSelection,
+                willAddMissingRequired: requiredIds.filter((id: string) => !validSelections.includes(id)).length > 0
+              });
+              // Only update if we need to add required exhibits that aren't already selected
+              const missingRequired = requiredIds.filter((id: string) => !validSelections.includes(id));
+              if (missingRequired.length > 0) {
+                const finalSelection = [...new Set([...validSelections, ...missingRequired])];
+                onExhibitsChange(finalSelection);
+              }
+              // Don't overwrite user selections with just required exhibits
+            } else if (selectionChanged && validSelections.length === 0) {
+              // No user selections - just add required exhibits
+              console.log('🔄 No user selections, adding required exhibits:', { 
+                previous: selectedExhibits, 
+                newSelection, 
+                requiredIds,
+                removedInvalid: selectedExhibits.filter(id => !allExhibitIds.includes(id))
+              });
+              onExhibitsChange(newSelection);
+            } else {
+              console.log('⏭️ Skipping exhibit selection update - no changes needed:', {
+                hasUserSelections,
+                validSelectionsCount: validSelections.length,
+                selectionChanged
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error loading exhibits:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter exhibits based on selected tier (Basic/Standard/Advanced)
+  const filteredExhibits = useMemo(() => {
+    if (!selectedTier?.tier?.name) {
+      // No tier selected, show all exhibits
+      return exhibits;
+    }
+
+    const tierName = selectedTier.tier.name.toLowerCase();
+    
+    // Filter exhibits to only show those matching the selected tier
+    return exhibits.filter(exhibit => {
+      // First check if exhibit has planType field (new way - more reliable)
+      if (exhibit.planType) {
+        return exhibit.planType.toLowerCase() === tierName;
+      }
+      
+      // Fallback: Check if exhibit name contains a plan type (legacy support)
+      const exhibitName = exhibit.name.toLowerCase();
+      // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
+      const hasStandard = exhibitName.includes('standard') || (exhibitName.includes('-std') || exhibitName.includes('_std') || exhibitName.endsWith('std'));
+      const hasAdvanced = exhibitName.includes('advanced');
+      const hasBasic = exhibitName.includes('basic');
+      const hasPremium = exhibitName.includes('premium');
+      const hasEnterprise = exhibitName.includes('enterprise');
+      
+      // If exhibit has a plan type in name, filter by matching tier
+      if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
+        if (tierName === 'basic') {
+          return hasBasic && !hasStandard && !hasAdvanced;
+        } else if (tierName === 'standard') {
+          return hasStandard && !hasAdvanced && !hasBasic;
+        } else if (tierName === 'advanced') {
+          return hasAdvanced && !hasStandard && !hasBasic;
+        } else if (tierName === 'premium') {
+          return hasPremium;
+        } else if (tierName === 'enterprise') {
+          return hasEnterprise;
+        }
+        // If tier doesn't match any plan type, don't show this exhibit
+        return false;
+      }
+      
+      // For exhibits without explicit plan type, show them (they're generic)
+      return true;
+    });
+  }, [exhibits, selectedTier]);
+
+  // Auto-select ALL matching tier exhibits when tier changes
+  // When a plan (Basic/Standard/Advanced) is selected, automatically select ALL exhibits for that plan
+  // This includes both "Include" and "Not Include" variants for all combinations
+  useEffect(() => {
+    if (!selectedTier?.tier?.name || exhibits.length === 0) {
+      return; // No tier selected or exhibits not loaded yet
+    }
+
+    const tierName = selectedTier.tier.name.toLowerCase();
+
+    // Find ALL exhibits that match the selected tier (both Include and Not Include variants separately)
+    const matchingExhibitIds = exhibits
+      .filter(ex => {
+        // First check planType field (most reliable)
+        if (ex.planType) {
+          const matchesTier = ex.planType.toLowerCase() === tierName;
+          if (!matchesTier) return false;
+          // Include this exhibit ONLY if:
+          // 1. It has an explicit includeType (separate Include/Not Include variants), OR
+          // 2. It doesn't have a plan type in its name (it's a generic exhibit for this tier)
+          return true;
+        }
+
+        // Fallback: Check exhibit name for plan type
+        const exhibitName = ex.name.toLowerCase();
+        // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
+        const hasStandard = exhibitName.includes('standard') || (exhibitName.includes('-std') || exhibitName.includes('_std') || exhibitName.endsWith('std'));
+        const hasAdvanced = exhibitName.includes('advanced');
+        const hasBasic = exhibitName.includes('basic');
+        const hasPremium = exhibitName.includes('premium');
+        const hasEnterprise = exhibitName.includes('enterprise');
+
+        // If exhibit has a plan type in name, check if it matches selected tier
+        if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
+          if (tierName === 'basic') {
+            return hasBasic && !hasStandard && !hasAdvanced;
+          } else if (tierName === 'standard') {
+            return hasStandard && !hasAdvanced && !hasBasic;
+          } else if (tierName === 'advanced') {
+            return hasAdvanced && !hasStandard && !hasBasic;
+          } else if (tierName === 'premium') {
+            return hasPremium;
+          } else if (tierName === 'enterprise') {
+            return hasEnterprise;
+          }
+          return false;
+        }
+
+        // Don't auto-select exhibits without explicit plan type (generic exhibits)
+        // User must manually select these
+        return false;
+      })
+      .map(ex => ex._id);
+
+    // Always include required exhibits (they should always be selected)
+    const requiredExhibitIds = exhibits
+      .filter(ex => ex.isRequired)
+      .map(ex => ex._id);
+
+    // Combine: matching tier exhibits + required exhibits + keep any manually selected exhibits without plan types
+    const exhibitsWithoutPlanType = selectedExhibits.filter(id => {
+      const ex = exhibits.find(e => e._id === id);
+      if (!ex) return false;
+      // Keep if it doesn't have a plan type (user manually selected generic exhibits)
+      if (!ex.planType) {
+        const name = ex.name.toLowerCase();
+        // Check for "std" as abbreviation for "standard"
+        const hasStd = name.includes('-std') || name.includes('_std') || name.endsWith('std');
+        const hasPlanInName = name.includes('basic') || name.includes('standard') || hasStd ||
+                             name.includes('advanced') || name.includes('premium') ||
+                             name.includes('enterprise');
+        return !hasPlanInName;
+      }
+      return false;
+    });
+
+    // Final selection: matching tier exhibits + required + manually selected generic exhibits
+    const finalSelection = Array.from(new Set([
+      ...matchingExhibitIds,
+      ...requiredExhibitIds,
+      ...exhibitsWithoutPlanType
+    ]));
+
+    // Only update if the selection would change
+    if (JSON.stringify(finalSelection.sort()) !== JSON.stringify(selectedExhibits.sort())) {
+      const matchingExhibitNames = exhibits
+        .filter(ex => matchingExhibitIds.includes(ex._id))
+        .map(ex => ({
+          name: ex.name,
+          planType: ex.planType,
+          includeType: ex.includeType,
+          id: ex._id
+        }));
+
+      console.log('✅ Auto-selecting exhibits for tier:', tierName, {
+        matchingCount: matchingExhibitIds.length,
+        requiredCount: requiredExhibitIds.length,
+        genericCount: exhibitsWithoutPlanType.length,
+        totalSelected: finalSelection.length,
+        previousSelectionCount: selectedExhibits.length,
+        matchingExhibits: matchingExhibitNames.slice(0, 10), // Show first 10 for debugging
+        allMatchingExhibitNames: matchingExhibitNames.map(e => ({ name: e.name, includeType: e.includeType }))
+      });
+
+      // Log which exhibits are being added/removed
+      const added = finalSelection.filter(id => !selectedExhibits.includes(id));
+      const removed = selectedExhibits.filter(id => !finalSelection.includes(id));
+      if (added.length > 0) {
+        console.log('➕ Adding exhibits:', added.map(id => {
+          const ex = exhibits.find(e => e._id === id);
+          return ex ? `${ex.name} (${ex.includeType || 'generic'})` : id;
+        }));
+      }
+      if (removed.length > 0) {
+        console.log('➖ Removing exhibits:', removed.map(id => {
+          const ex = exhibits.find(e => e._id === id);
+          return ex ? `${ex.name} (${ex.includeType || 'generic'})` : id;
+        }));
+      }
+
+      onExhibitsChange(finalSelection);
+    } else {
+      console.log('✅ Exhibits already match selected tier:', tierName, {
+        currentSelectionCount: selectedExhibits.length,
+        matchingCount: matchingExhibitIds.length
+      });
+    }
+  }, [selectedTier, exhibits.length, onExhibitsChange]); // Removed selectedExhibits from deps to avoid infinite loop
+
+  // Auto-select exhibits that belong to the currently selected combination
+  useEffect(() => {
+    if (!combination || combination === 'all' || exhibits.length === 0) return;
+
+    const matchingIds = exhibits
+      .filter(ex => ex.combinations?.some(c => c.toLowerCase() === combination.toLowerCase()))
+      .filter(ex => !removedExhibitIdsRef.current.has(ex._id.toString()))
+      .map(ex => ex._id);
+
+    if (matchingIds.length === 0) return;
+
+    const current = selectedExhibitsRef.current;
+    const newSelection = Array.from(new Set([...current, ...matchingIds]));
+
+    if (JSON.stringify(newSelection.sort()) !== JSON.stringify([...current].sort())) {
+      console.log('✅ Auto-selecting exhibits for combination:', combination, { count: matchingIds.length });
+      onExhibitsChange(newSelection);
+    }
+  }, [combination, exhibits.length, onExhibitsChange]);
+
+  // Helper function to extract base combination from combination string
+  const extractBaseCombination = (combination: string): string => {
+    if (!combination || combination === 'all') return '';
+    
+    let base = combination.toLowerCase();
+    
+    // Normalize dropbox-to-mydrive to dropbox-to-google-mydrive (merge into same group)
+    if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+      base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+    }
+
+    // Normalize all Box→Google Drive variants into one canonical key (box-to-google-mydrive)
+    // Covers: box-to-google-mydrive-shareddrive, box-to-google-sharedrive, box-to-google-mydrive-sharedrive
+    if (
+      base === 'box-to-google-mydrive-shareddrive' ||
+      base.startsWith('box-to-google-mydrive-shareddrive-') ||
+      base === 'box-to-google-sharedrive' ||
+      base.startsWith('box-to-google-sharedrive-') ||
+      base === 'box-to-google-mydrive-sharedrive' ||
+      base.startsWith('box-to-google-mydrive-sharedrive-')
+    ) {
+      base = 'box-to-google-mydrive';
+    }
+
+    // Remove plan type suffixes (including "std" as abbreviation for "standard")
+    base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
+    
+    // Remove include/notinclude suffixes
+    base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+    
+    // Normalize legacy/hand-typed folder keys:
+    // - Replace "/" and other non-alphanumeric separators
+    // - Collapse multiple dashes
+    // This makes "onedrive-/-sharepoint---onedrive-/-sharepoint" and
+    // "onedrive-/-sharepoint-onedrive-/-sharepoint" group together.
+    base = base
+      .replace(/\//g, '-') // "x/y" -> "x-y"
+      .replace(/[^a-z0-9-]+/g, '-') // anything else -> "-"
+      .replace(/-+/g, '-') // collapse
+      .replace(/^-+|-+$/g, ''); // trim dashes
+
+    // If the base is duplicated (A-B-A-B), collapse to first half (A-B)
+    const parts = base.split('-').filter(Boolean);
+    if (parts.length > 0 && parts.length % 2 === 0) {
+      const half = parts.length / 2;
+      const first = parts.slice(0, half).join('-');
+      const second = parts.slice(half).join('-');
+      if (first === second) {
+        base = first;
+      }
+    }
+
+    // Clean up any trailing dashes
+    base = base.replace(/-+$/, '').trim();
+    
+    return base;
+  };
+
+  // Helper function to format combination for display (e.g., "testing-to-production" -> "Testing to Production")
+  const formatCombinationForDisplay = (combination: string): string => {
+    if (!combination) return '';
+
+    // Special case: "Google My Drive & Share Drive to Google My Drive & Share Drive"
+    // Prefer the business-friendly label requested by users.
+    const normalized = combination.toLowerCase().replace(/-+$/g, '').trim();
+    if (normalized === 'google-my-drive-&-share-drive-to-google-my-drive-&-share-drive') {
+      return 'Google My Drive / Share Drive - Google My Drive / Share Drive';
+    }
+
+    // Special case: Box to SharePoint should display as SharePoint Online (consistent with exhibit naming)
+    if (normalized === 'box-to-sharepoint') {
+      return 'Box to SharePoint Online';
+    }
+
+    // Special case: Box to Google MyDrive covers both MyDrive and Shared Drive
+    if (normalized === 'box-to-google-mydrive') {
+      return 'Box to Google My Drive & Shared Drive';
+    }
+
+    // Special case: Google Shared Drive to SharePoint should display as SharePoint Online
+    if (normalized === 'google-sharedrive-to-sharepoint') {
+      return 'Google ShareDrive to SharePoint Online';
+    }
+
+    // Special case: Google MyDrive to SharePoint should display as SharePoint Online
+    if (normalized === 'google-mydrive-to-sharepoint') {
+      return 'Google MyDrive to SharePoint Online';
+    }
+
+    // Special case: ShareFile to SharePoint should display as SharePoint Online
+    if (normalized === 'sharefile-to-sharepoint') {
+      return 'ShareFile to SharePoint Online';
+    }
+    
+    // Special case: legacy OneDrive->SharePoint Online exhibits use a custom slug
+    if (normalized === 'one-drive-toshare-point') {
+      return 'OneDrive to SharePoint Online';
+    }
+
+    // Special case: "onedrive-to-sharepoint" should display as "OneDrive / SharePoint - OneDrive / SharePoint"
+    if (normalized === 'onedrive-to-sharepoint' || normalized === 'onedrive-to-share-point') {
+      return 'OneDrive / SharePoint - OneDrive / SharePoint';
+    }
+
+    // Special case: user-created OneDrive/SharePoint folder should keep the exact folder-style label
+    // (This slug is produced by normalization of "OneDrive / SharePoint - OneDrive / SharePoint")
+    // extractBaseCombination should already collapse duplicates, so this should be "onedrive-sharepoint"
+    if (normalized === 'onedrive-sharepoint') {
+      return 'OneDrive / SharePoint - OneDrive / SharePoint';
+    }
+
+    // Special case: ShareFile to Google Shared Drive
+    if (normalized === 'sharefile-to-google-sharedrive') {
+      return 'ShareFile to Google Shared Drive';
+    }
+
+    // Special case: ShareFile to Google MyDrive (covers both MyDrive & Shared Drive combined exhibits)
+    if (normalized === 'sharefile-to-google-mydrive') {
+      return 'ShareFile to Google Drive (MyDrive & Shared Drive)';
+    }
+
+    // Special case: Dropbox to MyDrive only
+    if (normalized === 'dropbox-to-mydrive') {
+      return 'Dropbox to MyDrive';
+    }
+
+    // Special case: Dropbox to Google Shared Drive only
+    if (normalized === 'dropbox-to-google-sharedrive') {
+      return 'Dropbox to Google Shared Drive';
+    }
+
+    // Special case: map "dropbox-to-google" to a clear label covering both MyDrive & Shared Drive
+    if (combination.toLowerCase() === 'dropbox-to-google') {
+      return 'Dropbox To Google (MyDrive & Shared Drive)';
+    }
+
+    // Special case: map "dropbox-to-microsoft" to a clear label covering OneDrive & SharePoint Online
+    if (combination.toLowerCase() === 'dropbox-to-microsoft') {
+      return 'Dropbox To Microsoft (OneDrive & SharePoint Online)';
+    }
+
+    // Special case: Google MyDrive & SharedDrive to Google MyDrive & SharedDrive
+    if (combination.toLowerCase() === 'google-to-google') {
+      return 'Google MyDrive/SharedDrive - Google MyDrive/SharedDrive';
+    }
+
+    // Special case: synthetic key for exhibits covering both Google MyDrive and Google SharedDrive targets
+    if (normalized === 'google-mydrive-to-google') {
+      return 'Google MyDrive to Google (MyDrive & Shared Drive)';
+    }
+
+    return combination
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  // Filter exhibits by search query
+  const searchFilteredExhibits = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return filteredExhibits;
+    }
+    const query = searchQuery.toLowerCase().trim();
+    
+    // Normalize the search query (remove special characters, normalize spaces/dashes)
+    const normalizedQuery = query
+      .replace(/[\/\-\s]+/g, ' ') // Replace /, -, and multiple spaces with single space
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    return filteredExhibits.filter(exhibit => {
+      // Search in exhibit name
+      const nameMatch = exhibit.name.toLowerCase().includes(query);
+      if (nameMatch) return true;
+      
+      // Search in combinations field
+      if (exhibit.combinations && exhibit.combinations.length > 0) {
+        const combinationMatch = exhibit.combinations.some(combo => 
+          combo.toLowerCase().includes(query) || 
+          combo.toLowerCase().replace(/[\/\-\s]+/g, ' ').includes(normalizedQuery)
+        );
+        if (combinationMatch) return true;
+      }
+      
+      // Search in the formatted combination name (what would be displayed as group name)
+      const primaryCombination = exhibit.combinations && exhibit.combinations.length > 0
+        ? exhibit.combinations[0]
+        : 'all';
+      const baseCombination = extractBaseCombination(primaryCombination);
+      if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 1) {
+        const formattedName = formatCombinationForDisplay(baseCombination);
+        const formattedMatch = formattedName.toLowerCase().includes(query) ||
+          formattedName.toLowerCase().replace(/[\/\-\s]+/g, ' ').includes(normalizedQuery);
+        if (formattedMatch) return true;
+      }
+      
+      // Search in description
+      if (exhibit.description && exhibit.description.toLowerCase().includes(query)) {
+        return true;
+      }
+      
+      // Special handling for "OneDrive / SharePoint" searches
+      // Match variations like "onedrive sharepoint", "onedrive/sharepoint", "onedrive-sharepoint"
+      const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length > 0);
+      if (queryWords.length >= 2) {
+        const hasOnedrive = queryWords.some(w => w.includes('onedrive') || w.includes('onedr'));
+        const hasSharepoint = queryWords.some(w => w.includes('sharepoint') || w.includes('share'));
+        
+        if (hasOnedrive && hasSharepoint) {
+          // Check if exhibit name or combination contains both terms
+          const exhibitText = (exhibit.name + ' ' + (exhibit.combinations || []).join(' ')).toLowerCase();
+          if (exhibitText.includes('onedrive') && exhibitText.includes('sharepoint')) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    });
+  }, [filteredExhibits, searchQuery]);
+
+  // Shared grouping logic: turn a flat exhibit list into the grouped/folder list shown
+  // in the UI. Used both for the rendered list (search-filtered) AND for the selected-
+  // combination chips (full exhibit set), so the two can never disagree about which folder
+  // an exhibit belongs to. Returns the visible groups plus the IDs hidden from the UI.
+  const buildExhibitGroups = (sourceList: Exhibit[]): {
+    visibleResult: Array<{ id: string; name: string; exhibits: Exhibit[]; isGroup: boolean; displayOrder: number }>;
+    hiddenIds: string[];
+  } => {
+    // Defensive check: ensure sourceList is an array
+    if (!Array.isArray(sourceList)) {
+      console.warn('⚠️ ExhibitSelector: sourceList is not an array', sourceList);
+      return { visibleResult: [], hiddenIds: [] };
+    }
+
+    // Filter out generic "Included Features" / "Not Included Features" exhibits only when
+    // plan-specific versions (Standard/Advanced/etc.) exist for the same combination.
+    // If a combination has NO plan-specific exhibits, keep the generic ones — they are the only option.
+    const planTypeRegex = /\b(Basic|Standard|Advanced|Premium|Enterprise)\s+(Plan\s*-)?\s*(Included|Not Included|Include|Not Include)/i;
+    const combosWithPlanExhibits = new Set<string>();
+    sourceList.forEach(exhibit => {
+      if (planTypeRegex.test(exhibit.name || '')) {
+        const combo = exhibit.combinations?.[0] || 'all';
+        combosWithPlanExhibits.add(combo);
+      }
+    });
+
+    const filtered = sourceList.filter(exhibit => {
+      const name = exhibit.name || '';
+      const endsWithIncludedFeatures = / - (Included|Not Included) Features$/i.test(name);
+      if (endsWithIncludedFeatures && !planTypeRegex.test(name)) {
+        // Only hide if plan-specific exhibits exist for this combination
+        const combo = exhibit.combinations?.[0] || 'all';
+        return !combosWithPlanExhibits.has(combo);
+      }
+      return true;
+    });
+    
+    const sorted = [...filtered].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+    
+    // Group exhibits by base combination extracted from combinations field
+    const groups: Map<string, Exhibit[]> = new Map();
+    const ungrouped: Exhibit[] = [];
+    // Track which exhibits have been added to a group to prevent duplicates
+    const addedExhibitIds = new Set<string>();
+
+    // Hide legacy/duplicate groups that are merged into other folders
+    const hiddenGroupNames = new Set<string>([]);
+    
+    sorted.forEach((exhibit) => {
+      // Skip if already added to a group (prevent duplicates)
+      if (addedExhibitIds.has(exhibit._id)) {
+        return;
+      }
+      
+      // Get the most specific combination for folder grouping.
+      const combos = exhibit.combinations && exhibit.combinations.length > 0 ? exhibit.combinations : ['all'];
+
+      let primaryCombination: string;
+
+      // Exhibits covering Google MyDrive→MyDrive AND MyDrive→SharedDrive together → own combined folder
+      if (combos.includes('google-mydrive-to-google-mydrive') && combos.includes('google-mydrive-to-google-sharedrive')) {
+        primaryCombination = 'google-mydrive-to-google';
+      // When combinations[0] is 'dropbox-to-google' but the exhibit is Shared Drive only, prefer the specific key
+      } else if (combos.includes('dropbox-to-google-sharedrive')) {
+        primaryCombination = 'dropbox-to-google-sharedrive';
+      // Merge "dropbox-to-google-mydrive" exhibits into the "Dropbox to MyDrive" folder
+      } else if (combos.includes('dropbox-to-google-mydrive') && combos.includes('dropbox-to-mydrive')) {
+        primaryCombination = 'dropbox-to-mydrive';
+      } else {
+        primaryCombination = combos[0];
+      }
+      
+      // Extract base combination (e.g., "testing-to-production" from "testing-to-production-include-basic")
+      const baseCombination = extractBaseCombination(primaryCombination);
+      
+      // Debug logging for OneDrive/SharePoint exhibits
+      if (exhibit.name && (exhibit.name.toLowerCase().includes('onedrive') && exhibit.name.toLowerCase().includes('sharepoint'))) {
+        console.log('🔍 OneDrive/SharePoint exhibit processing:', {
+          name: exhibit.name,
+          primaryCombination,
+          baseCombination,
+          combinations: exhibit.combinations
+        });
+      }
+      
+      if (baseCombination && baseCombination !== 'all' && baseCombination.length >= 3) {
+        // Default folder name derived from the combination key.
+        let folderName = formatCombinationForDisplay(baseCombination);
+
+        // Override: when the combination key is a GENERIC PARENT covering multiple
+        // destinations (e.g. "nfs-to-microsoft" → both OneDrive AND SharePoint Online
+        // exhibits), use the destination implied by the exhibit's NAME instead. Without
+        // this, exhibits with different destinations end up lumped into one folder
+        // because their `combinations` field doesn't include a specific child key.
+        // Heuristic: extract "<source> to <destination>" from the exhibit name (the
+        // segment before " - " and before " Standard|Basic|Advanced Plan").
+        const exhibitNameRaw = (exhibit.name || '').toString();
+        // Strip the trailing "[Plan] Plan - [Include type]" / "- Included Features" suffix from
+        // the END of the name (instead of splitting on the FIRST " - "). This keeps combinations
+        // whose own name contains " - " (e.g. "MyDrive/ShareDrive - OneDrive/SharePointOnline")
+        // intact instead of truncating them at the first dash — otherwise the Include and
+        // Not-Include files of the SAME combination land in different folders.
+        const nameBase = exhibitNameRaw
+          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)?\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+          .replace(/\s+-\s*(Include|Not\s*Include|Included|Not\s*Included)(\s+Features?)?\s*$/i, '')
+          .replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '')
+          .replace(/\s+(std|adv|basic|standard|advanced|premium|enterprise)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
+          .trim();
+        if (nameBase) {
+          // Convert the combination's display label to a comparable shape; if the
+          // exhibit-name-derived label is MORE SPECIFIC (longer / additional segments
+          // beyond the combination label), prefer it as the folder name.
+          const comboNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+          const nameNorm = nameBase.toLowerCase().replace(/\s+/g, ' ').trim();
+          const isMoreSpecific = nameNorm !== comboNorm && nameNorm.length > comboNorm.length;
+          // Also override when the names imply different destinations (e.g. combo says
+          // "Nfs To Microsoft" but the name says "NFS to OneDrive" — sharing only the
+          // source/parent, NOT the destination).
+          const namesAgree = nameNorm === comboNorm || nameNorm.startsWith(comboNorm + ' ') || comboNorm.startsWith(nameNorm + ' ');
+          if (isMoreSpecific || !namesAgree) {
+            folderName = nameBase;
+          }
+        }
+
+        // Canonicalize "OneDrive / SharePoint <-> OneDrive / SharePoint" folder labels
+        // regardless of separator (dash vs whitespace) or casing, so every variant
+        // (e.g. "Onedrive / Sharepoint Onedrive / Sharepoint") lands in one folder.
+        const folderNameNorm = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (/^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint$/.test(folderNameNorm)) {
+          folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+        }
+        // Canonicalize "Google My Drive & Share Drive To/to Google My Drive & Share Drive"
+        // (the only difference between the two folders is the "To"/"to" casing) so both land
+        // in one folder.
+        if (/^google my drive & share drive to google my drive & share drive$/.test(folderNameNorm)) {
+          folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+        }
+
+        // Canonicalize "MyDrive/ShareDrive <-> OneDrive/SharePoint Online" regardless of the
+        // spacing around the internal dash (" - " vs "-"), so the Include and Not-Include files
+        // — named inconsistently — collapse into a single folder.
+        if (/^mydrive\s*\/\s*sharedrive\s*-\s*onedrive\s*\/\s*sharepoint\s*online$/.test(folderNameNorm)) {
+          folderName = 'MyDrive/ShareDrive-OneDrive/SharePointOnline';
+        }
+
+        // Skip rendering these groups entirely in the UI (case-insensitive check)
+        const folderNameLower = folderName.toLowerCase();
+        const shouldHide = Array.from(hiddenGroupNames).some(hiddenName =>
+          hiddenName.toLowerCase() === folderNameLower
+        );
+        if (shouldHide) {
+          return;
+        }
+
+        if (!groups.has(folderName)) {
+          groups.set(folderName, []);
+        }
+        groups.get(folderName)!.push(exhibit);
+        addedExhibitIds.add(exhibit._id);
+      } else {
+        // Fallback: Try grouping by name pattern (for backward compatibility)
+        const exhibitName = exhibit.name || '';
+        const dashIndex = exhibitName.indexOf(' - ');
+        
+        // Special handling for "OneDrive / SharePoint - OneDrive / SharePoint" exhibits
+        // Check if the full name matches this pattern (case-insensitive)
+        const normalizedName = exhibitName.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (normalizedName.includes('onedrive') && normalizedName.includes('sharepoint')) {
+          // Check if it matches the pattern "OneDrive / SharePoint - OneDrive / SharePoint - ..."
+          // The separator between the two halves may be a dash OR just whitespace
+          // (e.g. "Onedrive / Sharepoint Onedrive / Sharepoint"), so the dash is optional.
+          const onedriveSharePointPattern = /^onedrive\s*\/\s*sharepoint\s*-?\s*onedrive\s*\/\s*sharepoint/i;
+          if (onedriveSharePointPattern.test(exhibitName)) {
+            const folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+            if (!groups.has(folderName)) {
+              groups.set(folderName, []);
+            }
+            groups.get(folderName)!.push(exhibit);
+            addedExhibitIds.add(exhibit._id);
+            return; // Skip the rest of the fallback logic
+          }
+        }
+        
+        if (dashIndex > 0) {
+          const baseName = exhibitName.substring(0, dashIndex);
+          let folderName = baseName
+            .replace(/\s+(Basic|Standard|Advanced|Premium)\s+Plan$/i, '')
+            .trim();
+
+          // Special case: some legacy SharePoint exhibits use "SharePoint to SharePoint Online" in the name,
+          // but the desired UI label is "SharePoint Online to SharePoint Online".
+          if (folderName.toLowerCase() === 'sharepoint to sharepoint online') {
+            folderName = 'SharePoint Online to SharePoint Online';
+          }
+          
+          // Special case: "Onedrive To Sharepoint" or "OneDrive To SharePoint" should display as "OneDrive / SharePoint - OneDrive / SharePoint"
+          const normalizedFolderName = folderName.toLowerCase().replace(/\s+/g, ' ').trim();
+          if (normalizedFolderName === 'onedrive to sharepoint' || normalizedFolderName === 'onedrive to share point') {
+            folderName = 'OneDrive / SharePoint - OneDrive / SharePoint';
+          }
+          // Merge the "To"/"to" casing variants of this combination into one folder
+          if (normalizedFolderName === 'google my drive & share drive to google my drive & share drive') {
+            folderName = 'Google My Drive & Share Drive To Google My Drive & Share Drive';
+          }
+
+          if (!folderName || folderName.length < 3) {
+            folderName = baseName;
+          }
+          
+          // Skip rendering these groups entirely in the UI
+          if (hiddenGroupNames.has(folderName)) {
+            return;
+          }
+          
+          if (!groups.has(folderName)) {
+            groups.set(folderName, []);
+          }
+          groups.get(folderName)!.push(exhibit);
+          addedExhibitIds.add(exhibit._id);
+        } else {
+          ungrouped.push(exhibit);
+          addedExhibitIds.add(exhibit._id);
+        }
+      }
+    });
+    
+    // Convert groups to flat list items
+    const result: Array<{ 
+      id: string; 
+      name: string; 
+      exhibits: Exhibit[]; 
+      isGroup: boolean;
+      displayOrder: number;
+    }> = [];
+    
+    // Add groups (display as groups even if they have only 1 exhibit, to ensure proper formatting)
+    groups.forEach((exhibits, folderName) => {
+      if (exhibits.length > 1) {
+        // Deduplicate exhibits within the group by their display label (the part after " - ") AND includeType
+        // Keep the most specific exhibit (prefer exhibits specific to this combination over merged ones)
+        // IMPORTANT: Keep separate entries for "Included" and "Not Included" variants - they must not be deduplicated
+        const deduplicatedExhibits: Exhibit[] = [];
+        const seenLabels = new Map<string, Exhibit>();
+
+        // Sort exhibits to process more specific ones first (non-merged before merged)
+        const sortedExhibits = [...exhibits].sort((a, b) => {
+          const aIsMerged = a.name.includes('(MyDrive & Shared Drive)');
+          const bIsMerged = b.name.includes('(MyDrive & Shared Drive)');
+          if (aIsMerged && !bIsMerged) return 1; // Merged ones go last
+          if (!aIsMerged && bIsMerged) return -1;
+          return 0;
+        });
+
+        sortedExhibits.forEach(exhibit => {
+          const dashIndex = exhibit.name.indexOf(' - ');
+          const label = dashIndex > 0 ? exhibit.name.substring(dashIndex + 3) : exhibit.name;
+          // Key includes BOTH the label AND the includeType to keep included/notincluded separate
+          const dedupeKey = `${label}|${exhibit.includeType || 'generic'}`;
+
+          // Only add if we haven't seen this label + includeType combination before
+          if (!seenLabels.has(dedupeKey)) {
+            seenLabels.set(dedupeKey, exhibit);
+            deduplicatedExhibits.push(exhibit);
+          }
+          // If key already exists, skip this exhibit (we already have a more specific one)
+        });
+
+        result.push({
+          id: `group-${folderName}`,
+          name: folderName,
+          exhibits: deduplicatedExhibits,
+          isGroup: true,
+          displayOrder: Math.min(...deduplicatedExhibits.map(e => e.displayOrder ?? 0))
+        });
+      } else {
+        // Even single-exhibit groups should be displayed with the formatted folder name
+        // This ensures exhibits like "OneDrive / SharePoint - OneDrive / SharePoint" show up correctly
+        result.push({
+          id: `group-${folderName}`,
+          name: folderName,
+          exhibits: exhibits,
+          isGroup: true,
+          displayOrder: exhibits[0].displayOrder ?? 0
+        });
+      }
+    });
+    
+    // Add ungrouped exhibits
+    ungrouped.forEach(exhibit => {
+      result.push({
+        id: exhibit._id,
+        name: exhibit.name,
+        exhibits: [exhibit],
+        isGroup: false,
+        displayOrder: exhibit.displayOrder ?? 0
+      });
+    });
+    
+    // Combinations to hide from the selector UI (matched on the displayed name,
+    // normalized to lowercase with collapsed whitespace).
+    const hiddenDisplayNames = new Set<string>([
+      'google my drive & shareddrive to google my drive & shareddrive std inscope',
+      'google my drive & shareddrive to google my drive & shareddrive std outscope',
+      'google my drive & shareddrive to google my drive & shareddrive adv inscope',
+      'google my drive & shareddrive to google my drive & shareddrive adv outscope',
+      'google mydrive to google shared drive',
+      'google mydrive to box',
+      'google mydrive to dropbox',
+      'box to box',
+      'google shared drive to egnyte',
+      'box to google mydrive $ shared drive',
+    ]);
+    // Filter out hidden combinations AND record their exhibit IDs so they can be
+    // removed from the current selection. Hiding a combination must also DESELECT it,
+    // otherwise it silently flows into the generated agreement (the agreement is built
+    // from selectedExhibits, not from what the list shows).
+    const hiddenIds: string[] = [];
+    const visibleResult = result.filter((item) => {
+      const isHidden = hiddenDisplayNames.has((item.name || '').toLowerCase().replace(/\s+/g, ' ').trim());
+      if (isHidden) {
+        (item.exhibits || []).forEach((ex: Exhibit) => { if (ex?._id) hiddenIds.push(ex._id.toString()); });
+        return false;
+      }
+      return true;
+    });
+
+    // Sort by display order
+    return { visibleResult: visibleResult.sort((a, b) => a.displayOrder - b.displayOrder), hiddenIds };
+  };
+
+  // Process exhibits for flat list display (handle grouping)
+  const processedExhibits = useMemo(() => {
+    const { visibleResult, hiddenIds } = buildExhibitGroups(searchFilteredExhibits);
+    hiddenExhibitIdsRef.current = hiddenIds;
+
+    // With no active search, keep the curated displayOrder ordering.
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return visibleResult;
+
+    // Rank search results by how the query matches each group's display name, using the
+    // EARLIEST occurrence of the query:
+    //   0 exact      — the whole name equals the query ("Box")
+    //   1 prefix     — name starts with the query ("Box to Google Drive")
+    //   2 word-prefix— a later word starts with the query ("Google Drive to Box")
+    //   3 contains   — query appears only mid-word ("Dropbox to Box" via "Drop[box]")
+    //   4 other      — name doesn't contain the query (matched via combination/description)
+    // This keeps prefix matches ahead of substring matches like "Dropbox". Within each rank,
+    // results are ordered alphabetically.
+    const rankName = (name: string): number => {
+      const n = (name || '').toLowerCase();
+      const idx = n.indexOf(q);
+      if (idx === -1) return 4;
+      if (idx === 0) return n.length === q.length ? 0 : 1;
+      const prevChar = n.charAt(idx - 1);
+      const isWordBoundary = /[\s\-\/(),&]/.test(prevChar);
+      return isWordBoundary ? 2 : 3;
+    };
+
+    return [...visibleResult].sort((a, b) => {
+      const ra = rankName(a.name);
+      const rb = rankName(b.name);
+      if (ra !== rb) return ra - rb;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }, [searchFilteredExhibits, searchQuery]);
+
+  // Deselect any exhibits that belong to a hidden combination (keeps the agreement in
+  // sync with what the user can actually see/select).
+  useEffect(() => {
+    const hidden = new Set(hiddenExhibitIdsRef.current.map((id: string) => id.toString()));
+    if (hidden.size === 0) return;
+    const filtered = selectedExhibits.filter((id) => !hidden.has((id ?? '').toString()));
+    if (filtered.length !== selectedExhibits.length) {
+      onExhibitsChange(filtered);
+    }
+  }, [processedExhibits, selectedExhibits, onExhibitsChange]);
+
+  const toggleExhibit = (exhibitId: string, isRequired: boolean) => {
+    if (isRequired) return; // Cannot deselect required exhibits
+    
+    if (selectedExhibits.includes(exhibitId)) {
+      onExhibitsChange(selectedExhibits.filter(id => id !== exhibitId));
+    } else {
+      removedExhibitIdsRef.current.delete((exhibitId ?? '').toString());
+      onExhibitsChange([...selectedExhibits, exhibitId]);
+    }
+  };
+
+  const handleUnselectAll = () => {
+    // Only unselect non-required exhibits
+    const requiredIds = exhibits.filter(ex => ex.isRequired).map(ex => ex._id);
+    onExhibitsChange(requiredIds);
+  };
+
+  const hasAnyExhibits = filteredExhibits.length > 0;
+
+  // Names of migration types that have at least one exhibit selected (for display below search).
+  // Built from the SAME grouping function as the rendered list (run over ALL exhibits, not just
+  // search-filtered ones, so the chips stay visible during search). Mapping each selected exhibit
+  // to the exact folder it lands in guarantees chips can never disagree with the list.
+  const selectedMigrationNames = useMemo(() => {
+    const selectedSet = new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean));
+    if (selectedSet.size === 0) return [];
+
+    // Group the full exhibit set exactly as the list does, then build an id -> folder-name map.
+    const { visibleResult } = buildExhibitGroups(exhibits);
+    const idToFolderName = new Map<string, string>();
+    visibleResult.forEach((group) => {
+      (group.exhibits || []).forEach((ex) => {
+        if (ex?._id) idToFolderName.set(ex._id.toString(), group.name);
+      });
+    });
+
+    const names: string[] = [];
+    const seen = new Set<string>();
+    selectedExhibits.forEach((selectedId) => {
+      const folderName = idToFolderName.get((selectedId ?? '').toString());
+      if (!folderName) return; // hidden or unknown exhibit -> no chip
+      if (!seen.has(folderName)) {
+        seen.add(folderName);
+        names.push(folderName);
+      }
+    });
+
+    return names;
+  }, [selectedExhibits, exhibits]);
+
+  const handleRemoveMigrationType = (migrationName: string) => {
+    const item = Array.isArray(processedExhibits)
+      ? processedExhibits.find((i) => i?.name === migrationName)
+      : null;
+    if (!item?.exhibits?.length) return;
+    const idsToRemove = item.exhibits.map((ex: any) => (ex?._id ?? '').toString()).filter(Boolean);
+    // Mark as explicitly removed so the required/auto-select effects don't re-add them.
+    idsToRemove.forEach((id: string) => removedExhibitIdsRef.current.add(id));
+    const newSelection = selectedExhibits.filter((id) => !idsToRemove.includes((id ?? '').toString()));
+    onExhibitsChange(newSelection);
+  };
+
+  return (
+    <div className="flex justify-center">
+      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-5 mb-4 w-full max-w-4xl">
+        {/* Header Section */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+              <ArrowRight className="w-3.5 h-3.5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 mb-0.5">Search and select exhibits</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Choose the exhibits to include in your migration project.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={loadExhibits}
+              disabled={loading}
+              className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Refresh exhibits from backend"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={handleUnselectAll}
+              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-xs font-medium transition-colors flex-shrink-0"
+            >
+              Unselect All
+            </button>
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="mb-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search exhibits..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-700 placeholder-gray-400"
+            />
+          </div>
+        </div>
+
+        {/* Selected migration types (below search) */}
+        {selectedMigrationNames.length > 0 && (
+          <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+              Selected combinations <span className="text-blue-600 font-bold">({selectedMigrationNames.length})</span>
+            </h4>
+            <div className="flex flex-wrap gap-2">
+              {selectedMigrationNames.map((name) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-1.5 pl-2 pr-1 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-medium"
+                >
+                  <Check className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                  {name}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMigrationType(name)}
+                    className="p-0.5 rounded hover:bg-blue-200 text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title="Remove this combination"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Exhibits List Container */}
+        {loading ? (
+          <div className="animate-pulse bg-gray-100 rounded-lg p-4 h-32"></div>
+        ) : !hasAnyExhibits ? (
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 leading-relaxed">
+            No exhibits found for this combination yet. Add exhibit DOCX files in <code className="font-mono">CPQ12/backend-exhibits/</code> and restart backend seeding.
+          </div>
+        ) : (
+          <div className="bg-blue-50/30 rounded-lg border border-blue-200 p-4">
+            <div className="mb-3">
+              <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Exhibits</h4>
+            </div>
+            <div
+              ref={listScrollRef}
+              className="max-h-[200px] overflow-y-auto space-y-2"
+              style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#9ca3af #f3f4f6',
+              }}
+            >
+              {!Array.isArray(processedExhibits) || processedExhibits.length === 0 ? (
+                <div className="text-xs text-gray-400 text-center py-8">
+                  No exhibits match your search.
+                </div>
+              ) : (
+                (Array.isArray(processedExhibits) ? processedExhibits : []).map((item, index) => {
+                  const isGroup = item.isGroup;
+                  const allExhibitsSelected = item.exhibits.every(ex => selectedExhibits.includes(ex._id));
+                  const someExhibitsSelected = item.exhibits.some(ex => selectedExhibits.includes(ex._id));
+                  const hasRequired = item.exhibits.some(ex => ex.isRequired);
+                  const fileCount = item.exhibits.length;
+                  // For groups: treat as selected if ANY child is selected (since a "migration" is conceptually one selection).
+                  const isSelected = isGroup ? someExhibitsSelected : selectedExhibits.includes(item.exhibits[0]._id);
+                  const isExpanded = isGroup ? expandedGroups.has(item.id) : false;
+
+                  const handleClick = () => {
+                    if (isGroup) {
+                      // IMPORTANT: A group represents ONE migration, but it may have multiple exhibit files
+                      // (Included/Not Included, plan variants: Basic, Standard, Advanced, etc).
+                      // Clicking the group should select ALL exhibits in the group (all Include + Not Include variants for all plans).
+                      // The agreement generation will later filter by selected plan, but here we select all variants.
+                      const nonRequiredExhibits = item.exhibits.filter(ex => !ex.isRequired);
+                      const requiredExhibits = item.exhibits.filter(ex => ex.isRequired);
+                      const requiredIds = requiredExhibits.map(ex => ex._id);
+                      const nonRequiredIds = nonRequiredExhibits.map(ex => ex._id);
+
+                      if (someExhibitsSelected) {
+                        // Deselect all non-required exhibits in the group
+                        onExhibitsChange(
+                          selectedExhibits.filter(id => !nonRequiredIds.includes(id))
+                        );
+                      } else {
+                        // Select ALL exhibits in the group (all Include + Not Include variants for all plans)
+                        const allGroupIds = [...requiredIds, ...nonRequiredIds];
+                        // User is re-selecting this combination — clear any prior explicit removal.
+                        allGroupIds.forEach((id) => removedExhibitIdsRef.current.delete((id ?? '').toString()));
+                        const newSelection = [...new Set([...selectedExhibits, ...allGroupIds])];
+                        onExhibitsChange(newSelection);
+                        console.log('✅ Selected all variants in group:', {
+                          groupName: item.name,
+                          selectedCount: allGroupIds.length,
+                          exhibits: item.exhibits.map(ex => ex.name)
+                        });
+                      }
+                    } else {
+                      toggleExhibit(item.exhibits[0]._id, item.exhibits[0].isRequired);
+                    }
+                  };
+
+                  const header = (
+                    <button
+                      key={`${item.id}-header`}
+                      type="button"
+                      onClick={handleClick}
+                      disabled={hasRequired && isGroup}
+                      className={`w-full text-left p-2.5 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'border-blue-500 bg-white shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-gray-50'
+                      } ${hasRequired && isGroup ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {/* Expand/collapse chevron for groups (clicking it shouldn't toggle selection) */}
+                        {isGroup ? (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedGroups(prev => {
+                                const next = new Set(prev);
+                                if (next.has(item.id)) next.delete(item.id);
+                                else next.add(item.id);
+                                return next;
+                              });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setExpandedGroups(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(item.id)) next.delete(item.id);
+                                  else next.add(item.id);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className="w-5 h-5 flex items-center justify-center flex-shrink-0 rounded hover:bg-gray-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                            aria-label={isExpanded ? 'Collapse group' : 'Expand group'}
+                          >
+                            <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          </div>
+                        ) : (
+                          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-300 opacity-0" />
+                          </div>
+                        )}
+
+                        <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-[10px] font-semibold text-gray-700">{index + 1}</span>
+                        </div>
+                        <div
+                          className={`w-4 h-4 border-2 flex items-center justify-center flex-shrink-0 ${
+                            isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300 bg-white'
+                          }`}
+                        >
+                          {/* For groups, show an indeterminate mark when partially selected, check when fully selected */}
+                          {!isGroup && isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                          {isGroup && allExhibitsSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                          {isGroup && someExhibitsSelected && !allExhibitsSelected && (
+                            <div className="w-2 h-0.5 bg-white rounded-sm" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 text-xs leading-tight">{item.name}</div>
+                        </div>
+                        <div className="text-[10px] text-gray-500 flex-shrink-0 whitespace-nowrap">
+                          ({fileCount} {fileCount === 1 ? 'file' : 'files'})
+                        </div>
+                      </div>
+                    </button>
+                  );
+
+                  if (!isGroup) return header;
+
+                  return (
+                    <div key={item.id} className="space-y-1">
+                      {header}
+                      {isExpanded && (
+                        <div className="ml-10 mr-2 space-y-1">
+                          {item.exhibits
+                            .slice()
+                            .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+                            .map((ex) => {
+                              const isExSelected = selectedExhibits.includes(ex._id);
+                              // Use the LAST " - " so the child shows just the plan/include part
+                              // (e.g. "Standard Not Include") even when the combination portion of
+                              // the name itself contains " - " (e.g. "MyDrive/ShareDrive - OneDrive/…").
+                              const dashIndex = ex.name.lastIndexOf(' - ');
+                              const childLabel = dashIndex > 0 ? ex.name.substring(dashIndex + 3) : ex.name;
+                              return (
+                                <button
+                                  key={ex._id}
+                                  type="button"
+                                  onClick={() => toggleExhibit(ex._id, ex.isRequired)}
+                                  disabled={ex.isRequired}
+                                  className={`w-full text-left px-2.5 py-2 rounded-md border transition-all ${
+                                    isExSelected
+                                      ? 'border-blue-400 bg-white'
+                                      : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50'
+                                  } ${ex.isRequired ? 'opacity-90 cursor-not-allowed' : 'cursor-pointer'}`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className={`w-4 h-4 border-2 flex items-center justify-center flex-shrink-0 ${
+                                        isExSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300 bg-white'
+                                      }`}
+                                    >
+                                      {isExSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                                    </div>
+                                    <div className="text-[11px] text-gray-800 font-medium">{childLabel}</div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default ExhibitSelector;

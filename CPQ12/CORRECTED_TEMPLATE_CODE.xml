@@ -1,0 +1,35 @@
+<!-- CORRECTED TEMPLATE CODE - Copy this into your DOCX template -->
+
+{{#exhibits}}
+<w:p>
+  <w:r>
+    <w:t><w:b>Overage Charges for {{exhibitCombinationName}}:</w:b> {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month</w:t>
+  </w:r>
+  {{#exhibitOveragePerGB}}
+  <w:r>
+    <w:t> | {{exhibitOveragePerGB}} per GB</w:t>
+  </w:r>
+  {{/exhibitOveragePerGB}}
+</w:p>
+{{/exhibits}}
+
+<!-- 
+STRUCTURE BREAKDOWN:
+1. {{#exhibits}} - Starts loop for each exhibit
+2. <w:p> - Opens paragraph
+3. <w:r> - Opens text run
+4. <w:t> - Text content with combination name and per-user/per-server costs
+5. </w:r> - Closes first text run (ONLY ONE CLOSING TAG NEEDED HERE)
+6. {{#exhibitOveragePerGB}} - Conditional: only if per-GB exists
+7. <w:r> - Opens new text run for per-GB
+8. <w:t> - Per-GB text
+9. </w:r> - Closes per-GB text run
+10. {{/exhibitOveragePerGB}} - Closes conditional (NOTE: Capital 'O' in Overage)
+11. </w:p> - Closes paragraph
+12. {{/exhibits}} - Closes loop
+
+IMPORTANT: 
+- Remove any duplicate </w:r> tags
+- Use {{/exhibitOveragePerGB}} (capital O), not {{/exhibitoveragePerGB}}
+-->
+

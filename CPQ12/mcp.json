@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "git": {
+      "command": "git",
+      "description": "Git version control — read commit history, diffs, branches, create commits",
+      "tools": [
+        "git log",
+        "git diff",
+        "git status",
+        "git show",
+        "git blame",
+        "git branch",
+        "git log --oneline"
+      ],
+      "when_to_use": "When you need to understand code changes, review history, or verify commits"
+    },
+    "mongodb": {
+      "command": "mongodb",
+      "uri": "$MONGODB_URI",
+      "description": "MongoDB database — query exhibits, combinations, templates, pricing data",
+      "collections": [
+        "userQuotes",
+        "exhibitCombinations",
+        "templates",
+        "users",
+        "pricingPlans",
+        "discountRules",
+        "cloudIntegrations"
+      ],
+      "when_to_use": "When you need to verify data, check combinations, audit pricing changes, or test migrations"
+    },
+    "sendgrid": {
+      "command": "sendgrid",
+      "api_key": "$SENDGRID_API_KEY",
+      "description": "SendGrid email service — verify email sending, check templates, audit email integrations",
+      "capabilities": [
+        "Send test emails",
+        "Verify email templates",
+        "Check email sending logs",
+        "Audit email security"
+      ],
+      "when_to_use": "When you need to verify email functionality, test templates, or audit email integration"
+    }
+  },
+  "notes": "These integrations allow Claude to: (1) read git history, (2) query MongoDB for data verification, (3) test SendGrid email functionality. All are read/test-focused by default (no destructive operations recommended for safety)."
+}

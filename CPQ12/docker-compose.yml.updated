@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: cpq-gotenberg
+    restart: unless-stopped
+    networks:
+      - cpq-network
+    # No port mapping - accessed internally via http://gotenberg:3000
+    # Provides fast PDF conversion (1-2s vs 8-10s with direct LibreOffice)
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploymentgigitaldocker/Dockerfile
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_MSAL_CLIENT_ID: ${VITE_MSAL_CLIENT_ID}
+        VITE_MSAL_REDIRECT_URI: ${VITE_MSAL_REDIRECT_URI}
+        VITE_CLARITY_ID: ${VITE_CLARITY_ID}
+    container_name: cpq-application
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      GOTENBERG_URL: http://gotenberg:3000
+      MONGODB_URI: ${MONGODB_URI}
+      DB_NAME: ${DB_NAME}
+      HUBSPOT_API_KEY: ${HUBSPOT_API_KEY}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM}
+      JWT_SECRET: ${JWT_SECRET}
+      BOLDSIGN_API_KEY: ${BOLDSIGN_API_KEY}
+      BOLDSIGN_BASE_URL: ${BOLDSIGN_BASE_URL}
+      BOLDSIGN_APP_URL: ${BOLDSIGN_APP_URL}
+      APP_BASE_URL: ${APP_BASE_URL}
+      BASE_URL: ${BASE_URL}
+      SOFFICE_PATH: /usr/bin/libreoffice
+    env_file:
+      - .env
+    volumes:
+      - ./temp-files:/temp
+    restart: unless-stopped
+    networks:
+      - cpq-network
+    depends_on:
+      - gotenberg
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - cpq-network
+
+networks:
+  cpq-network:
+    driver: bridge

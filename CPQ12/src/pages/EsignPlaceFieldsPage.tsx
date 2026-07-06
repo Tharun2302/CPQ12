@@ -1,0 +1,1630 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Rnd } from 'react-rnd';
+import { v4 as uuidv4 } from 'uuid';
+import { PenLine, Loader2, Mail, Type, Briefcase, Calendar, FileText, BookOpen, CheckCircle2, UserPlus, Trash2, ArrowUp, ArrowDown, ArrowLeft, Circle } from 'lucide-react';
+import { BACKEND_URL } from '../config/api';
+import EsignPdfPageView, { FieldCoords } from '../components/EsignPdfPageView';
+import {
+  formatSendForSignatureSuccessMessage,
+  validateSignatureFieldsBeforeSend,
+} from '../utils/esignSendValidation';
+import {
+  ESIGN_DEFAULT_TEXT_COLOR,
+  ESIGN_TEXT_FONT_OPTIONS,
+  type EsignTextFontId,
+  cssStackForEsignTextFont,
+  normalizeEsignTextColor,
+  normalizeEsignTextFont,
+} from '../utils/esignTextFieldStyle';
+import { shouldAutoStartPlaceFieldsTour, startEsignPlaceFieldsTour } from '../utils/esignTour';
+import { lookupRecipient } from '../config/recipientDirectory';
+
+const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
+const SAVED_RECIPIENTS_KEY = 'esign_saved_recipients';
+const SAVED_GROUPS_KEY = 'esign_saved_groups';
+const DEFAULT_GROUP_KEY = 'esign_default_group_id';
+
+function getDefaultGroupId(): string | null {
+  try {
+    return localStorage.getItem(DEFAULT_GROUP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setDefaultGroupIdInStorage(id: string | null) {
+  try {
+    if (id) localStorage.setItem(DEFAULT_GROUP_KEY, id);
+    else localStorage.removeItem(DEFAULT_GROUP_KEY);
+  } catch (e) {
+    console.warn('Failed to save default group', e);
+  }
+}
+
+export interface SavedRecipient {
+  id: string;
+  name: string;
+  email: string;
+  role: 'signer' | 'reviewer';
+}
+
+export interface SavedGroup {
+  id: string;
+  name: string;
+  recipients: { name: string; email: string; role: 'signer' | 'reviewer' }[];
+}
+
+function getSavedRecipients(): SavedRecipient[] {
+  try {
+    const raw = localStorage.getItem(SAVED_RECIPIENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecipientsToStorage(list: SavedRecipient[]) {
+  try {
+    localStorage.setItem(SAVED_RECIPIENTS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save recipients to storage', e);
+  }
+}
+
+function getSavedGroups(): SavedGroup[] {
+  try {
+    const raw = localStorage.getItem(SAVED_GROUPS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGroupsToStorage(list: SavedGroup[]) {
+  try {
+    localStorage.setItem(SAVED_GROUPS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save groups to storage', e);
+  }
+}
+
+export interface QuotePendingApproval {
+  documentId: string;
+  esignId: string;
+  clientName: string;
+  amount: number;
+  approvalEmails: { role1: string; role2: string; role4: string };
+  teamId: string;
+  teamEmail: string;
+  creatorEmail: string;
+  creatorName: string;
+  quoteId?: string;
+  isOverage?: boolean;
+  additionalRecipients?: string[];
+}
+
+const PDF_SCALE = 1.5;
+/** Minimum field size in pixels (used by Rnd and for persistence) */
+const MIN_FIELD_WIDTH_PX = 80;
+const MIN_FIELD_HEIGHT_PX = 22;
+
+export type FieldType = 'signature' | 'name' | 'title' | 'date' | 'text';
+
+export interface EsignRecipient {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  action?: 'signer' | 'reviewer' | null;
+  status?: string;
+  email_message?: string | null;
+}
+
+/** Matches recipient-row logic: Technical/Legal team default to review, or explicit reviewer role/action. */
+function getRecipientEffectiveAction(r: EsignRecipient): 'signer' | 'reviewer' {
+  return (
+    r.action ??
+    (r.role === 'Technical Team' || r.role === 'Legal Team'
+      ? 'reviewer'
+      : r.role?.toLowerCase() === 'reviewer'
+        ? 'reviewer'
+        : 'signer')
+  );
+}
+
+/** "Place fields for" uses Sign vs Review from action, not the generic role string left over from add-recipient. */
+function getPlaceFieldsDropdownLabel(r: EsignRecipient): string {
+  const eff = getRecipientEffectiveAction(r);
+  const actionWord = eff === 'reviewer' ? 'Reviewer' : 'Signer';
+  const rw = (r.role || '').trim();
+  if (rw === 'Team Lead' || rw === 'Team Approval') return `Team Lead · ${actionWord}`;
+  if (rw === 'Technical Team') return `Technical Team · ${actionWord}`;
+  if (rw === 'Legal Team') return `Legal Team · ${actionWord}`;
+  return actionWord;
+}
+
+interface PlacedField {
+  id: string;
+  type: FieldType;
+  page: number;
+  recipient_id?: string | null;
+  /** Creator-filled default copy for `text` fields (signers see it and may edit). */
+  prefill?: string;
+  /** Hex e.g. #1e3a8a — shown on place-fields, sign page, and final PDF. */
+  text_color?: string;
+  /** pdf-lib StandardFont mapping: helvetica | times | courier */
+  text_font?: EsignTextFontId;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  /** 0–1 relative to page width/height — keeps sign view aligned with pdf-lib */
+  xNorm?: number;
+  yNorm?: number;
+  widthNorm?: number;
+  heightNorm?: number;
+  xPct?: number;
+  yPct?: number;
+  widthPct?: number;
+  heightPct?: number;
+}
+
+const FIELD_DEFS: { type: FieldType; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { type: 'signature', label: 'Signature', Icon: PenLine },
+  { type: 'name', label: 'Name', Icon: Type },
+  { type: 'title', label: 'Title', Icon: Briefcase },
+  { type: 'date', label: 'Date', Icon: Calendar },
+  { type: 'text', label: 'Text', Icon: FileText },
+];
+
+/** Per-recipient colors for field overlays and recipient list. Use full class names so Tailwind includes them. */
+const RECIPIENT_COLORS = [
+  { box: 'bg-sky-100 border-2 border-sky-500 text-sky-800 hover:bg-sky-200', dot: 'bg-sky-500' },
+  { box: 'bg-emerald-100 border-2 border-emerald-500 text-emerald-800 hover:bg-emerald-200', dot: 'bg-emerald-500' },
+  { box: 'bg-amber-100 border-2 border-amber-500 text-amber-800 hover:bg-amber-200', dot: 'bg-amber-500' },
+  { box: 'bg-violet-100 border-2 border-violet-500 text-violet-800 hover:bg-violet-200', dot: 'bg-violet-500' },
+  { box: 'bg-rose-100 border-2 border-rose-500 text-rose-800 hover:bg-rose-200', dot: 'bg-rose-500' },
+  { box: 'bg-cyan-100 border-2 border-cyan-500 text-cyan-800 hover:bg-cyan-200', dot: 'bg-cyan-500' },
+];
+const UNASSIGNED_COLOR = { box: 'bg-slate-100 border-2 border-slate-400 text-slate-700 hover:bg-slate-200', dot: 'bg-slate-400' };
+
+function getRoleDisplayLabel(role: string): string {
+  const r = (role || 'signer').trim();
+  if (r === 'Team Lead' || r === 'Team Approval') return 'Team Lead';
+  if (r === 'Technical Team') return 'Technical Team';
+  if (r === 'Legal Team') return 'Legal Team';
+  if (r.toLowerCase() === 'reviewer') return 'Reviewer';
+  return 'Signer';
+}
+
+function getRecipientColor(
+  recipientId: string | null | undefined,
+  recipients: EsignRecipient[]
+): { box: string; dot: string } {
+  if (!recipientId || !recipients.length) return UNASSIGNED_COLOR;
+  const idx = recipients.findIndex((r) => r.id === recipientId);
+  if (idx < 0) return UNASSIGNED_COLOR;
+  return RECIPIENT_COLORS[idx % RECIPIENT_COLORS.length] ?? UNASSIGNED_COLOR;
+}
+
+const EsignPlaceFieldsPage: React.FC = () => {
+  const { documentId } = useParams<{ documentId: string }>();
+  const navigate = useNavigate();
+
+  const [doc, setDoc] = useState<{ file_name: string; status: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [signatureFields, setSignatureFields] = useState<PlacedField[]>([]);
+  const [totalPages, setTotalPages] = useState(1);
+  const [dragSource, setDragSource] = useState<FieldType | null>(null);
+  const [recipients, setRecipients] = useState<EsignRecipient[]>([]);
+  const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
+  const [newRecipient, setNewRecipient] = useState({ name: '', email: '', role: 'signer' as 'signer' | 'reviewer' });
+  const [recipientError, setRecipientError] = useState<string | null>(null);
+  const [addingRecipient, setAddingRecipient] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageMetricsRef = useRef<Record<number, { wPt: number; hPt: number }>>({});
+  const [pageDimsTick, setPageDimsTick] = useState(0);
+  const [pendingApproval, setPendingApproval] = useState<QuotePendingApproval | null>(null);
+  const [sendingApproval, setSendingApproval] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [sendForSignatureResult, setSendForSignatureResult] = useState<string | null>(null);
+  const [sendSuccessModal, setSendSuccessModal] = useState<{ open: boolean; recipients: string[] }>({ open: false, recipients: [] });
+  const [sending, setSending] = useState(false);
+  const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>(() => getSavedRecipients());
+  const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => getSavedGroups());
+  const [defaultGroupId, setDefaultGroupIdState] = useState<string | null>(() => getDefaultGroupId());
+  const [groupNameInput, setGroupNameInput] = useState('');
+  /** When editing a group, this holds the group id and a draft of name + recipients */
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; recipients: { name: string; email: string; role: 'signer' | 'reviewer' }[] } | null>(null);
+  /** Group id when "View" is expanded to show who's in the group */
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  const fileUrl = doc ? `${BACKEND_URL}/api/esign/documents/${documentId}/file?inline=1` : '';
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(QUOTE_PENDING_APPROVAL_KEY);
+      if (!raw) {
+        setPendingApproval(null);
+        return;
+      }
+      const data = JSON.parse(raw) as QuotePendingApproval;
+      if (data.esignId === documentId && data.documentId && data.teamEmail && data.approvalEmails?.role1) {
+        setPendingApproval(data);
+      } else {
+        setPendingApproval(null);
+      }
+    } catch {
+      setPendingApproval(null);
+    }
+  }, [documentId]);
+
+  const placeFieldsTourAutoStartedRef = useRef(false);
+  const placeFieldsTourTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (loading || !doc || placeFieldsTourAutoStartedRef.current || !shouldAutoStartPlaceFieldsTour()) return;
+    placeFieldsTourAutoStartedRef.current = true;
+    placeFieldsTourTimeoutRef.current = window.setTimeout(() => {
+      placeFieldsTourTimeoutRef.current = null;
+      startEsignPlaceFieldsTour();
+    }, 500);
+    return () => {
+      if (placeFieldsTourTimeoutRef.current) {
+        window.clearTimeout(placeFieldsTourTimeoutRef.current);
+        placeFieldsTourTimeoutRef.current = null;
+      }
+    };
+  }, [loading, doc]);
+
+  useEffect(() => {
+    if (!documentId) return;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}`);
+        const data = await res.json();
+        if (data.success) {
+          setDoc(data.document);
+        } else {
+          navigate('/esign');
+        }
+      } catch {
+        navigate('/esign');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [documentId, navigate]);
+
+  useEffect(() => {
+    if (!documentId) return;
+    (async () => {
+      const [fieldsRes, recipientsRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/esign/signature-fields/${documentId}`),
+        fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`),
+      ]);
+      const fieldsData = await fieldsRes.json();
+      const recipientsData = await recipientsRes.json();
+      if (recipientsData.success && recipientsData.recipients?.length) {
+        setRecipients(recipientsData.recipients);
+        setSelectedRecipientId(recipientsData.recipients[0]?.id || null);
+      }
+      // Default group is no longer auto-added when document has no recipients.
+      // Add recipients via "Add to document" on a saved group.
+      if (fieldsData.success && fieldsData.fields?.length) {
+        setSignatureFields(
+          fieldsData.fields.map((f: any) => {
+            const page = f.page || 1;
+            const id = f._id?.toString() || uuidv4();
+            const recipient_id = f.recipient_id?.toString() || null;
+            if (f.x != null && f.y != null) {
+              const t = (f.type || 'signature') as FieldType;
+              return {
+                id,
+                type: t,
+                page,
+                recipient_id,
+                ...(typeof f.prefill === 'string' ? { prefill: f.prefill } : {}),
+                ...(t === 'text'
+                  ? {
+                      text_color: normalizeEsignTextColor(f.text_color),
+                      text_font: normalizeEsignTextFont(f.text_font),
+                    }
+                  : {}),
+                x: Number(f.x),
+                y: Number(f.y),
+                width: Number(f.width) || 120,
+                height: Number(f.height) || 40,
+                ...(f.xNorm != null && f.yNorm != null && f.widthNorm != null && f.heightNorm != null
+                  ? {
+                      xNorm: Number(f.xNorm),
+                      yNorm: Number(f.yNorm),
+                      widthNorm: Number(f.widthNorm),
+                      heightNorm: Number(f.heightNorm),
+                    }
+                  : {}),
+              };
+            }
+            const t2 = (f.type || 'signature') as FieldType;
+            return {
+              id,
+              type: t2,
+              page,
+              recipient_id,
+              ...(typeof f.prefill === 'string' ? { prefill: f.prefill } : {}),
+              ...(t2 === 'text'
+                ? {
+                    text_color: normalizeEsignTextColor(f.text_color),
+                    text_font: normalizeEsignTextFont(f.text_font),
+                  }
+                : {}),
+              xPct: f.xPct ?? 10,
+              yPct: f.yPct ?? 80,
+              widthPct: f.widthPct ?? 20,
+              heightPct: f.heightPct ?? 4,
+            };
+          })
+        );
+      }
+    })();
+  }, [documentId]);
+
+  const handlePageDimensions = useCallback((info: { pageNumber: number; widthPt: number; heightPt: number }) => {
+    pageMetricsRef.current[info.pageNumber] = { wPt: info.widthPt, hPt: info.heightPt };
+    setPageDimsTick((t) => t + 1);
+  }, []);
+
+
+  const fieldsToApiPayload = useCallback((list: PlacedField[]) => {
+    return list.map((f) => {
+      const base: Record<string, unknown> = { page: f.page, type: f.type, recipient_id: f.recipient_id || null };
+      if (f.type === 'text') {
+        const p = (f.prefill ?? '').slice(0, 8000);
+        base.prefill = p;
+        base.text_color = normalizeEsignTextColor(f.text_color);
+        base.text_font = normalizeEsignTextFont(f.text_font);
+      } else if ((f.type === 'name' || f.type === 'title') && typeof f.prefill === 'string') {
+        base.prefill = f.prefill.slice(0, 500);
+      }
+      if (f.x == null || f.y == null) {
+        return { ...base, xPct: f.xPct ?? 10, yPct: f.yPct ?? 80, widthPct: f.widthPct ?? 20, heightPct: f.heightPct ?? 4 };
+      }
+      const w = Math.max(MIN_FIELD_WIDTH_PX / PDF_SCALE, f.width ?? 120);
+      const h = Math.max(MIN_FIELD_HEIGHT_PX / PDF_SCALE, f.height ?? 40);
+      const pm = pageMetricsRef.current[f.page];
+      const row: Record<string, unknown> = { ...base, x: f.x, y: f.y, width: w, height: h };
+      if (pm) {
+        row.xNorm = f.x / pm.wPt;
+        row.yNorm = f.y / pm.hPt;
+        row.widthNorm = w / pm.wPt;
+        row.heightNorm = h / pm.hPt;
+      } else if (f.xNorm != null && f.yNorm != null && f.widthNorm != null && f.heightNorm != null) {
+        row.xNorm = f.xNorm;
+        row.yNorm = f.yNorm;
+        row.widthNorm = f.widthNorm;
+        row.heightNorm = f.heightNorm;
+      }
+      return row;
+    });
+  }, []);
+
+  const saveRecipientsAndSet = useCallback(async (list: EsignRecipient[], selectLast?: boolean) => {
+    if (!documentId) return { success: false };
+    setRecipientError(null);
+    let data: { success?: boolean; recipients?: EsignRecipient[]; error?: string } = { success: false };
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients: list.map((r) => ({
+            name: r.name,
+            email: r.email,
+            role: r.role || 'signer',
+            ...(r.action ? { action: r.action } : {}),
+            ...(r.email_message != null && r.email_message.trim() !== '' ? { email_message: r.email_message.trim() } : {}),
+          })),
+        }),
+      });
+      const text = await res.text();
+      try {
+        data = JSON.parse(text);
+      } catch {
+        const msg = res.ok ? 'Server returned invalid JSON' : `Request failed (${res.status}). Check that the backend is running at ${BACKEND_URL}.`;
+        setRecipientError(msg);
+        return { success: false };
+      }
+      if (!res.ok) {
+        setRecipientError(data.error || `Request failed (${res.status})`);
+        return { success: false };
+      }
+      if (data.success && Array.isArray(data.recipients)) {
+        setRecipients(data.recipients);
+        if (data.recipients.length > 0) {
+          if (selectLast) setSelectedRecipientId(data.recipients[data.recipients.length - 1]?.id || null);
+          else setSelectedRecipientId((prev) => (data.recipients!.some((r: EsignRecipient) => r.id === prev) ? prev : data.recipients![0]?.id || null));
+        }
+        return { success: true };
+      }
+      setRecipientError(data.error || 'Failed to save recipients');
+      return { success: false };
+    } catch (err: any) {
+      const msg = err?.message?.includes('fetch') || err?.message?.includes('Network')
+        ? `Cannot reach server. Is it running at ${BACKEND_URL}?`
+        : (err?.message || 'Failed to save recipients');
+      setRecipientError(msg);
+      return { success: false };
+    }
+  }, [documentId]);
+
+  const addRecipient = async () => {
+    const name = newRecipient.name.trim();
+    const email = newRecipient.email.trim();
+    if (!email) {
+      setRecipientError('Email is required');
+      return;
+    }
+    setRecipientError(null);
+    setAddingRecipient(true);
+    const role = newRecipient.role || 'signer';
+    const optimistic: EsignRecipient = {
+      id: `temp-${Date.now()}`,
+      name: name || email,
+      email,
+      role,
+    };
+    setRecipients((prev) => [...prev, optimistic]);
+    setSelectedRecipientId(optimistic.id);
+    setNewRecipient({ name: '', email: '', role: 'signer' });
+    const listToSave = [...recipients, { id: '', name: name || email, email, role }];
+    const result = await saveRecipientsAndSet(listToSave, true);
+    setAddingRecipient(false);
+    if (!result.success) {
+      setRecipients((prev) => prev.filter((r) => r.id !== optimistic.id));
+      setSelectedRecipientId(recipients[0]?.id || null);
+      setNewRecipient({ name: name || '', email, role: newRecipient.role || 'signer' });
+    }
+  };
+
+  const updateRecipientRole = async (recipientId: string, newRole: string) => {
+    const updated = recipients.map((r) => {
+      if (r.id !== recipientId) return r;
+      const isGeneric = newRole === 'signer' || newRole === 'reviewer';
+      return { ...r, role: newRole, ...(isGeneric ? { action: undefined } : {}) };
+    });
+    setRecipients(updated);
+    await saveRecipientsAndSet(updated);
+  };
+
+  const updateRecipientAction = async (recipientId: string, action: 'signer' | 'reviewer') => {
+    const updated = recipients.map((r) => (r.id === recipientId ? { ...r, action } : r));
+    setRecipients(updated);
+    await saveRecipientsAndSet(updated);
+  };
+
+  const removeRecipient = async (id: string) => {
+    const newList = recipients.filter((r) => r.id !== id);
+    setSignatureFields((prev) => prev.map((f) => (f.recipient_id === id ? { ...f, recipient_id: null } : f)));
+    if (newList.length) await saveRecipientsAndSet(newList);
+    else if (documentId) {
+      await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/recipients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipients: [] }),
+      });
+      setRecipients([]);
+      setSelectedRecipientId(null);
+    }
+  };
+
+  const moveRecipientUp = async (index: number) => {
+    if (index <= 0 || index >= recipients.length) return;
+    const newList = [...recipients];
+    [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
+    await saveRecipientsAndSet(newList);
+  };
+
+  const moveRecipientDown = async (index: number) => {
+    if (index < 0 || index >= recipients.length - 1) return;
+    const newList = [...recipients];
+    [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
+    await saveRecipientsAndSet(newList);
+  };
+
+  const saveCurrentRecipientsToSaved = () => {
+    const current = recipients.map((r) => ({
+      id: r.id.startsWith('temp-') ? `saved-${r.email}-${Date.now()}` : r.id,
+      name: r.name || r.email,
+      email: r.email,
+      role: ((r.role || 'signer').toLowerCase() === 'reviewer' ? 'reviewer' : 'signer') as 'signer' | 'reviewer',
+    }));
+    const existing = getSavedRecipients();
+    const byEmail = new Map(existing.map((s) => [s.email.toLowerCase(), s]));
+    current.forEach((c) => {
+      byEmail.set(c.email.toLowerCase(), { ...c, id: byEmail.get(c.email.toLowerCase())?.id ?? c.id });
+    });
+    const merged = Array.from(byEmail.values());
+    saveRecipientsToStorage(merged);
+    setSavedRecipients(merged);
+  };
+
+  const addFromSaved = async (saved: SavedRecipient) => {
+    const listToSave = [...recipients, { id: '', name: saved.name || saved.email, email: saved.email, role: saved.role }];
+    const result = await saveRecipientsAndSet(listToSave, true);
+    if (!result.success) setRecipientError('Failed to add recipient');
+  };
+
+  const removeSavedRecipient = (id: string) => {
+    const next = savedRecipients.filter((s) => s.id !== id);
+    saveRecipientsToStorage(next);
+    setSavedRecipients(next);
+  };
+
+  const saveCurrentAsGroup = () => {
+    const name = groupNameInput.trim();
+    if (!name || recipients.length === 0) return;
+    const newGroup: SavedGroup = {
+      id: `group-${Date.now()}`,
+      name,
+      recipients: recipients.map((r) => ({
+        name: r.name || r.email,
+        email: r.email,
+        role: ((r.role || 'signer').toLowerCase() === 'reviewer' ? 'reviewer' : 'signer') as 'signer' | 'reviewer',
+      })),
+    };
+    const next = [...savedGroups, newGroup];
+    saveGroupsToStorage(next);
+    setSavedGroups(next);
+    setGroupNameInput('');
+  };
+
+  const SOW_ROLES = ['Team Lead', 'Technical Team', 'Legal Team'];
+  const SOW_ACTIONS: ('signer' | 'reviewer')[] = ['signer', 'reviewer', 'reviewer'];
+  const addGroupToDocument = async (group: SavedGroup) => {
+    const existingEmails = new Set(recipients.map((r) => r.email.toLowerCase()));
+    const toAdd = group.recipients.filter((g) => !existingEmails.has(g.email.toLowerCase()));
+    if (toAdd.length === 0) {
+      setRecipientError('All members of this group are already added');
+      return;
+    }
+    const isDefaultGroup = group.id === defaultGroupId;
+    const listToSave = [
+      ...recipients,
+      ...toAdd.map((g, idx) => ({
+        id: '' as string,
+        name: g.name || g.email,
+        email: g.email,
+        role: isDefaultGroup && idx < SOW_ROLES.length ? SOW_ROLES[idx] : g.role,
+        action: isDefaultGroup && idx < SOW_ACTIONS.length ? SOW_ACTIONS[idx] : undefined,
+      })),
+    ];
+    const result = await saveRecipientsAndSet(listToSave, true);
+    if (!result.success) setRecipientError('Failed to add group');
+    else setRecipientError(null);
+  };
+
+  const setDefaultGroup = (id: string | null) => {
+    setDefaultGroupIdState(id);
+    setDefaultGroupIdInStorage(id);
+  };
+
+  const removeGroup = (id: string) => {
+    const next = savedGroups.filter((g) => g.id !== id);
+    saveGroupsToStorage(next);
+    setSavedGroups(next);
+    if (editingGroup?.id === id) setEditingGroup(null);
+    if (defaultGroupId === id) setDefaultGroup(null);
+  };
+
+  const startEditingGroup = (g: SavedGroup) => {
+    setExpandedGroupId(null);
+    setEditingGroup({
+      id: g.id,
+      name: g.name,
+      recipients: g.recipients.map((r) => ({ ...r })),
+    });
+  };
+
+  /** Persist fields to backend (pass updated list after drag/resize so size and position are saved). */
+  const saveFieldsToBackend = useCallback(
+    async (fieldsToSave: PlacedField[]) => {
+      if (!documentId || !fieldsToSave.length) return;
+      const payload = fieldsToApiPayload(fieldsToSave);
+      try {
+        await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document_id: documentId, fields: payload }),
+        });
+      } catch (err) {
+        console.warn('Failed to auto-save field positions:', err);
+      }
+    },
+    [documentId, fieldsToApiPayload]
+  );
+
+  const prefillSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefillLatestRef = useRef<PlacedField[] | null>(null);
+  const queuePrefillSave = useCallback(
+    (list: PlacedField[]) => {
+      prefillLatestRef.current = list;
+      if (prefillSaveTimerRef.current) clearTimeout(prefillSaveTimerRef.current);
+      prefillSaveTimerRef.current = setTimeout(() => {
+        prefillSaveTimerRef.current = null;
+        const latest = prefillLatestRef.current;
+        if (latest) void saveFieldsToBackend(latest);
+      }, 450);
+    },
+    [saveFieldsToBackend]
+  );
+
+  const flushPrefillSave = useCallback(() => {
+    if (prefillSaveTimerRef.current) {
+      clearTimeout(prefillSaveTimerRef.current);
+      prefillSaveTimerRef.current = null;
+    }
+    const latest = prefillLatestRef.current;
+    if (latest) void saveFieldsToBackend(latest);
+  }, [saveFieldsToBackend]);
+
+  useEffect(() => {
+    return () => {
+      if (prefillSaveTimerRef.current) clearTimeout(prefillSaveTimerRef.current);
+    };
+  }, []);
+
+  const updateTextFieldProps = useCallback(
+    (fieldId: string, patch: Partial<Pick<PlacedField, 'prefill' | 'text_color' | 'text_font'>>) => {
+      setSignatureFields((prev) => {
+        const next = prev.map((field) => (field.id === fieldId ? { ...field, ...patch } : field));
+        queuePrefillSave(next);
+        return next;
+      });
+    },
+    [queuePrefillSave]
+  );
+
+  /** After every page that has fields has reported dimensions, add xNorm/yNorm to legacy rows and save once. */
+  useEffect(() => {
+    if (!documentId || !signatureFields.length) return;
+    const pointFields = signatureFields.filter((f) => f.x != null && f.y != null);
+    if (!pointFields.some((f) => f.xNorm == null)) return;
+    const pages = [...new Set(pointFields.map((f) => f.page))];
+    const m = pageMetricsRef.current;
+    if (!pages.every((p) => m[p])) return;
+    const next = signatureFields.map((f) => {
+      if (f.x == null || f.y == null || f.xNorm != null) return f;
+      const pm = m[f.page];
+      if (!pm) return f;
+      const w = Math.max(MIN_FIELD_WIDTH_PX / PDF_SCALE, f.width ?? 120);
+      const h = Math.max(MIN_FIELD_HEIGHT_PX / PDF_SCALE, f.height ?? 40);
+      return {
+        ...f,
+        xNorm: f.x / pm.wPt,
+        yNorm: f.y / pm.hPt,
+        widthNorm: w / pm.wPt,
+        heightNorm: h / pm.hPt,
+      };
+    });
+    setSignatureFields(next);
+    saveFieldsToBackend(next);
+  }, [pageDimsTick, documentId, signatureFields, saveFieldsToBackend]);
+
+  const handleFieldDrop = useCallback(
+    (coords: FieldCoords & { fieldType: string; pageWidthPt: number; pageHeightPt: number }) => {
+      setDragSource(null);
+      const pw = coords.pageWidthPt;
+      const ph = coords.pageHeightPt;
+      const ft = coords.fieldType as FieldType;
+      const sel = selectedRecipientId ? recipients.find((r) => r.id === selectedRecipientId) : null;
+      if (ft === 'signature' && sel && getRecipientEffectiveAction(sel) === 'reviewer') {
+        return;
+      }
+      // For directory-listed recipients, auto-prefill Name/Title at drop time.
+      // The signer sees these as read-only labels (matches existing prefilled-text UX).
+      const directoryEntry = sel ? lookupRecipient(sel.email) : null;
+      const directoryPrefill: { prefill?: string } = (() => {
+        if (!directoryEntry) return {};
+        if (ft === 'name') return { prefill: directoryEntry.name };
+        if (ft === 'title') return { prefill: directoryEntry.title };
+        return {};
+      })();
+      const newField: PlacedField = {
+        id: uuidv4(),
+        type: ft,
+        page: coords.page,
+        recipient_id: selectedRecipientId || undefined,
+        ...(ft === 'text'
+          ? { prefill: '', text_color: ESIGN_DEFAULT_TEXT_COLOR, text_font: 'helvetica' as EsignTextFontId }
+          : {}),
+        ...directoryPrefill,
+        x: coords.x,
+        y: coords.y,
+        width: coords.width,
+        height: coords.height,
+        xNorm: coords.x / pw,
+        yNorm: coords.y / ph,
+        widthNorm: coords.width / pw,
+        heightNorm: coords.height / ph,
+      };
+      setSignatureFields((prev) => {
+        const next = [...prev, newField];
+        saveFieldsToBackend(next);
+        return next;
+      });
+    },
+    [selectedRecipientId, recipients, saveFieldsToBackend]
+  );
+
+  const removeField = (id: string) => {
+    setSignatureFields((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      saveFieldsToBackend(next);
+      return next;
+    });
+  };
+
+  /** Save fields then send for signature (no navigation to send page). */
+  const handleSendForSignature = async () => {
+    if (!documentId) return;
+    setSendForSignatureResult(null);
+
+    const fieldCheck = validateSignatureFieldsBeforeSend(
+      recipients,
+      signatureFields.map((f) => ({ type: f.type, recipient_id: f.recipient_id ?? null }))
+    );
+    if (fieldCheck) {
+      setSendForSignatureResult(fieldCheck);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const fields = fieldsToApiPayload(signatureFields);
+      const fieldsRes = await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: documentId, fields }),
+      });
+      const fieldsData = await fieldsRes.json();
+      if (!fieldsData.success) {
+        setSendForSignatureResult('Failed to save fields.');
+        return;
+      }
+      setSaving(false);
+      // Save current recipients before send
+      const recipientsSaved = await saveRecipientsAndSet(recipients);
+      if (!recipientsSaved?.success) {
+        setSendForSignatureResult('Could not save recipients. Please try again.');
+        return;
+      }
+      setSending(true);
+      try {
+        const sendRes = await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/send-for-signature`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const sendData = await sendRes.json();
+        if (sendData.success) {
+          setSendForSignatureResult(formatSendForSignatureSuccessMessage(sendData));
+          const sentTo = Array.isArray(sendData.emails_sent_to) ? sendData.emails_sent_to : [];
+          setSendSuccessModal({ open: true, recipients: sentTo });
+        } else {
+          setSendForSignatureResult(sendData.error || 'Failed to send.');
+        }
+      } catch {
+        setSendForSignatureResult('Failed to send.');
+      } finally {
+        setSending(false);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendForApproval = async () => {
+    if (!pendingApproval || !documentId) return;
+    setSendingApproval(true);
+    setApprovalError(null);
+    try {
+      // Persist current signature fields before creating workflow so approvers/signers see them
+      const fieldsPayload = fieldsToApiPayload(signatureFields);
+      if (fieldsPayload.length) {
+        await fetch(`${BACKEND_URL}/api/esign/signature-fields`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document_id: documentId, fields: fieldsPayload }),
+        });
+      }
+
+      const workflowPayload = {
+        documentId: pendingApproval.documentId,
+        documentType: 'PDF Agreement',
+        clientName: pendingApproval.clientName,
+        amount: pendingApproval.amount,
+        creatorEmail: pendingApproval.creatorEmail,
+        creatorName: pendingApproval.creatorName,
+        isOverage: pendingApproval.isOverage ?? false,
+        esignDocumentId: documentId,
+        totalSteps: 3,
+        workflowSteps: [
+          { step: 1, role: 'Team Approval', email: pendingApproval.teamEmail, status: 'pending' as const, group: pendingApproval.teamId, comments: '', additionalRecipients: pendingApproval.additionalRecipients ?? [] },
+          { step: 2, role: 'Technical Team', email: pendingApproval.approvalEmails.role1, status: 'pending' as const },
+          { step: 3, role: 'Legal Team', email: pendingApproval.approvalEmails.role2, status: 'pending' as const },
+        ],
+      };
+      const createRes = await fetch(`${BACKEND_URL}/api/approval-workflows`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(workflowPayload),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok || !createData.workflowId) {
+        throw new Error(createData.error || 'Failed to create approval workflow');
+      }
+      const teamRes = await fetch(`${BACKEND_URL}/api/send-team-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamEmail: pendingApproval.teamEmail,
+          additionalRecipients: pendingApproval.additionalRecipients ?? [],
+          workflowData: {
+            documentId: pendingApproval.documentId,
+            documentType: 'PDF Agreement',
+            clientName: pendingApproval.clientName,
+            amount: pendingApproval.amount,
+            workflowId: createData.workflowId,
+            teamGroup: pendingApproval.teamId,
+            creatorEmail: pendingApproval.creatorEmail,
+            requestedByName: pendingApproval.creatorName || pendingApproval.creatorEmail,
+          },
+        }),
+      });
+      const teamData = teamRes.ok ? await teamRes.json().catch(() => ({})) : {};
+      sessionStorage.removeItem(QUOTE_PENDING_APPROVAL_KEY);
+      setPendingApproval(null);
+      if (teamData?.success) {
+        alert('Approval workflow started. Team Approval has been notified.');
+      } else {
+        alert('Workflow created but team email may have failed. Please check the Approval dashboard.');
+      }
+      navigate('/approval', { state: { openDashboardTab: true, source: 'quote-approval', documentId: pendingApproval.documentId } });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to send for approval';
+      setApprovalError(msg);
+    } finally {
+      setSendingApproval(false);
+    }
+  };
+
+  const getFieldLabel = (type: FieldType) => FIELD_DEFS.find((d) => d.type === type)?.label ?? type;
+
+  /**
+   * Decide what text to render inside a placed Name/Title/Signature/Date box on the
+   * Place Fields canvas. Resolution order:
+   *   1. Field's own `prefill` (set at drop time via the recipient directory)
+   *   2. Live lookup of the bound recipient's email in the directory — Name/Title
+   *      fall back to their mapped value (handles fields placed BEFORE the
+   *      directory had an entry, and shows dynamic updates on re-render)
+   *   3. Generic field-type label ("Signature", "Date", etc.)
+   * Signature and Date intentionally keep their generic labels — they're
+   * placeholders the signer will fill in, not static text.
+   */
+  const getPlacedFieldDisplay = (f: PlacedField): string => {
+    if (f.prefill && f.prefill.trim()) return f.prefill;
+    const recipient = f.recipient_id
+      ? recipients.find((r) => r.id === f.recipient_id)
+      : null;
+    const directoryEntry = recipient ? lookupRecipient(recipient.email) : null;
+    if (directoryEntry) {
+      if (f.type === 'name') return directoryEntry.name;
+      if (f.type === 'title') return directoryEntry.title;
+    }
+    return getFieldLabel(f.type);
+  };
+
+  const selectedRecipientForPlacement = selectedRecipientId ? recipients.find((r) => r.id === selectedRecipientId) : null;
+  const placingFieldsForReviewer = selectedRecipientForPlacement
+    ? getRecipientEffectiveAction(selectedRecipientForPlacement) === 'reviewer'
+    : false;
+
+  // ── Validation checklist (drives the sidebar "Validation" section + Review & Send button) ──
+  const signerRecipients = recipients.filter((r) => getRecipientEffectiveAction(r) === 'signer');
+  const reviewerRecipients = recipients.filter((r) => getRecipientEffectiveAction(r) === 'reviewer');
+  const hasAssignedFields = signatureFields.some((f) => f.recipient_id);
+  const signersMissingSignature = signerRecipients.filter((s) => {
+    const rf = hasAssignedFields ? signatureFields.filter((f) => !f.recipient_id || f.recipient_id === s.id) : signatureFields;
+    return !rf.some((f) => (f.type || 'signature') === 'signature');
+  });
+  const reviewersMissingField = reviewerRecipients.filter((rv) => !signatureFields.some((f) => f.recipient_id === rv.id));
+  const validationItems: { label: string; done: boolean }[] = [
+    { label: recipients.length > 0 ? `${recipients.length} recipient${recipients.length === 1 ? '' : 's'} added` : 'Add at least one recipient', done: recipients.length > 0 },
+    { label: 'At least one field placed', done: signatureFields.length > 0 },
+    {
+      label: signerRecipients.length === 0 ? 'No signers to verify' : 'Signature placed for each signer',
+      done: signerRecipients.length === 0 || signersMissingSignature.length === 0,
+    },
+    ...(reviewerRecipients.length > 0
+      ? [{ label: 'Field placed for each reviewer', done: reviewersMissingField.length === 0 }]
+      : []),
+  ];
+  const allValidationPassed = validationItems.every((v) => v.done) && recipients.length > 0;
+
+  if (loading || !doc) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden w-full">
+      {sendSuccessModal.open && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+          onClick={() => {
+            setSendSuccessModal({ open: false, recipients: [] });
+            if (documentId) navigate(`/esign/${documentId}/status`);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="send-success-title"
+          >
+            <div className="px-6 pt-6 pb-2 flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h2 id="send-success-title" className="text-lg font-semibold text-slate-900">
+                Signature request sent successfully.
+              </h2>
+              {sendSuccessModal.recipients.length > 0 && (
+                <p className="mt-2 text-sm text-slate-600">
+                  Notified {sendSuccessModal.recipients.length} recipient{sendSuccessModal.recipients.length === 1 ? '' : 's'}:
+                </p>
+              )}
+              {sendSuccessModal.recipients.length > 0 && (
+                <ul className="mt-1 text-sm text-slate-700 break-words">
+                  {sendSuccessModal.recipients.map((email) => (
+                    <li key={email}>{email}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="px-6 pt-4 pb-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+            setSendSuccessModal({ open: false, recipients: [] });
+            if (documentId) navigate(`/esign/${documentId}/status`);
+          }}
+                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 text-white px-6 py-2.5 text-sm font-semibold hover:bg-indigo-700 shadow-md hover:shadow-lg transition-shadow"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-col flex-1 min-h-0 w-full max-w-7xl mx-auto">
+        {/* Header: Back · Step indicator · Guide */}
+        <div className="mb-2 sm:mb-3 shrink-0 flex flex-row flex-wrap items-center justify-between gap-3 gap-y-2">
+          <button
+            type="button"
+            onClick={() => navigate('/esign')}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 -ml-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+            Back
+          </button>
+
+          {/* Step indicator: 1 Recipients · 2 Place Fields · 3 Review & Send */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {[
+              { n: 1, label: 'Recipients' },
+              { n: 2, label: 'Place Fields' },
+              { n: 3, label: 'Review & Send' },
+            ].map((step, i) => {
+              const isCurrent = step.n === 2;
+              const isDone = step.n < 2;
+              return (
+                <React.Fragment key={step.n}>
+                  {i > 0 && <span className="h-px w-4 sm:w-6 bg-slate-300" aria-hidden />}
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                        isCurrent
+                          ? 'bg-indigo-600 text-white'
+                          : isDone
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-slate-100 text-slate-400'
+                      }`}
+                    >
+                      {step.n}
+                    </span>
+                    <span className={`hidden md:inline text-xs font-medium ${isCurrent ? 'text-slate-900' : 'text-slate-400'}`}>
+                      {step.label}
+                    </span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (placeFieldsTourTimeoutRef.current) {
+                window.clearTimeout(placeFieldsTourTimeoutRef.current);
+                placeFieldsTourTimeoutRef.current = null;
+              }
+              placeFieldsTourAutoStartedRef.current = true;
+              startEsignPlaceFieldsTour();
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <BookOpen className="h-4 w-4 shrink-0 text-indigo-600" aria-hidden />
+            <span className="hidden sm:inline">Guide</span>
+          </button>
+        </div>
+
+        <div className="flex gap-4 lg:gap-6 flex-col lg:flex-row flex-1 min-h-0 lg:items-stretch">
+          {/* Document area first (left / full width on mobile) — ~70% width */}
+          <div className="flex flex-1 lg:flex-[7] flex-col min-w-0 order-2 lg:order-1 min-h-[280px] lg:min-h-0">
+            <div
+              id="esign-tour-pdf-preview"
+              ref={scrollContainerRef}
+              className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-y-auto overflow-x-hidden flex-1 min-h-0 scroll-mt-24"
+              onDragOver={(e) => e.preventDefault()}
+            >
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <div
+                  key={pageNum}
+                  data-page={pageNum}
+                  className="flex flex-col items-center py-6 first:pt-6 last:pb-6"
+                >
+                  <span className="text-xs font-medium text-slate-400 mb-2">Page {pageNum} of {totalPages}</span>
+                  <div
+                    className={`rounded-lg overflow-hidden shadow-md ${dragSource ? 'ring-2 ring-indigo-400 ring-offset-2' : ''}`}
+                  >
+                    <EsignPdfPageView
+                      pdfUrl={fileUrl}
+                      pageNumber={pageNum}
+                      scale={PDF_SCALE}
+                      onPdfInfo={pageNum === 1 ? (info) => setTotalPages(info.numPages) : undefined}
+                      onPageDimensions={handlePageDimensions}
+                      onDrop={handleFieldDrop}
+                      className=""
+                    >
+                      {signatureFields
+                        .filter((f) => (f.page || 1) === pageNum)
+                        .map((f) => {
+                          const isPointBased = f.x != null && f.y != null;
+                          const widthPt = f.width ?? 120;
+                          const heightPt = f.height ?? 40;
+                          const color = getRecipientColor(f.recipient_id, recipients);
+                          const minWidthPt = MIN_FIELD_WIDTH_PX / PDF_SCALE;
+                          const minHeightPt = MIN_FIELD_HEIGHT_PX / PDF_SCALE;
+
+                          if (isPointBased) {
+                            const isTextField = f.type === 'text';
+                            return (
+                              <Rnd
+                                key={f.id}
+                                position={{ x: (f.x ?? 0) * PDF_SCALE, y: (f.y ?? 0) * PDF_SCALE }}
+                                size={{ width: Math.max(MIN_FIELD_WIDTH_PX, widthPt * PDF_SCALE), height: Math.max(MIN_FIELD_HEIGHT_PX, heightPt * PDF_SCALE) }}
+                                minWidth={MIN_FIELD_WIDTH_PX}
+                                minHeight={isTextField ? Math.max(MIN_FIELD_HEIGHT_PX, 36) : MIN_FIELD_HEIGHT_PX}
+                                {...(isTextField ? { cancel: '.esign-text-prefill, .esign-text-toolbar, .esign-text-style-input' } : {})}
+                                onDragStop={(_e, d) => {
+                                  const xPt = d.x / PDF_SCALE;
+                                  const yPt = d.y / PDF_SCALE;
+                                  const pm = pageMetricsRef.current[f.page];
+                                  const fw = f.width ?? 120;
+                                  const fh = f.height ?? 40;
+                                  const next = signatureFields.map((field) =>
+                                    field.id === f.id
+                                      ? {
+                                          ...field,
+                                          x: xPt,
+                                          y: yPt,
+                                          width: fw,
+                                          height: fh,
+                                          ...(pm
+                                            ? {
+                                                xNorm: xPt / pm.wPt,
+                                                yNorm: yPt / pm.hPt,
+                                                widthNorm: fw / pm.wPt,
+                                                heightNorm: fh / pm.hPt,
+                                              }
+                                            : {}),
+                                        }
+                                      : field
+                                  );
+                                  setSignatureFields(next);
+                                  saveFieldsToBackend(next);
+                                }}
+                                onResizeStop={(_e, _dir, ref, _delta, position) => {
+                                  const xPt = position.x / PDF_SCALE;
+                                  const yPt = position.y / PDF_SCALE;
+                                  const wPt = Math.max(minWidthPt, ref.offsetWidth / PDF_SCALE);
+                                  const hPt = Math.max(minHeightPt, ref.offsetHeight / PDF_SCALE);
+                                  const pm = pageMetricsRef.current[f.page];
+                                  const next = signatureFields.map((field) =>
+                                    field.id === f.id
+                                      ? {
+                                          ...field,
+                                          x: xPt,
+                                          y: yPt,
+                                          width: wPt,
+                                          height: hPt,
+                                          ...(pm
+                                            ? {
+                                                xNorm: xPt / pm.wPt,
+                                                yNorm: yPt / pm.hPt,
+                                                widthNorm: wPt / pm.wPt,
+                                                heightNorm: hPt / pm.hPt,
+                                              }
+                                            : {}),
+                                        }
+                                      : field
+                                  );
+                                  setSignatureFields(next);
+                                  saveFieldsToBackend(next);
+                                }}
+                                enableResizing={
+                                  isTextField
+                                    ? {
+                                        top: true,
+                                        right: true,
+                                        bottom: true,
+                                        left: true,
+                                        topRight: true,
+                                        bottomRight: true,
+                                        bottomLeft: true,
+                                        topLeft: true,
+                                      }
+                                    : { bottom: true, right: true, bottomRight: true }
+                                }
+                                dragGrid={[1, 1]}
+                                resizeGrid={[1, 1]}
+                                className={
+                                  isTextField
+                                    ? 'flex items-stretch justify-stretch font-medium text-sm cursor-move group p-0 rounded'
+                                    : `flex items-center justify-center rounded font-medium text-sm cursor-move group ${color.box}`
+                                }
+                                onClick={(e: React.MouseEvent) => {
+                                  e.stopPropagation();
+                                  if (!isTextField && e.detail === 2) removeField(f.id);
+                                }}
+                                title={
+                                  isTextField
+                                    ? `Text — type in the box. Drag border area to move; use handles to resize. Hover for × to remove.${f.recipient_id ? ` Assignee: ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}.` : ''}`
+                                    : `${getFieldLabel(f.type)}${f.recipient_id ? ` • ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}` : ''} (double-click to remove)`
+                                }
+                              >
+                                {isTextField ? (
+                                  <div className="w-full h-full min-h-0 flex flex-col rounded border-2 border-dashed border-slate-900 bg-white/[0.97] shadow-sm">
+                                    <div className="esign-text-toolbar flex flex-wrap items-center gap-2 px-1.5 pt-1 pb-1 border-b border-dashed border-slate-300/90">
+                                      <label className="flex items-center gap-1 text-[10px] text-slate-700 font-medium">
+                                        <span className="hidden min-[380px]:inline">Color</span>
+                                        <input
+                                          type="color"
+                                          className="esign-text-style-input h-7 w-9 min-w-0 cursor-pointer rounded border border-slate-400 bg-white p-0"
+                                          value={normalizeEsignTextColor(f.text_color)}
+                                          onChange={(e) => updateTextFieldProps(f.id, { text_color: e.target.value })}
+                                          title="Text color"
+                                        />
+                                      </label>
+                                      <label className="flex items-center gap-1 text-[10px] text-slate-700 font-medium min-w-0 flex-1">
+                                        <span className="shrink-0 hidden sm:inline">Font</span>
+                                        <select
+                                          className="esign-text-style-input min-w-0 flex-1 max-w-[11rem] rounded border border-slate-400 bg-white py-0.5 px-1 text-[10px]"
+                                          value={normalizeEsignTextFont(f.text_font)}
+                                          onChange={(e) =>
+                                            updateTextFieldProps(f.id, { text_font: normalizeEsignTextFont(e.target.value) })
+                                          }
+                                        >
+                                          {ESIGN_TEXT_FONT_OPTIONS.map((opt) => (
+                                            <option key={opt.id} value={opt.id}>
+                                              {opt.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                    </div>
+                                    <textarea
+                                      className="esign-text-prefill flex-1 min-h-[2.25rem] w-full resize-none border-0 bg-transparent text-sm leading-snug focus:outline-none focus:ring-0 px-1.5 py-1 cursor-text placeholder:opacity-45"
+                                      style={{
+                                        color: normalizeEsignTextColor(f.text_color),
+                                        fontFamily: cssStackForEsignTextFont(f.text_font),
+                                      }}
+                                      value={f.prefill ?? ''}
+                                      placeholder="Type here…"
+                                      onChange={(e) => {
+                                        const v = e.target.value.slice(0, 8000);
+                                        updateTextFieldProps(f.id, { prefill: v });
+                                      }}
+                                      onBlur={flushPrefillSave}
+                                      spellCheck
+                                    />
+                                    <button
+                                      type="button"
+                                      className="self-end mr-0.5 mb-0.5 text-xs leading-none text-slate-500 opacity-0 group-hover:opacity-100 hover:text-red-600 px-1 py-0.5"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeField(f.id);
+                                      }}
+                                      title="Remove field"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {getPlacedFieldDisplay(f)}
+                                    <span
+                                      className="ml-1 text-xs opacity-0 group-hover:opacity-100"
+                                      onClick={(e: React.MouseEvent) => {
+                                        e.stopPropagation();
+                                        removeField(f.id);
+                                      }}
+                                    >
+                                      ×
+                                    </span>
+                                  </>
+                                )}
+                              </Rnd>
+                            );
+                          }
+
+                          const pctText = f.type === 'text';
+                          return (
+                            <div
+                              key={f.id}
+                              className={`absolute flex rounded font-medium text-sm group ${pctText ? 'items-stretch p-0' : `items-center justify-center cursor-pointer ${color.box}`}`}
+                              style={{
+                                left: `${f.xPct ?? 10}%`,
+                                top: `${f.yPct ?? 80}%`,
+                                width: `${f.widthPct ?? 20}%`,
+                                height: `${f.heightPct ?? 4}%`,
+                              }}
+                              onClick={(e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                if (!pctText && e.detail === 2) removeField(f.id);
+                              }}
+                              title={
+                                pctText
+                                  ? 'Text — type in the box. Use place-fields with point positions for drag/resize.'
+                                  : `${getFieldLabel(f.type)}${f.recipient_id ? ` • ${recipients.find((r) => r.id === f.recipient_id)?.name || ''}` : ''} (double-click to remove)`
+                              }
+                            >
+                              {pctText ? (
+                                <div className="w-full h-full min-h-0 flex flex-col rounded border-2 border-dashed border-slate-900 bg-white/[0.97]">
+                                  <div className="esign-text-toolbar flex flex-wrap items-center gap-1.5 px-1 pt-0.5 pb-0.5 border-b border-dashed border-slate-300/90">
+                                    <input
+                                      type="color"
+                                      className="esign-text-style-input h-6 w-8 cursor-pointer rounded border border-slate-400 bg-white p-0"
+                                      value={normalizeEsignTextColor(f.text_color)}
+                                      onChange={(e) => updateTextFieldProps(f.id, { text_color: e.target.value })}
+                                      title="Color"
+                                    />
+                                    <select
+                                      className="esign-text-style-input flex-1 min-w-0 rounded border border-slate-400 bg-white py-0 px-0.5 text-[9px]"
+                                      value={normalizeEsignTextFont(f.text_font)}
+                                      onChange={(e) =>
+                                        updateTextFieldProps(f.id, { text_font: normalizeEsignTextFont(e.target.value) })
+                                      }
+                                    >
+                                      {ESIGN_TEXT_FONT_OPTIONS.map((opt) => (
+                                        <option key={opt.id} value={opt.id}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <textarea
+                                    className="esign-text-prefill flex-1 w-full resize-none border-0 bg-transparent text-sm focus:outline-none px-1 py-0.5 cursor-text placeholder:opacity-45"
+                                    style={{
+                                      color: normalizeEsignTextColor(f.text_color),
+                                      fontFamily: cssStackForEsignTextFont(f.text_font),
+                                    }}
+                                    value={f.prefill ?? ''}
+                                    placeholder="Type here…"
+                                    onChange={(e) => {
+                                      const v = e.target.value.slice(0, 8000);
+                                      updateTextFieldProps(f.id, { prefill: v });
+                                    }}
+                                    onBlur={flushPrefillSave}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="self-end text-xs text-slate-500 opacity-0 group-hover:opacity-100 px-1"
+                                    onClick={(e) => { e.stopPropagation(); removeField(f.id); }}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  {getPlacedFieldDisplay(f)}
+                                  <span
+                                    className="ml-1 text-xs opacity-0 group-hover:opacity-100"
+                                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeField(f.id); }}
+                                  >
+                                    ×
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </EsignPdfPageView>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {approvalError && (
+              <div className="mt-2 shrink-0 p-2.5 sm:p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm flex items-center justify-between gap-2">
+                <span>{approvalError}</span>
+                <button type="button" onClick={() => setApprovalError(null)} className="text-red-600 hover:text-red-800 font-medium">×</button>
+              </div>
+            )}
+            {sendForSignatureResult && (
+              <div className="mt-2 shrink-0">
+                <p
+                  className={`text-xs sm:text-sm ${
+                    sendForSignatureResult.startsWith('Successfully') ||
+                    sendForSignatureResult.startsWith('Signing') ||
+                    sendForSignatureResult.startsWith('Document')
+                      ? 'text-emerald-600'
+                      : 'text-amber-600'
+                  }`}
+                >
+                  {sendForSignatureResult}
+                </p>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2 pt-2 sm:mt-3 sm:pt-3 shrink-0 border-t border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600">Go to page</span>
+                <input
+                  id="goto-page"
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  defaultValue={1}
+                  className="w-14 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const n = Math.max(1, Math.min(totalPages, parseInt((e.target as HTMLInputElement).value, 10) || 1));
+                      scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.getElementById('goto-page') as HTMLInputElement;
+                    const n = input ? Math.max(1, Math.min(totalPages, parseInt(input.value, 10) || 1)) : 1;
+                    scrollContainerRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Go
+                </button>
+                <span className="text-sm text-slate-500">1–{totalPages}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right panel: recipient · fields · validation — ~30% width */}
+          <div className="w-full lg:flex-[3] lg:max-w-sm shrink-0 order-1 lg:order-2 flex flex-col min-h-0 max-h-[min(52vh,420px)] lg:max-h-none lg:h-full">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-3 sm:p-4 space-y-5 overflow-y-auto flex-1 min-h-0">
+
+              {/* ── Recipient ── */}
+              <section id="esign-tour-recipients-panel">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900">Recipient</h2>
+                  <span className="text-xs font-medium text-slate-400">{recipients.length}</span>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">Select who you're placing fields for. Signers need a Signature field; Reviewers use Name, Title, Date, or Text.</p>
+                {recipients.length > 0 && (
+                  <div id="esign-tour-place-for-select" className="space-y-2 max-h-52 overflow-y-auto pr-0.5 scroll-mt-24">
+                    {recipients.map((r, index) => {
+                      const isSelected = selectedRecipientId === r.id;
+                      const recipientColor = getRecipientColor(r.id, recipients);
+                      const effectiveAction = r.action ?? (r.role === 'Technical Team' || r.role === 'Legal Team' ? 'reviewer' : (r.role?.toLowerCase() === 'reviewer' ? 'reviewer' : 'signer'));
+                      const isReviewer = effectiveAction === 'reviewer';
+                      return (
+                        <div
+                          key={r.id}
+                          onClick={() => setSelectedRecipientId(r.id)}
+                          title={getPlaceFieldsDropdownLabel(r)}
+                          className={`cursor-pointer rounded-lg border-2 p-2.5 transition-colors ${isSelected ? `${recipientColor.box} ring-1 ring-offset-1` : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {/* radio */}
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${isSelected ? 'border-indigo-600' : 'border-slate-300'}`} aria-hidden>
+                              {isSelected && <span className="h-2 w-2 rounded-full bg-indigo-600" />}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`h-2 w-2 rounded-full shrink-0 ${recipientColor.dot}`} title="Field color" />
+                                <p className="font-medium text-slate-900 text-sm truncate">{r.name || r.email}</p>
+                              </div>
+                              <p className="text-xs text-slate-500 truncate mt-0.5">{r.email || ''}</p>
+                              <div className="mt-1.5 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                                <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${isReviewer ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                                  {isReviewer ? 'Review' : 'Sign'}
+                                </span>
+                                <span className="text-[9px] text-slate-500">Action:</span>
+                                <select
+                                  value={effectiveAction}
+                                  onChange={(e) => updateRecipientAction(r.id, e.target.value as 'signer' | 'reviewer')}
+                                  className="text-[10px] rounded border border-slate-300 bg-white py-0.5 pr-6 pl-1"
+                                  title="Sign or Review"
+                                >
+                                  <option value="signer">Sign</option>
+                                  <option value="reviewer">Review</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
+                              {recipients.length > 1 && (
+                                <>
+                                  <button type="button" onClick={() => moveRecipientUp(index)} disabled={index === 0} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
+                                  <button type="button" onClick={() => moveRecipientDown(index)} disabled={index === recipients.length - 1} className="p-0.5 text-slate-500 hover:text-indigo-600 disabled:opacity-30" title="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
+                                </>
+                              )}
+                              <button type="button" onClick={() => removeRecipient(r.id)} className="p-0.5 text-slate-400 hover:text-red-600" title="Remove"><Trash2 className="h-3.5 w-3.5" /></button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="mt-3 pt-3 border-t border-slate-200">
+                  <input type="text" value={newRecipient.name} onChange={(e) => { setNewRecipient((p) => ({ ...p, name: e.target.value })); setRecipientError(null); }} placeholder="Name" className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5" />
+                  <input
+                    type="email"
+                    value={newRecipient.email}
+                    onChange={(e) => {
+                      const email = e.target.value;
+                      setNewRecipient((p) => {
+                        const entry = lookupRecipient(email);
+                        const nextName = entry && !p.name.trim() ? entry.name : p.name;
+                        return { ...p, email, name: nextName };
+                      });
+                      setRecipientError(null);
+                    }}
+                    placeholder="Email"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs mb-1.5"
+                  />
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-xs text-slate-600">Role:</span>
+                    <select
+                      value={newRecipient.role}
+                      onChange={(e) => setNewRecipient((p) => ({ ...p, role: e.target.value as 'signer' | 'reviewer' }))}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                    >
+                      <option value="signer">Signer</option>
+                      <option value="reviewer">Reviewer</option>
+                    </select>
+                  </div>
+                  {recipientError && <p className="text-xs text-red-600 mt-1">{recipientError}</p>}
+                  <button type="button" onClick={addRecipient} disabled={addingRecipient || !newRecipient.email.trim()} className="mt-1.5 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {addingRecipient ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add recipient
+                  </button>
+                </div>
+              </section>
+
+              {/* ── Fields ── */}
+              <section id="esign-tour-field-palette" className="border-t border-slate-200 pt-4">
+                <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900 mb-1">Fields</h2>
+                {selectedRecipientForPlacement ? (
+                  <p className="text-xs text-slate-500 mb-2">Drag onto the document for <strong className="font-medium text-slate-700">{selectedRecipientForPlacement.name || selectedRecipientForPlacement.email}</strong>.</p>
+                ) : (
+                  <p className="text-xs text-amber-600 mb-2">Select a recipient above before placing fields.</p>
+                )}
+                {selectedRecipientId && placingFieldsForReviewer && (
+                  <p className="text-xs text-slate-600 mb-2">
+                    For reviewers, <strong className="font-medium text-slate-800">Signature</strong> is not used. Drag <strong className="font-medium text-slate-800">Name</strong>, <strong className="font-medium text-slate-800">Title</strong>, <strong className="font-medium text-slate-800">Date</strong>, or <strong className="font-medium text-slate-800">Text</strong> onto the PDF.
+                  </p>
+                )}
+                <div className="space-y-2">
+                  {FIELD_DEFS.map(({ type, label, Icon }) => {
+                    const signatureBlockedForReviewer = placingFieldsForReviewer && type === 'signature';
+                    return (
+                    <div
+                      key={type}
+                      draggable={!signatureBlockedForReviewer}
+                      onDragStart={(e) => {
+                        if (signatureBlockedForReviewer) {
+                          e.preventDefault();
+                          return;
+                        }
+                        setDragSource(type);
+                        e.dataTransfer.setData('text/plain', type);
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      onDragEnd={() => setDragSource(null)}
+                      title={signatureBlockedForReviewer ? 'Reviewers cannot be assigned signature fields' : undefined}
+                      className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 transition-colors ${
+                        signatureBlockedForReviewer
+                          ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
+                          : dragSource === type
+                            ? 'border-indigo-400 bg-indigo-50 cursor-grab active:cursor-grabbing'
+                            : 'border-slate-300 bg-white hover:border-indigo-300 hover:bg-slate-50 cursor-grab active:cursor-grabbing'
+                      }`}
+                    >
+                      <Icon className={`h-5 w-5 shrink-0 ${signatureBlockedForReviewer ? 'text-slate-400' : 'text-indigo-600'}`} />
+                      <span className={`font-medium text-sm ${signatureBlockedForReviewer ? 'text-slate-500' : 'text-slate-800'}`}>{label}</span>
+                    </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+                  <strong className="font-medium text-slate-600">Text fields:</strong> drag <strong>Text</strong> onto the PDF, use the color swatch and font list in the box, type your wording, then resize/move.
+                </p>
+              </section>
+
+              {/* ── Validation ── */}
+              <section className="border-t border-slate-200 pt-4">
+                <h2 className="text-xs font-bold uppercase tracking-wide text-slate-900 mb-2">Validation</h2>
+                <ul className="space-y-1.5">
+                  {validationItems.map((v) => (
+                    <li key={v.label} className="flex items-center gap-2 text-xs">
+                      {v.done
+                        ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                        : <Circle className="h-4 w-4 shrink-0 text-slate-300" />}
+                      <span className={v.done ? 'text-slate-700' : 'text-slate-400'}>{v.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              </div>
+
+              {/* Footer action bar: Back · Review & Send */}
+              <div className="shrink-0 border-t border-slate-200 bg-white p-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/esign')}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </button>
+                <button
+                  type="button"
+                  id="esign-tour-send-signature"
+                  onClick={handleSendForSignature}
+                  disabled={saving || sending || !allValidationPassed}
+                  title={allValidationPassed ? 'Save fields and send for signature' : 'Complete the validation checklist first'}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-shadow"
+                >
+                  {(saving || sending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Mail className="h-4 w-4" /> Review &amp; Send</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default EsignPlaceFieldsPage;

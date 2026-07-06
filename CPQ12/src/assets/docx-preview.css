@@ -1,0 +1,173 @@
+/* Local copy of docx-preview styling to avoid remote fetch and tracking blocks */
+.docx-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0 32px;
+  background: #f3f4f6;
+}
+
+.docx {
+  color: #000;
+  line-height: 1.4;
+  font-family: "Times New Roman", serif;
+}
+
+.docx .page {
+  position: relative;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  margin: 12px auto;
+  padding: 96px 72px;
+  width: 816px; /* 8.5in minus typical margins */
+  min-height: 1056px; /* approx 11in page */
+  box-sizing: border-box;
+}
+
+.docx .page > section {
+  margin: 0;
+}
+
+.docx p {
+  margin: 0 0 8px;
+}
+
+.docx h1,
+.docx h2,
+.docx h3,
+.docx h4,
+.docx h5,
+.docx h6 {
+  font-weight: bold;
+  margin: 0 0 10px;
+}
+
+.docx ul,
+.docx ol {
+  margin: 0 0 10px 24px;
+  padding: 0;
+}
+
+.docx table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed; /* Preserve column widths from Word template */
+}
+
+.docx table td,
+.docx table th {
+  border: 1px solid #666;
+  padding: 4px;
+  vertical-align: top;
+}
+
+/* Preserve column widths - make bundled pricing column narrower to match Word doc */
+.docx table td:nth-child(1),
+.docx table th:nth-child(1) {
+  width: 22%; /* Job Requirement */
+}
+
+.docx table td:nth-child(2),
+.docx table th:nth-child(2) {
+  width: 38%; /* Description - widest */
+}
+
+.docx table td:nth-child(3),
+.docx table th:nth-child(3) {
+  width: 20%; /* Price (USD) */
+}
+
+.docx table td:nth-child(4),
+.docx table th:nth-child(4) {
+  width: 20%; /* Bundled Pricing - narrower, matching Word doc */
+  max-width: 130px; /* Cap maximum width to prevent it from being too wide */
+  min-width: 90px; /* Ensure minimum readable width */
+}
+
+/* Gray background for bundled pricing column (4th column) */
+.docx table td:nth-child(4),
+.docx table th:nth-child(4) {
+  background-color: #e5e5e5;
+  background-color: #d3d3d3;
+}
+
+/* Right-align price columns (3rd and 4th columns) */
+.docx table td:nth-child(3),
+.docx table th:nth-child(3),
+.docx table td:nth-child(4),
+.docx table th:nth-child(4) {
+  text-align: right;
+}
+
+.docx img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* CRITICAL: Preserve image positioning (left/right alignment) */
+.docx p img,
+.docx .image-inline {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
+/* Preserve left-aligned images */
+.docx p[style*="text-align: left"] img,
+.docx .image-left {
+  float: left;
+  margin-right: 10px;
+  margin-bottom: 5px;
+}
+
+/* Preserve right-aligned images */
+.docx p[style*="text-align: right"] img,
+.docx .image-right {
+  float: right;
+  margin-left: 10px;
+  margin-bottom: 5px;
+}
+
+/* Preserve center-aligned images */
+.docx p[style*="text-align: center"] img,
+.docx .image-center {
+  display: block;
+  margin: 0 auto;
+}
+
+/* Preserve table cell alignment for images */
+.docx table td img,
+.docx table th img {
+  vertical-align: middle;
+}
+
+/* Preserve drawing/anchor positioning */
+.docx .drawing,
+.docx [data-anchor] {
+  position: relative;
+  display: inline-block;
+}
+
+.docx a {
+  color: inherit;
+}
+
+.docx .page-number {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  font-size: 12px;
+}
+
+.docx .docx-header {
+  position: absolute;
+  top: 32px;
+  left: 72px;
+  right: 72px;
+}
+
+.docx .docx-footer {
+  position: absolute;
+  bottom: 32px;
+  left: 72px;
+  right: 72px;
+}
+

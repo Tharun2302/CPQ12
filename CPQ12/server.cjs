@@ -1,0 +1,12054 @@
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const sgMail = require('@sendgrid/mail');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { exec } = require('child_process');
+const { MongoClient } = require('mongodb');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { spawn } = require('child_process');
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+
+// --- simple in-memory cache (no external deps) ---
+const _cache = {
+  exhibits:  { data: null, ts: 0 },
+  templates: { data: null, ts: 0 },
+};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+function _cacheValid(entry) { return entry.data !== null && (Date.now() - entry.ts) < CACHE_TTL_MS; }
+function _cacheClear(key)   { _cache[key].data = null; _cache[key].ts = 0; }
+// --- end cache ---
+
+let libre;
+try {
+  libre = require('libreoffice-convert');
+  // Don't promisify if it's already a promise-based function
+  if (typeof libre.convert === 'function' && !libre.convertAsync) {
+    libre.convertAsync = require('util').promisify(libre.convert);
+  }
+  console.log('✅ libreoffice-convert package loaded successfully');
+} catch (e) {
+  console.log('⚠️ libreoffice-convert not available, will use system LibreOffice');
+  console.error('libreoffice-convert error:', e.message);
+}
+// Load .env from same directory as this script so signing links use correct APP_BASE_URL
+const envPath = path.join(__dirname, '.env');
+require('dotenv').config({ path: envPath });
+if (!process.env.APP_BASE_URL && require('fs').existsSync(envPath)) {
+  const envContent = require('fs').readFileSync(envPath, 'utf8');
+  const match = envContent.match(/^\s*APP_BASE_URL\s*=\s*(.+)/m);
+  if (match) process.env.APP_BASE_URL = match[1].trim().replace(/^["']|["']$/g, '');
+}
+
+const app = express();
+// IMPORTANT: dotenv values are strings. If PORT is provided as a string (e.g. "3001"),
+// Node can treat it as a named pipe instead of a TCP port. Always coerce to number.
+const PORT = Number.parseInt(process.env.PORT, 10) || 3001;
+
+/** Match signature_fields by document_id whether stored as ObjectId or string (avoids empty fields on some DBs). */
+function signatureFieldsDocumentFilter(docId) {
+  const { ObjectId } = require('mongodb');
+  const oid = docId instanceof ObjectId ? docId : new ObjectId(String(docId));
+  return { $or: [{ document_id: oid }, { document_id: oid.toString() }] };
+}
+
+/** Same for esign_recipients — mirrors signature_fields document_id matching. */
+function esignRecipientsDocumentFilter(docId) {
+  const { ObjectId } = require('mongodb');
+  const oid = docId instanceof ObjectId ? docId : new ObjectId(String(docId));
+  return { $or: [{ document_id: oid }, { document_id: oid.toString() }] };
+}
+
+function normalizeEsignEmail(e) {
+  if (!e || typeof e !== 'string') return '';
+  return e.trim().toLowerCase();
+}
+
+/** Short, safe file name for email subjects. */
+function sanitizeEsignEmailSubjectFileName(name) {
+  if (!name || typeof name !== 'string') return 'document';
+  const t = name.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() || 'document';
+  return t.length > 120 ? `${t.slice(0, 117)}...` : t;
+}
+
+/** Email to notify for creator-facing e-sign events (matches list "Created by" when uploaded_by is not an address). */
+function getEsignDocumentCreatorNotifyEmail(doc) {
+  if (!doc) return '';
+  const up = String(doc.uploaded_by || '').trim();
+  if (up.includes('@')) return up;
+  const req = String(doc.requested_by_email || '').trim();
+  if (req.includes('@')) return req;
+  return '';
+}
+
+/** True when actor is the uploader (creator) of the e-sign document. */
+function esignActorIsDocumentCreator(doc, actorEmail) {
+  const uploader = normalizeEsignEmail(doc.uploaded_by);
+  const actor = normalizeEsignEmail(actorEmail);
+  return uploader !== '' && actor !== '' && uploader === actor;
+}
+
+/** Authorization for Edit Dates on an e-sign document. Creator OR Approval Admin.
+ *  Async because admin status may need a DB lookup. */
+async function actorCanEditEsignDates(esignDoc, actorEmail) {
+  if (!actorEmail) return false;
+  if (esignActorIsDocumentCreator(esignDoc, actorEmail)) return true;
+  return await hasApprovalAdminAccess({ email: actorEmail });
+}
+
+/** Authorization for Edit Dates on a documents-collection row. Creator OR Approval
+ *  Admin. The `documents` collection doesn't store creator directly, so we resolve
+ *  it via the linked approval_workflows row (creatorEmail) or any linked esign
+ *  document (uploaded_by). */
+async function actorCanEditSourceDocumentDates(doc, actorEmail) {
+  if (!actorEmail) return false;
+  if (await hasApprovalAdminAccess({ email: actorEmail })) return true;
+  const actor = String(actorEmail).trim().toLowerCase();
+  if (!actor) return false;
+  try {
+    const wf = await db.collection('approval_workflows').findOne({ documentId: doc.id });
+    if (wf) {
+      const wfCreator = String(wf.creatorEmail || wf.createdBy || '').trim().toLowerCase();
+      if (wfCreator && wfCreator === actor) return true;
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    const esign = await db.collection('esign_documents').findOne({ source_document_id: doc.id });
+    if (esign && esignActorIsDocumentCreator(esign, actorEmail)) return true;
+  } catch (e) { /* fall through */ }
+  return false;
+}
+
+// Helper: returns true for any localhost / 127.0.0.1 origin (any port) or known prod domains.
+// Configure allowed production origins via env vars:
+//   APP_BASE_URL=https://cpq.cftools.live
+//   ALLOWED_ORIGINS=https://cpq.cftools.live,https://zenop.ai,https://www.zenop.ai
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  const extraOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(o => o.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+  const prodOrigins = new Set([
+    ...extraOrigins,
+    (process.env.APP_BASE_URL || '').replace(/\/$/, ''),
+  ].filter(Boolean));
+  return prodOrigins.has(origin);
+}
+
+// Middleware - Configure CORS to allow frontend requests
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS: ' + origin));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
+}));
+
+// Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-KEY');
+  }
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+// Large enough for generate-signed JSON bodies with base64 signature images (multiple fields).
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static files from the React app build
+//
+// IMPORTANT (prod caching):
+// - Never aggressively cache HTML entrypoints (index.html), otherwise browsers can get a stale HTML
+//   that references *new* hashed chunks, or vice-versa, causing runtime errors like:
+//     "Cannot access '<symbol>' before initialization"
+// - Aggressively cache Vite hashed assets under dist/assets for performance.
+const distPath = path.join(__dirname, 'dist');
+const assetsPath = path.join(distPath, 'assets');
+
+// Serve JS/CSS chunks with correct MIME (prevents "application/octet-stream" / "Cannot access 'ze' before initialization")
+// Use writeHead + stream.pipe so headers are locked before any data; prevents Express/middleware from overwriting Content-Type
+app.get('/assets/:filename', (req, res) => {
+  const filename = req.params.filename;
+  if (!/^[a-zA-Z0-9_.-]+\.(js|mjs|css)$/.test(filename)) {
+    return res.status(404).end();
+  }
+  const filePath = path.join(assetsPath, filename);
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return res.status(404).end();
+  }
+  const contentType = (filename.endsWith('.css')) ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Cache-Control': 'public, max-age=31536000, immutable'
+  });
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500).end();
+    else res.destroy();
+  });
+  stream.pipe(res);
+});
+
+// Serve index.html with two fixes:
+// 1. Vite emits modulepreload hints as data:application/octet-stream — browsers need application/javascript.
+// 2. Strict CSP (script-src without data:) blocks those data: modulepreload hints entirely.
+//    Strip them; the actual bundle <script src="/assets/..."> still loads fine.
+function sendIndexHtml(res) {
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  let html = fs.readFileSync(indexPath, 'utf8');
+  // Fix MIME type first so the strip regex matches consistently
+  html = html.replace(/data:application\/octet-stream/g, 'data:application/javascript');
+  // Remove <link rel="modulepreload" href="data:..."> tags that strict CSP blocks
+  html = html.replace(/<link[^>]+rel=["']modulepreload["'][^>]+href=["']data:[^"']*["'][^>]*\/?>/gi, '');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  // Set a permissive CSP that allows Google Fonts (fonts.googleapis.com / fonts.gstatic.com).
+  // The proxy may override this — if it does, update the proxy's CSP directly instead.
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://zenop.ai:8443",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "connect-src 'self' ws: wss: https:",
+    "img-src 'self' data: blob: https:",
+    "frame-src 'self' blob: https://zenop.ai:8443",
+    "worker-src 'self' blob:",
+  ].join('; '));
+  res.send(html);
+}
+
+// GET / must be handled before express.static so we serve fixed index.html (express.static would serve raw with bad data URL)
+app.get('/', (req, res) => {
+  sendIndexHtml(res);
+});
+
+// Redirect e-sign dashboard/sign from backend port to frontend only in local dev (Vite on 5173). In production the same server serves the app on 3001, so do not redirect.
+app.get('/esign-inbox', (req, res) => {
+  const host = (req.get('host') || '').toLowerCase();
+  if (host.includes('localhost') && host.includes('3001')) {
+    const front = host.replace('3001', '5173');
+    return res.redirect(302, `http://${front}${req.originalUrl}`);
+  }
+  sendIndexHtml(res);
+});
+app.get('/sign/:documentId', (req, res) => {
+  const host = (req.get('host') || '').toLowerCase();
+  if (host.includes('localhost') && host.includes('3001')) {
+    const front = host.replace('3001', '5173');
+    return res.redirect(302, `http://${front}${req.originalUrl}`);
+  }
+  sendIndexHtml(res);
+});
+
+app.use(
+  express.static(distPath, {
+    index: false, // Don't auto-serve index.html; we handle / explicitly above with fixed HTML
+    etag: true,
+    lastModified: true,
+    setHeaders(res, filePath) {
+      const p = (filePath || '').replace(/\\/g, '/');
+      if (p.endsWith('.js') || p.endsWith('.mjs')) {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      }
+      if (p.endsWith('.css')) {
+        res.setHeader('Content-Type', 'text/css; charset=utf-8');
+      }
+      if (p.includes('dist/assets') || p.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-cache');
+    },
+  })
+);
+
+// Multer configuration for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+// Multer disk storage for e-signature documents (uploads/documents, uploads/signatures)
+const uploadsBase = path.join(__dirname, 'uploads');
+const documentsDir = path.join(uploadsBase, 'documents');
+const signaturesDir = path.join(uploadsBase, 'signatures');
+const signedDir = path.join(uploadsBase, 'signed');
+[documentsDir, signaturesDir, signedDir].forEach((dir) => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+const esignDocumentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, documentsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.pdf';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+  }
+});
+const esignDocumentUpload = multer({ storage: esignDocumentStorage });
+
+// MongoDB configuration
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const DB_NAME = process.env.DB_NAME || 'cpq_database';
+
+// MongoDB client
+let client;
+let db;
+
+// Initialize MongoDB connection
+async function initializeDatabase() {
+  try {
+    // Check if database connection is available
+    console.log('🔍 Checking database connection...');
+    console.log('📊 MongoDB config:', {
+      uri: MONGODB_URI,
+      database: DB_NAME
+    });
+    
+    // Connect to MongoDB
+    client = new MongoClient(MONGODB_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log('✅ MongoDB connection successful');
+    
+    // Create templates collection if it doesn't exist
+    const templatesCollection = db.collection('templates');
+    await templatesCollection.createIndex({ file_type: 1 });
+    await templatesCollection.createIndex({ is_default: 1 });
+    await templatesCollection.createIndex({ created_at: 1 });
+    
+    // Create documents collection with indexes
+    const documentsCollection = db.collection('documents');
+    await documentsCollection.createIndex({ id: 1 }, { unique: true });
+    await documentsCollection.createIndex({ company: 1 });
+    await documentsCollection.createIndex({ clientEmail: 1 });
+    await documentsCollection.createIndex({ generatedDate: -1 });
+    await documentsCollection.createIndex({ createdAt: -1 }); // For fast sorting in GET /api/documents
+    await documentsCollection.createIndex({ status: 1 });
+    console.log('✅ Documents collection ready with indexes');
+
+    // E-Signature collections
+    const esignDocumentsCollection = db.collection('esign_documents');
+    await esignDocumentsCollection.createIndex({ created_at: -1 });
+    await esignDocumentsCollection.createIndex({ status: 1 });
+    await esignDocumentsCollection.createIndex({ uploaded_by: 1 });
+    const signatureFieldsCollection = db.collection('signature_fields');
+    await signatureFieldsCollection.createIndex({ document_id: 1 });
+    const esignRecipientsCollection = db.collection('esign_recipients');
+    await esignRecipientsCollection.createIndex({ document_id: 1 });
+    // Ensure signing_token index is SPARSE so multiple recipients without a token don't cause E11000
+    try {
+      await esignRecipientsCollection.dropIndex('signing_token_1');
+    } catch (_) {
+      // Ignore if index doesn't exist
+    }
+    await esignRecipientsCollection.updateMany(
+      { signing_token: null },
+      { $unset: { signing_token: '' } }
+    );
+    await esignRecipientsCollection.createIndex({ signing_token: 1 }, { unique: true, sparse: true });
+    const esignSignatureSecretsCollection = db.collection('esign_signature_secrets');
+    await esignSignatureSecretsCollection.createIndex(
+      { document_id: 1, recipient_id: 1, field_index: 1 },
+      { unique: true }
+    );
+    const auditLogsCollection = db.collection('audit_logs');
+    await auditLogsCollection.createIndex({ document_id: 1 });
+    await auditLogsCollection.createIndex({ timestamp: -1 });
+    console.log('✅ E-Signature collections ready');
+    
+    console.log('✅ Connected to MongoDB Atlas successfully');
+    console.log('📊 Database name:', DB_NAME);
+    
+    // Test the connection
+    await db.admin().ping();
+    
+    // Auto-seed default templates on server startup (optional)
+    //
+    // NOTE:
+    // - This seeding checks for file modifications and auto-updates templates in database
+    // - It compares file modification time with database version
+    // - Only updated templates are re-uploaded (efficient)
+    // - Set SEED_TEMPLATES_ON_STARTUP=true to enable auto-sync
+    //
+    // To force seeding on a given environment, set:
+    //   SEED_TEMPLATES_ON_STARTUP=true
+    // in your .env file and restart the server.
+    const shouldSeedTemplates =
+      process.env.SEED_TEMPLATES_ON_STARTUP &&
+      process.env.SEED_TEMPLATES_ON_STARTUP.toLowerCase() === 'true';
+
+    if (shouldSeedTemplates) {
+      try {
+        const { seedDefaultTemplates } = require('./seed-templates.cjs');
+        const { seedDefaultExhibits } = require('./seed-exhibits.cjs');
+        
+        console.log('🌱 Seeding templates and exhibits...');
+        await seedDefaultTemplates(db);
+        await seedDefaultExhibits(db);
+        console.log('✅ Seeding complete');
+      } catch (error) {
+        console.log('⚠️ Template/exhibit seeding skipped due to error:', error.message);
+      }
+    } else {
+      console.log('⏭️ Skipping template/exhibit seeding on startup (SEED_TEMPLATES_ON_STARTUP not set to true)');
+      console.log('💡 Tip: Set SEED_TEMPLATES_ON_STARTUP=true in .env to auto-sync backend template changes');
+    }
+
+    console.log('✅ MongoDB Atlas ping successful');
+    
+    // Function to sync exhibits from MongoDB to backend-exhibits folder
+    // This restores UI-added exhibits to folder after Docker restart
+    async function syncExhibitsToFolder(db) {
+      try {
+        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+        
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(exhibitsDir)) {
+          try {
+            fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
+            console.log(`📁 Created backend-exhibits directory: ${exhibitsDir}`);
+          } catch (mkdirError) {
+            console.warn(`⚠️ Cannot create backend-exhibits directory: ${mkdirError.message}`);
+            return; // Skip sync if can't create directory
+          }
+        }
+
+        // Check write permissions
+        try {
+          fs.accessSync(exhibitsDir, fs.constants.W_OK);
+        } catch (accessError) {
+          console.warn(`⚠️ No write permission for backend-exhibits directory: ${accessError.message}`);
+          return; // Skip sync if no write permission
+        }
+
+        console.log('🔄 Syncing exhibits from MongoDB to backend-exhibits folder...');
+        
+        // Get all exhibits from MongoDB
+        const exhibits = await db.collection('exhibits').find({}).toArray();
+        let syncedCount = 0;
+        let skippedCount = 0;
+        let errorCount = 0;
+
+        for (const exhibit of exhibits) {
+          try {
+            if (!exhibit.fileName || !exhibit.fileData) {
+              skippedCount++;
+              continue;
+            }
+
+            const filePath = path.join(exhibitsDir, exhibit.fileName);
+            
+            // Skip if file already exists (don't overwrite)
+            if (fs.existsSync(filePath)) {
+              skippedCount++;
+              continue;
+            }
+
+            // Convert base64 to buffer and write to file
+            let fileBuffer;
+            if (Buffer.isBuffer(exhibit.fileData)) {
+              fileBuffer = exhibit.fileData;
+            } else if (typeof exhibit.fileData === 'string') {
+              fileBuffer = Buffer.from(exhibit.fileData, 'base64');
+            } else {
+              console.warn(`⚠️ Unknown fileData format for exhibit: ${exhibit.fileName}`);
+              skippedCount++;
+              continue;
+            }
+
+            fs.writeFileSync(filePath, fileBuffer, { mode: 0o644 });
+            console.log(`✅ Synced exhibit to folder: ${exhibit.fileName}`);
+            syncedCount++;
+          } catch (fileError) {
+            console.error(`❌ Error syncing exhibit ${exhibit.fileName}:`, fileError.message);
+            errorCount++;
+          }
+        }
+
+        console.log(`📊 Folder Sync Summary:`);
+        console.log(`   ✅ Synced: ${syncedCount}`);
+        console.log(`   ⏭️  Skipped (already exists): ${skippedCount}`);
+        console.log(`   ❌ Errors: ${errorCount}`);
+        console.log(`   📁 Total exhibits in MongoDB: ${exhibits.length}\n`);
+      } catch (error) {
+        console.error('❌ Error syncing exhibits to folder:', error.message);
+        // Don't throw - this is non-critical
+      }
+    }
+
+    // Sync MongoDB exhibits back to backend-exhibits folder (reverse sync)
+    // This restores UI-added exhibits to folder after Docker restart
+    try {
+      await syncExhibitsToFolder(db);
+    } catch (error) {
+      console.log('⚠️ Exhibit folder sync skipped due to error:', error.message);
+    }
+    
+    // Create users collection with proper indexes
+    const usersCollection = db.collection('users');
+    await usersCollection.createIndex({ email: 1 }, { unique: true });
+    await usersCollection.createIndex({ provider: 1 });
+    await usersCollection.createIndex({ created_at: -1 });
+    console.log('✅ Users collection ready with indexes');
+
+    // Create daily_logins collection with proper indexes
+    const dailyLoginsCollection = db.collection('daily_logins');
+    await dailyLoginsCollection.createIndex({ date: 1 }, { unique: true });
+    await dailyLoginsCollection.createIndex({ date: -1 });
+    console.log('✅ Daily logins collection ready with indexes');
+
+    // Ensure collections exist
+    const collections = ['quotes', 'templates', 'pricing_tiers', 'exhibits'];
+    for (const collectionName of collections) {
+      try {
+        await db.createCollection(collectionName);
+        console.log(`✅ Collection '${collectionName}' ready`);
+  } catch (error) {
+        console.log(`ℹ️ Collection '${collectionName}' already exists`);
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ MongoDB Atlas connection failed:', error);
+    console.log('⚠️ Database features will be disabled');
+    console.log('📝 To enable database features, set up MongoDB Atlas and configure:');
+    console.log('   MONGODB_URI, DB_NAME environment variables');
+    return false;
+  }
+}
+
+// Helper to generate a friendly document ID
+function generateDocumentId(clientName = 'UnknownClient', company = 'UnknownCompany') {
+  const sanitize = (str) =>
+    String(str)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .substring(0, 20)
+      .replace(/^[0-9]/, 'C$&');
+
+  const sanitizedCompany = sanitize(company);
+  const sanitizedClient = sanitize(clientName);
+  const timestamp = Date.now().toString().slice(-5);
+
+  return `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
+}
+
+// Helper function to track daily user logins
+async function trackDailyLogin(userId, loginMethod = 'email', userEmail = null) {
+  try {
+    if (!db) {
+      console.warn('⚠️ Cannot track daily login: Database not available');
+      return;
+    }
+
+    // Get user email if not provided
+    let email = userEmail;
+    if (!email) {
+      const user = await db.collection('users').findOne({ id: userId });
+      if (user) {
+        email = user.email;
+      } else {
+        email = 'unknown@example.com';
+      }
+    }
+
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date();
+    const dateString = today.toISOString().split('T')[0]; // e.g., "2024-01-15"
+
+    const dailyLoginsCollection = db.collection('daily_logins');
+
+    // Find or create today's login record
+    const todayRecord = await dailyLoginsCollection.findOne({ date: dateString });
+
+    if (todayRecord) {
+      // Update existing record - add user ID and email if not already present
+      if (!todayRecord.user_ids.includes(userId)) {
+        await dailyLoginsCollection.updateOne(
+          { date: dateString },
+          {
+            $addToSet: { 
+              user_ids: userId,
+              user_emails: email // Store email alongside user ID
+            },
+            $set: {
+              count: todayRecord.user_ids.length + 1,
+              updated_at: new Date()
+            }
+          }
+        );
+        console.log(`✅ Tracked daily login for user ${userId} (${email}) on ${dateString}`);
+      } else {
+        console.log(`ℹ️ User ${userId} (${email}) already logged in today (${dateString})`);
+      }
+    } else {
+      // Create new record for today
+      await dailyLoginsCollection.insertOne({
+        date: dateString,
+        user_ids: [userId],
+        user_emails: [email], // Store email alongside user ID
+        count: 1,
+        login_methods: [loginMethod],
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+      console.log(`✅ Created daily login record for ${dateString} with user ${userId} (${email})`);
+    }
+  } catch (error) {
+    console.error('❌ Error tracking daily login:', error);
+    // Don't throw - login should still succeed even if tracking fails
+  }
+}
+
+// Initialize database on startup
+let databaseAvailable = false;
+
+// Environment variables
+const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY || 'demo-key';
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
+const EMAIL_PORT = process.env.EMAIL_PORT || 587;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const GOTENBERG_URL = process.env.GOTENBERG_URL || '';
+const LIBREOFFICE_SERVICE_URL = process.env.LIBREOFFICE_SERVICE_URL || 'http://localhost:3002';
+
+// Email configuration
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
+const isEmailConfigured = process.env.SENDGRID_API_KEY;
+
+// Email template functions
+function formatUsdAmount(value) {
+  const n = Number(value || 0);
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Approval portal access tokens (secure links for role-based portals)
+const APPROVAL_TOKEN_EXPIRY_DAYS = 7;
+
+// E-sign link expiry: recipients must sign within this many days of the email being sent
+const ESIGN_LINK_EXPIRY_DAYS = 15;
+const ESIGN_EXPIRY_REMINDER_DAYS_BEFORE = 3;
+const ESIGN_EXPIRY_REMINDER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Returns true if the esign_recipients record has a token_expires_at in the past.
+ * Tokens created before this feature was added (no token_expires_at) are treated as valid.
+ */
+function isEsignTokenExpired(recipient) {
+  if (!recipient || !recipient.token_expires_at) return false;
+  return new Date(recipient.token_expires_at).getTime() < Date.now();
+}
+async function createApprovalAccessToken(db, workflowId, role) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + APPROVAL_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  await db.collection('approval_access_tokens').updateOne(
+    { workflowId, role },
+    { $set: { workflowId, role, token, expiresAt, updatedAt: new Date().toISOString() } },
+    { upsert: true }
+  );
+  return token;
+}
+
+// Backfill fields the triggering dashboard may not have forwarded (discountPercent,
+// hasCustomLineItems, amount) from the persisted workflow record, so approval-email
+// alert banners render consistently on every step regardless of which UI fired it.
+async function enrichWorkflowDataFromRecord(workflowData) {
+  if (!workflowData || !db || !workflowData.workflowId) return;
+  try {
+    const wf = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
+    if (!wf) return;
+    if (workflowData.amount == null) workflowData.amount = wf.amount;
+    if (workflowData.discountPercent == null) workflowData.discountPercent = wf.discountPercent;
+    if (workflowData.hasCustomLineItems == null) workflowData.hasCustomLineItems = wf.hasCustomLineItems;
+  } catch (e) {
+    console.error('⚠️ enrichWorkflowDataFromRecord failed:', e.message);
+  }
+}
+
+function generateTeamEmailHTML(workflowData, token) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const approvalLink = token
+    ? `${baseUrl}/approval/${workflowData.workflowId}?role=teamlead&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/team-approval?workflow=${workflowData.workflowId}`;
+  const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
+  const discountPercent = Number(workflowData.discountPercent) || 0;
+  const highDiscountNote = discountPercent > 15
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
+        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as <strong>Team Lead</strong>.</p>
+      </div>`
+    : '';
+  const HIGH_VALUE_THRESHOLD = 30000;
+  const amountNum = Number(workflowData.amount) || 0;
+  const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Value Deal ($${formatUsdAmount(amountNum)})</strong><br>
+        This quote total exceeds $30,000 and requires your careful review.</p>
+      </div>`
+    : '';
+  const customLineItemsNote = workflowData.hasCustomLineItems
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ Custom Line Items Added</strong><br>
+        This quote includes manually added custom line items. Please review them carefully.</p>
+      </div>`
+    : '';
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Team Approval Required</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #0ea5e9, #0369a1); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>🧩 Team Approval Required${teamLabel ? ` - ${teamLabel}` : ''}</h1>
+        </div>
+
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Team${teamLabel ? ` (${teamLabel})` : ''},</h2>
+
+          <p>A new document requires your <strong>Team Approval</strong>:</p>
+
+          ${highDiscountNote}
+          ${highValueNote}
+          ${customLineItemsNote}
+
+          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📄 Document Details</h3>
+            ${teamLabel ? `<p><strong>Team Group:</strong> ${teamLabel}</p>` : ''}
+            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${approvalLink}" 
+               style="background: #0ea5e9; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+          </div>
+          
+          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+function generateTechnicalTeamEmailHTML(workflowData, token) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const approvalLink = token
+    ? `${baseUrl}/approval/${workflowData.workflowId}?role=technical&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/technical-approval?workflow=${workflowData.workflowId}`;
+  const discountPercent = Number(workflowData.discountPercent) || 0;
+  const highDiscountNote = discountPercent > 15
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
+        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Technical Team</strong>.</p>
+      </div>`
+    : '';
+  const HIGH_VALUE_THRESHOLD = 30000;
+  const amountNum = Number(workflowData.amount) || 0;
+  const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Value Deal ($${formatUsdAmount(amountNum)})</strong><br>
+        This quote total exceeds $30,000 and requires your careful review.</p>
+      </div>`
+    : '';
+  const customLineItemsNote = workflowData.hasCustomLineItems
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ Custom Line Items Added</strong><br>
+        This quote includes manually added custom line items. Please review them carefully.</p>
+      </div>`
+    : '';
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Technical Team Approval Required</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #3B82F6, #1E40AF); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>🔔 Technical Team Approval Required</h1>
+        </div>
+
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Technical Team,</h2>
+
+          <p>A new document requires your <strong>Technical Team</strong> approval:</p>
+
+          ${highDiscountNote}
+          ${highValueNote}
+          ${customLineItemsNote}
+
+          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${approvalLink}" 
+               style="background: #3B82F6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+          </div>
+          
+          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function generateLegalTeamEmailHTML(workflowData, token) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const approvalLink = token
+    ? `${baseUrl}/approval/${workflowData.workflowId}?role=legal&token=${encodeURIComponent(token)}`
+    : `${baseUrl}/legal-approval?workflow=${workflowData.workflowId}`;
+  const discountPercent = Number(workflowData.discountPercent) || 0;
+  const highDiscountNote = discountPercent > 15
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Discount Alert (${discountPercent}%)</strong><br>
+        This quote includes a ${discountPercent}% discount, which exceeds 15%. This requires your approval as the <strong>Legal Team</strong>.</p>
+      </div>`
+    : '';
+  const HIGH_VALUE_THRESHOLD = 30000;
+  const amountNum = Number(workflowData.amount) || 0;
+  const highValueNote = amountNum > HIGH_VALUE_THRESHOLD
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ High Value Deal ($${formatUsdAmount(amountNum)})</strong><br>
+        This quote total exceeds $30,000 and requires your careful review.</p>
+      </div>`
+    : '';
+  const customLineItemsNote = workflowData.hasCustomLineItems
+    ? `<div style="background: #FEF3C7; border: 1px solid #F59E0B; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400E;"><strong>⚠️ Custom Line Items Added</strong><br>
+        This quote includes manually added custom line items. Please review them carefully.</p>
+      </div>`
+    : '';
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Legal Team Approval Required</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #8B5CF6, #7C3AED); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>👑 Legal Team Approval Required</h1>
+        </div>
+
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Legal Team,</h2>
+
+          <p>A new document requires your <strong>Legal Team</strong> approval:</p>
+
+          ${highDiscountNote}
+          ${highValueNote}
+          ${customLineItemsNote}
+
+          <div style="background: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Requested by:</strong> ${workflowData.requestedByName || workflowData.creatorEmail || '—'}</p>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId}</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${approvalLink}" 
+               style="background: #8B5CF6; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve
+            </a>
+          </div>
+          
+          <p><strong>Note:</strong> This approval link is secure and will expire in 7 days.</p>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function generateClientEmailHTML(workflowData) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Document Submitted for Approval</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #10B981, #059669); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>📋 Document Submitted for Approval</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello ${workflowData.clientName},</h2>
+          
+          <p>Your document has been submitted for approval:</p>
+          
+          <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
+            <p><strong>Status:</strong> Pending Approval</p>
+            <p><strong>📎 Document:</strong> The PDF document is attached to this email for your review.</p>
+          </div>
+          
+          <p>Our team will review your document and get back to you soon.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}/client-notification?workflow=${workflowData.workflowId}" 
+               style="background: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review & Approve Document
+            </a>
+          </div>
+          
+          <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
+            <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Action Required</p>
+            <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
+              Please review the document details and approve or deny this request. Your decision is required to complete the approval process.
+            </p>
+          </div>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated message from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function generateDealDeskEmailHTML(workflowData) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+  const downloadLink = workflowData.workflowId && workflowData.documentId
+    ? `${baseUrl}/api/approval-workflows/${workflowData.workflowId}/document`
+    : null;
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Approval Workflow Completed</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #3B82F6, #1D4ED8); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>✅ Approval Workflow Completed</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <h2>Hello Deal Desk Team,</h2>
+          
+          <p>All approval steps have been completed successfully. The <strong>approved document</strong> is attached to this email for your review.</p>
+          
+          <div style="background: #EFF6FF; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #93C5FD;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
+            <p><strong>Status:</strong> All Approvals Complete</p>
+            <p><strong>📎 Approved document:</strong> The approved document is attached to this email.</p>
+            ${downloadLink ? `
+            <p style="margin-top: 12px;"><a href="${downloadLink}" style="color: #2563EB; font-weight: bold;">Download the approved document</a></p>
+            ` : ''}
+          </div>
+          
+          <div style="background: #F0FDF4; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #BBF7D0;">
+            <h3>✅ Approval Summary</h3>
+            <ul style="margin: 0; padding-left: 20px;">
+              <li>✅ Team Lead - Approved</li>
+              <li>✅ Technical Team - Approved</li>
+              <li>✅ Legal Team - Approved</li>
+            </ul>
+          </div>
+          
+          <p>The document is now ready for your review and any necessary follow-up actions. Deal Desk does not have an approval dashboard; this email and attachment are your delivery.</p>
+          
+          <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #F59E0B;">
+            <p style="margin: 0; color: #92400E; font-weight: bold;">📋 Next Steps</p>
+            <p style="margin: 5px 0 0 0; color: #92400E; font-size: 14px;">
+              Please review the approved document and proceed with any necessary deal desk processes. If e-sign is required, it will happen in the next step.
+            </p>
+          </div>
+        </div>
+        
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated notification from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// Denial notification to workflow creator
+function generateDenialEmailHTML(data) {
+  const { workflowData, deniedBy, comments } = data;
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Approval Denied - ${deniedBy}</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #EF4444, #B91C1C); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>❌ Approval Denied</h1>
+        </div>
+        <div style="background: white; padding: 30px; border: 1px solid #E5E7EB;">
+          <p>Your approval workflow has been <strong>denied</strong> by <strong>${deniedBy}</strong>.</p>
+          <div style="background: #FEF2F2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #FCA5A5;">
+            <h3>📄 Document Details</h3>
+            <p><strong>Document ID:</strong> ${workflowData.documentId}</p>
+            <p><strong>Client:</strong> ${workflowData.clientName}</p>
+            <p><strong>Amount:</strong> $${formatUsdAmount(workflowData.amount)}</p>
+            <p><strong>Workflow ID:</strong> ${workflowData.workflowId || workflowData.id || ''}</p>
+          </div>
+          ${comments ? `<p><strong>Reason:</strong> ${comments}</p>` : ''}
+          <p>You can review and take action by visiting your dashboard.</p>
+        </div>
+        <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
+          <p>This is an automated notification from your approval system.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// Email sending function using SendGrid
+async function sendEmail(to, subject, html, attachments = []) {
+  try {
+    const emailPayload = {
+      from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
+      to: to,
+      subject: subject,
+      html: html,
+      text: html.replace(/<style[\s\S]*?<\/style>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim(),
+      attachments: attachments.map(att => ({
+        content: att.content.toString('base64'),
+        filename: att.filename,
+        type: att.contentType,
+        disposition: 'attachment'
+      }))
+    };
+    
+    console.log('📧 Sending email with SendGrid payload:', JSON.stringify({
+      from: emailPayload.from,
+      to: emailPayload.to,
+      subject: emailPayload.subject,
+      attachments: attachments.length > 0 ? `${attachments.length} attachment(s)` : 'No attachments'
+    }, null, 2));
+    
+    const result = await sgMail.send(emailPayload);
+
+    console.log('✅ Email sent successfully via SendGrid:', result);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('❌ Email send error:', error);
+
+    if (error.code === 401) {
+      console.error('📧 SendGrid 401 Unauthorized — check SENDGRID_API_KEY in .env:');
+      console.error('   1. Create an API key at https://app.sendgrid.com/settings/api_keys (Mail Send permission)');
+      console.error('   2. Set in .env: SENDGRID_API_KEY=SG.xxxx... (no quotes, no spaces)');
+      console.error('   3. Restart the server after changing .env');
+    }
+    if (error.code === 403) {
+      console.error('📧 SendGrid 403 Forbidden — verify your sender (EMAIL_FROM) in SendGrid:');
+      console.error('   Go to https://app.sendgrid.com/settings/sender_auth and verify', emailPayload.from, 'or your domain.');
+    }
+
+    // Check if it's a bounce/suppression error
+    if (error.response) {
+      const errorBody = error.response.body;
+      if (errorBody && Array.isArray(errorBody.errors)) {
+        errorBody.errors.forEach(err => {
+          if (err.message && (err.message.includes('bounce') || err.message.includes('suppression') || err.message.includes('invalid'))) {
+            console.error('🚨 BOUNCE/SUPPRESSION ERROR:', err.message);
+            console.error('📧 Email address may be on suppression list:', to);
+            console.error('💡 ACTION REQUIRED: Remove', to, 'from SendGrid suppression list at https://app.sendgrid.com/suppressions/bounces');
+          }
+        });
+      }
+    }
+
+    return { success: false, error: error };
+  }
+}
+
+// Notify document creator by email when a recipient denies (review or sign)
+async function sendEsignDeniedNotificationToCreator(doc, recipient, comment, deniedBy) {
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (!creatorEmail || !creatorEmail.includes('@')) return;
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign denied notification: SENDGRID_API_KEY not set — creator not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const recipientLabel = recipient.name || recipient.email || 'A recipient';
+  const subject = `E-sign document denied: ${fileName}`;
+  const commentBlock = comment ? `<p><strong>Comment from ${recipientLabel}:</strong></p><p>${comment.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : '';
+  const html = `
+    <p>Your e-sign document has been denied.</p>
+    <p><strong>Document:</strong> ${fileName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+    <p><strong>Denied by:</strong> ${recipientLabel} (${deniedBy === 'review' ? 'reviewer' : 'signer'})</p>
+    ${commentBlock}
+    <p>You can view the status and any comments in e sign status in the app.</p>
+  `;
+  try {
+    const result = await sendEmail(creatorEmail, subject, html);
+    if (result.success) console.log('✅ E-sign denied notification sent to creator', creatorEmail);
+    else console.warn('❌ E-sign denied notification not sent to creator', creatorEmail, result.error);
+  } catch (err) {
+    console.warn('E-sign denied notification to creator failed', creatorEmail, err?.message || err);
+  }
+}
+
+// Notify document creator when all recipients have signed or reviewed (envelope completed).
+async function sendEsignCompletedNotificationToCreator(doc) {
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (!creatorEmail || !creatorEmail.includes('@')) return;
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign completion notification: SENDGRID_API_KEY not set — creator not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const safe = String(fileName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const subject = `E-sign completed: ${sanitizeEsignEmailSubjectFileName(fileName)}`;
+  const html = `
+    <p>All recipients have finished signing or reviewing your document.</p>
+    <p><strong>Document:</strong> ${safe}</p>
+    <p>You can open <strong>e sign</strong> or <strong>e sign status</strong> in the app to download the signed PDF.</p>
+  `;
+  try {
+    const result = await sendEmail(creatorEmail, subject, html);
+    if (result.success) console.log('✅ E-sign completion notification sent to creator', creatorEmail);
+    else console.warn('❌ E-sign completion notification not sent to creator', creatorEmail, result.error);
+  } catch (err) {
+    console.warn('E-sign completion notification to creator failed', creatorEmail, err?.message || err);
+  }
+}
+
+async function sendEsignForwardedNotificationToCreator(doc, previousRecipient, nextRecipient, comment) {
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (!creatorEmail || !creatorEmail.includes('@')) return;
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign forwarded notification: SENDGRID_API_KEY not set — creator not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const fromLabel = previousRecipient?.name || previousRecipient?.email || 'Recipient';
+  const toLabel = nextRecipient?.name || nextRecipient?.email || 'Recipient';
+  const commentBlock = comment
+    ? `<p><strong>Forwarding note:</strong></p><p>${escapeEmailMessage(comment)}</p>`
+    : '';
+  const html = `
+    <p>An e-sign request was forwarded to a new recipient.</p>
+    <p><strong>Document:</strong> ${escapeHtml(fileName)}</p>
+    <p><strong>Forwarded by:</strong> ${escapeHtml(fromLabel)}${previousRecipient?.email ? ` (${escapeHtml(previousRecipient.email)})` : ''}</p>
+    <p><strong>Forwarded to:</strong> ${escapeHtml(toLabel)}${nextRecipient?.email ? ` (${escapeHtml(nextRecipient.email)})` : ''}</p>
+    ${commentBlock}
+    <p>You can view the latest recipient details in e sign status in the app.</p>
+  `;
+  try {
+    const result = await sendEmail(creatorEmail, `E-sign request forwarded: ${sanitizeEsignEmailSubjectFileName(fileName)}`, html);
+    if (result.success) console.log('✅ E-sign forwarded notification sent to creator', creatorEmail);
+    else console.warn('❌ E-sign forwarded notification not sent to creator', creatorEmail, result.error);
+  } catch (err) {
+    console.warn('E-sign forwarded notification to creator failed', creatorEmail, err?.message || err);
+  }
+}
+
+// Notify ALL recipients and creator when everyone has signed/reviewed (envelope completed), with signed PDF attached.
+async function sendEsignCompletedNotificationToAllRecipients(doc) {
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('📧 E-sign completion notification: SENDGRID_API_KEY not set — recipients not emailed.');
+    return;
+  }
+  const fileName = doc.file_name || 'Document';
+  const safe = String(fileName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const subject = `E-sign completed: ${sanitizeEsignEmailSubjectFileName(fileName)}`;
+  const html = `
+    <p>Everyone has signed the agreement. The completed signed document is attached.</p>
+    <p><strong>Document:</strong> ${safe}</p>
+    <p>Please find the fully executed document attached to this email for your records.</p>
+  `;
+
+  // Attach the signed PDF if available
+  const attachments = [];
+  const filePath = doc.signed_file_path;
+  if (filePath && fs.existsSync(filePath)) {
+    try {
+      const fileContent = fs.readFileSync(filePath);
+      const attachName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+      attachments.push({ content: fileContent, filename: attachName, contentType: 'application/pdf' });
+    } catch (attachErr) {
+      console.warn('Could not read signed PDF for attachment:', attachErr?.message || attachErr);
+    }
+  }
+
+  // Collect all unique email addresses: creator + every recipient
+  const emailSet = new Set();
+  const creatorEmail = getEsignDocumentCreatorNotifyEmail(doc);
+  if (creatorEmail && creatorEmail.includes('@')) emailSet.add(creatorEmail.toLowerCase().trim());
+
+  if (db) {
+    try {
+      const docId = doc._id instanceof ObjectId ? doc._id : new ObjectId(doc._id.toString());
+      const recipients = await db.collection('esign_recipients').find({ document_id: docId }).toArray();
+      for (const r of recipients) {
+        if (r.email && r.email.includes('@')) emailSet.add(r.email.toLowerCase().trim());
+      }
+    } catch (fetchErr) {
+      console.warn('Could not fetch recipients for completion email:', fetchErr?.message || fetchErr);
+    }
+  }
+
+  for (const email of emailSet) {
+    try {
+      const result = await sendEmail(email, subject, html, attachments);
+      if (result.success) console.log('✅ E-sign completion notification sent to', email);
+      else console.warn('❌ E-sign completion notification not sent to', email, result.error);
+    } catch (err) {
+      console.warn('E-sign completion notification failed for', email, err?.message || err);
+    }
+  }
+}
+
+// NOTE: Static files are already served above with cache-safe headers (do not duplicate express.static).
+
+// HubSpot redirect handler - only when deal/contact params present; otherwise SPA handles /
+app.get('/hubspot-landing', (req, res) => {
+  const dealId = req.query.dealId;
+  const dealName = req.query.dealName;
+  const amount = req.query.amount;
+  const closeDate = req.query.closeDate;
+  const stage = req.query.stage;
+  const ownerId = req.query.ownerId;
+  const contactEmail = req.query.ContactEmail;
+  const contactFirstName = req.query.ContactFirstName;
+  const contactLastName = req.query.ContactLastName;
+  const companyName = req.query.CompanyName;
+  const companyByContact = req.query.CompanyByContact || req.query.CompanyFromContact;
+  console.log({
+    deal: { dealId, dealName, amount, closeDate, stage, ownerId },
+    contact: { email: contactEmail, firstName: contactFirstName, lastName: contactLastName },
+    company: { name: companyName, byContact: companyByContact }
+  });
+  const fullContactName = `${contactFirstName} ${contactLastName}`.trim();
+  res.send(`
+    <h2>Deal Information</h2>
+    <p><strong>Deal:</strong> ${dealName} (ID: ${dealId})</p>
+    <p><strong>Amount:</strong> ${amount}</p>
+    <p><strong>Stage:</strong> ${stage || 'N/A'}</p>
+    <p><strong>Close Date:</strong> ${closeDate || 'N/A'}</p>
+    <p><strong>Owner ID:</strong> ${ownerId || 'N/A'}</p>
+    <h2>Contact Information</h2>
+    <p><strong>Name:</strong> ${fullContactName}</p>
+    <p><strong>Email:</strong> ${contactEmail}</p>
+    <h2>Company Information</h2>
+    <p><strong>Company:</strong> ${companyName}</p>
+    <p><strong>Company by Contact:</strong> ${companyByContact}</p>
+  `);
+});
+
+// Database health check endpoint
+app.get('/api/database/health', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        message: 'MongoDB not connected',
+        error: 'Database connection not available'
+      });
+    }
+    
+    await db.admin().ping();
+    res.json({
+      success: true,
+      message: 'MongoDB connection successful',
+      database: DB_NAME,
+      host: 'MongoDB Atlas'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'MongoDB connection failed',
+      error: error.message
+    });
+  }
+});
+
+// Download document for BoldSign (free plan workaround)
+app.get('/api/boldsign/download-document/:documentId', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database not available' });
+    }
+
+    const { documentId } = req.params;
+    
+    // Try documents collection first
+    const documentsCollection = db.collection('documents');
+    const document = await documentsCollection.findOne({ id: documentId });
+
+    if (document && document.fileData) {
+      let fileBuffer;
+      if (Buffer.isBuffer(document.fileData)) {
+        fileBuffer = document.fileData;
+      } else if (document.fileData.buffer) {
+        fileBuffer = Buffer.from(document.fileData.buffer);
+      } else if (document.fileData.data) {
+        fileBuffer = Buffer.from(document.fileData.data);
+      }
+
+      const fileName = document.fileName || `${documentId}.pdf`;
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Length': fileBuffer.length
+      });
+      return res.send(fileBuffer);
+    }
+
+    // Fallback: try templates collection (in case approved file is stored as a template)
+    const templatesCollection = db.collection('templates');
+    const template = await templatesCollection.findOne({ id: documentId });
+    if (template && template.fileData) {
+      let fileBuffer;
+      if (Buffer.isBuffer(template.fileData)) {
+        fileBuffer = template.fileData;
+      } else if (template.fileData.buffer) {
+        fileBuffer = Buffer.from(template.fileData.buffer);
+      } else if (template.fileData.data) {
+        fileBuffer = Buffer.from(template.fileData.data);
+      }
+
+      const isPdf = (template.fileType || '').toLowerCase() === 'pdf';
+      const contentType = isPdf
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const fileExt = isPdf ? 'pdf' : 'docx';
+      const fileName = template.fileName || `${documentId}.${fileExt}`;
+
+      res.set({
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Length': fileBuffer.length
+      });
+      return res.send(fileBuffer);
+    }
+
+    return res.status(404).json({ success: false, message: 'Document not found' });
+  } catch (error) {
+    console.error('❌ Error downloading document:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to download document', 
+      error: error.message 
+    });
+  }
+});
+
+// Create BoldSign redirect (free plan compatible)
+app.post('/api/boldsign/create-embedded-send', async (req, res) => {
+  try {
+    const { documentId, clientEmail, clientName } = req.body || {};
+    
+    if (!documentId) {
+      return res.status(400).json({ success: false, message: 'documentId is required' });
+    }
+
+    // Determine best download URL based on where the file exists
+    const baseAppUrl = (process.env.APP_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+    let resolvedDownloadUrl = null;
+
+    try {
+      // Prefer documents/:id/file if present
+      const doc = await db.collection('documents').findOne({ id: documentId });
+      if (doc && doc.fileData) {
+        resolvedDownloadUrl = `${baseAppUrl}/api/documents/${documentId}/file`;
+      } else {
+        // Fallback to templates/:id/file if present
+        const tpl = await db.collection('templates').findOne({ id: documentId });
+        if (tpl && tpl.fileData) {
+          resolvedDownloadUrl = `${baseAppUrl}/api/templates/${documentId}/file`;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not resolve download URL for documentId:', documentId, e?.message);
+    }
+
+    // As a last resort, keep previous fallback (combined resolver)
+    if (!resolvedDownloadUrl) {
+      resolvedDownloadUrl = `${baseAppUrl}/api/boldsign/download-document/${documentId}`;
+    }
+
+    // For free plan: provide BoldSign upload page + resolved download URL
+    const APP_BASE = (process.env.BOLDSIGN_APP_URL || 'https://app.boldsign.com').replace(/\/$/, '');
+    const uploadUrl = `${APP_BASE}/document/new`;
+    
+    return res.json({ 
+      success: true, 
+      url: uploadUrl,
+      downloadUrl: resolvedDownloadUrl,
+      clientEmail,
+      clientName,
+      instructions: 'Free plan: Download the document and upload it manually to BoldSign',
+      freePlanMode: true
+    });
+  } catch (error) {
+    console.error('❌ BoldSign redirect error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create BoldSign redirect', 
+      error: error.message 
+    });
+  }
+});
+
+// Authentication endpoints
+
+// User registration
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot register users without database connection'
+      });
+    }
+
+    const { name, email, password } = req.body;
+    
+    // Validate input
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, and password are required'
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await db.collection('users').findOne({ email: email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'User with this email already exists'
+      });
+    }
+
+    // Hash password
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Create user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
+    const user = {
+      id: `user_${Date.now()}`,
+      name: name,
+      email: email,
+      password: hashedPassword,
+      provider: 'email',
+      role: 'viewer',
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+
+    await db.collection('users').insertOne(user);
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Return user without password
+    const { password: _, ...userWithoutPassword } = user;
+
+    res.json({
+      success: true,
+      message: 'User registered successfully',
+      user: userWithoutPassword,
+      token: token
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to register user',
+      error: error.message
+    });
+  }
+});
+
+// User login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot login without database connection'
+      });
+    }
+
+    const { email, password } = req.body;
+    
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      });
+    }
+
+    // Find user
+    const user = await db.collection('users').findOne({ email: email });
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Check password
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Track daily login
+    await trackDailyLogin(user.id, 'email', user.email);
+
+    // Return user without password (with computed role + isApprovalAdmin flag)
+    const { password: _, ...userWithoutPassword } = user;
+    const dbExhibitEmails = await getExhibitAdminEmailsFromDb();
+    const isExhibitAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbExhibitEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const effectiveRole = user.role || (isExhibitAdmin ? 'exhibit_admin' : 'viewer');
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      user: userResponse,
+      token: token
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to login',
+      error: error.message
+    });
+  }
+});
+
+// Get user by token
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot verify user without database connection'
+      });
+    }
+
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
+    }
+
+    // Only verify server-issued JWTs (tokens with 3 parts)
+    if (token.split('.').length !== 3) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token format'
+      });
+    }
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await db.collection('users').findOne({ id: decoded.userId });
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Return user without password (ensure role for frontend: from DB, .env, or settings list)
+    const { password: _, ...userWithoutPassword } = user;
+    const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || (await getExhibitAdminEmailsFromDb()).some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
+
+    res.json({
+      success: true,
+      user: userResponse
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Invalid token',
+      error: error.message
+    });
+  }
+});
+
+// Microsoft OAuth user creation/update
+app.post('/api/auth/microsoft', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot process Microsoft auth without database connection'
+      });
+    }
+
+    const { id, name, email, accessToken } = req.body;
+    
+    // Check if user exists
+    let user = await db.collection('users').findOne({ email: email });
+    
+    if (user) {
+      // Update existing user
+      await db.collection('users').updateOne(
+        { email: email },
+        { 
+          $set: { 
+            name: name,
+            provider: 'microsoft',
+            updated_at: new Date()
+          }
+        }
+      );
+      user = await db.collection('users').findOne({ email: email });
+    } else {
+      // Create new user (default role: viewer; set role to 'exhibit_admin' in DB for users who can manage exhibits)
+      user = {
+        id: id || `microsoft_${Date.now()}`,
+        name: name,
+        email: email,
+        provider: 'microsoft',
+        role: 'viewer',
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+      await db.collection('users').insertOne(user);
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Track daily login
+    await trackDailyLogin(user.id, 'microsoft', user.email);
+
+    // Return user without password (ensure role for frontend: from DB, .env, or settings list)
+    const { password: __, ...userWithoutPassword } = user;
+    const dbEmails = await getExhibitAdminEmailsFromDb();
+    const isAdmin = user.role === 'exhibit_admin' || isExhibitAdminByEnv(user.email) || dbEmails.some((e) => String(e).trim().toLowerCase() === (user.email || '').trim().toLowerCase());
+    const effectiveRole = user.role || (isAdmin ? 'exhibit_admin' : 'viewer');
+    const isApprovalAdmin = await hasApprovalAdminAccess(user);
+    const userResponse = { ...userWithoutPassword, role: effectiveRole, isApprovalAdmin };
+
+    res.json({
+      success: true,
+      message: 'Microsoft authentication successful',
+      user: userResponse,
+      token: token
+    });
+  } catch (error) {
+    console.error('Microsoft auth error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process Microsoft authentication',
+      error: error.message
+    });
+  }
+});
+
+// Get daily login statistics
+app.get('/api/auth/daily-logins', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot retrieve login statistics without database connection'
+      });
+    }
+
+    const { startDate, endDate, limit = 30 } = req.query;
+    
+    const dailyLoginsCollection = db.collection('daily_logins');
+    let query = {};
+
+    // Filter by date range if provided
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = startDate;
+      if (endDate) query.date.$lte = endDate;
+    }
+
+    // Get daily login records, sorted by date (newest first)
+    const records = await dailyLoginsCollection
+      .find(query)
+      .sort({ date: -1 })
+      .limit(parseInt(limit))
+      .toArray();
+
+    // Get user details for each login record
+    const usersCollection = db.collection('users');
+    const recordsWithUserDetails = await Promise.all(
+      records.map(async (record) => {
+        // Use stored emails if available, otherwise fetch from users collection
+        const userEmails = record.user_emails || [];
+        const userDetails = await Promise.all(
+          record.user_ids.map(async (userId, index) => {
+            // Try to get email from stored array first
+            const storedEmail = userEmails[index] || null;
+            
+            // Fetch user details for additional info
+            const user = await usersCollection.findOne({ id: userId });
+            return user ? {
+              id: user.id,
+              email: storedEmail || user.email,
+              name: user.name || 'N/A',
+              provider: user.provider || 'email'
+            } : { 
+              id: userId, 
+              email: storedEmail || 'Unknown', 
+              name: 'Unknown User', 
+              provider: 'N/A' 
+            };
+          })
+        );
+        return {
+          date: record.date,
+          count: record.count,
+          user_ids: record.user_ids,
+          user_emails: record.user_emails || [],
+          users: userDetails,
+          created_at: record.created_at,
+          updated_at: record.updated_at
+        };
+      })
+    );
+
+    // Calculate total statistics
+    const totalLogins = records.reduce((sum, record) => sum + record.count, 0);
+    const uniqueUsers = new Set();
+    records.forEach(record => {
+      record.user_ids.forEach(userId => uniqueUsers.add(userId));
+    });
+
+    res.json({
+      success: true,
+      data: {
+        records: recordsWithUserDetails,
+        summary: {
+          total_days: records.length,
+          total_logins: totalLogins,
+          unique_users: uniqueUsers.size,
+          date_range: {
+            start: records.length > 0 ? records[records.length - 1].date : null,
+            end: records.length > 0 ? records[0].date : null
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching daily login statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve login statistics',
+      error: error.message
+    });
+  }
+});
+
+// Save quote to database
+app.post('/api/quotes', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot save quotes without database connection'
+      });
+    }
+
+    const { id, clientName, clientEmail, company, configuration, selectedTier, calculation, status } = req.body;
+    
+    const quote = {
+      id,
+      client_name: clientName,
+      client_email: clientEmail,
+      company,
+      configuration,
+      selected_tier: selectedTier,
+      calculation,
+      status,
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+    
+    await db.collection('quotes').replaceOne(
+      { id: id },
+      quote,
+      { upsert: true }
+    );
+    
+    res.json({ success: true, message: 'Quote saved successfully' });
+  } catch (error) {
+    console.error('Save quote error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save quote',
+      error: error.message
+    });
+  }
+});
+
+// Get all quotes from database
+app.get('/api/quotes', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch quotes without database connection'
+      });
+    }
+
+    const quotes = await db.collection('quotes').find({}).sort({ created_at: -1 }).toArray();
+    
+    const formattedQuotes = quotes.map(quote => {
+      return {
+        ...quote,
+        configuration: quote.configuration || {},
+        selectedTier: quote.selected_tier || {},
+        calculation: quote.calculation || {}
+      };
+    });
+    
+    res.json({ success: true, quotes: formattedQuotes });
+  } catch (error) {
+    console.error('Get quotes error:', error);
+      res.status(500).json({
+        success: false,
+      message: 'Failed to fetch quotes',
+      error: error.message
+    });
+  }
+});
+
+// Update quote status in database
+app.put('/api/quotes/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot update quotes without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    await db.collection('quotes').updateOne(
+      { id: id },
+      { 
+        $set: { 
+          status: status,
+          updated_at: new Date()
+        }
+      }
+    );
+    
+    res.json({ success: true, message: 'Quote status updated successfully' });
+  } catch (error) {
+    console.error('Update quote error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update quote',
+      error: error.message
+    });
+  }
+});
+
+// Delete quote from database
+app.delete('/api/quotes/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available',
+        message: 'Cannot delete quotes without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    
+    await db.collection('quotes').deleteOne({ id: id });
+    
+    res.json({ success: true, message: 'Quote deleted successfully' });
+  } catch (error) {
+    console.error('Delete quote error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete quote',
+      error: error.message
+    });
+  }
+});
+
+// Save pricing tier to database
+app.post('/api/pricing-tiers', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available',
+        message: 'Cannot save pricing tiers without database connection'
+      });
+    }
+
+    const { id, name, perUserCost, perGBCost, managedMigrationCost, instanceCost, userLimits, gbLimits, features } = req.body;
+    
+    const pricingTier = {
+      id,
+      name,
+      per_user_cost: perUserCost,
+      per_gb_cost: perGBCost,
+      managed_migration_cost: managedMigrationCost,
+      instance_cost: instanceCost,
+      user_limits: userLimits,
+      gb_limits: gbLimits,
+      features,
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+    
+    await db.collection('pricing_tiers').replaceOne(
+      { id: id },
+      pricingTier,
+      { upsert: true }
+    );
+    
+    res.json({ success: true, message: 'Pricing tier saved successfully' });
+  } catch (error) {
+    console.error('Save pricing tier error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save pricing tier',
+      error: error.message
+    });
+  }
+});
+
+// Get all pricing tiers from database
+app.get('/api/pricing-tiers', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available',
+        message: 'Cannot fetch pricing tiers without database connection'
+      });
+    }
+
+    const tiers = await db.collection('pricing_tiers').find({}).sort({ name: 1 }).toArray();
+    
+    const formattedTiers = tiers.map(tier => ({
+      id: tier.id,
+      name: tier.name,
+      perUserCost: tier.per_user_cost,
+      perGBCost: tier.per_gb_cost,
+      managedMigrationCost: tier.managed_migration_cost,
+      instanceCost: tier.instance_cost,
+      userLimits: tier.user_limits,
+      gbLimits: tier.gb_limits,
+      features: tier.features,
+      createdAt: tier.created_at,
+      updatedAt: tier.updated_at
+    }));
+    
+    res.json({ success: true, tiers: formattedTiers });
+  } catch (error) {
+    console.error('Get pricing tiers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pricing tiers',
+      error: error.message
+    });
+  }
+});
+
+// Template Endpoints
+
+// Upload template
+app.post('/api/templates', upload.single('template'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+      success: false, 
+        error: 'Database not available',
+        message: 'Cannot save templates without database connection'
+      });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No template file provided' 
+      });
+    }
+
+    const { name, description, isDefault, combination, planType, category } = req.body;
+    const file = req.file;
+    
+    // Generate unique ID for template
+    const templateId = `template-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    
+    // Determine file type
+    const fileType = file.originalname.toLowerCase().endsWith('.docx') ? 'docx' : 'pdf';
+    
+    console.log('📄 Processing template:', {
+      id: templateId,
+      name: name || file.originalname,
+      fileName: file.originalname,
+      fileType,
+      fileSize: file.size,
+      combination: combination || '(none)',
+      planType: planType || '(none)',
+      category: category || '(none)'
+    });
+
+    const template = {
+      id: templateId,
+      name: name || file.originalname,
+      description: description || '',
+      fileName: file.originalname,
+      fileType: fileType,
+      fileSize: file.size,
+      fileData: file.buffer,
+      isDefault: isDefault === 'true' || false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    // Optional: link template to a combination/plan/category (e.g. multi-combination)
+    if (combination && String(combination).trim()) template.combination = String(combination).trim().toLowerCase();
+    if (planType && String(planType).trim()) template.planType = String(planType).trim().toLowerCase();
+    if (category && String(category).trim()) template.category = String(category).trim().toLowerCase();
+    
+    await db.collection('templates').insertOne(template);
+
+      console.log('✅ Template saved to database:', templateId);
+      
+      const responseTemplate = {
+        id: templateId,
+        name: name || file.originalname,
+        description: description || '',
+        fileName: file.originalname,
+        fileType,
+        fileSize: file.size,
+        isDefault: isDefault === 'true' || false,
+        createdAt: new Date().toISOString()
+      };
+      if (template.combination) responseTemplate.combination = template.combination;
+      if (template.planType) responseTemplate.planType = template.planType;
+      if (template.category) responseTemplate.category = template.category;
+
+      _cacheClear('templates');
+      res.json({
+        success: true,
+        message: 'Template uploaded successfully',
+        template: responseTemplate
+      });
+    
+  } catch (error) {
+    console.error('❌ Error uploading template:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to upload template',
+      details: error.message 
+    });
+  }
+});
+
+// Get all templates
+app.get('/api/templates', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch templates without database connection'
+      });
+    }
+
+    if (_cacheValid(_cache.templates)) {
+      console.log(`📄 Returning ${_cache.templates.data.length} templates from cache`);
+      return res.json({ success: true, templates: _cache.templates.data, count: _cache.templates.data.length });
+    }
+
+    console.log('📄 Fetching templates from database...');
+
+    const queryStart = Date.now();
+
+    // IMPORTANT: In MongoDB Node.js driver v6+, projection must be specified
+    // via the "projection" option. Passing { fileData: 0 } as the second
+    // argument no longer works and was causing the full (large) fileData
+    // blobs to be read from the database and sent over the network.
+    //
+    // Restrict the fields we return to keep the payload small and fast.
+    const templatesCursor = db.collection('templates')
+      .find(
+        {},
+        {
+          projection: {
+            fileData: 0, // never send the big binary/base64 data in the list call
+          }
+        }
+      )
+      .sort({ createdAt: -1 });
+
+    const templates = await templatesCursor.toArray();
+    _cache.templates = { data: templates, ts: Date.now() };
+    const queryDuration = Date.now() - queryStart;
+
+    console.log(`✅ Fetched ${templates.length} templates from database (${queryDuration}ms)`);
+
+    res.json({
+      success: true,
+      templates,
+      count: templates.length
+    });
+  } catch (error) {
+    console.error('❌ Error fetching templates:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch templates',
+      details: error.message 
+    });
+  }
+});
+
+// Get template file
+app.get('/api/templates/:id/file', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available',
+        message: 'Cannot fetch template files without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    
+    console.log('📄 Fetching template file:', id);
+    
+    const template = await db.collection('templates').findOne({ id: id });
+    
+    if (!template) {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Template not found' 
+        });
+      }
+
+    // Determine content type based on stored fileType (supports both short type and full MIME)
+    let contentType = 'application/octet-stream';
+    const ft = (template.fileType || '').toString().toLowerCase();
+    if (ft === 'docx' || ft.includes('wordprocessingml')) {
+      contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (ft === 'pdf' || ft.includes('application/pdf')) {
+      contentType = 'application/pdf';
+    }
+    
+    // Check if template has fileData
+    if (!template.fileData) {
+      console.error('❌ Template has no fileData:', template.id);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Template file data is missing',
+        message: `Template ${template.id} exists but has no file data. Please re-upload the template.`
+      });
+    }
+    
+    // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
+    let fileBuffer;
+    if (Buffer.isBuffer(template.fileData)) {
+      fileBuffer = template.fileData;
+    } else if (template.fileData && template.fileData.buffer) {
+      // Some drivers store Binary with .buffer
+      fileBuffer = Buffer.from(template.fileData.buffer);
+    } else if (typeof template.fileData === 'string') {
+      // Base64 string
+      fileBuffer = Buffer.from(template.fileData, 'base64');
+    } else {
+      console.error('❌ Unsupported fileData format for template:', template.id, typeof template.fileData);
+      throw new Error('Unsupported template fileData format');
+    }
+    
+    // Validate that the buffer is not empty
+    if (fileBuffer.length === 0) {
+      console.error('❌ Template file buffer is empty:', template.id);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Template file is empty',
+        message: `Template ${template.id} file data is empty. Please re-upload the template.`
+      });
+    }
+    
+    // Validate DOCX signature for DOCX files (ZIP signature: PK)
+    if (contentType.includes('wordprocessingml')) {
+      if (fileBuffer.length < 4 || fileBuffer[0] !== 0x50 || fileBuffer[1] !== 0x4B) {
+        console.error('❌ Template file is not a valid DOCX (missing ZIP signature):', template.id);
+        // Log first bytes for debugging
+        const firstBytes = fileBuffer.slice(0, Math.min(20, fileBuffer.length)).toString('hex');
+        console.error('   First bytes:', firstBytes);
+        
+        return res.status(500).json({ 
+          success: false, 
+          error: 'Template file is corrupted',
+          message: `Template ${template.id} file is not a valid DOCX file (missing ZIP signature). Please re-upload the template.`
+        });
+      }
+    }
+    
+    console.log('✅ Sending template file:', {
+      id: template.id,
+      fileName: template.fileName,
+      size: fileBuffer.length,
+      contentType
+    });
+    
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${template.fileName}"`,
+      'Content-Length': fileBuffer.length
+    });
+    
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error('❌ Error fetching template file:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch template file',
+      details: error.message 
+    });
+  }
+});
+
+// Reseed default templates/exhibits from disk into the database
+// This syncs files from ./backend-templates and ./backend-exhibits into MongoDB.
+// Useful when you updated a DOCX on disk but the UI still serves an older DB copy.
+app.post('/api/templates/reseed', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot reseed templates without database connection'
+      });
+    }
+
+    console.log('🌱 Reseeding templates/exhibits on demand...');
+    const { seedDefaultTemplates } = require('./seed-templates.cjs');
+    const { seedDefaultExhibits } = require('./seed-exhibits.cjs');
+
+    const templatesUpdated = await seedDefaultTemplates(db);
+    const exhibitsUpdated = await seedDefaultExhibits(db);
+
+    console.log('✅ Reseed completed:', { templatesUpdated, exhibitsUpdated });
+
+    _cacheClear('templates');
+    _cacheClear('exhibits');
+    return res.json({
+      success: true,
+      message: 'Templates/exhibits reseeded successfully',
+      templatesUpdated,
+      exhibitsUpdated
+    });
+  } catch (error) {
+    console.error('❌ Error reseeding templates/exhibits:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to reseed templates/exhibits',
+      details: error?.message || String(error)
+    });
+  }
+});
+
+// ============================================
+// COMBINATIONS API ENDPOINTS (user-managed list for Configure dropdown)
+// ============================================
+
+// Get all combinations (optional filter by migrationType; exclude fileData from list)
+app.get('/api/combinations', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { migrationType } = req.query;
+    const query = migrationType ? { migrationType: String(migrationType) } : {};
+    const raw = await db.collection('combinations')
+      .find(query, { projection: { fileData: 0 } })
+      .sort({ displayOrder: 1, label: 1 })
+      .toArray();
+    const combinations = raw.map(c => ({ ...c, hasFile: !!(c.fileName) }));
+    res.json({ success: true, combinations, count: combinations.length });
+  } catch (error) {
+    console.error('Error fetching combinations:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get combination file (download uploaded document)
+app.get('/api/combinations/:id/file', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { id } = req.params;
+    const combo = await db.collection('combinations').findOne({ id }, { projection: { fileData: 1, fileName: 1, fileType: 1 } });
+    if (!combo || !combo.fileData) {
+      return res.status(404).json({ success: false, error: 'Combination or file not found' });
+    }
+    const buf = Buffer.from(combo.fileData, 'base64');
+    const fileName = combo.fileName || `combination-${id}.docx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', combo.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.send(buf);
+  } catch (error) {
+    console.error('Error fetching combination file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+const ALLOWED_MIGRATION_TYPES = ['Messaging', 'Content', 'Email', 'Multi combination', 'Overage Agreement', 'Manage', 'Bundle'];
+
+// Create combination (optional file upload - e.g. DOCX template for this combination)
+app.post('/api/combinations', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
+    if (!value || !String(value).trim()) {
+      return res.status(400).json({ success: false, error: 'value is required' });
+    }
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ success: false, error: 'label is required' });
+    }
+    const mt = migrationType != null ? String(migrationType).trim() : '';
+    if (!mt) {
+      return res.status(400).json({ success: false, error: 'migrationType is required' });
+    }
+    if (!ALLOWED_MIGRATION_TYPES.includes(mt)) {
+      return res.status(400).json({ success: false, error: `migrationType must be one of: ${ALLOWED_MIGRATION_TYPES.join(', ')}` });
+    }
+    const val = String(value).trim().toLowerCase().replace(/\s+/g, '-');
+    const existing = await db.collection('combinations').findOne({ value: val, migrationType: mt });
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'A combination with this value and migration type already exists' });
+    }
+    const doc = {
+      id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      value: val,
+      label: String(label).trim(),
+      migrationType: mt,
+      displayOrder: typeof displayOrder === 'number' ? displayOrder : (parseInt(displayOrder, 10) || 999),
+      requiresUsers: mt === 'Manage' ? (requiresUsers === false || requiresUsers === 'false' ? false : true) : undefined,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    if (req.file && req.file.buffer) {
+      doc.fileName = req.file.originalname;
+      doc.fileSize = req.file.size;
+      doc.fileData = req.file.buffer.toString('base64');
+      doc.fileType = req.file.mimetype || (req.file.originalname.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream');
+    }
+    await db.collection('combinations').insertOne(doc);
+    const responseCombo = { id: doc.id, value: doc.value, label: doc.label, migrationType: doc.migrationType, displayOrder: doc.displayOrder, createdAt: doc.createdAt, updatedAt: doc.updatedAt };
+    if (doc.fileName) responseCombo.hasFile = true;
+    res.status(201).json({ success: true, combination: responseCombo });
+  } catch (error) {
+    console.error('Error creating combination:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update combination
+app.put('/api/combinations/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { id } = req.params;
+    const { value, label, migrationType, displayOrder, requiresUsers } = req.body || {};
+    const update = { updatedAt: new Date() };
+    if (value !== undefined) update.value = String(value).trim().toLowerCase().replace(/\s+/g, '-');
+    if (label !== undefined) update.label = String(label).trim();
+    if (migrationType !== undefined) update.migrationType = String(migrationType).trim();
+    if (displayOrder !== undefined) update.displayOrder = typeof displayOrder === 'number' ? displayOrder : parseInt(displayOrder, 10) || 999;
+    const mt = migrationType !== undefined ? String(migrationType).trim() : null;
+    if (requiresUsers !== undefined && mt === 'Manage') {
+      update.requiresUsers = requiresUsers === false || requiresUsers === 'false' ? false : true;
+    }
+    const result = await db.collection('combinations').updateOne(
+      { id },
+      { $set: update }
+    );
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Combination not found' });
+    }
+    const updated = await db.collection('combinations').findOne({ id }, { projection: { fileData: 0 } });
+    const out = { ...updated, hasFile: !!(updated && updated.fileName) };
+    res.json({ success: true, combination: out });
+  } catch (error) {
+    console.error('Error updating combination:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Upload or replace combination template file (backend combination template)
+app.post('/api/combinations/:id/file', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const { id } = req.params;
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: 'File is required' });
+    }
+    const combo = await db.collection('combinations').findOne({ id });
+    if (!combo) {
+      return res.status(404).json({ success: false, error: 'Combination not found' });
+    }
+    const update = {
+      updatedAt: new Date(),
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileData: req.file.buffer.toString('base64'),
+      fileType: req.file.mimetype || (req.file.originalname.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/octet-stream')
+    };
+    await db.collection('combinations').updateOne(
+      { id },
+      { $set: update }
+    );
+    const updated = await db.collection('combinations').findOne({ id }, { projection: { fileData: 0 } });
+    const out = { ...updated, hasFile: true };
+    res.json({ success: true, combination: out });
+  } catch (error) {
+    console.error('Error uploading combination file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete combination (admin only: require exhibit_admin or admin role)
+app.delete('/api/combinations/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const { id } = req.params;
+    const result = await db.collection('combinations').deleteOne({ id });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Combination not found' });
+    }
+    res.json({ success: true, message: 'Combination deleted' });
+  } catch (error) {
+    console.error('Error deleting combination:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Seed default combinations (from current hardcoded list) so Configure dropdown is populated
+app.post('/api/combinations/seed', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not available' });
+    }
+    const defaults = [
+      { value: 'slack-to-teams', label: 'SLACK TO TEAMS', migrationType: 'Messaging', displayOrder: 1 },
+      { value: 'slack-to-google-chat', label: 'SLACK TO GOOGLE CHAT', migrationType: 'Messaging', displayOrder: 2 },
+      { value: 'teams-to-slack', label: 'TEAMS TO SLACK', migrationType: 'Messaging', displayOrder: 3 },
+      { value: 'gmail-to-outlook', label: 'GMAIL TO OUTLOOK', migrationType: 'Email', displayOrder: 1 },
+      { value: 'gmail-to-gmail', label: 'GMAIL TO GMAIL', migrationType: 'Email', displayOrder: 2 },
+      { value: 'outlook-to-outlook', label: 'OUTLOOK TO OUTLOOK', migrationType: 'Email', displayOrder: 3 },
+      { value: 'outlook-to-gmail', label: 'OUTLOOK TO GMAIL', migrationType: 'Email', displayOrder: 4 },
+      { value: 'overage-agreement', label: 'OVERAGE AGREEMENT', migrationType: 'Overage Agreement', displayOrder: 1 },
+      { value: 'multi-combination', label: 'Combination', migrationType: 'Multi combination', displayOrder: 1 },
+      { value: 'dropbox-to-google', label: 'DROPBOX TO GOOGLE (SHARED DRIVE/MYDRIVE)', migrationType: 'Content', displayOrder: 1 },
+      { value: 'dropbox-to-microsoft', label: 'DROPBOX TO MICROSOFT (ONEDRIVE/SHAREPOINT)', migrationType: 'Content', displayOrder: 2 },
+      { value: 'dropbox-to-box', label: 'DROPBOX TO BOX', migrationType: 'Content', displayOrder: 3 },
+      { value: 'dropbox-to-onedrive', label: 'DROPBOX TO ONEDRIVE', migrationType: 'Content', displayOrder: 4 },
+      { value: 'dropbox-to-egnyte', label: 'DROPBOX TO EGNYTE', migrationType: 'Content', displayOrder: 5 },
+      { value: 'box-to-box', label: 'BOX TO BOX', migrationType: 'Content', displayOrder: 6 },
+      { value: 'box-to-dropbox', label: 'BOX TO DROPBOX', migrationType: 'Content', displayOrder: 7 },
+      { value: 'onedrive-to-onedrive', label: 'ONEDRIVE TO ONEDRIVE', migrationType: 'Content', displayOrder: 8 },
+      { value: 'egnyte-to-microsoft', label: 'EGNYTE TO MICROSOFT (ONEDRIVE/SHAREPOINT)', migrationType: 'Content', displayOrder: 9 }
+    ];
+    let inserted = 0;
+    let backfilled = 0;
+    for (const d of defaults) {
+      const existing = await db.collection('combinations').findOne({ value: d.value, migrationType: d.migrationType });
+      if (!existing) {
+        await db.collection('combinations').insertOne({
+          id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          ...d,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        inserted++;
+      } else if (!existing.id) {
+        // Legacy row missing the `id` field — backfill so edit/delete works
+        await db.collection('combinations').updateOne(
+          { _id: existing._id },
+          { $set: { id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`, updatedAt: new Date() } }
+        );
+        backfilled++;
+      }
+    }
+    // Also backfill any non-default rows that are missing `id`
+    const orphans = await db.collection('combinations').find({ id: { $exists: false } }).toArray();
+    for (const o of orphans) {
+      await db.collection('combinations').updateOne(
+        { _id: o._id },
+        { $set: { id: `combo-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`, updatedAt: new Date() } }
+      );
+      backfilled++;
+    }
+    const total = await db.collection('combinations').countDocuments();
+    res.json({ success: true, message: `Seed complete. Inserted ${inserted} new combinations. Backfilled ${backfilled} missing IDs. Total: ${total}.` });
+  } catch (error) {
+    console.error('Error seeding combinations:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// EXHIBITS API ENDPOINTS
+// ============================================
+
+// Get all exhibits (with optional filters)
+app.get('/api/exhibits', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available'
+      });
+    }
+
+    const { combination, category } = req.query;
+
+    if (!category && _cacheValid(_cache.exhibits)) {
+      let cachedExhibits = _cache.exhibits.data;
+      if (combination) {
+        cachedExhibits = cachedExhibits.filter(e =>
+          e.combinations.includes('all') || e.combinations.includes(combination)
+        );
+      }
+      console.log(`📎 Returning ${cachedExhibits.length} exhibits from cache`);
+      return res.json({ success: true, exhibits: cachedExhibits, count: cachedExhibits.length });
+    }
+
+    console.log('📎 Fetching exhibits from database...');
+    console.log('   Filters:', { combination, category });
+
+    const query = {};
+    
+    // Filter by category if provided
+    if (category) {
+      query.category = category;
+    }
+
+    // Fetch all exhibits (without fileData for listing)
+    const exhibitsCursor = db.collection('exhibits')
+      .find(query, {
+        projection: {
+          fileData: 0, // Exclude large binary data
+        }
+      })
+      .sort({ displayOrder: 1, name: 1 });
+
+    let exhibits = await exhibitsCursor.toArray();
+
+    if (!category) { _cache.exhibits = { data: exhibits, ts: Date.now() }; }
+
+    // Filter by combination on the backend
+    if (combination) {
+      exhibits = exhibits.filter(exhibit => 
+        exhibit.combinations.includes('all') || 
+        exhibit.combinations.includes(combination)
+      );
+    }
+
+    console.log(`✅ Fetched ${exhibits.length} exhibits for combination: ${combination}`);
+
+    res.json({
+      success: true,
+      exhibits,
+      count: exhibits.length
+    });
+  } catch (error) {
+    console.error('❌ Error fetching exhibits:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch exhibits',
+      details: error.message 
+    });
+  }
+});
+
+// Get single exhibit file by ID
+app.get('/api/exhibits/:id/file', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+
+    console.log(`📎 Fetching exhibit file: ${id}`);
+
+    const exhibit = await db.collection('exhibits').findOne({
+      _id: new ObjectId(id)
+    });
+
+    if (!exhibit) {
+      return res.status(404).json({
+        success: false,
+        error: 'Exhibit not found'
+      });
+    }
+
+    // Convert base64 to buffer
+    const fileBuffer = Buffer.from(exhibit.fileData, 'base64');
+
+    const contentType = exhibit.fileType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${exhibit.fileName}"`);
+    res.setHeader('Content-Length', fileBuffer.length);
+    // Disable HTTP caching so that exhibit edits made via the admin UI are reflected
+    // immediately on the next agreement generation. Without this, the browser caches
+    // the binary by URL and keeps serving the stale .docx after the file is replaced.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    console.log(`✅ Exhibit file sent: ${exhibit.fileName}`);
+    res.send(fileBuffer);
+
+  } catch (error) {
+    console.error('❌ Error fetching exhibit file:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch exhibit file',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
+// EXHIBIT UPLOAD/MANAGEMENT API ENDPOINTS
+// ============================================
+
+// Helper: true if email is in EXHIBIT_ADMIN_EMAILS (.env comma-separated list). No DB update needed.
+// In .env add: EXHIBIT_ADMIN_EMAILS=user1@cloudfuze.com,user2@cloudfuze.com
+function isExhibitAdminByEnv(email) {
+  const list = process.env.EXHIBIT_ADMIN_EMAILS;
+  if (!list || typeof list !== 'string') return false;
+  const emails = list.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return emails.includes((email || '').trim().toLowerCase());
+}
+
+// Get exhibit admin emails stored in DB (settings collection). Used by admin UI.
+async function getExhibitAdminEmailsFromDb() {
+  if (!db) return [];
+  try {
+    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
+    return Array.isArray(doc?.emails) ? doc.emails : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Resolve effective exhibit_admin: from DB role, .env EXHIBIT_ADMIN_EMAILS, or DB settings.exhibit_admins list
+async function hasExhibitAdminAccess(user) {
+  if (!user) return false;
+  if (user.role === 'exhibit_admin') return true;
+  if (isExhibitAdminByEnv(user.email)) return true;
+  const dbEmails = await getExhibitAdminEmailsFromDb();
+  const normalized = (user.email || '').trim().toLowerCase();
+  return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
+}
+
+// Helper: require JWT and exhibit_admin (from DB role, .env, or settings list). Returns user or sends 401/403 and null.
+async function getExhibitAdminUser(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  if (token.split('.').length !== 3) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await db.collection('users').findOne({ id: decoded.userId });
+    if (!user) {
+      res.status(401).json({ success: false, error: 'User not found' });
+      return null;
+    }
+    if (!(await hasExhibitAdminAccess(user))) {
+      res.status(403).json({ success: false, error: 'Only exhibit admins can add, edit, or delete exhibits' });
+      return null;
+    }
+    return user;
+  } catch (e) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+}
+
+// ============================================
+// EXHIBIT ADMINS SETTINGS (admin UI to add/remove emails)
+// ============================================
+
+// GET list of exhibit admin emails (from DB settings). Requires exhibit_admin.
+app.get('/api/settings/exhibit-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const emails = await getExhibitAdminEmailsFromDb();
+    res.json({ success: true, emails });
+  } catch (e) {
+    console.error('GET exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST add an email to exhibit admins list. Requires exhibit_admin.
+app.post('/api/settings/exhibit-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const { email } = req.body || {};
+    const trimmed = (email && String(email).trim()) || '';
+    if (!trimmed || !trimmed.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+    const normalized = trimmed.toLowerCase();
+    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    if (emails.map((e) => String(e).trim().toLowerCase()).includes(normalized)) {
+      return res.json({ success: true, emails, message: 'Email already in list' });
+    }
+    const updated = [...emails, trimmed];
+    await db.collection('settings').updateOne(
+      { _id: 'exhibit_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('POST exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ============================================
+// APPROVAL ADMINS — admins who can edit Team Approval Settings
+// (Mirrors exhibit_admin logic. Bootstrap with APPROVAL_ADMIN_EMAILS env or DEFAULT_APPROVAL_ADMINS.)
+// ============================================
+
+const DEFAULT_APPROVAL_ADMINS = ['bala.raviteja@cloudfuze.com', 'anush.dasari@cloudfuze.com'];
+
+function isApprovalAdminByEnv(email) {
+  const list = process.env.APPROVAL_ADMIN_EMAILS;
+  const candidates = [];
+  if (typeof list === 'string' && list.trim()) {
+    list.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean).forEach((e) => candidates.push(e));
+  }
+  DEFAULT_APPROVAL_ADMINS.forEach((e) => candidates.push(e.toLowerCase()));
+  return candidates.includes((email || '').trim().toLowerCase());
+}
+
+async function getApprovalAdminEmailsFromDb() {
+  if (!db) return [];
+  try {
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    return Array.isArray(doc?.emails) ? doc.emails : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function hasApprovalAdminAccess(user) {
+  if (!user) return false;
+  if (isApprovalAdminByEnv(user.email)) return true;
+  const dbEmails = await getApprovalAdminEmailsFromDb();
+  const normalized = (user.email || '').trim().toLowerCase();
+  return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
+}
+
+async function getApprovalAdminUser(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  if (token.split('.').length !== 3) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await db.collection('users').findOne({ id: decoded.userId });
+    if (!user) {
+      res.status(401).json({ success: false, error: 'User not found' });
+      return null;
+    }
+    if (!(await hasApprovalAdminAccess(user))) {
+      res.status(403).json({ success: false, error: 'Only approval admins can manage this list' });
+      return null;
+    }
+    return user;
+  } catch (e) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+}
+
+app.get('/api/settings/approval-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const emails = await getApprovalAdminEmailsFromDb();
+    res.json({ success: true, emails });
+  } catch (e) {
+    console.error('GET approval-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/settings/approval-admins', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const { email } = req.body || {};
+    const trimmed = (email && String(email).trim()) || '';
+    if (!trimmed || !trimmed.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+    const normalized = trimmed.toLowerCase();
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    if (emails.map((e) => String(e).trim().toLowerCase()).includes(normalized)) {
+      return res.json({ success: true, emails, message: 'Email already in list' });
+    }
+    const updated = [...emails, trimmed];
+    await db.collection('settings').updateOne(
+      { _id: 'approval_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('POST approval-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.delete('/api/settings/approval-admins/:email', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getApprovalAdminUser(req, res);
+    if (!authUser) return;
+    const emailParam = decodeURIComponent((req.params.email || '').trim());
+    if (!emailParam) return res.status(400).json({ success: false, error: 'Email required' });
+    const doc = await db.collection('settings').findOne({ _id: 'approval_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    const normalized = emailParam.toLowerCase();
+    const updated = emails.filter((e) => String(e).trim().toLowerCase() !== normalized);
+    await db.collection('settings').updateOne(
+      { _id: 'approval_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('DELETE approval-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// DELETE remove an email from exhibit admins list. Requires exhibit_admin.
+app.delete('/api/settings/exhibit-admins/:email', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+    const emailParam = decodeURIComponent((req.params.email || '').trim());
+    if (!emailParam) return res.status(400).json({ success: false, error: 'Email required' });
+    const doc = await db.collection('settings').findOne({ _id: 'exhibit_admins' });
+    const emails = Array.isArray(doc?.emails) ? doc.emails : [];
+    const normalized = emailParam.toLowerCase();
+    const updated = emails.filter((e) => String(e).trim().toLowerCase() !== normalized);
+    await db.collection('settings').updateOne(
+      { _id: 'exhibit_admins' },
+      { $set: { emails: updated, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, emails: updated });
+  } catch (e) {
+    console.error('DELETE exhibit-admins error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Upload new exhibit (POST)
+app.post('/api/exhibits', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database not available' 
+      });
+    }
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No file uploaded' 
+      });
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword'
+    ];
+    
+    if (!allowedTypes.includes(req.file.mimetype) && !req.file.originalname.toLowerCase().endsWith('.docx')) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid file type. Only DOCX files are allowed.' 
+      });
+    }
+
+    // Get metadata from request body
+    const {
+      name,
+      description = '',
+      category,
+      combinations,
+      planType = '',
+      includeType = '',
+      displayOrder,
+      keywords,
+      isRequired = false
+    } = req.body;
+
+    // Validate required fields
+    if (!category) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required field: category is required' 
+      });
+    }
+
+    // Validate plan type (required)
+    if (!planType || planType.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required field: planType is required. Please select Basic, Standard, or Advanced.' 
+      });
+    }
+
+    // Validate plan type value
+    const validPlanTypes = ['basic', 'standard', 'advanced'];
+    if (!validPlanTypes.includes(planType.toLowerCase())) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Invalid plan type: ${planType}. Must be one of: Basic, Standard, or Advanced.` 
+      });
+    }
+
+    // Include type: included | notincluded (from upload selection)
+    let finalIncludeType = (includeType && String(includeType).trim().toLowerCase()) || '';
+    if (finalIncludeType && finalIncludeType !== 'included' && finalIncludeType !== 'notincluded') {
+      return res.status(400).json({ success: false, error: 'includeType must be "included" or "notincluded".' });
+    }
+
+    // Parse combinations FIRST (needed for name generation)
+    let combinationsArray = [];
+    if (combinations) {
+      try {
+        combinationsArray = typeof combinations === 'string' 
+          ? JSON.parse(combinations) 
+          : Array.isArray(combinations) 
+            ? combinations 
+            : [combinations];
+      } catch (e) {
+        combinationsArray = [combinations];
+      }
+    }
+
+    // Auto-generate name from combination if not provided
+    let finalName = name ? name.trim() : '';
+    if (!finalName && combinationsArray.length > 0 && combinationsArray[0] !== 'all') {
+      const combination = combinationsArray[0];
+      // Convert "slack-to-teams" to "Slack to Teams"
+      // Also handles single words like "testing" -> "Testing"
+      const parts = combination.split('-');
+      const formatted = parts
+        .filter(part => part.trim() !== '' && part !== 'to')
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(' ');
+      
+      // If formatted is empty, capitalize the original combination
+      finalName = formatted || (combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase());
+    }
+    if (!finalName) {
+      finalName = 'New Exhibit';
+    }
+
+    // Parse keywords (can be string or array)
+    let keywordsArray = [];
+    if (keywords) {
+      try {
+        keywordsArray = typeof keywords === 'string' 
+          ? JSON.parse(keywords) 
+          : Array.isArray(keywords) 
+            ? keywords 
+            : [keywords];
+      } catch (e) {
+        keywordsArray = keywords.split(',').map(k => k.trim()).filter(Boolean);
+      }
+    }
+
+    // Convert file to base64
+    const fileData = req.file.buffer.toString('base64');
+
+    // Derive includeType from combination if not provided (for backward compatibility)
+    if (!finalIncludeType && combinationsArray.length > 0 && combinationsArray[0] !== 'all') {
+      const combo = String(combinationsArray[0]).toLowerCase();
+      if (combo.includes('notincluded') || combo.includes('not-include') || combo.includes('not include')) {
+        finalIncludeType = 'notincluded';
+      } else {
+        finalIncludeType = 'included';
+      }
+    }
+    if (!finalIncludeType) finalIncludeType = 'included';
+
+    // Create exhibit document
+    const exhibitDoc = {
+      name: finalName,
+      description: description.trim() || '',
+      fileName: req.file.originalname,
+      fileData: fileData,
+      fileType: req.file.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      fileSize: req.file.size,
+      combinations: combinationsArray.length > 0 ? combinationsArray : ['all'],
+      category: category.toLowerCase(),
+      planType: planType ? planType.toLowerCase() : '', // Store plan type (basic, standard, advanced)
+      includeType: finalIncludeType, // included | notincluded (from upload selection)
+      displayOrder: displayOrder ? parseInt(displayOrder) : 999,
+      keywords: keywordsArray,
+      isRequired: isRequired === true || isRequired === 'true',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      version: 1
+    };
+
+    // Check if exhibit with same filename already exists (in MongoDB)
+    const existing = await db.collection('exhibits').findOne({
+      fileName: exhibitDoc.fileName
+    });
+
+    if (existing) {
+      return res.status(409).json({ 
+        success: false, 
+        error: 'Exhibit with this filename already exists',
+        existingId: existing._id
+      });
+    }
+
+    // Check if file already exists in folder (to prevent overwriting manually added files)
+    const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+    const filePath = path.join(exhibitsDir, exhibitDoc.fileName);
+    
+    // Only check folder if directory exists
+    if (fs.existsSync(exhibitsDir) && fs.existsSync(filePath)) {
+      // File exists in folder but not in MongoDB - warn but allow (might be orphaned file)
+      console.warn(`⚠️ File exists in folder but not in MongoDB: ${exhibitDoc.fileName}`);
+      console.warn(`   Proceeding with upload - file will be overwritten in folder`);
+    }
+
+    // Insert into database
+    const result = await db.collection('exhibits').insertOne(exhibitDoc);
+
+    // Also save to backend-exhibits folder for easy file access
+    try {
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(exhibitsDir)) {
+        try {
+          fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
+          console.log(`📁 Created backend-exhibits directory: ${exhibitsDir}`);
+        } catch (mkdirError) {
+          // Check if it's a permission error
+          if (mkdirError.code === 'EACCES' || mkdirError.code === 'EPERM') {
+            console.error(`❌ Permission denied creating directory: ${exhibitsDir}`);
+            console.error(`   Error: ${mkdirError.message}`);
+            throw new Error(`Permission denied: Cannot create backend-exhibits directory. Check file system permissions.`);
+          }
+          throw mkdirError;
+        }
+      }
+      
+      // Check write permissions before attempting to write
+      try {
+        fs.accessSync(exhibitsDir, fs.constants.W_OK);
+      } catch (accessError) {
+        console.error(`❌ No write permission for directory: ${exhibitsDir}`);
+        throw new Error(`Permission denied: Cannot write to backend-exhibits directory. Check file system permissions.`);
+      }
+      
+      // Save file to folder
+      fs.writeFileSync(filePath, req.file.buffer, { mode: 0o644 });
+      console.log(`💾 Exhibit file saved to folder: ${filePath}`);
+    } catch (folderError) {
+      // Log detailed error information
+      const errorDetails = {
+        message: folderError.message,
+        code: folderError.code,
+        path: exhibitsDir,
+        stack: folderError.stack
+      };
+      
+      console.error(`❌ Failed to save exhibit to backend-exhibits folder:`, errorDetails);
+      console.warn(`⚠️ Exhibit saved to MongoDB but NOT to folder`);
+      console.warn(`   This is non-critical - exhibit is still accessible from MongoDB`);
+      
+      // In production, you might want to send this to error tracking service
+      // For now, we continue without failing the upload
+    }
+
+    console.log(`✅ Exhibit uploaded: ${exhibitDoc.name} (ID: ${result.insertedId})`);
+
+    _cacheClear('exhibits');
+    res.json({
+      success: true,
+      message: 'Exhibit uploaded successfully',
+      exhibit: {
+        id: result.insertedId.toString(),
+        name: exhibitDoc.name,
+        fileName: exhibitDoc.fileName,
+        category: exhibitDoc.category,
+        combinations: exhibitDoc.combinations
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error uploading exhibit:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to upload exhibit',
+      details: error.message 
+    });
+  }
+});
+
+// Update exhibit (PUT)
+app.put('/api/exhibits/:id', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database not available' 
+      });
+    }
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+
+    // Get existing exhibit
+    const existing = await db.collection('exhibits').findOne({
+      _id: new ObjectId(id)
+    });
+
+    if (!existing) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Exhibit not found' 
+      });
+    }
+
+    // Prepare update data
+    const updateData = {
+      updatedAt: new Date()
+    };
+
+    // Update metadata if provided
+    // Auto-generate name from combination if not provided or if name is "New Exhibit"
+    if (req.body.name) {
+      updateData.name = req.body.name.trim();
+    }
+    
+    // Parse combinations first to use for name generation
+    let parsedCombinations = existing.combinations || [];
+    if (req.body.combinations) {
+      try {
+        parsedCombinations = typeof req.body.combinations === 'string' 
+          ? JSON.parse(req.body.combinations) 
+          : Array.isArray(req.body.combinations) 
+            ? req.body.combinations 
+            : [req.body.combinations];
+      } catch (e) {
+        parsedCombinations = [req.body.combinations];
+      }
+    }
+    
+    // Auto-generate name if not provided or if current name is "New Exhibit"
+    if (!updateData.name || updateData.name === 'New Exhibit') {
+      if (parsedCombinations.length > 0 && parsedCombinations[0] !== 'all') {
+        const combination = parsedCombinations[0];
+        const parts = combination.split('-');
+        const formatted = parts
+          .filter(part => part.trim() !== '' && part !== 'to')
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+          .join(' ');
+        updateData.name = formatted || (combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase());
+      }
+    }
+    if (req.body.description !== undefined) updateData.description = req.body.description.trim() || '';
+    if (req.body.category) updateData.category = req.body.category.toLowerCase();
+    if (req.body.planType !== undefined) {
+      const planTypeValue = req.body.planType ? req.body.planType.toLowerCase().trim() : '';
+      if (!planTypeValue) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Plan Type is required. Please select Basic, Standard, or Advanced.' 
+        });
+      }
+      const validPlanTypes = ['basic', 'standard', 'advanced'];
+      if (!validPlanTypes.includes(planTypeValue)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Invalid plan type: ${req.body.planType}. Must be one of: Basic, Standard, or Advanced.` 
+        });
+      }
+      updateData.planType = planTypeValue;
+    }
+    if (req.body.includeType !== undefined) {
+      const includeTypeValue = (req.body.includeType && String(req.body.includeType).trim().toLowerCase()) || '';
+      if (includeTypeValue && includeTypeValue !== 'included' && includeTypeValue !== 'notincluded') {
+        return res.status(400).json({ success: false, error: 'includeType must be "included" or "notincluded".' });
+      }
+      updateData.includeType = includeTypeValue || (existing.includeType || 'included');
+    }
+    if (req.body.displayOrder) updateData.displayOrder = parseInt(req.body.displayOrder);
+    if (req.body.isRequired !== undefined) {
+      updateData.isRequired = req.body.isRequired === true || req.body.isRequired === 'true';
+    }
+
+    // Update combinations (already parsed above for name generation)
+    if (req.body.combinations) {
+      updateData.combinations = parsedCombinations;
+    }
+
+    // Update keywords
+    if (req.body.keywords) {
+      try {
+        updateData.keywords = typeof req.body.keywords === 'string' 
+          ? JSON.parse(req.body.keywords) 
+          : Array.isArray(req.body.keywords) 
+            ? req.body.keywords 
+            : req.body.keywords.split(',').map((k) => k.trim()).filter(Boolean);
+      } catch (e) {
+        updateData.keywords = [req.body.keywords];
+      }
+    }
+
+    // Update file if new file provided
+    if (req.file) {
+      // Validate file type
+      const allowedTypes = [
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword'
+      ];
+      
+      if (!allowedTypes.includes(req.file.mimetype) && !req.file.originalname.toLowerCase().endsWith('.docx')) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Invalid file type. Only DOCX files are allowed.' 
+        });
+      }
+
+      // Check if new filename conflicts with another exhibit
+      if (req.file.originalname !== existing.fileName) {
+        const conflictingExhibit = await db.collection('exhibits').findOne({
+          fileName: req.file.originalname,
+          _id: { $ne: new ObjectId(id) } // Exclude current exhibit
+        });
+        
+        if (conflictingExhibit) {
+          return res.status(409).json({ 
+            success: false, 
+            error: 'Another exhibit with this filename already exists',
+            conflictingId: conflictingExhibit._id
+          });
+        }
+      }
+
+      updateData.fileName = req.file.originalname;
+      updateData.fileData = req.file.buffer.toString('base64');
+      updateData.fileType = req.file.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      updateData.fileSize = req.file.size;
+      updateData.version = (existing.version || 0) + 1;
+      
+      // Also update file in backend-exhibits folder
+      try {
+        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+        
+        // Ensure directory exists
+        if (!fs.existsSync(exhibitsDir)) {
+          fs.mkdirSync(exhibitsDir, { recursive: true, mode: 0o755 });
+        }
+        
+        // Check write permissions
+        try {
+          fs.accessSync(exhibitsDir, fs.constants.W_OK);
+        } catch (accessError) {
+          throw new Error(`Permission denied: Cannot write to backend-exhibits directory`);
+        }
+        
+        // Delete old file if filename changed
+        if (existing.fileName && existing.fileName !== req.file.originalname) {
+          const oldFilePath = path.join(exhibitsDir, existing.fileName);
+          if (fs.existsSync(oldFilePath)) {
+            fs.unlinkSync(oldFilePath);
+            console.log(`🗑️ Deleted old exhibit file: ${oldFilePath}`);
+          }
+        }
+        
+        // Save new file
+        const filePath = path.join(exhibitsDir, req.file.originalname);
+        fs.writeFileSync(filePath, req.file.buffer, { mode: 0o644 });
+        console.log(`💾 Exhibit file updated in folder: ${filePath}`);
+      } catch (folderError) {
+        const errorDetails = {
+          message: folderError.message,
+          code: folderError.code,
+          path: path.join(__dirname, 'backend-exhibits')
+        };
+        console.error(`❌ Failed to update exhibit in backend-exhibits folder:`, errorDetails);
+        console.warn(`⚠️ Exhibit updated in MongoDB but NOT in folder`);
+      }
+    }
+
+    // Update in database
+    await db.collection('exhibits').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    console.log(`✅ Exhibit updated: ${id}`);
+
+    _cacheClear('exhibits');
+    res.json({
+      success: true,
+      message: 'Exhibit updated successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating exhibit:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to update exhibit',
+      details: error.message 
+    });
+  }
+});
+
+// Delete exhibit (DELETE)
+app.delete('/api/exhibits/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database not available' 
+      });
+    }
+
+    const authUser = await getExhibitAdminUser(req, res);
+    if (!authUser) return;
+
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+
+    // Get exhibit info before deleting (to remove file from folder)
+    const exhibit = await db.collection('exhibits').findOne({
+      _id: new ObjectId(id)
+    });
+
+    const result = await db.collection('exhibits').deleteOne({
+      _id: new ObjectId(id)
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Exhibit not found' 
+      });
+    }
+
+    // Also delete file from backend-exhibits folder
+    if (exhibit && exhibit.fileName) {
+      try {
+        const exhibitsDir = path.join(__dirname, 'backend-exhibits');
+        const filePath = path.join(exhibitsDir, exhibit.fileName);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`🗑️ Deleted exhibit file from folder: ${filePath}`);
+        }
+      } catch (folderError) {
+        console.warn(`⚠️ Failed to delete exhibit from backend-exhibits folder: ${folderError.message}`);
+      }
+    }
+
+    console.log(`✅ Exhibit deleted: ${id}`);
+
+    _cacheClear('exhibits');
+    res.json({
+      success: true,
+      message: 'Exhibit deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error deleting exhibit:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete exhibit',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
+// PDF DOCUMENTS API ENDPOINTS
+// ============================================
+
+// Save PDF document to MongoDB (similar to template save)
+app.post('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const {
+      fileName, fileData, fileSize, clientName, clientEmail, company,
+      templateName, quoteId, metadata, docxFileData, docxFileName,
+      // New fields for date editing post-generation
+      dates, templateData, templateId, customLineItems
+    } = req.body;
+
+    if (!fileName || !fileData) {
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+
+    console.log('📄 Saving PDF document to MongoDB:', {
+      fileName,
+      company,
+      fileSize,
+      clientName,
+      hasDocx: !!docxFileData
+    });
+    
+    console.log('🔍 Document ID generation data:', {
+      clientName: clientName,
+      company: company,
+      clientNameType: typeof clientName,
+      companyType: typeof company
+    });
+
+    // Convert base64 to Buffer (same as templates)
+    let fileBuffer = Buffer.from(fileData, 'base64');
+    let finalFileName = fileName;
+    const docxBuffer = docxFileData ? Buffer.from(docxFileData, 'base64') : null;
+
+    // Auto-convert office documents to PDF if uploaded
+    const officeFormats = ['.docx', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods', '.odp'];
+    const fileExt = fileName.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+    const isOfficeFile = officeFormats.includes(fileExt);
+
+    if (isOfficeFile && libre) {
+      try {
+        console.log(`🔄 Converting ${fileExt.toUpperCase()} to PDF:`, fileName);
+        const pdfBuffer = await libre.convertAsync(fileBuffer, '.pdf', undefined);
+
+        if (pdfBuffer && pdfBuffer.length > 0) {
+          fileBuffer = pdfBuffer;
+          finalFileName = fileName.replace(/\.[^.]+$/i, '.pdf'); // Replace any extension with .pdf
+          console.log('✅ Document converted to PDF:', finalFileName);
+        } else {
+          console.warn('⚠️ Conversion returned empty output, using original file');
+        }
+      } catch (e) {
+        console.warn(`⚠️ ${fileExt.toUpperCase()} to PDF conversion failed:`, e.message, '- using original file');
+        // Continue with original file if conversion fails
+      }
+    }
+
+    // Generate document ID with client and company names
+    const sanitizeForId = (str) => {
+      if (!str) return 'Unknown';
+      return str
+        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
+        .substring(0, 20) // Limit length
+        .replace(/^[0-9]/, 'C$&'); // Ensure doesn't start with number
+    };
+    
+    const sanitizedCompany = sanitizeForId(company);
+    const sanitizedClient = sanitizeForId(clientName);
+    const timestamp = Date.now().toString().slice(-5); // Keep only last 5 digits
+    
+    const document = {
+      id: `${sanitizedCompany}_${sanitizedClient}_${timestamp}`,
+      fileName: finalFileName, // Use converted filename if DOCX was converted to PDF
+      fileData: fileBuffer, // Store as Buffer like templates
+      fileSize: fileBuffer.length, // Update file size after potential conversion
+      clientName,
+      clientEmail,
+      company,
+      templateName,
+      generatedDate: new Date(),
+      quoteId,
+      metadata,
+      createdAt: new Date(),
+      status: 'active',
+      // Snapshot of inputs used to render this document — enables date editing post-generation.
+      // dates may be undefined for legacy callers; templateData/templateId/customLineItems are
+      // captured so the doc can be re-rendered client-side with new dates later.
+      dates: dates && typeof dates === 'object' ? {
+        projectStartDate: dates.projectStartDate || null,
+        effectiveDate: dates.effectiveDate || null,
+        quoteExpiryDate: dates.quoteExpiryDate || null
+      } : null,
+      templateData: templateData && typeof templateData === 'object' ? templateData : null,
+      templateId: templateId || null,
+      customLineItems: Array.isArray(customLineItems) ? customLineItems : [],
+      dateHistory: []
+    };
+    
+    // Add DOCX data if available
+    if (docxBuffer && docxFileName) {
+      document.docxFileData = docxBuffer;
+      document.docxFileName = docxFileName;
+      console.log('💾 Also saving DOCX file:', docxFileName, 'Size:', docxBuffer.length);
+    }
+
+    const documentsCollection = db.collection('documents');
+    const result = await documentsCollection.insertOne(document);
+
+    if (result.insertedId) {
+      console.log('✅ PDF document saved to MongoDB:', document.id);
+      console.log('   MongoDB _id:', result.insertedId);
+      console.log('   Company:', company);
+      console.log('   File size:', Math.round(fileSize / 1024), 'KB');
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Document saved successfully',
+      documentId: document.id
+    });
+  } catch (error) {
+    console.error('❌ Error saving document:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to save document',
+      details: error.message 
+    });
+  }
+});
+
+// OLD SLOW ENDPOINT REMOVED - This was converting ALL PDFs to base64 which was extremely slow
+// The fast endpoint at line 3216 excludes fileData and is much faster
+
+// Get single PDF document by ID (convert Buffer to base64)
+app.get('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const documentsCollection = db.collection('documents');
+    let document = await documentsCollection.findOne({ id: req.params.id });
+
+    // Smart search fallback: if exact ID doesn't match, try to find by client/company
+    if (!document) {
+      console.log('⚠️ Exact ID not found in direct fetch, attempting smart search...');
+      const id = req.params.id;
+      
+      // Extract client and company from ID pattern: Company_Client_Timestamp
+      const parts = id.split('_');
+      if (parts.length >= 2) {
+        // Search for documents where ID starts with the same company_client pattern
+        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
+        const matchingDocs = await documentsCollection
+          .find({ id: { $regex: idPattern } })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .toArray();
+        
+        if (matchingDocs.length > 0) {
+          document = matchingDocs[0];
+          console.log(`✅ Found matching document: ${document.id} (searched for: ${id})`);
+        } else {
+          // Fallback: search by company and clientName fields
+          const companyPart = parts[0].replace(/[0-9]/g, '');
+          const clientPart = parts[1].replace(/[0-9]/g, '');
+          
+          if (companyPart && clientPart) {
+            const searchQuery = {
+              $and: [
+                { company: { $regex: companyPart, $options: 'i' } },
+                { clientName: { $regex: clientPart, $options: 'i' } }
+              ]
+            };
+            
+            const matchingDocs2 = await documentsCollection
+              .find(searchQuery)
+              .sort({ createdAt: -1 })
+              .limit(1)
+              .toArray();
+            
+            if (matchingDocs2.length > 0) {
+              document = matchingDocs2[0];
+              console.log(`✅ Found matching document by client/company: ${document.id} (searched for: ${id})`);
+              } else {
+              // Fallback: search by clientName only (in case company name changed or is different)
+              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
+              // Insert optional spaces before capital letters (camelCase handling)
+              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
+              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
+              const clientOnlyQuery = {
+                clientName: { $regex: clientNamePattern, $options: 'i' }
+              };
+              
+              const matchingDocs3 = await documentsCollection
+                .find(clientOnlyQuery)
+                .sort({ createdAt: -1 })
+                .limit(1)
+                .toArray();
+              
+              if (matchingDocs3.length > 0) {
+                document = matchingDocs3[0];
+                console.log(`✅ Found matching document by client name only: ${document.id} (searched for: ${id})`);
+                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${document.company}`);
+              }
+            }
+          }
+        }
+      }
+      
+      if (!document) {
+        return res.status(404).json({ success: false, error: 'Document not found' });
+      }
+    }
+
+    console.log('✅ Retrieved document from MongoDB:', document.id);
+
+    // Convert Buffer to base64 for frontend
+    let base64 = '';
+    let docxBase64 = '';
+    try {
+      if (document.fileData) {
+        if (Buffer.isBuffer(document.fileData)) {
+          base64 = document.fileData.toString('base64');
+        } else if (document.fileData.buffer) {
+          base64 = Buffer.from(document.fileData.buffer).toString('base64');
+        } else if (document.fileData.data) {
+          base64 = Buffer.from(document.fileData.data).toString('base64');
+        } else if (typeof document.fileData === 'string') {
+          // Already base64 string
+          base64 = document.fileData;
+        }
+      }
+      
+      // Also convert DOCX if available
+      if (document.docxFileData) {
+        if (Buffer.isBuffer(document.docxFileData)) {
+          docxBase64 = document.docxFileData.toString('base64');
+        } else if (document.docxFileData.buffer) {
+          docxBase64 = Buffer.from(document.docxFileData.buffer).toString('base64');
+        } else if (typeof document.docxFileData === 'string') {
+          docxBase64 = document.docxFileData;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not convert document Buffer to base64 for id:', document.id, e?.message);
+    }
+    
+    // Serialize dates to strings for frontend compatibility
+    const documentWithBase64 = { 
+      ...document, 
+      fileData: base64,
+      generatedDate: document.generatedDate ? (document.generatedDate instanceof Date ? document.generatedDate.toISOString() : document.generatedDate) : new Date().toISOString(),
+      createdAt: document.createdAt ? (document.createdAt instanceof Date ? document.createdAt.toISOString() : document.createdAt) : new Date().toISOString(),
+    };
+    
+    // Add DOCX data if available
+    if (docxBase64) {
+      documentWithBase64.docxFileData = docxBase64;
+      documentWithBase64.docxFileName = document.docxFileName;
+    }
+
+    res.json({ 
+      success: true, 
+      document: documentWithBase64
+    });
+  } catch (error) {
+    console.error('❌ Error retrieving document:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to retrieve document',
+      details: error.message 
+    });
+  }
+});
+
+// Delete PDF document by ID
+app.delete('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const documentsCollection = db.collection('documents');
+    const result = await documentsCollection.deleteOne({ id: req.params.id });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    console.log('✅ Deleted document from MongoDB:', req.params.id);
+
+    res.json({ 
+      success: true, 
+      message: 'Document deleted successfully' 
+    });
+  } catch (error) {
+    console.error('❌ Error deleting document:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete document',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
+// DOCX TO PDF CONVERSION
+// ============================================
+
+/**
+ * Pre-process a DOCX buffer so LibreOffice's `--convert-to pdf:writer_pdf_Export`
+ * faithfully renders top-of-page floating image layouts (logos pinned to
+ * top-left and top-right).
+ *
+ * Why: LibreOffice's PDF filter drops Word's `<wp:anchor>` absolute page
+ * positions (`<wp:positionH relativeFrom="page">`) and falls back to inline
+ * rendering on the host paragraph — two side-by-side floating images stack
+ * vertically and center on the page. The fix is to transform paragraphs with
+ * 2+ floating-image anchors (or 2+ adjacent paragraphs each with one anchor)
+ * into a 1×N borderless table whose cells host the images inline. LibreOffice
+ * renders inline-in-cell images perfectly, so the layout is preserved.
+ *
+ * For the Multi Combination template specifically, the logos live in
+ * `word/header1.xml` and the XML has Microsoft listed first, CloudFuze
+ * second, but Word displays them at posOffset=5372100 (right) and
+ * posOffset=723900 (left). We sort anchors by horizontal posOffset before
+ * building cells so the leftmost image ends up in the leftmost cell.
+ *
+ * Safe: if anything fails, returns the original buffer unmodified.
+ */
+function preprocessDocxForLibreOffice(buffer) {
+  try {
+    const PizZip = require('pizzip');
+    const zip = new PizZip(buffer);
+
+    let anyTransformed = false;
+    const targets = Object.keys(zip.files).filter((name) =>
+      name === 'word/document.xml' || /^word\/header\d*\.xml$/i.test(name)
+    );
+    console.log(`📐 DOCX preprocessor v3 scanning: ${targets.join(', ') || '(none)'}`);
+
+    for (const xmlPath of targets) {
+      const file = zip.file(xmlPath);
+      if (!file) continue;
+      const original = file.asText();
+      const totalAnchors = (original.match(/<wp:anchor\b/g) || []).length;
+      const totalInline = (original.match(/<wp:inline\b/g) || []).length;
+      const isHeader = /^word\/header\d+\.xml$/i.test(xmlPath);
+      console.log(`📐   ${xmlPath}: ${totalAnchors} <wp:anchor> + ${totalInline} <wp:inline> image(s)${isHeader ? ' [header]' : ''}`);
+
+      let updated = transformParagraphsWithFloatingImages(original);
+      // Headers commonly host logos as separate centered inline-image paragraphs.
+      // Group those into a side-by-side table too (safe because headers are
+      // overwhelmingly used for logos/branding, not body content layout).
+      if (isHeader) {
+        updated = transformHeaderInlineImageParagraphs(updated);
+        // Also replace existing header tables that contain inline images —
+        // LibreOffice sometimes can't render multi-column tables in headers
+        // and falls back to rendering cells as standalone centered paragraphs
+        // (stacked). A clean borderless 1×N table avoids that quirk.
+        updated = transformHeaderTablesWithImages(updated);
+      }
+
+      // Body: keep the "Important Payment Notes" section together on its own
+      // page so its heading never orphans at the bottom of the previous page.
+      if (xmlPath === 'word/document.xml') {
+        updated = injectPageBreakBeforeSection(updated, 'Important Payment Notes');
+      }
+
+      if (updated !== original) {
+        zip.file(xmlPath, updated);
+        anyTransformed = true;
+        console.log(`📐   ${xmlPath}: preprocessor transforms applied`);
+      } else if (totalAnchors > 0 || totalInline > 0) {
+        console.log(`📐   ${xmlPath}: images present but no transform pattern matched`);
+      }
+    }
+
+    if (!anyTransformed) return buffer;
+    return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+  } catch (err) {
+    console.warn('⚠️ DOCX preprocessor skipped (falling back to original):', err.message);
+    return buffer;
+  }
+}
+
+/**
+ * Find paragraphs containing floating-image anchors and groups of adjacent
+ * single-anchor paragraphs. When a group has 2+ total anchors, replace it
+ * with a 1×N borderless table whose cells host the same images inline.
+ * Anchors are sorted by horizontal page position before being placed in
+ * cells (leftmost → leftmost cell).
+ */
+function transformParagraphsWithFloatingImages(xml) {
+  const anchorRunRegex =
+    /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:anchor\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:anchor>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
+  const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+
+  const paragraphs = [];
+  let m;
+  while ((m = paragraphRegex.exec(xml)) !== null) {
+    const fullParagraph = m[0];
+    const anchorRuns = fullParagraph.match(anchorRunRegex) || [];
+    paragraphs.push({
+      fullParagraph,
+      start: m.index,
+      end: m.index + fullParagraph.length,
+      anchorRuns,
+    });
+  }
+
+  // Group consecutive (whitespace-separated) paragraphs that contain anchors.
+  const groups = [];
+  let current = null;
+  for (const p of paragraphs) {
+    if (p.anchorRuns.length === 0) {
+      if (current) { groups.push(current); current = null; }
+      continue;
+    }
+    const adjacent = current && /^\s*$/.test(xml.substring(current.end, p.start));
+    if (adjacent) {
+      current.paragraphs.push(p);
+      current.end = p.end;
+      current.totalAnchors += p.anchorRuns.length;
+    } else {
+      if (current) groups.push(current);
+      current = { start: p.start, end: p.end, paragraphs: [p], totalAnchors: p.anchorRuns.length };
+    }
+  }
+  if (current) groups.push(current);
+
+  const transformable = groups.filter((g) => g.totalAnchors >= 2);
+  if (transformable.length === 0) return xml;
+
+  let result = xml;
+  for (let i = transformable.length - 1; i >= 0; i--) {
+    const group = transformable[i];
+    const allAnchorRuns = group.paragraphs.flatMap((p) => p.anchorRuns);
+
+    // Sort by horizontal page position so leftmost image goes into leftmost cell.
+    // The XML may list anchors in any order; we want visual order on the page.
+    const sortedRuns = [...allAnchorRuns].sort((a, b) => {
+      const ax = extractPositionH(a);
+      const bx = extractPositionH(b);
+      return ax - bx;
+    });
+
+    const tableXml = buildLogoTableXml(sortedRuns);
+    if (!tableXml) continue;
+
+    const cleanedParagraphs = group.paragraphs.map((p) => {
+      let out = p.fullParagraph;
+      for (const run of p.anchorRuns) out = out.replace(run, '');
+      return out;
+    });
+
+    const replacement = tableXml + cleanedParagraphs.join('');
+    result = result.substring(0, group.start) + replacement + result.substring(group.end);
+  }
+
+  return result;
+}
+
+/** Extract the horizontal page offset from a `<wp:anchor>` run (EMUs). 0 if missing. */
+function extractPositionH(anchorRun) {
+  const m = anchorRun.match(/<wp:positionH\b[^>]*>[\s\S]*?<wp:posOffset>(-?\d+)<\/wp:posOffset>[\s\S]*?<\/wp:positionH>/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * Insert `<w:pageBreakBefore/>` into the `<w:pPr>` of any paragraph whose text
+ * content matches the given section heading (case-sensitive, exact substring).
+ * This forces the paragraph (and the section that follows it) to start on a
+ * fresh page, avoiding orphaned headings at the bottom of the previous page.
+ *
+ * Safe:
+ *  - Idempotent (skips paragraphs that already have <w:pageBreakBefore/>)
+ *  - Only matches paragraphs whose visible text contains the heading
+ *  - Returns the input unchanged if no matching paragraph is found
+ */
+function injectPageBreakBeforeSection(xml, sectionHeading) {
+  if (!sectionHeading) return xml;
+  const paragraphRegex = /<w:p\b([^>]*)>([\s\S]*?)<\/w:p>/g;
+  let matched = 0;
+
+  const result = xml.replace(paragraphRegex, (full, attrs, inner) => {
+    // Extract visible text content of the paragraph (concatenate all <w:t>…</w:t>).
+    const textParts = inner.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
+    const text = textParts.map((t) => t.replace(/<[^>]+>/g, '')).join('');
+    if (!text.includes(sectionHeading)) return full;
+
+    // Idempotent: leave alone if a page break is already configured.
+    if (/<w:pageBreakBefore\b/.test(inner)) return full;
+
+    matched++;
+    const existingPPr = inner.match(/<w:pPr\b[^>]*>([\s\S]*?)<\/w:pPr>/);
+    let newInner;
+    if (existingPPr) {
+      const augmented = '<w:pPr>' + '<w:pageBreakBefore/>' + existingPPr[1] + '</w:pPr>';
+      newInner = inner.replace(existingPPr[0], augmented);
+    } else {
+      newInner = '<w:pPr><w:pageBreakBefore/></w:pPr>' + inner;
+    }
+    return `<w:p${attrs}>${newInner}</w:p>`;
+  });
+
+  if (matched > 0) {
+    console.log(`📐   inserted <w:pageBreakBefore/> into ${matched} paragraph(s) matching "${sectionHeading}"`);
+  }
+  return result;
+}
+
+/**
+ * Header-specific: find any existing table that contains 2+ inline images
+ * (one per cell) and replace it with a clean 1×N borderless table. LibreOffice
+ * has a documented quirk where it sometimes drops the row of a table in a
+ * header and renders the cells as standalone centered paragraphs (stacked).
+ * Replacing with a simple borderless table avoids that quirk.
+ *
+ * Runs AFTER the inline-paragraph transformation, so anything already wrapped
+ * by this preprocessor is left alone.
+ */
+function transformHeaderTablesWithImages(xml) {
+  const inlineImageRunRegex =
+    /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:inline\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:inline>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
+  // Match top-level tables only (don't try to handle nested tables — rare in headers).
+  const tableRegex = /<w:tbl>[\s\S]*?<\/w:tbl>/g;
+
+  return xml.replace(tableRegex, (tableXml) => {
+    const inlineRuns = tableXml.match(inlineImageRunRegex) || [];
+    if (inlineRuns.length < 2) return tableXml; // leave alone
+
+    // Skip if this is already a borderless table that we (the preprocessor)
+    // produced — identified by all 6 borders being w:val="nil" and a fixed
+    // layout. Avoids double-processing.
+    const allBordersNil = (tableXml.match(/w:val="nil"/g) || []).length >= 6;
+    const ourFixedLayout = /tblLayout w:type="fixed"/.test(tableXml) &&
+                          /tblInd w:w="0" w:type="dxa"/.test(tableXml);
+    if (allBordersNil && ourFixedLayout) return tableXml;
+
+    const replacement = buildInlineLogoTableXml(inlineRuns);
+    return replacement || tableXml;
+  });
+}
+
+/**
+ * Header-specific: groups "image-only" paragraphs (paragraphs containing exactly one
+ * `<wp:inline>` image and no visible text) that are near each other (separated only by
+ * truly empty paragraphs) into a single 1×N borderless table. This fixes the common
+ * pattern where Word stacks two centered logos in separate paragraphs — LibreOffice
+ * renders them stacked, but we want side-by-side.
+ *
+ * Conservative criteria to avoid false positives:
+ *  - Only image-ONLY paragraphs are eligible (no other text content)
+ *  - Intervening paragraphs in the group must be truly empty (no text, no images)
+ *  - At least 2 image-only paragraphs are needed
+ */
+function transformHeaderInlineImageParagraphs(xml) {
+  const inlineImageRunRegex =
+    /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<wp:inline\b[\s\S]*?<a:graphic\b[\s\S]*?<\/a:graphic>[\s\S]*?<\/wp:inline>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g;
+  const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+
+  // Pre-compute table nesting depth at each character position so we can skip
+  // paragraphs inside table cells. `transformParagraphsWithFloatingImages` may
+  // have already wrapped anchored images in a borderless table whose cells each
+  // contain one image-only <w:p>; without this guard we would group those
+  // in-cell paragraphs and splice a replacement across the </w:tc><w:tc>
+  // boundary, leaving the outer table with an unclosed cell/row/tbl and
+  // producing malformed XML that LibreOffice rejects as "Document is empty".
+  const tblTokenRegex = /<w:tbl(?![A-Za-z])|<\/w:tbl>/g;
+  const tableDepth = new Array(xml.length + 1).fill(0);
+  {
+    let depth = 0;
+    let last = 0;
+    let tk;
+    while ((tk = tblTokenRegex.exec(xml)) !== null) {
+      tableDepth.fill(depth, last, tk.index);
+      if (tk[0] === '</w:tbl>') depth = Math.max(0, depth - 1);
+      else depth += 1;
+      last = tk.index + tk[0].length;
+      tableDepth.fill(depth, tk.index, last);
+    }
+    tableDepth.fill(depth, last, xml.length + 1);
+  }
+
+  // Classify each paragraph: 'image' (image-only, no visible text),
+  // 'empty' (no images, no visible text), or 'other'.
+  const paragraphs = [];
+  let m;
+  while ((m = paragraphRegex.exec(xml)) !== null) {
+    const full = m[0];
+    // Skip paragraphs nested inside a table — they belong to existing cell
+    // content and must not participate in top-level grouping.
+    if (tableDepth[m.index] > 0) continue;
+    const inlineRuns = full.match(inlineImageRunRegex) || [];
+    const hasAnchor = /<wp:anchor\b/.test(full);
+    // Strip XML tags and check whether any visible text remains.
+    const textContent = full.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+
+    let kind;
+    if (hasAnchor) {
+      kind = 'other'; // leave anchored content to the other transform
+    } else if (inlineRuns.length === 1 && textContent.length === 0) {
+      kind = 'image';
+    } else if (inlineRuns.length === 0 && textContent.length === 0) {
+      kind = 'empty';
+    } else {
+      kind = 'other';
+    }
+
+    paragraphs.push({
+      full,
+      start: m.index,
+      end: m.index + full.length,
+      kind,
+      inlineRun: inlineRuns[0] || null,
+    });
+  }
+
+  // Walk paragraphs forming groups of image-only paragraphs. A group can include
+  // 'empty' paragraphs between images, but is broken by any 'other' paragraph.
+  const groups = [];
+  let current = null;
+  for (const p of paragraphs) {
+    if (p.kind === 'image') {
+      if (!current) current = { paragraphs: [p], start: p.start, end: p.end };
+      else { current.paragraphs.push(p); current.end = p.end; }
+    } else if (p.kind === 'empty' && current) {
+      // Extend the group's end so when we replace, intervening empty paragraphs
+      // get swallowed by the replacement too. Keeps spacing tight.
+      current.end = p.end;
+    } else {
+      // 'other' or 'empty' with no current group → flush
+      if (current) {
+        const imgCount = current.paragraphs.length;
+        if (imgCount >= 2) groups.push(current);
+        current = null;
+      }
+    }
+  }
+  if (current && current.paragraphs.length >= 2) groups.push(current);
+
+  if (groups.length === 0) return xml;
+
+  // Apply replacements in reverse order so earlier indices stay valid.
+  let result = xml;
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const g = groups[i];
+    const runs = g.paragraphs.map((p) => p.inlineRun).filter(Boolean);
+    if (runs.length < 2) continue;
+    const tableXml = buildInlineLogoTableXml(runs);
+    if (!tableXml) continue;
+    result = result.substring(0, g.start) + tableXml + result.substring(g.end);
+  }
+  return result;
+}
+
+/**
+ * Like `buildLogoTableXml` but accepts runs that already wrap `<wp:inline>` images
+ * (rather than `<wp:anchor>`). Reuses the same fixed-layout / zero-indent / borderless
+ * table structure so LibreOffice renders the images side-by-side at the page edges.
+ */
+function buildInlineLogoTableXml(inlineRuns) {
+  if (!inlineRuns || inlineRuns.length < 2) return null;
+  const cellDxaWidth = Math.floor(9360 / inlineRuns.length);
+
+  const cells = [];
+  for (let i = 0; i < inlineRuns.length; i++) {
+    const align = i === 0
+      ? 'left'
+      : i === inlineRuns.length - 1
+        ? 'right'
+        : 'center';
+
+    cells.push(
+      '<w:tc>' +
+        '<w:tcPr>' +
+          `<w:tcW w:w="${cellDxaWidth}" w:type="dxa"/>` +
+          '<w:tcBorders>' +
+            '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+            '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '</w:tcBorders>' +
+          '<w:vAlign w:val="center"/>' +
+        '</w:tcPr>' +
+        '<w:p>' +
+          `<w:pPr><w:jc w:val="${align}"/></w:pPr>` +
+          inlineRuns[i] +
+        '</w:p>' +
+      '</w:tc>'
+    );
+  }
+
+  const gridCols = cells.map(() => `<w:gridCol w:w="${cellDxaWidth}"/>`).join('');
+  return (
+    '<w:tbl>' +
+      '<w:tblPr>' +
+        `<w:tblW w:w="${cellDxaWidth * inlineRuns.length}" w:type="dxa"/>` +
+        '<w:tblInd w:w="0" w:type="dxa"/>' +
+        '<w:tblBorders>' +
+          '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+          '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '<w:insideH w:val="nil"/><w:insideV w:val="nil"/>' +
+        '</w:tblBorders>' +
+        '<w:tblLayout w:type="fixed"/>' +
+      '</w:tblPr>' +
+      `<w:tblGrid>${gridCols}</w:tblGrid>` +
+      `<w:tr>${cells.join('')}</w:tr>` +
+    '</w:tbl>'
+  );
+}
+
+/**
+ * Build the borderless 1×N table XML for the given list of anchor-image runs.
+ * Returns null if any anchor's required substructure is missing.
+ */
+function buildLogoTableXml(anchorRuns) {
+  if (!anchorRuns || anchorRuns.length < 2) return null;
+
+  const cellPctWidth = Math.floor(5000 / anchorRuns.length); // /5000 = 100%
+  const cellDxaWidth = Math.floor(9360 / anchorRuns.length); // ~6.5" content area
+
+  const cells = [];
+  for (let i = 0; i < anchorRuns.length; i++) {
+    const run = anchorRuns[i];
+    const extentMatch = run.match(/<wp:extent\b[^>]*\/>/);
+    const docPrMatch = run.match(/<wp:docPr\b[\s\S]*?(?:\/>|<\/wp:docPr>)/);
+    const cNvGfpMatch = run.match(/<wp:cNvGraphicFramePr\b[\s\S]*?(?:\/>|<\/wp:cNvGraphicFramePr>)/);
+    const graphicMatch = run.match(/<a:graphic\b[\s\S]*?<\/a:graphic>/);
+    if (!extentMatch || !docPrMatch || !graphicMatch) return null;
+
+    const cNvGfp = cNvGfpMatch ? cNvGfpMatch[0] : '<wp:cNvGraphicFramePr/>';
+
+    const inlineRun =
+      '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+        extentMatch[0] +
+        '<wp:effectExtent l="0" t="0" r="0" b="0"/>' +
+        docPrMatch[0] +
+        cNvGfp +
+        graphicMatch[0] +
+      '</wp:inline></w:drawing></w:r>';
+
+    // First cell left-aligned (hugs left margin), last right-aligned (hugs right margin),
+    // middles centered. With equal-width cells spanning full content width, this puts
+    // the leftmost logo flush left and the rightmost flush right.
+    const align = i === 0
+      ? 'left'
+      : i === anchorRuns.length - 1
+        ? 'right'
+        : 'center';
+
+    cells.push(
+      '<w:tc>' +
+        '<w:tcPr>' +
+          `<w:tcW w:w="${cellDxaWidth}" w:type="dxa"/>` +
+          '<w:tcBorders>' +
+            '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+            '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '</w:tcBorders>' +
+          '<w:vAlign w:val="center"/>' +
+        '</w:tcPr>' +
+        '<w:p>' +
+          `<w:pPr><w:jc w:val="${align}"/></w:pPr>` +
+          inlineRun +
+        '</w:p>' +
+      '</w:tc>'
+    );
+  }
+
+  const gridCols = cells.map(() => `<w:gridCol w:w="${cellDxaWidth}"/>`).join('');
+
+  // Fixed layout + explicit dxa widths + zero indent.
+  // LibreOffice 25.x reliably honors fixed-layout dxa widths (it sometimes ignores pct widths).
+  return (
+    '<w:tbl>' +
+      '<w:tblPr>' +
+        `<w:tblW w:w="${cellDxaWidth * anchorRuns.length}" w:type="dxa"/>` +
+        '<w:tblInd w:w="0" w:type="dxa"/>' +
+        '<w:tblBorders>' +
+          '<w:top w:val="nil"/><w:left w:val="nil"/>' +
+          '<w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+          '<w:insideH w:val="nil"/><w:insideV w:val="nil"/>' +
+        '</w:tblBorders>' +
+        '<w:tblLayout w:type="fixed"/>' +
+      '</w:tblPr>' +
+      `<w:tblGrid>${gridCols}</w:tblGrid>` +
+      `<w:tr>${cells.join('')}</w:tr>` +
+    '</w:tbl>'
+  );
+}
+
+// Convert DOCX to PDF using multiple fallback methods
+app.post('/api/convert/docx-to-pdf', upload.single('file'), async (req, res) => {
+  // Set longer timeout for conversion
+  req.setTimeout(60000); // 60 seconds
+  res.setTimeout(60000);
+  
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No DOCX file provided' });
+    }
+
+    console.log('🔄 Starting DOCX to PDF conversion...');
+    console.log('📄 File size:', req.file.size, 'bytes');
+    console.log('📄 File type:', req.file.mimetype);
+
+    // Pre-process DOCX so LibreOffice's PDF filter preserves top-of-page floating
+    // image layouts (logos pinned to left/right edges). The backend template DOCX
+    // on disk and in MongoDB is NOT modified — this only mutates the in-memory
+    // buffer for this single conversion.
+    // Skip preprocessing when ?skipPreprocess=true is passed — OnlyOffice-edited DOCX has a different
+    // internal structure that the preprocessor can corrupt (results in "source file could not be loaded").
+    const skipPreprocess = req.query.skipPreprocess === 'true' || req.query.skipPreprocess === '1';
+    if (skipPreprocess) {
+      console.log('⏭️  Skipping DOCX preprocessor (skipPreprocess=true)');
+    } else {
+      const originalBufferSize = req.file.buffer.length;
+      req.file.buffer = preprocessDocxForLibreOffice(req.file.buffer);
+      if (req.file.buffer.length !== originalBufferSize) {
+        console.log('📐 DOCX pre-processed for LibreOffice (size:',
+          originalBufferSize, '→', req.file.buffer.length, 'bytes)');
+      }
+    }
+
+    const hasFatalLibreOfficeStderr = (stderrText) => {
+      const s = String(stderrText || '').toLowerCase();
+      return (
+        s.includes('source file could not be loaded') ||
+        s.includes('error: source file could not be loaded') ||
+        s.includes('fatal')
+      );
+    };
+
+    // Method 1: Gotenberg (Docker microservice - fastest, 1-2 seconds)
+    if (GOTENBERG_URL) {
+      try {
+        console.log('⚡ Trying Gotenberg service (fastest):', GOTENBERG_URL);
+        const baseUrl = GOTENBERG_URL.replace(/\/$/, '');
+        const endpoint = `${baseUrl}/forms/libreoffice/convert`;
+        const form = new FormData();
+        const blob = new Blob([req.file.buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        form.append('files', blob, 'document.docx');
+        form.append('outputFilename', 'agreement');
+        const resp = await fetch(endpoint, { method: 'POST', body: form });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          console.warn('⚠️ Gotenberg conversion failed:', resp.status);
+        } else {
+          const ab = await resp.arrayBuffer();
+          const pdfBuffer = Buffer.from(ab);
+          console.log('✅ PDF generated with Gotenberg (1-2s)');
+          console.log('📄 PDF size:', pdfBuffer.length, 'bytes');
+          res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="agreement.pdf"',
+            'Content-Length': pdfBuffer.length
+          });
+          return res.send(pdfBuffer);
+        }
+      } catch (e) {
+        console.warn('⚠️ Gotenberg request error:', e.message);
+      }
+    }
+
+    // Method 2: Direct LibreOffice system call (fallback - slower, 8-10 seconds but more compatible)
+    try {
+      console.log('📄 Trying direct LibreOffice conversion...');
+
+      // Buffer was already preprocessed earlier in this handler (honoring ?skipPreprocess),
+      // so use it directly here to avoid double-processing.
+      const preprocessedBuffer = req.file.buffer;
+
+      const os = require('os');
+      const fs = require('fs');
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpq-'));
+      const inputPath = path.join(tmpDir, `${uuidv4()}.docx`);
+
+      fs.writeFileSync(inputPath, preprocessedBuffer);
+
+      const isWindows = os.platform() === 'win32';
+      let sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
+      if (isWindows && !process.env.SOFFICE_PATH) {
+        try {
+          const candidateCom = sofficeCmd.replace(/soffice\.exe$/i, 'soffice.com');
+          if (fs.existsSync(candidateCom)) sofficeCmd = candidateCom;
+        } catch {}
+      }
+      const sofficeCwd = isWindows ? path.dirname(sofficeCmd) : process.cwd();
+
+      const loProfileDir = path.join(tmpDir, 'lo-profile');
+      try { fs.mkdirSync(loProfileDir, { recursive: true }); } catch {}
+      const toFileUri = (p) => {
+        const norm = p.replace(/\\/g, '/');
+        return norm.match(/^[A-Za-z]:\//) ? `file:///${norm}` : `file://${norm}`;
+      };
+      const userInstallationArg = `-env:UserInstallation=${toFileUri(loProfileDir)}`;
+
+      const { spawn } = require('child_process');
+      const conversionArgs = [
+        '--headless', '--nologo', '--nolockcheck', '--nofirststartwizard', '--norestore',
+        userInstallationArg, '--convert-to', 'pdf:writer_pdf_Export', '--outdir', tmpDir, inputPath
+      ];
+
+      let loPythonHome = '';
+      if (isWindows) {
+        try {
+          const entries = fs.readdirSync(sofficeCwd, { withFileTypes: true });
+          const pyCore = entries.find((e) => e.isDirectory() && /^python-core-/i.test(e.name));
+          if (pyCore) loPythonHome = path.join(sofficeCwd, pyCore.name);
+        } catch {}
+      }
+
+      // Use a MINIMAL clean env — npm sets npm_*, NODE_*, INIT_CWD vars that can confuse LibreOffice's
+      // bundled Python interpreter (we've observed Node-spawned soffice fail with
+      // "Error: source file could not be loaded" while PowerShell-launched soffice with the SAME args
+      // succeeds). Pass only the absolute minimum the OS needs.
+      const sofficeEnv = isWindows
+        ? {
+            PATH: `${sofficeCwd};${process.env.SystemRoot || 'C:\\Windows'}\\system32;${process.env.SystemRoot || 'C:\\Windows'}`,
+            SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+            TEMP: process.env.TEMP || process.env.TMP || tmpDir,
+            TMP: process.env.TMP || process.env.TEMP || tmpDir,
+            USERPROFILE: process.env.USERPROFILE || '',
+            APPDATA: process.env.APPDATA || '',
+            LOCALAPPDATA: process.env.LOCALAPPDATA || '',
+            HOMEDRIVE: process.env.HOMEDRIVE || 'C:',
+            HOMEPATH: process.env.HOMEPATH || '',
+          }
+        : { PATH: process.env.PATH || '' };
+
+      const conversion = spawn(sofficeCmd, conversionArgs, {
+        stdio: 'pipe',
+        cwd: sofficeCwd,
+        env: sofficeEnv
+      });
+
+      let stdout = '', stderr = '';
+      conversion.stdout.on('data', (data) => { stdout += data.toString(); });
+      conversion.stderr.on('data', (data) => { stderr += data.toString(); });
+
+      const pdfBuffer = await new Promise((resolve, reject) => {
+        conversion.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`LibreOffice failed with code ${code}`));
+            return;
+          }
+
+          const expectedPdfPath = inputPath.replace(/\.docx$/i, '.pdf');
+          let finalPdfPath = expectedPdfPath;
+          if (!fs.existsSync(finalPdfPath)) {
+            const pdfs = fs.readdirSync(tmpDir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+            if (pdfs.length > 0) finalPdfPath = path.join(tmpDir, pdfs[0]);
+          }
+
+          if (!fs.existsSync(finalPdfPath) || !fs.statSync(finalPdfPath).size) {
+            reject(new Error('LibreOffice produced no or empty PDF'));
+            return;
+          }
+
+          const pdf = fs.readFileSync(finalPdfPath);
+          try { fs.unlinkSync(inputPath); fs.unlinkSync(finalPdfPath);
+                 fs.rmSync(loProfileDir, { recursive: true, force: true }); fs.rmdirSync(tmpDir); } catch {}
+          resolve(pdf);
+        });
+        conversion.on('error', (error) => reject(error));
+      });
+
+      console.log('✅ PDF generated with LibreOffice (8-10s)');
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="agreement.pdf"',
+        'Content-Length': pdfBuffer.length
+      });
+      return res.send(pdfBuffer);
+
+    } catch (libreError) {
+      console.error('❌ LibreOffice conversion failed:', libreError.message);
+    }
+
+    // Method 3: Use libreoffice-convert package (if available)
+    if (libre && typeof libre.convertAsync === 'function') {
+      try {
+        console.log('📄 Trying libreoffice-convert package...');
+        const pdfBuffer = await libre.convertAsync(req.file.buffer, '.pdf', undefined);
+        if (pdfBuffer && pdfBuffer.length > 0) {
+          console.log('✅ PDF generated successfully with libreoffice-convert');
+          res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="agreement.pdf"',
+            'Content-Length': pdfBuffer.length
+          });
+          return res.send(pdfBuffer);
+        }
+        console.warn('⚠️ libreoffice-convert returned empty output; continuing...');
+      } catch (e) {
+        console.error('❌ libreoffice-convert failed:', e?.message || e);
+      }
+    }
+
+    // All conversion methods failed - show error instead of broken PDF
+    console.error('❌ ALL PDF CONVERSION METHODS FAILED');
+    console.error('Methods attempted:');
+    console.error('  1. ⚡ Gotenberg:', GOTENBERG_URL ? 'configured but failed' : 'not configured');
+    console.error('  2. 📄 Direct LibreOffice: failed');
+    console.error('  3. 📦 libreoffice-convert package:', libre ? 'failed' : 'not available');
+
+    return res.status(500).json({
+      success: false,
+      error: 'PDF Conversion Failed',
+      message: 'Unable to convert DOCX to PDF. Please try again later.',
+      details: 'All conversion methods (Gotenberg, LibreOffice, libreoffice-convert) are unavailable or failed.',
+      troubleshooting: {
+        gotenberg: GOTENBERG_URL ? 'configured but failed - check if service is running' : 'not configured - set GOTENBERG_URL environment variable',
+        libreoffice: 'system conversion failed - check if LibreOffice is installed',
+        recommendation: 'Please try again or contact support if the problem persists'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ DOCX->PDF conversion error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Convert HTML to a true (text-based) PDF using puppeteer/headless Chrome.
+// Used by the "Edit Agreement" flow so saved edits become a real PDF (selectable text, sharper),
+// instead of a rasterized html2canvas screenshot.
+app.post('/api/convert/html-to-pdf', express.json({ limit: '20mb' }), async (req, res) => {
+  req.setTimeout(60000);
+  res.setTimeout(60000);
+  try {
+    const html = req.body && typeof req.body.html === 'string' ? req.body.html : '';
+    if (!html.trim()) {
+      return res.status(400).json({ success: false, error: 'No HTML content provided' });
+    }
+    const inlineCss = req.body && typeof req.body.css === 'string' ? req.body.css : '';
+
+    let puppeteer;
+    try {
+      puppeteer = require('puppeteer');
+    } catch (e) {
+      console.error('❌ puppeteer not installed:', e.message);
+      return res.status(500).json({ success: false, error: 'puppeteer not available on server' });
+    }
+
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #000; line-height: 1.5; }
+  table { border-collapse: collapse; width: 100%; }
+  table, th, td { border: 1px solid #000; }
+  th, td { padding: 6px 8px; vertical-align: top; }
+  img { max-width: 100%; height: auto; }
+  p { margin: 0 0 6px 0; }
+
+  /* --- Override docx-preview's fixed page wrappers so the A4 page rules win ---
+     docx-preview emits <section class="docx" style="width:794px; padding:...">
+     plus header/footer absolute boxes. Those collide with puppeteer's @page rules
+     and cause empty header bars / wrong margins. Flatten everything to flow.   */
+  .docx-wrapper { background: #fff !important; padding: 0 !important; }
+  .docx-wrapper > section.docx,
+  section.docx {
+    width: auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    page-break-after: auto !important;
+  }
+  section.docx > header,
+  section.docx > footer { display: none !important; }
+  .docx p, .docx div { line-height: 1.5; }
+  ${inlineCss}
+</style>
+</head><body>${html}</body></html>`;
+
+    const browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: '18mm', right: '16mm', bottom: '18mm', left: '16mm' },
+      });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="agreement-edited.pdf"');
+      res.send(pdfBuffer);
+    } finally {
+      await browser.close().catch(() => {});
+    }
+  } catch (error) {
+    console.error('❌ HTML->PDF conversion error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Patch the ORIGINAL generated DOCX with text-only replacements, then convert to PDF.
+// This preserves 100% of Word formatting because we never reconstruct the DOCX — we only
+// substitute changed text inside the existing word/document.xml.
+//
+// Body: multipart form with:
+//   - file: original DOCX (the generated agreement)
+//   - replacements: JSON array of { from: string, to: string }
+//
+// Returns JSON: { success, pdfBase64, docxBase64, replacedCount }
+app.post('/api/agreements/patch-and-pdf', upload.single('file'), async (req, res) => {
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+  try {
+    if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+      return res.status(400).json({ success: false, error: 'No original DOCX provided' });
+    }
+    let replacements = [];
+    try {
+      replacements = JSON.parse(req.body.replacements || '[]');
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid replacements JSON: ' + e.message });
+    }
+    if (!Array.isArray(replacements)) {
+      return res.status(400).json({ success: false, error: 'replacements must be an array' });
+    }
+
+    const PizZip = require('pizzip');
+    let zip;
+    try {
+      zip = new PizZip(req.file.buffer);
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Could not read DOCX (not a valid zip): ' + e.message });
+    }
+
+    // Patch any XML file inside the DOCX that holds text — main body, headers, footers.
+    const xmlFiles = Object.keys(zip.files).filter((name) =>
+      /^word\/(document|header\d*|footer\d*)\.xml$/i.test(name),
+    );
+    if (xmlFiles.length === 0) {
+      return res.status(400).json({ success: false, error: 'DOCX has no word/document.xml' });
+    }
+
+    let totalReplaced = 0;
+    let totalSkipped = 0;
+
+    // Safer strategy: never touch <w:r>/<w:p> structure. For each replacement, look for a SINGLE
+    // <w:t> element whose decoded text contains the "from" string, and substitute "to" in place.
+    // Multi-run text (where the user's "from" string is split across multiple styled runs) is
+    // SKIPPED — those edits won't be applied here, but the DOCX layout stays 100% intact.
+    const escapeXmlText = (s) =>
+      String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const decodeXmlText = (s) =>
+      String(s)
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'");
+    const normWs = (s) => s.replace(/\s+/g, ' ').trim();
+
+    for (const fileName of xmlFiles) {
+      let xml = zip.files[fileName].asText();
+
+      for (const repl of replacements) {
+        if (!repl || typeof repl.from !== 'string' || typeof repl.to !== 'string') continue;
+        const fromNorm = normWs(repl.from);
+        const toNorm = repl.to;
+        if (!fromNorm) continue;
+
+        // Strategy 1: try to find a SINGLE <w:t> whose text contains fromNorm.
+        const tRegex = /<w:t(\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
+        let match;
+        let matchedRange = null;
+        while ((match = tRegex.exec(xml)) !== null) {
+          const decoded = decodeXmlText(match[2]);
+          const normDecoded = normWs(decoded);
+          if (!normDecoded) continue;
+          if (normDecoded === fromNorm || normDecoded.includes(fromNorm)) {
+            matchedRange = {
+              fullStart: match.index,
+              fullEnd: match.index + match[0].length,
+              attrs: match[1] || ' xml:space="preserve"',
+              decoded,
+            };
+            break;
+          }
+        }
+
+        if (matchedRange) {
+          const tolerant = matchedRange.decoded.replace(/\s+/g, ' ');
+          let newDecoded;
+          if (normWs(tolerant) === fromNorm) {
+            newDecoded = toNorm;
+          } else {
+            const idx = tolerant.indexOf(fromNorm);
+            if (idx < 0) { totalSkipped++; continue; }
+            newDecoded = tolerant.slice(0, idx) + toNorm + tolerant.slice(idx + fromNorm.length);
+          }
+          const newElement = `<w:t${matchedRange.attrs}>${escapeXmlText(newDecoded)}</w:t>`;
+          xml = xml.slice(0, matchedRange.fullStart) + newElement + xml.slice(matchedRange.fullEnd);
+          totalReplaced++;
+          continue;
+        }
+
+        // Strategy 2: text is split across multiple <w:t> in one paragraph. Find a <w:p> whose joined
+        // <w:t> text contains fromNorm. Then write toNorm into the run that contains the START of the match
+        // and clear the remaining matched-region chars from subsequent runs (keep their tags intact so we
+        // never alter <w:r>/<w:p> structure — only the textual content of existing <w:t> elements).
+        const pRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+        let pMatch;
+        let didMultiRun = false;
+        while ((pMatch = pRegex.exec(xml)) !== null) {
+          const paragraph = pMatch[0];
+          if (/<w:drawing\b|<w:pict\b|<w:object\b/.test(paragraph)) continue;
+
+          // collect <w:t> positions within the paragraph
+          const localRegex = /<w:t(\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
+          const runs = [];
+          let rm;
+          while ((rm = localRegex.exec(paragraph)) !== null) {
+            runs.push({
+              localStart: rm.index,
+              openTag: rm[0].slice(0, rm[0].indexOf('>') + 1),
+              closeTag: '</w:t>',
+              innerStart: rm.index + rm[0].indexOf('>') + 1,
+              innerEnd: rm.index + rm[0].length - '</w:t>'.length,
+              attrs: rm[1] || ' xml:space="preserve"',
+              decoded: decodeXmlText(rm[2]),
+            });
+          }
+          if (runs.length < 2) continue;
+
+          const joined = runs.map((r) => r.decoded).join('');
+          const joinedNorm = normWs(joined);
+          if (!joinedNorm.includes(fromNorm)) continue;
+
+          // Find character span in joined string
+          const joinedSpaceless = joined.replace(/\s+/g, ' ');
+          const startInJoined = joinedSpaceless.indexOf(fromNorm);
+          if (startInJoined < 0) continue;
+          const endInJoined = startInJoined + fromNorm.length;
+
+          // Map joined indices back to per-run inner-text indices
+          let cursor = 0;
+          let newParagraph = paragraph;
+          // Iterate runs from last to first so localStart indices stay valid
+          for (let i = runs.length - 1; i >= 0; i--) {
+            const r = runs[i];
+            const runText = r.decoded.replace(/\s+/g, ' ');
+            const runStart = (() => {
+              let acc = 0;
+              for (let j = 0; j < i; j++) acc += runs[j].decoded.replace(/\s+/g, ' ').length;
+              return acc;
+            })();
+            const runEnd = runStart + runText.length;
+
+            // Compute overlap of this run with [startInJoined, endInJoined)
+            const overlapStart = Math.max(runStart, startInJoined);
+            const overlapEnd = Math.min(runEnd, endInJoined);
+            if (overlapEnd <= overlapStart) continue; // no overlap — leave run alone
+
+            const localOverlapStart = overlapStart - runStart;
+            const localOverlapEnd = overlapEnd - runStart;
+            let newRunText;
+            if (runStart <= startInJoined && startInJoined < runEnd) {
+              // This run holds the START of the match — insert "to" here, then keep any tail after match
+              const before = runText.slice(0, localOverlapStart);
+              const after = runText.slice(localOverlapEnd);
+              newRunText = before + toNorm + after;
+            } else {
+              // Run is fully or partially inside the match (not the start) — delete the overlapping chars
+              newRunText = runText.slice(0, localOverlapStart) + runText.slice(localOverlapEnd);
+            }
+            const newInner = escapeXmlText(newRunText);
+            const before = newParagraph.slice(0, r.innerStart);
+            const after = newParagraph.slice(r.innerEnd);
+            newParagraph = before + newInner + after;
+          }
+
+          if (newParagraph !== paragraph) {
+            xml = xml.slice(0, pMatch.index) + newParagraph + xml.slice(pMatch.index + paragraph.length);
+            totalReplaced++;
+            didMultiRun = true;
+            break;
+          }
+        }
+
+        if (!didMultiRun) totalSkipped++;
+      }
+
+      zip.file(fileName, xml);
+    }
+    console.log(`🔧 patch: applied ${totalReplaced}, skipped ${totalSkipped} (text split across styled runs).`);
+
+    let patchedDocx = zip.generate({ type: 'nodebuffer' });
+
+    // CRITICAL: same preprocessing the Generate Agreement flow applies before LibreOffice conversion.
+    // Without it, floating logos (anchored to top-left/right of page) collapse into stacked inline images
+    // when LibreOffice renders the PDF.
+    try {
+      patchedDocx = preprocessDocxForLibreOffice(patchedDocx);
+    } catch (preErr) {
+      console.warn('⚠️ preprocessDocxForLibreOffice failed on patched DOCX, continuing without it:', preErr.message);
+    }
+
+    // Convert patched DOCX → PDF using the same LibreOffice path as html-to-docx-pdf.
+    let pdfBuffer = null;
+    if (libre && typeof libre.convertAsync === 'function') {
+      try {
+        pdfBuffer = await libre.convertAsync(patchedDocx, '.pdf', undefined);
+      } catch (e) {
+        console.warn('⚠️ libreoffice-convert failed, will try direct spawn:', e.message);
+      }
+    }
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      try {
+        const os = require('os');
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpq-patch-'));
+        const inputPath = path.join(tmpDir, `${uuidv4()}.docx`);
+        fs.writeFileSync(inputPath, patchedDocx);
+        const isWindows = os.platform() === 'win32';
+        let sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
+        if (isWindows && !process.env.SOFFICE_PATH) {
+          try {
+            const candidateCom = sofficeCmd.replace(/soffice\.exe$/i, 'soffice.com');
+            if (fs.existsSync(candidateCom)) sofficeCmd = candidateCom;
+          } catch {}
+        }
+        const sofficeCwd = isWindows ? path.dirname(sofficeCmd) : process.cwd();
+        const loProfileDir = path.join(tmpDir, 'lo-profile');
+        try { fs.mkdirSync(loProfileDir, { recursive: true }); } catch {}
+        const toFileUri = (p) => {
+          const norm = p.replace(/\\/g, '/');
+          return norm.match(/^[A-Za-z]:\//) ? `file:///${norm}` : `file://${norm}`;
+        };
+        const conversion = spawn(sofficeCmd, [
+          '--headless', '--nologo', '--nolockcheck', '--nofirststartwizard', '--norestore',
+          `-env:UserInstallation=${toFileUri(loProfileDir)}`,
+          '--convert-to', 'pdf:writer_pdf_Export',
+          '--outdir', tmpDir,
+          inputPath,
+        ], {
+          stdio: 'pipe',
+          cwd: sofficeCwd,
+          env: { ...process.env, PATH: isWindows ? `${sofficeCwd};${process.env.PATH || ''}` : (process.env.PATH || '') },
+        });
+        let stderr = '';
+        conversion.stderr.on('data', (d) => { stderr += d.toString(); });
+        const pdfPath = await new Promise((resolve, reject) => {
+          conversion.on('close', (code) => {
+            const expected = inputPath.replace(/\.docx$/i, '.pdf');
+            if (fs.existsSync(expected) && fs.statSync(expected).size > 0) return resolve(expected);
+            try {
+              const pdfs = fs.readdirSync(tmpDir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+              if (pdfs.length > 0) {
+                const p2 = path.join(tmpDir, pdfs[0]);
+                if (fs.statSync(p2).size > 0) return resolve(p2);
+              }
+            } catch {}
+            reject(new Error(`LibreOffice produced no PDF (exit ${code}): ${stderr}`));
+          });
+          conversion.on('error', reject);
+        });
+        pdfBuffer = fs.readFileSync(pdfPath);
+        try { fs.unlinkSync(inputPath); } catch {}
+        try { fs.unlinkSync(pdfPath); } catch {}
+        try { fs.rmSync(loProfileDir, { recursive: true, force: true }); } catch {}
+        try { fs.rmdirSync(tmpDir); } catch {}
+      } catch (spawnErr) {
+        return res.status(500).json({ success: false, error: 'LibreOffice conversion failed: ' + spawnErr.message });
+      }
+    }
+
+    return res.json({
+      success: true,
+      replacedCount: totalReplaced,
+      skippedCount: totalSkipped,
+      pdfBase64: Buffer.from(pdfBuffer).toString('base64'),
+      docxBase64: Buffer.from(patchedDocx).toString('base64'),
+    });
+  } catch (error) {
+    console.error('❌ patch-and-pdf error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─── OnlyOffice Document Server integration ───────────────────────────────────
+// Lets users edit the agreement DOCX in a real Word-style editor (full ribbon, tables, images)
+// and saves the edited file back. Layout is preserved 100% because OnlyOffice round-trips the
+// actual DOCX bytes — no HTML conversion in between.
+//
+// Flow:
+//   1. Frontend POSTs the original DOCX to /api/onlyoffice/start-session.
+//      Backend stores it under a sessionId and returns editor config + iframe URL.
+//   2. Frontend opens OnlyOffice editor (api.js) with that config in an iframe.
+//   3. OnlyOffice's server GETs /api/onlyoffice/file/:sessionId to fetch the DOCX.
+//   4. User edits in the browser. When they click Save / close, OnlyOffice POSTs
+//      a status payload to /api/onlyoffice/callback/:sessionId. Status 2 = saved.
+//   5. Backend downloads the edited DOCX from OnlyOffice's URL, stores it under sessionId,
+//      converts to PDF via LibreOffice.
+//   6. Frontend polls /api/onlyoffice/result/:sessionId until the edited file is ready,
+//      then swaps it into processedAgreement / originalDocxAgreement.
+
+const onlyofficeSessions = new Map(); // sessionId → { origDocx, editedDocx, editedPdf, status, callbackUrl }
+
+const ONLYOFFICE_INTERNAL_URL = process.env.ONLYOFFICE_INTERNAL_URL || 'http://localhost:3003';
+// Public-facing URL the browser uses to load OnlyOffice's api.js (usually same host:port).
+const ONLYOFFICE_PUBLIC_URL = process.env.ONLYOFFICE_PUBLIC_URL || 'http://localhost:3003';
+// Backend URL OnlyOffice container uses to call back into this server.
+// In Docker Desktop, host.docker.internal resolves to the host machine.
+const BACKEND_CALLBACK_URL = process.env.BACKEND_CALLBACK_URL || 'http://host.docker.internal:3001';
+
+// OnlyOffice JWT secret. When set (production), the Document Server runs with JWT_ENABLED=true
+// and rejects every unsigned request. We must (a) sign the editor config, (b) sign outbound
+// CommandService calls, and (c) verify inbound save callbacks. When empty (localhost dev with
+// JWT disabled) all of this is skipped, preserving the existing insecure-but-simple behavior.
+const ONLYOFFICE_JWT_SECRET = (process.env.ONLYOFFICE_JWT_SECRET || '').trim();
+
+// Verify an inbound OnlyOffice callback. OnlyOffice puts the JWT either in the body (`token`)
+// or in the Authorization header ("Bearer <jwt>", header name set by JWT_HEADER). Returns the
+// decoded payload, or throws. When no secret is configured, verification is skipped (returns null).
+function verifyOnlyOfficeCallback(req) {
+  if (!ONLYOFFICE_JWT_SECRET) return null;
+  let token = req.body && req.body.token;
+  if (!token) {
+    const auth = req.headers['authorization'] || '';
+    if (auth.startsWith('Bearer ')) token = auth.slice(7);
+  }
+  if (!token) throw new Error('missing OnlyOffice JWT on callback');
+  // OnlyOffice nests the real payload under `payload` when the token comes from the Authorization header.
+  const decoded = jwt.verify(token, ONLYOFFICE_JWT_SECRET);
+  return decoded && decoded.payload ? decoded.payload : decoded;
+}
+
+app.post('/api/onlyoffice/start-session', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+      return res.status(400).json({ success: false, error: 'No DOCX file provided' });
+    }
+    const sessionId = uuidv4();
+    onlyofficeSessions.set(sessionId, {
+      origDocx: req.file.buffer,
+      editedDocx: null,
+      editedPdf: null,
+      status: 'editing',
+      createdAt: Date.now(),
+    });
+
+    // Clean up old sessions (>2 hours)
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [id, s] of onlyofficeSessions.entries()) {
+      if (s.createdAt < cutoff) onlyofficeSessions.delete(id);
+    }
+
+    const fileUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/file/${sessionId}`;
+    const callbackUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/callback/${sessionId}`;
+
+    const config = {
+      documentType: 'word',
+      document: {
+        fileType: 'docx',
+        key: sessionId, // unique per edit session
+        title: 'agreement.docx',
+        url: fileUrl,
+      },
+      editorConfig: {
+        callbackUrl,
+        lang: 'en',
+        mode: 'edit',
+        user: { id: 'user-1', name: 'User' },
+        customization: { autosave: true, forcesave: true, compactToolbar: false },
+      },
+    };
+
+    // When JWT is enabled (production), the Document Server requires the config to carry a
+    // signed token; without it the editor refuses to open. No-op on localhost (empty secret).
+    if (ONLYOFFICE_JWT_SECRET) {
+      config.token = jwt.sign(config, ONLYOFFICE_JWT_SECRET, { expiresIn: '5h' });
+    }
+
+    res.json({
+      success: true,
+      sessionId,
+      editorUrl: ONLYOFFICE_PUBLIC_URL,
+      config,
+    });
+  } catch (e) {
+    console.error('❌ onlyoffice start-session error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// OnlyOffice server fetches the DOCX from here.
+app.get('/api/onlyoffice/file/:sessionId', (req, res) => {
+  const s = onlyofficeSessions.get(req.params.sessionId);
+  if (!s) return res.status(404).send('Session not found');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', 'attachment; filename="agreement.docx"');
+  res.send(s.origDocx);
+});
+
+// OnlyOffice server POSTs save events here.
+// Status codes per OnlyOffice docs:
+//   0 = no document with the key (error)
+//   1 = document is being edited
+//   2 = document is ready for saving
+//   3 = document saving error has occurred
+//   4 = document closed with no changes
+//   6 = document is being edited, but the current document state is saved (forcesave)
+//   7 = error has occurred while force-saving the document
+app.post('/api/onlyoffice/callback/:sessionId', express.json({ limit: '50mb' }), async (req, res) => {
+  const sessionId = req.params.sessionId;
+  const s = onlyofficeSessions.get(sessionId);
+  if (!s) return res.status(404).json({ error: 1 });
+  try {
+    // Reject forged callbacks when JWT is enabled. A verified token's payload carries the
+    // authoritative status/url, so prefer it over the raw (unsigned) body fields.
+    let body = req.body || {};
+    if (ONLYOFFICE_JWT_SECRET) {
+      const verified = verifyOnlyOfficeCallback(req);
+      if (verified) body = { ...body, ...verified };
+    }
+    console.log(`📥 onlyoffice callback [${sessionId}]: status=${body.status}, url=${body.url ? 'present' : 'absent'}`);
+    if (body.status === 2 || body.status === 6) {
+      // Saved — download the edited DOCX from the URL OnlyOffice provides.
+      if (body.url) {
+        const axiosInst = axios.create({ responseType: 'arraybuffer', timeout: 60000 });
+        const editedResp = await axiosInst.get(body.url);
+        const editedDocx = Buffer.from(editedResp.data);
+        s.editedDocx = editedDocx;
+        s.status = 'saved';
+        console.log(`✅ onlyoffice [${sessionId}] downloaded edited DOCX, size: ${editedDocx.length}`);
+
+        // Debug: write the raw OnlyOffice-saved DOCX to disk so we can inspect what OnlyOffice actually produced
+        // (before LibreOffice conversion). Lets us tell whether layout drift comes from OnlyOffice or LibreOffice.
+        try {
+          const debugDir = path.join(__dirname, 'onlyoffice-debug');
+          if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir);
+          const debugPath = path.join(debugDir, `${sessionId}-onlyoffice-output.docx`);
+          fs.writeFileSync(debugPath, editedDocx);
+          console.log(`🔍 raw OnlyOffice output written to: ${debugPath}`);
+        } catch (e) {
+          console.warn('⚠️ could not write debug DOCX:', e.message);
+        }
+
+        // Convert to PDF by reusing the existing /api/convert/docx-to-pdf endpoint via internal HTTP.
+        // That endpoint already has the full LibreOffice fallback chain that works for Generate Agreement,
+        // including Gotenberg, libreoffice-convert, and multiple soffice attempts. No need to re-implement.
+        try {
+          const FormData = require('form-data');
+          const fd = new FormData();
+          fd.append('file', editedDocx, {
+            filename: 'agreement-edited.docx',
+            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          });
+
+          const conversionResp = await axios.post(
+            `http://127.0.0.1:${PORT}/api/convert/docx-to-pdf?skipPreprocess=true`,
+            fd,
+            {
+              headers: fd.getHeaders(),
+              responseType: 'arraybuffer',
+              timeout: 120000,
+              maxContentLength: Infinity,
+              maxBodyLength: Infinity,
+            },
+          );
+          s.editedPdf = Buffer.from(conversionResp.data);
+          s.status = 'ready';
+          console.log(`✅ onlyoffice [${sessionId}] PDF rendered via /api/convert/docx-to-pdf, size: ${s.editedPdf.length}`);
+        } catch (pdfErr) {
+          const respData = pdfErr?.response?.data;
+          const errMsg = respData
+            ? (Buffer.isBuffer(respData) ? Buffer.from(respData).toString('utf8').slice(0, 500) : String(respData).slice(0, 500))
+            : pdfErr.message;
+          console.error(`❌ onlyoffice [${sessionId}] PDF conversion failed:`, errMsg);
+          s.status = 'pdf-failed';
+        }
+      }
+    } else if (body.status === 4) {
+      s.status = 'no-changes';
+    } else if (body.status === 3 || body.status === 7) {
+      s.status = 'editor-error';
+    }
+    res.json({ error: 0 });
+  } catch (e) {
+    console.error(`❌ onlyoffice callback [${sessionId}] error:`, e);
+    res.json({ error: 1 });
+  }
+});
+
+// Trigger OnlyOffice to force-save the document. Without this, OnlyOffice only POSTs the saved file
+// when the user closes the browser tab. We call this when the user clicks "Done" in the modal so the
+// callback fires synchronously.
+app.post('/api/onlyoffice/force-save/:sessionId', async (req, res) => {
+  const sessionId = req.params.sessionId;
+  if (!onlyofficeSessions.has(sessionId)) {
+    return res.status(404).json({ success: false, error: 'Session not found' });
+  }
+  try {
+    const commandUrl = `${ONLYOFFICE_INTERNAL_URL}/coauthoring/CommandService.ashx`;
+    const command = { c: 'forcesave', key: sessionId };
+    // When JWT is enabled, the CommandService rejects unsigned commands. Sign the body itself
+    // (OnlyOffice verifies the `token` field) and also send it as a Bearer header for good measure.
+    const headers = { 'Content-Type': 'application/json' };
+    if (ONLYOFFICE_JWT_SECRET) {
+      const token = jwt.sign(command, ONLYOFFICE_JWT_SECRET, { expiresIn: '5m' });
+      command.token = token;
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const resp = await axios.post(
+      commandUrl,
+      command,
+      { timeout: 15000, headers },
+    );
+    console.log(`📤 forcesave [${sessionId}] →`, resp.data);
+    res.json({ success: true, response: resp.data });
+  } catch (e) {
+    console.error(`❌ forcesave [${sessionId}] error:`, e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Frontend polls this to find out when the edited DOCX + PDF are ready.
+app.get('/api/onlyoffice/result/:sessionId', (req, res) => {
+  const s = onlyofficeSessions.get(req.params.sessionId);
+  if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
+  if (s.status !== 'ready') {
+    return res.json({ success: true, status: s.status });
+  }
+  res.json({
+    success: true,
+    status: 'ready',
+    pdfBase64: Buffer.from(s.editedPdf).toString('base64'),
+    docxBase64: Buffer.from(s.editedDocx).toString('base64'),
+  });
+});
+
+// Start an OnlyOffice edit session from an existing saved document ("Edit for RedLine" on the
+// Approval page). Pulls the document's Word (DOCX) from MongoDB and binds the session to that
+// document id so the edits can be saved back via /persist-to-document.
+app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const { id } = req.params;
+    const document = await db.collection('documents').findOne({ id });
+    if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const toBuf = (fd) => {
+      if (!fd) return null;
+      if (Buffer.isBuffer(fd)) return fd;
+      if (fd.buffer) return Buffer.from(fd.buffer);
+      if (fd.data) return Buffer.from(fd.data);
+      if (typeof fd === 'string') return Buffer.from(fd, 'base64');
+      return null;
+    };
+    const isDocx = (b) => b && b.length > 1 && b[0] === 0x50 && b[1] === 0x4b;
+
+    // Prefer the stored Word file; fall back to fileData if it is itself a DOCX.
+    let docx = toBuf(document.docxFileData);
+    if (!isDocx(docx)) {
+      const fd = toBuf(document.fileData);
+      docx = isDocx(fd) ? fd : null;
+    }
+    if (!isDocx(docx)) {
+      return res.status(400).json({ success: false, error: 'No editable Word (DOCX) version is available for this document, so it cannot be redlined.' });
+    }
+
+    const sessionId = uuidv4();
+    onlyofficeSessions.set(sessionId, {
+      origDocx: docx,
+      editedDocx: null,
+      editedPdf: null,
+      status: 'editing',
+      createdAt: Date.now(),
+      documentId: id,
+    });
+
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [sid, s] of onlyofficeSessions.entries()) {
+      if (s.createdAt < cutoff) onlyofficeSessions.delete(sid);
+    }
+
+    const fileUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/file/${sessionId}`;
+    const callbackUrl = `${BACKEND_CALLBACK_URL}/api/onlyoffice/callback/${sessionId}`;
+    const config = {
+      documentType: 'word',
+      document: {
+        fileType: 'docx',
+        key: sessionId,
+        title: (document.fileName || 'agreement').replace(/\.[^.]+$/, '') + '.docx',
+        url: fileUrl,
+      },
+      editorConfig: {
+        callbackUrl,
+        lang: 'en',
+        mode: 'edit',
+        user: { id: 'user-1', name: 'User' },
+        customization: { autosave: true, forcesave: true, compactToolbar: false },
+      },
+    };
+    if (ONLYOFFICE_JWT_SECRET) config.token = jwt.sign(config, ONLYOFFICE_JWT_SECRET, { expiresIn: '5h' });
+
+    res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config });
+  } catch (e) {
+    console.error('❌ onlyoffice start-session-from-document error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Persist the edited (redlined) document from an OnlyOffice session back into the documents
+// collection, overwriting both the PDF (fileData) and the Word copy (docxFileData).
+app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const s = onlyofficeSessions.get(req.params.sessionId);
+    if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
+    if (!s.documentId) return res.status(400).json({ success: false, error: 'Session is not bound to a document' });
+    if (s.status !== 'ready' || !s.editedPdf || !s.editedDocx) {
+      return res.status(409).json({ success: false, error: 'Edited document not ready yet', status: s.status });
+    }
+    const result = await db.collection('documents').updateOne(
+      { id: s.documentId },
+      { $set: { fileData: s.editedPdf, docxFileData: s.editedDocx, fileSize: s.editedPdf.length, updatedAt: new Date() } }
+    );
+    if (result.matchedCount === 0) return res.status(404).json({ success: false, error: 'Document not found' });
+    console.log(`✅ onlyoffice redline persisted to document ${s.documentId} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
+    res.json({ success: true, documentId: s.documentId });
+  } catch (e) {
+    console.error('❌ onlyoffice persist-to-document error:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Test DOCX to PDF conversion capabilities
+app.get('/api/convert/test', async (req, res) => {
+  try {
+    console.log('🧪 Testing conversion capabilities...');
+    const status = {
+      libreofficeConvert: libre ? 'available' : 'not available',
+      gotenberg: GOTENBERG_URL ? `configured: ${GOTENBERG_URL}` : 'not configured',
+      systemLibreOffice: 'not tested (use libreoffice-convert instead)'
+    };
+    
+    res.json({ success: true, status });
+  } catch (error) {
+    console.error('❌ Test error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete template
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available',
+        message: 'Cannot delete templates without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    
+    console.log('🗑️ Deleting template:', id);
+    
+    const result = await db.collection('templates').deleteOne({ id: id });
+    
+    if (result.deletedCount === 0) {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Template not found' 
+        });
+      }
+
+    console.log('✅ Template deleted successfully:', id);
+
+    _cacheClear('templates');
+    res.json({
+      success: true,
+      message: 'Template deleted successfully'
+    });
+  } catch (error) {
+    console.error('❌ Error deleting template:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete template',
+      details: error.message 
+    });
+  }
+});
+
+// Update template metadata
+app.put('/api/templates/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Database not available',
+        message: 'Cannot update templates without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    const { name, description, isDefault, combination, planType, category } = req.body;
+    
+    console.log('📝 Updating template metadata:', id, { name, description, isDefault, combination, planType, category });
+    
+    const updateData = {
+      updatedAt: new Date().toISOString()
+    };
+    
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (isDefault !== undefined) updateData.isDefault = isDefault;
+    if (combination !== undefined) updateData.combination = combination ? String(combination).trim().toLowerCase() : null;
+    if (planType !== undefined) updateData.planType = planType ? String(planType).trim().toLowerCase() : null;
+    if (category !== undefined) updateData.category = category ? String(category).trim().toLowerCase() : null;
+    
+    const result = await db.collection('templates').updateOne(
+      { id: id },
+      { $set: updateData }
+    );
+    
+    if (result.matchedCount === 0) {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Template not found' 
+        });
+      }
+
+    console.log('✅ Template updated successfully:', id);
+
+    _cacheClear('templates');
+    res.json({
+      success: true,
+      message: 'Template updated successfully'
+    });
+  } catch (error) {
+    console.error('❌ Error updating template:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to update template',
+      details: error.message 
+    });
+  }
+});
+
+// HubSpot API endpoints for authentication
+// Get HubSpot contact by ID
+app.get('/api/hubspot/contacts/:contactId', async (req, res) => {
+  try {
+    const { contactId } = req.params;
+    
+    if (!HUBSPOT_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: 'HubSpot API key not configured'
+      });
+    }
+
+    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${HUBSPOT_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HubSpot API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    console.error('❌ Error fetching HubSpot contact:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get HubSpot deal by ID
+app.get('/api/hubspot/deals/:dealId', async (req, res) => {
+  try {
+    const { dealId } = req.params;
+    
+    if (!HUBSPOT_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: 'HubSpot API key not configured'
+      });
+    }
+
+    const response = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${HUBSPOT_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HubSpot API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    console.error('❌ Error fetching HubSpot deal:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Test MongoDB connection
+app.get('/api/test-mongodb', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'MongoDB not connected',
+        message: 'Database connection not available'
+      });
+    }
+
+    const testDoc = { 
+      message: 'MongoDB Atlas connection test', 
+      timestamp: new Date(),
+      test: true,
+      database: DB_NAME
+    };
+    
+    const result = await db.collection('test').insertOne(testDoc);
+    
+    res.json({ 
+      success: true, 
+      message: 'MongoDB Atlas working!', 
+      id: result.insertedId,
+      database: DB_NAME,
+      timestamp: new Date()
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      database: DB_NAME,
+      message: 'MongoDB connection failed'
+    });
+  }
+});
+
+// HubSpot API endpoints
+app.get('/api/hubspot/contacts', async (req, res) => {
+  try {
+    console.log('🔍 HubSpot contacts endpoint called');
+    
+    // For now, return demo data since we don't have real HubSpot integration
+    const demoContacts = [
+      {
+        id: 'contact_1',
+        email: 'john.doe@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+        company: 'Example Corp',
+        phone: '+1-555-0123'
+      },
+      {
+        id: 'contact_2', 
+        email: 'jane.smith@example.com',
+        firstName: 'Jane',
+        lastName: 'Smith',
+        company: 'Tech Solutions',
+        phone: '+1-555-0456'
+      }
+    ];
+    
+    res.json({
+      success: true,
+      data: demoContacts,
+      isDemo: true,
+      message: 'Demo HubSpot contacts data'
+    });
+  } catch (error) {
+    console.error('❌ Error fetching HubSpot contacts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch contacts',
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/hubspot/deals', async (req, res) => {
+  try {
+    console.log('🔍 HubSpot deals endpoint called');
+    
+    // For now, return demo data since we don't have real HubSpot integration
+    const demoDeals = [
+      {
+        id: 'deal_1',
+        dealName: 'Cloud Migration Project',
+        amount: '$25,000',
+        stage: 'Proposal',
+        closeDate: '2024-12-31',
+        ownerId: 'owner_1'
+      },
+      {
+        id: 'deal_2',
+        dealName: 'Digital Transformation',
+        amount: '$50,000', 
+        stage: 'Negotiation',
+        closeDate: '2024-11-15',
+        ownerId: 'owner_2'
+      }
+    ];
+    
+    res.json({
+      success: true,
+      data: demoDeals,
+      isDemo: true,
+      message: 'Demo HubSpot deals data'
+    });
+  } catch (error) {
+    console.error('❌ Error fetching HubSpot deals:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch deals',
+      message: error.message
+    });
+  }
+});
+
+app.post('/api/hubspot/contacts', async (req, res) => {
+  try {
+    console.log('🔍 Creating HubSpot contact:', req.body);
+    
+    // For now, simulate contact creation
+    const newContact = {
+      id: `contact_${Date.now()}`,
+      ...req.body,
+      createdAt: new Date().toISOString()
+    };
+    
+    res.json({
+      success: true,
+      contact: newContact,
+      isDemo: true,
+      message: 'Demo contact created successfully'
+    });
+  } catch (error) {
+    console.error('❌ Error creating HubSpot contact:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create contact',
+      message: error.message
+    });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    success: true,
+    message: 'CPQ Server is running',
+    timestamp: new Date(),
+    database: databaseAvailable ? 'Connected' : 'Disconnected',
+    email: isEmailConfigured ? 'Configured' : 'Not configured',
+    hubspot: HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'
+  });
+});
+
+// Email sending endpoint (supports attachments e.g., DOCX/PDF)
+app.post('/api/email/send', upload.single('attachment'), async (req, res) => {
+  try {
+    console.log('📧 Email send request received');
+    console.log('📧 Email configured:', isEmailConfigured);
+    console.log('📧 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? 'Set (hidden)' : 'Not set');
+    console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM || 'Not set');
+    
+    if (!isEmailConfigured) {
+      console.log('❌ Email not configured - missing credentials');
+      return res.status(500).json({
+        success: false,
+        message: 'Email configuration not set. Set SENDGRID_API_KEY in environment.',
+        instructions: [
+          '1. Create .env file in project root',
+          '2. Add: SENDGRID_API_KEY=your-sendgrid-api-key',
+          '3. Add: EMAIL_FROM=your-verified-email@domain.com',
+          '4. Restart the server'
+        ]
+      });
+    }
+
+    const to = req.body?.to;
+    const subject = req.body?.subject;
+    const message = req.body?.message;
+
+    if (!to || !subject || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: to, subject, message'
+      });
+    }
+
+    let attachments = [];
+    if (req.file) {
+      attachments.push({
+        filename: req.file.originalname || 'attachment',
+        content: req.file.buffer,
+        contentType: req.file.mimetype || 'application/octet-stream'
+      });
+    }
+
+    console.log('📧 Attempting to send email...');
+    console.log('📧 To:', to);
+    console.log('📧 Subject:', subject);
+    console.log('📧 Attachment:', req.file ? req.file.originalname : 'None');
+    
+    const result = await sendEmail(to, subject, String(message).replace(/\n/g, '<br>'), attachments);
+    
+    if (result.success) {
+      console.log('✅ Email sent successfully:', result.data);
+      console.log('📧 SendGrid response status:', result.data?.[0]?.statusCode);
+      console.log('📧 SendGrid message ID:', result.data?.[0]?.headers?.['x-message-id']);
+      return res.json({ 
+        success: true, 
+        messageId: result.data?.[0]?.headers?.['x-message-id'], 
+        statusCode: result.data?.[0]?.statusCode,
+        data: result.data 
+      });
+    } else {
+      console.error('❌ Email send failed:', result.error);
+      throw new Error(result.error?.message || 'Failed to send email');
+    }
+  } catch (error) {
+    console.error('❌ Email send error:', error);
+    console.error('❌ Error code:', error.code);
+    console.error('❌ Error response:', error.response);
+    
+    let userFriendlyMessage = 'Failed to send email';
+    
+    if (error.message?.includes('API key') || error.message?.includes('Invalid API key')) {
+      userFriendlyMessage = 'SendGrid API key is invalid. Please check your SENDGRID_API_KEY environment variable.';
+    } else if (error.message?.includes('from') || error.message?.includes('domain')) {
+      userFriendlyMessage = 'Email sender not verified. Please verify your sender email in SendGrid dashboard.';
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      userFriendlyMessage = 'Could not connect to SendGrid servers. Please check your internet connection.';
+    } else if (error.message?.includes('rate limit')) {
+      userFriendlyMessage = 'Rate limit exceeded. Please wait before sending more emails.';
+    }
+    
+    return res.status(500).json({ 
+      success: false, 
+      message: userFriendlyMessage, 
+      error: error.message,
+      code: error.code 
+    });
+  }
+});
+
+// API endpoint to check SendGrid suppression status for email addresses
+app.post('/api/email/check-suppression', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { emails } = req.body;
+    if (!emails || !Array.isArray(emails)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an array of email addresses in the "emails" field'
+      });
+    }
+
+    const results = [];
+    const sendgridApiKey = process.env.SENDGRID_API_KEY;
+
+    for (const email of emails) {
+      try {
+        // Check bounces
+        const bounceResponse = await axios.get(
+          `https://api.sendgrid.com/v3/suppression/bounces/${encodeURIComponent(email)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${sendgridApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        results.push({
+          email: email,
+          status: 'on_bounce_list',
+          details: bounceResponse.data
+        });
+      } catch (bounceError) {
+        if (bounceError.response?.status === 404) {
+          // Not on bounce list, check invalid emails
+          try {
+            const invalidResponse = await axios.get(
+              `https://api.sendgrid.com/v3/suppression/invalid_emails/${encodeURIComponent(email)}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${sendgridApiKey}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            results.push({
+              email: email,
+              status: 'on_invalid_list',
+              details: invalidResponse.data
+            });
+          } catch (invalidError) {
+            if (invalidError.response?.status === 404) {
+              results.push({
+                email: email,
+                status: 'not_suppressed',
+                message: 'Email is not on any suppression list'
+              });
+            } else {
+              results.push({
+                email: email,
+                status: 'error',
+                error: invalidError.message
+              });
+            }
+          }
+        } else {
+          results.push({
+            email: email,
+            status: 'error',
+            error: bounceError.message
+          });
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      results: results,
+      instructions: {
+        remove_from_bounces: 'Go to https://app.sendgrid.com/suppressions/bounces and remove the email addresses',
+        remove_from_invalid: 'Go to https://app.sendgrid.com/suppressions/invalid_emails and remove the email addresses'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error checking suppression status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to check suppression status',
+      error: error.message
+    });
+  }
+});
+
+// API endpoint for sending approval workflow emails
+// Sequential email sending - Manager only
+app.post('/api/send-manager-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { managerEmail, workflowData } = req.body;
+    await enrichWorkflowDataFromRecord(workflowData);
+    const resolvedManagerEmail = managerEmail || process.env.TECHNICAL_TEAM_EMAIL || 'cpq.zenop.ai.technical@cloudfuze.com';
+    
+    console.log('📧 Sending email to Manager only (sequential approval)...');
+    console.log('Manager:', resolvedManagerEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Create secure token for role-based portal link
+    let token = null;
+    if (db && workflowData.workflowId) {
+      try {
+        token = await createApprovalAccessToken(db, workflowData.workflowId, 'technical');
+      } catch (err) {
+        console.error('❌ Failed to create approval token for technical:', err);
+      }
+    }
+
+    // Send email to Manager only with attachment (fire-and-forget for faster UX)
+    const sendStartedAt = Date.now();
+    sendEmail(
+      resolvedManagerEmail,
+      `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      generateTechnicalTeamEmailHTML(workflowData, token),
+      attachments
+    )
+      .then(result => {
+        console.log(`✅ Manager email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ Manager email async error:', err);
+      });
+
+    // Immediately respond so the frontend is not blocked by SendGrid latency
+    res.json({
+      success: true,
+      message: 'Manager email queued for sending',
+      result: { role: 'Manager', email: resolvedManagerEmail, success: true },
+      workflowData,
+      attachmentCount: attachments.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending Manager email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Sequential email sending - Team Approval (first step)
+app.post('/api/send-team-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { teamEmail, workflowData } = req.body;
+    await enrichWorkflowDataFromRecord(workflowData);
+    const resolvedTeamEmail = teamEmail || process.env.TEAM_APPROVAL_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
+    const teamLabel = (workflowData && workflowData.teamGroup) ? String(workflowData.teamGroup).toUpperCase() : null;
+    
+    console.log('📧 Sending email to Team (first approval step)...');
+    console.log('Team:', resolvedTeamEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Create secure token for role-based portal link
+    let token = null;
+    if (db && workflowData.workflowId) {
+      try {
+        token = await createApprovalAccessToken(db, workflowData.workflowId, 'teamlead');
+      } catch (err) {
+        console.error('❌ Failed to create approval token for team lead:', err);
+      }
+    }
+
+    // Send email to Team with attachment (fire-and-forget for faster UX)
+    const sendStartedAt = Date.now();
+    sendEmail(
+      resolvedTeamEmail,
+      `${teamLabel ? `[${teamLabel}] ` : ''}Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      generateTeamEmailHTML(workflowData, token),
+      attachments
+    )
+      .then(result => {
+        console.log(`✅ Team email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ Team email async error:', err);
+      });
+
+    // Immediately respond so the frontend is not blocked by SendGrid latency
+    res.json({
+      success: true,
+      message: 'Team email queued for sending',
+      result: { role: 'Team Approval', email: resolvedTeamEmail, success: true },
+      workflowData,
+      attachmentCount: attachments.length
+    });
+  } catch (error) {
+    console.error('❌ Error sending Team email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send Team email',
+      error: error.message
+    });
+  }
+});
+
+// Sequential email sending - CEO only (after Manager approves)
+app.post('/api/send-ceo-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { ceoEmail, workflowData } = req.body;
+    await enrichWorkflowDataFromRecord(workflowData);
+    const resolvedCeoEmail = ceoEmail || process.env.LEGAL_TEAM_EMAIL || 'cpq.zenop.ai.legal@cloudfuze.com';
+    
+    console.log('📧 Sending email to CEO (after Technical Team approval)...');
+    console.log('CEO:', resolvedCeoEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Create secure token for role-based portal link
+    let token = null;
+    if (db && workflowData.workflowId) {
+      try {
+        token = await createApprovalAccessToken(db, workflowData.workflowId, 'legal');
+      } catch (err) {
+        console.error('❌ Failed to create approval token for legal:', err);
+      }
+    }
+
+    // Send email to CEO only with attachment (fire-and-forget for faster UX)
+    const sendStartedAt = Date.now();
+    sendEmail(
+      resolvedCeoEmail,
+      `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+      generateLegalTeamEmailHTML(workflowData, token),
+      attachments
+    )
+      .then(result => {
+        console.log(`✅ CEO email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ CEO email async error:', err);
+      });
+
+    // Immediately respond so the frontend is not blocked by SendGrid latency
+    res.json({
+      success: true,
+      message: 'CEO email queued for sending',
+      result: { role: 'CEO', email: resolvedCeoEmail, success: true },
+      workflowData,
+      attachmentCount: attachments.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending CEO email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Sequential email sending - Client only (after CEO approves)
+// IMPORTANT: This endpoint is designed to respond quickly and not block
+// the approval UI on SendGrid latency. It mirrors the fire-and-forget
+// pattern used for Manager/CEO emails above.
+app.post('/api/send-client-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { clientEmail, workflowData } = req.body;
+    
+    console.log('📧 Queuing email to Client (after Legal Team approval)...');
+    console.log('Client:', clientEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Send email to Client only with attachment (fire-and-forget)
+    const sendStartedAt = Date.now();
+    sendEmail(
+      clientEmail,
+      `Document Submitted for Approval: ${workflowData.documentId}`,
+      generateClientEmailHTML(workflowData),
+      attachments
+    )
+      .then(result => {
+        console.log(`✅ Client email async result: ${result.success} (${Date.now() - sendStartedAt}ms)`);
+      })
+      .catch(err => {
+        console.error('❌ Client email async error:', err);
+      });
+
+    // Immediately respond so the frontend is not blocked by SendGrid latency
+    res.json({
+      success: true,
+      message: 'Client email queued for sending',
+      result: { role: 'Client', email: clientEmail, success: true },
+      workflowData: workflowData,
+      attachmentCount: attachments.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error queuing Client email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Send Deal Desk notification email (after client approval)
+// Also notifies the workflow creator (approval initiator) when available
+app.post('/api/send-deal-desk-email', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { dealDeskEmail, workflowData } = req.body;
+    const resolvedDealDeskEmail = dealDeskEmail || process.env.DEAL_DESK_EMAIL || 'salesops@cloudfuze.com';
+    
+    console.log('📧 Sending notification email to Deal Desk (after client approval)...');
+    console.log('Deal Desk:', resolvedDealDeskEmail);
+    console.log('Workflow Data:', workflowData);
+
+    // Fetch document attachment
+    let attachments = [];
+    if (workflowData.documentId && db) {
+      try {
+        console.log('📄 Fetching document for attachment:', workflowData.documentId);
+        const documentsCollection = db.collection('documents');
+        const document = await documentsCollection.findOne({ id: workflowData.documentId });
+        
+        if (document && document.fileData) {
+          // Convert document data to attachment
+          let fileBuffer;
+          if (Buffer.isBuffer(document.fileData)) {
+            fileBuffer = document.fileData;
+          } else if (document.fileData.buffer) {
+            fileBuffer = Buffer.from(document.fileData.buffer);
+          } else if (document.fileData.data) {
+            fileBuffer = Buffer.from(document.fileData.data);
+          }
+          
+          if (fileBuffer) {
+            attachments.push({
+              filename: document.fileName || `${workflowData.documentId}.pdf`,
+              content: fileBuffer,
+              contentType: 'application/pdf'
+            });
+            console.log('✅ Document attachment prepared:', document.fileName);
+          }
+        } else {
+          console.log('⚠️ Document not found or no file data:', workflowData.documentId);
+        }
+      } catch (docError) {
+        console.error('❌ Error fetching document for attachment:', docError);
+        // Continue without attachment rather than failing
+      }
+    }
+
+    // Look up workflow to find creator email (approval initiator)
+    let creatorEmailForNotification = null;
+    if (workflowData && workflowData.workflowId && db) {
+      try {
+        const workflowRecord = await db
+          .collection('approval_workflows')
+          .findOne({ id: workflowData.workflowId });
+        if (workflowRecord && workflowRecord.creatorEmail) {
+          creatorEmailForNotification = workflowRecord.creatorEmail;
+          console.log('📧 Found workflow creator email for completion notification:', creatorEmailForNotification);
+        } else {
+          console.log('ℹ️ No creatorEmail found on workflow; skipping creator completion email.');
+        }
+      } catch (creatorLookupError) {
+        console.error('❌ Error fetching workflow for creator completion email:', creatorLookupError);
+      }
+    }
+
+    // Deal Desk notification email is disabled — the approval workflow now ends at Legal.
+    // This endpoint is still the completion trigger: it notifies the creator and auto-sends
+    // the e-sign document below, then finalizes the workflow.
+    const completionSubject = `Approval Workflow Completed: ${workflowData.documentId}`;
+    const completionHtml = generateDealDeskEmailHTML(workflowData);
+
+    // Best-effort notification email to workflow creator (if available)
+    if (creatorEmailForNotification) {
+      sendEmail(creatorEmailForNotification, completionSubject, completionHtml, attachments)
+        .then(r => console.log('✅ Workflow creator completion email sent:', r.success))
+        .catch(err => console.error('❌ Error sending workflow creator completion email:', err));
+    }
+
+    // Auto-send e-sign document to signers when workflow has esignDocumentId (no creator action needed)
+    if (workflowData && workflowData.workflowId && db) {
+      try {
+        const workflowRecord = await db.collection('approval_workflows').findOne({ id: workflowData.workflowId });
+        const esignId = workflowRecord && workflowRecord.esignDocumentId;
+        if (esignId) {
+          const autoSendResult = await sendDocumentForSignatureInternal(esignId, { uploadedBy: 'approval-auto-send' });
+          if (autoSendResult.success && autoSendResult.emails_sent > 0) {
+            console.log('✅ Auto-sent e-sign document to', autoSendResult.emails_sent, 'recipient(s) after approval');
+          } else if (autoSendResult.success && !autoSendResult.already_sent) {
+            console.log('📧 E-sign document marked as sent (no SENDGRID or no recipients)');
+          }
+        }
+      } catch (autoSendErr) {
+        console.error('❌ Auto-send to signers after approval failed:', autoSendErr);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: creatorEmailForNotification
+        ? 'Creator completion email queued; workflow finalized'
+        : 'Workflow finalized',
+      result: {
+        creator: creatorEmailForNotification ? { role: 'Creator', email: creatorEmailForNotification } : null
+      },
+      workflowData: workflowData,
+      attachmentCount: attachments.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending Deal Desk email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Legacy endpoint - kept for backward compatibility
+app.post('/api/send-approval-emails', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { managerEmail, ceoEmail, clientEmail, workflowData } = req.body;
+    
+    console.log('📧 Sending approval workflow emails (legacy - all at once)...');
+    console.log('Manager:', managerEmail);
+    console.log('CEO:', ceoEmail);
+    console.log('Client:', clientEmail);
+    console.log('Workflow Data:', workflowData);
+
+    const results = [];
+
+    // Send email to Manager
+    try {
+      const managerResult = await sendEmail(
+        managerEmail,
+        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        generateTechnicalTeamEmailHTML(workflowData)
+      );
+      results.push({ role: 'Manager', email: managerEmail, success: managerResult.success });
+    } catch (error) {
+      console.error('❌ Manager email failed:', error);
+      results.push({ role: 'Manager', email: managerEmail, success: false, error: error.message });
+    }
+
+    // Send email to CEO
+    try {
+      const ceoResult = await sendEmail(
+        ceoEmail,
+        `Approval Required: ${workflowData.documentId} - ${workflowData.clientName}`,
+        generateLegalTeamEmailHTML(workflowData)
+      );
+      results.push({ role: 'CEO', email: ceoEmail, success: ceoResult.success });
+    } catch (error) {
+      console.error('❌ CEO email failed:', error);
+      results.push({ role: 'CEO', email: ceoEmail, success: false, error: error.message });
+    }
+
+    // Send email to Client
+    try {
+      const clientResult = await sendEmail(
+        clientEmail,
+        `Document Submitted for Approval: ${workflowData.documentId}`,
+        generateClientEmailHTML(workflowData)
+      );
+      results.push({ role: 'Client', email: clientEmail, success: clientResult.success });
+    } catch (error) {
+      console.error('❌ Client email failed:', error);
+      results.push({ role: 'Client', email: clientEmail, success: false, error: error.message });
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    const totalCount = results.length;
+
+    console.log(`✅ Approval emails sent: ${successCount}/${totalCount}`);
+
+    res.json({
+      success: successCount > 0,
+      message: `Approval emails sent: ${successCount}/${totalCount}`,
+      results: results,
+      workflowData: workflowData
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending approval emails:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// API endpoint to upload documents (PDF, Excel, CSV, etc.) to MongoDB
+// NOTE: This uses multipart/form-data and is separate from the JSON /api/documents endpoint.
+app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot save documents without database connection'
+      });
+    }
+
+    // Extract metadata for optional base64 uploads
+    const { clientName, company, quoteId, totalCost, fileName, fileData, fileSize } = req.body;
+
+    // Check if we have file data (either from upload or base64)
+    if (!req.file && !fileData) {
+      return res.status(400).json({
+        success: false,
+        error: 'No document file provided'
+      });
+    }
+
+    const file = req.file;
+    
+    // Generate document ID with client and company names
+    const sanitizeForId = (str) => {
+      if (!str) return 'Unknown';
+      return str
+        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
+        .substring(0, 20) // Limit length
+        .replace(/^[0-9]/, 'C$&'); // Ensure doesn't start with number
+    };
+    
+    const sanitizedCompany = sanitizeForId(company);
+    const sanitizedClient = sanitizeForId(clientName);
+    const timestamp = Date.now().toString().slice(-5); // Keep only last 5 digits
+    
+    const documentId = `${sanitizedCompany}_${sanitizedClient}_${timestamp}`;
+    
+    // Handle both file upload and base64 data
+    let finalFileName, finalFileData, finalFileSize;
+    
+    if (req.file) {
+      // File upload
+      finalFileName = file.originalname;
+      finalFileData = file.buffer;
+      finalFileSize = file.size;
+    } else {
+      // Base64 data
+      finalFileName = fileName || `document_${documentId}.pdf`;
+      finalFileData = Buffer.from(fileData, 'base64');
+      finalFileSize = parseInt(fileSize) || finalFileData.length;
+    }
+    
+    console.log('📄 Processing document:', {
+      id: documentId,
+      fileName: finalFileName,
+      fileSize: finalFileSize,
+      clientName,
+      company,
+      quoteId,
+      source: req.file ? 'upload' : 'base64'
+    });
+    
+    console.log('🔍 Document ID generation data (endpoint 2):', {
+      clientName: clientName,
+      company: company,
+      clientNameType: typeof clientName,
+      companyType: typeof company,
+      sanitizedCompany: sanitizedCompany,
+      sanitizedClient: sanitizedClient,
+      timestamp: timestamp
+    });
+
+    const document = {
+      id: documentId,
+      fileName: finalFileName,
+      fileData: finalFileData,
+      fileSize: finalFileSize,
+      clientName: clientName || 'Unknown Client',
+      company: company || 'Unknown Company',
+      quoteId: quoteId || null,
+      metadata: {
+        totalCost: totalCost ? parseFloat(totalCost) : 0
+      },
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      generatedDate: new Date().toISOString()
+    };
+    
+    await db.collection('documents').insertOne(document);
+
+    console.log('✅ Document saved to database:', documentId);
+    
+    res.json({
+      success: true,
+      message: 'Document uploaded successfully',
+      document: {
+        id: documentId,
+        fileName: file.originalname,
+        clientName: document.clientName,
+        company: document.company,
+        quoteId: document.quoteId,
+        fileSize: file.size,
+        createdAt: document.createdAt
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error uploading document:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============ E-SIGNATURE BUILT-IN SYSTEM ============
+// Document upload (disk storage), signature fields, signing, signed PDF generation
+
+const { ObjectId } = require('mongodb');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+
+/**
+ * Exact field list + order for a signer. MUST match between GET sign-by-token and POST generate-signed
+ * (frontend sends field_values keyed by index in this array).
+ */
+async function getEsignFieldsForRecipient(db, docId, recipientIdStr) {
+  const oid = docId instanceof ObjectId ? docId : new ObjectId(String(docId));
+  const docRecipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(oid)).toArray();
+  const validRecipientIds = new Set(docRecipients.map((r) => r._id.toString()));
+  const allFields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(oid)).sort({ _id: 1 }).toArray();
+  const allFieldsNorm = allFields.map((f) => {
+    if (!f.recipient_id) return f;
+    try {
+      if (validRecipientIds.has(f.recipient_id.toString())) return f;
+    } catch { /* ignore */ }
+    const copy = { ...f };
+    delete copy.recipient_id;
+    return copy;
+  });
+  const hasAnyRecipientAssignment = allFieldsNorm.some((f) => f.recipient_id);
+  if (hasAnyRecipientAssignment) {
+    return allFieldsNorm.filter((f) => {
+      if (f.recipient_id == null || f.recipient_id === '') return true;
+      try {
+        return f.recipient_id.toString() === recipientIdStr;
+      } catch {
+        return false;
+      }
+    });
+  }
+  return allFieldsNorm;
+}
+
+/** Same rules as EsignSignPage (signer vs reviewer). */
+function recipientIsEsignReviewer(rec) {
+  const action = rec.action;
+  const role = (rec.role || 'signer').toString();
+  return (
+    action === 'reviewer' ||
+    (action !== 'signer' &&
+      (role.toLowerCase() === 'reviewer' || role === 'Technical Team' || role === 'Legal Team'))
+  );
+}
+
+/** Values keyed by signature_fields _id (string); set when a reviewer approves. */
+function esignDocReviewerFieldMap(doc) {
+  const m = doc?.reviewer_field_values;
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : null;
+}
+
+function sanitizeReviewerSubmittedValue(fieldDoc, raw) {
+  if (raw == null) return '';
+  const s = String(raw);
+  const t = (fieldDoc.type || '').toString().toLowerCase();
+  if (t === 'text') return s.slice(0, 8000);
+  return s.slice(0, 500);
+}
+
+/** Prefill sent to clients / PDF fallback: reviewer map overrides DB prefill on text fields. */
+function esignEffectivePrefillForField(doc, fieldDoc) {
+  const rid = fieldDoc?._id?.toString();
+  const rmap = esignDocReviewerFieldMap(doc);
+  if (rid && rmap && Object.prototype.hasOwnProperty.call(rmap, rid)) {
+    const v = rmap[rid];
+    return v == null ? '' : String(v);
+  }
+  if (typeof fieldDoc.prefill === 'string') return fieldDoc.prefill;
+  return undefined;
+}
+
+/**
+ * Persist reviewer field_values onto esign_documents.reviewer_field_values.
+ * Indices in fieldValuesBody match the client's field list: non-signature fields only, in the same order as
+ * GET sign-by-token returns for that recipient (see getEsignFieldsForRecipient + reviewer filter).
+ * @param {string|null} recipientIdStr — when set, index order matches that recipient's visible fields only.
+ */
+async function esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody, recipientIdStr) {
+  let reviewerFieldOrder;
+  if (recipientIdStr) {
+    const forRec = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
+    reviewerFieldOrder = forRec.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+  } else {
+    const allPlacement = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+    reviewerFieldOrder = allPlacement.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+  }
+  const reviewerPatchByFieldId = {};
+  if (fieldValuesBody && typeof fieldValuesBody === 'object' && !Array.isArray(fieldValuesBody)) {
+    for (const [key, val] of Object.entries(fieldValuesBody)) {
+      const idx = parseInt(String(key), 10);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= reviewerFieldOrder.length) continue;
+      const fd = reviewerFieldOrder[idx];
+      reviewerPatchByFieldId[fd._id.toString()] = sanitizeReviewerSubmittedValue(fd, val);
+    }
+  }
+  const priorMap = esignDocReviewerFieldMap(doc) ? { ...doc.reviewer_field_values } : {};
+  const mergedReviewerValues = { ...priorMap, ...reviewerPatchByFieldId };
+  await db.collection('esign_documents').updateOne(
+    { _id: docId },
+    { $set: { reviewer_field_values: mergedReviewerValues, reviewer_field_values_at: new Date() } }
+  );
+  try {
+    await esignRegenerateReviewMergedPdf(db, docId);
+  } catch (e) {
+    console.warn('esignRegenerateReviewMergedPdf:', e?.message || e);
+  }
+  return mergedReviewerValues;
+}
+
+/** Copy reviewer_field_values into field_values map (by index and by field _id) so PDF merge always sees them. */
+function esignApplyReviewerMapToFieldValues(doc, fields, values) {
+  const m = esignDocReviewerFieldMap(doc);
+  if (!m || !fields?.length) return;
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const t = (f.type || 'signature').toLowerCase();
+    if (t === 'signature') continue;
+    const idx = String(i);
+    const cur = values[idx];
+    if (cur != null && String(cur).trim() !== '') continue;
+    const fid = f._id?.toString();
+    if (!fid) continue;
+    let rv = m[fid];
+    if (rv === undefined) {
+      for (const k of Object.keys(m)) {
+        if (k === fid) {
+          rv = m[k];
+          break;
+        }
+      }
+    }
+    if (rv == null) continue;
+    const s = String(rv);
+    if (s.length > 0) {
+      values[idx] = s;
+      values[fid] = s;
+    }
+  }
+}
+
+/** Client-provided field value present (signatures: data URLs; typed/draw/upload all end as non-empty strings). */
+function esignSignatureFieldValueProvided(val) {
+  if (val == null || val === '') return false;
+  const s = typeof val === 'string' ? val.trim() : String(val);
+  return s.length > 0;
+}
+
+/** 32-byte AES-256 key from ESIGN_SIGNATURE_ENCRYPTION_KEY (64 hex chars or 32-byte base64). */
+function getEsignSignatureEncryptionKey() {
+  const raw = process.env.ESIGN_SIGNATURE_ENCRYPTION_KEY;
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return Buffer.from(trimmed, 'hex');
+  try {
+    const b64 = Buffer.from(trimmed, 'base64');
+    if (b64.length === 32) return b64;
+  } catch (_) { /* ignore */ }
+  return crypto.createHash('sha256').update(trimmed, 'utf8').digest();
+}
+
+function encryptEsignSignaturePlaintext(plaintextUtf8) {
+  const key = getEsignSignatureEncryptionKey();
+  if (!key || key.length !== 32) {
+    throw new Error('ESIGN_SIGNATURE_ENCRYPTION_KEY must be set (64 hex chars = 32 bytes)');
+  }
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintextUtf8, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return { ciphertext: encrypted, iv, authTag };
+}
+
+/** Decrypt only for PDF generation. Never log returned plaintext. */
+function decryptEsignSignatureStoredDoc(doc) {
+  const key = getEsignSignatureEncryptionKey();
+  if (!key || key.length !== 32) {
+    throw new Error('ESIGN_SIGNATURE_ENCRYPTION_KEY must be set');
+  }
+  const toBuf = (b) => {
+    if (Buffer.isBuffer(b)) return b;
+    if (b?.buffer) return Buffer.from(b.buffer, b.byteOffset, b.byteLength);
+    if (typeof b === 'string') return Buffer.from(b, 'base64');
+    return Buffer.alloc(0);
+  };
+  const iv = toBuf(doc.iv);
+  const authTag = toBuf(doc.auth_tag);
+  const ciphertext = toBuf(doc.ciphertext);
+  if (!iv.length || !authTag.length || !ciphertext.length) throw new Error('invalid blob');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+}
+
+// Helper: log audit action
+async function logAudit(documentId, action, userEmail, ipAddress, extra) {
+  if (!db) return;
+  try {
+    await db.collection('audit_logs').insertOne({
+      document_id: typeof documentId === 'string' ? new ObjectId(documentId) : documentId,
+      action,
+      user_email: userEmail || 'anonymous',
+      timestamp: new Date(),
+      ip_address: ipAddress || null,
+      ...(extra && typeof extra === 'object' ? { metadata: extra } : {})
+    });
+  } catch (e) {
+    console.warn('Audit log error:', e?.message);
+  }
+}
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function escapeEmailMessage(value) {
+  return escapeHtml(value).replace(/\n/g, '<br />');
+}
+
+function formatEsignExpiryDate(dateLike) {
+  if (!dateLike) return '';
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function getEsignBaseUrls() {
+  const FRONTEND_DEV = 'http://localhost:5173';
+  let baseUrl = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
+  let baseUrlForDashboard = (process.env.APP_BASE_URL || '').trim() || FRONTEND_DEV;
+  if (baseUrl.includes('localhost:3001')) {
+    baseUrl = FRONTEND_DEV;
+    baseUrlForDashboard = FRONTEND_DEV;
+  }
+  if (baseUrlForDashboard.includes('localhost:3001')) baseUrlForDashboard = FRONTEND_DEV;
+  return { baseUrl, baseUrlForDashboard };
+}
+
+function getEsignRecipientUrls(token) {
+  const { baseUrl, baseUrlForDashboard } = getEsignBaseUrls();
+  return {
+    signingUrl: `${baseUrl}/sign/${token}`,
+    inboxUrl: `${baseUrlForDashboard}/esign-inbox?token=${encodeURIComponent(token)}`,
+  };
+}
+
+function buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, options = {}) {
+  const {
+    mode = 'initial',
+    tokenExpiresAt = null,
+    expiryDays = ESIGN_LINK_EXPIRY_DAYS,
+    forwardedByName = '',
+    forwardedByEmail = '',
+    forwardComment = '',
+  } = options;
+  const isReviewer = recipientIsEsignReviewer(rec);
+  const ctaText = isReviewer ? 'Review Document' : 'Sign Document';
+  const roleStr = (rec.role || '').toString().trim();
+  const isTechnical = roleStr === 'Technical Team';
+  const isLegal = roleStr === 'Legal Team';
+  const isTeamLead = roleStr === 'Team Lead' || roleStr === 'Team Approval';
+  const showDashboardLink = isTechnical || isLegal || isTeamLead;
+  const dashboardLabel = isTechnical
+    ? 'E-Sign Technical Dashboard'
+    : isLegal
+      ? 'E-Sign Legal Dashboard'
+      : isTeamLead
+        ? 'E-Sign Team Lead Dashboard'
+        : 'your E-Sign dashboard';
+  const openInDashboard = `Open the agreement in your <a href="${inboxUrl}">${dashboardLabel}</a>`;
+  const dashboardBlock = showDashboardLink
+    ? `<p><strong>Option 1 – Open in your dashboard:</strong> ${openInDashboard}${isReviewer ? '. The agreement will appear in your queue; open it from there to review.' : '. The agreement will open in your dashboard; you can then review and sign.'}</p>
+        <p><strong>Option 2 – ${isReviewer ? 'Direct link' : 'Sign directly'}:</strong> `
+    : '<p><strong>Signing link:</strong> ';
+  const fileNameForSubject = sanitizeEsignEmailSubjectFileName(doc.file_name || 'Document');
+  const customMessageBlock = (rec.email_message && rec.email_message.trim())
+    ? `<p style="margin:1em 0;">${escapeEmailMessage(rec.email_message.trim())}</p>`
+    : '';
+  const expiryLabel = formatEsignExpiryDate(tokenExpiresAt);
+  const expiryLine = expiryLabel
+    ? `<p><strong>Link expires:</strong> ${escapeHtml(expiryLabel)}</p>`
+    : '';
+
+  let subject;
+  let introLine;
+  let helperLine = '';
+  if (mode === 'reminder') {
+    subject = `Reminder: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject} before it expires`;
+    introLine = isReviewer
+      ? 'This is a reminder that your review is still pending.'
+      : 'This is a reminder that your signature is still pending.';
+    helperLine = '<p>Please complete the document before the secure link expires.</p>';
+  } else if (mode === 'extended') {
+    subject = `Signing link renewed: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
+    introLine = isReviewer
+      ? 'The sender has extended your review window and issued a fresh secure link.'
+      : 'The sender has extended your signing window and issued a fresh secure link.';
+    helperLine = `<p>Your new secure link is active now and remains valid for ${expiryDays} day${expiryDays === 1 ? '' : 's'}.</p>`;
+  } else if (mode === 'forwarded') {
+    const forwardedByLabel = (forwardedByName || forwardedByEmail || 'The original recipient').trim();
+    subject = `Forwarded: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
+    introLine = isReviewer
+      ? `${escapeHtml(forwardedByLabel)} forwarded this review request to you.`
+      : `${escapeHtml(forwardedByLabel)} forwarded this signing request to you.`;
+    helperLine = `${forwardComment ? `<p><strong>Forwarding note:</strong> ${escapeEmailMessage(forwardComment)}</p>` : ''}<p>Please use the secure link below to complete the request.</p>`;
+  } else {
+    subject = `Action required: ${isReviewer ? 'Review' : 'Sign'} ${fileNameForSubject}`;
+    introLine = isReviewer
+      ? 'You have been requested to <strong>review</strong> a document.'
+      : 'You have been requested to sign a document.';
+  }
+
+  return {
+    subject,
+    html: `<p>Hello${rec.name ? ` ${escapeHtml(rec.name)}` : ''},</p>
+      ${customMessageBlock}<p>${introLine}</p>
+      ${expiryLine}
+      ${helperLine}
+      ${dashboardBlock}<a href="${signingUrl}" style="display:inline-block; padding:10px 20px; background:#4f46e5; color:#fff; text-decoration:none; border-radius:6px;">${ctaText}</a></p>
+      <p>Thank you.</p>`,
+  };
+}
+
+function buildEsignRecipientRestoreUpdate(recipient) {
+  const set = {};
+  const unset = {};
+  if (recipient.name) set.name = recipient.name;
+  else unset.name = '';
+  if (recipient.email) set.email = recipient.email;
+  else unset.email = '';
+  if (recipient.status) set.status = recipient.status;
+  else unset.status = '';
+  if (recipient.signing_token != null && recipient.signing_token !== '') set.signing_token = recipient.signing_token;
+  else unset.signing_token = '';
+  if (recipient.token_created_at) set.token_created_at = recipient.token_created_at;
+  else unset.token_created_at = '';
+  if (recipient.token_expires_at) set.token_expires_at = recipient.token_expires_at;
+  else unset.token_expires_at = '';
+  if (recipient.expiry_reminder_sent_at) set.expiry_reminder_sent_at = recipient.expiry_reminder_sent_at;
+  else unset.expiry_reminder_sent_at = '';
+  if (recipient.expiry_extended_at) set.expiry_extended_at = recipient.expiry_extended_at;
+  else unset.expiry_extended_at = '';
+  if (recipient.expiry_extended_by) set.expiry_extended_by = recipient.expiry_extended_by;
+  else unset.expiry_extended_by = '';
+  if (recipient.expiry_extension_count != null) set.expiry_extension_count = recipient.expiry_extension_count;
+  else unset.expiry_extension_count = '';
+  if (recipient.original_recipient_email) set.original_recipient_email = recipient.original_recipient_email;
+  else unset.original_recipient_email = '';
+  if (recipient.original_recipient_name) set.original_recipient_name = recipient.original_recipient_name;
+  else unset.original_recipient_name = '';
+  if (recipient.forwarded_from_email) set.forwarded_from_email = recipient.forwarded_from_email;
+  else unset.forwarded_from_email = '';
+  if (recipient.forwarded_from_name) set.forwarded_from_name = recipient.forwarded_from_name;
+  else unset.forwarded_from_name = '';
+  if (recipient.forwarded_by_email) set.forwarded_by_email = recipient.forwarded_by_email;
+  else unset.forwarded_by_email = '';
+  if (recipient.forwarded_to_email) set.forwarded_to_email = recipient.forwarded_to_email;
+  else unset.forwarded_to_email = '';
+  if (recipient.forwarded_to_name) set.forwarded_to_name = recipient.forwarded_to_name;
+  else unset.forwarded_to_name = '';
+  if (recipient.forwarded_at) set.forwarded_at = recipient.forwarded_at;
+  else unset.forwarded_at = '';
+  if (recipient.forward_comment) set.forward_comment = recipient.forward_comment;
+  else unset.forward_comment = '';
+  if (recipient.forward_count != null) set.forward_count = recipient.forward_count;
+  else unset.forward_count = '';
+  const update = {};
+  if (Object.keys(set).length) update.$set = set;
+  if (Object.keys(unset).length) update.$unset = unset;
+  return update;
+}
+
+async function getEsignDocumentForRecipient(recipient) {
+  if (!recipient || !recipient.document_id || !db) return null;
+  const rawId = recipient.document_id;
+  const filters = [];
+  if (rawId instanceof ObjectId) {
+    filters.push({ _id: rawId });
+    filters.push({ _id: rawId.toString() });
+  } else {
+    const idStr = rawId && typeof rawId.toString === 'function' ? rawId.toString() : String(rawId);
+    if (idStr) {
+      filters.push({ _id: idStr });
+      try {
+        filters.push({ _id: new ObjectId(idStr) });
+      } catch (_) { /* ignore */ }
+    }
+  }
+  if (!filters.length) return null;
+  return db.collection('esign_documents').findOne(filters.length === 1 ? filters[0] : { $or: filters });
+}
+
+// POST /api/esign/documents/upload - Upload document to disk (converts DOCX to PDF), save metadata
+app.post('/api/esign/documents/upload', esignDocumentUpload.single('file'), async (req, res) => {
+  let filePath = null;
+  let dbInserted = false;
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file provided' });
+
+    const uploadedBy = req.body.uploaded_by || 'anonymous';
+    let fileName = req.file.originalname;
+    const originalFilePath = path.join(documentsDir, req.file.filename);
+    const fileExt = path.extname(fileName).toLowerCase();
+
+    // Step 1: Verify multer actually wrote the file to disk before doing anything else.
+    if (!fs.existsSync(originalFilePath)) {
+      console.error('❌ E-sign upload: multer did not produce a file on disk', { originalFilePath });
+      return res.status(500).json({
+        success: false,
+        error: 'Upload failed: file was not written to storage. Please retry.'
+      });
+    }
+
+    // Step 2: Read original file
+    let fileBuffer;
+    try {
+      fileBuffer = fs.readFileSync(originalFilePath);
+    } catch (readErr) {
+      console.error('❌ E-sign upload: failed to read uploaded file from disk', readErr);
+      try { fs.unlinkSync(originalFilePath); } catch {}
+      return res.status(500).json({
+        success: false,
+        error: 'Upload failed: could not read uploaded file. Please retry.'
+      });
+    }
+
+    if (!fileBuffer || fileBuffer.length === 0) {
+      try { fs.unlinkSync(originalFilePath); } catch {}
+      return res.status(500).json({
+        success: false,
+        error: 'Upload failed: uploaded file is empty. Please retry.'
+      });
+    }
+
+    let filePath = originalFilePath;
+    let fileData = fileBuffer.toString('base64');
+
+    // Step 3: Convert DOCX to PDF if needed
+    if (fileExt === '.docx' || fileExt === '.doc') {
+      try {
+        console.log('📄 Converting DOCX to PDF for e-sign:', fileName);
+        const FormData = require('form-data');
+        const formData = new FormData();
+        formData.append('file', fs.createReadStream(originalFilePath), fileName);
+
+        const convertRes = await axios.post(`http://127.0.0.1:${PORT}/api/convert/docx-to-pdf`, formData, {
+          headers: formData.getHeaders(),
+          timeout: 60000,
+          responseType: 'arraybuffer'
+        });
+
+        if (!convertRes.data || convertRes.data.length === 0) {
+          console.error('❌ DOCX conversion returned empty data');
+          try { fs.unlinkSync(originalFilePath); } catch {}
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to convert DOCX to PDF. Please try again.'
+          });
+        }
+
+        // convertRes.data is already a buffer
+        const pdfFileBuffer = Buffer.isBuffer(convertRes.data) ? convertRes.data : Buffer.from(convertRes.data);
+        const pdfFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`;
+        const pdfFilePath = path.join(documentsDir, pdfFileName);
+        fs.writeFileSync(pdfFilePath, pdfFileBuffer);
+
+        filePath = pdfFilePath;
+        fileData = pdfFileBuffer.toString('base64');
+        fileName = fileName.replace(/\.(docx|doc)$/i, '.pdf');
+
+        // Clean up original DOCX file
+        try { fs.unlinkSync(originalFilePath); } catch {}
+
+        console.log('✅ DOCX converted to PDF for e-sign:', fileName);
+      } catch (convErr) {
+        console.error('❌ E-sign DOCX conversion error:', convErr.message);
+        try { fs.unlinkSync(originalFilePath); } catch {}
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to convert DOCX to PDF. Please try again.'
+        });
+      }
+    }
+
+    // Step 4: Both disk + base64 confirmed — safe to insert DB record.
+    const doc = {
+      file_name: fileName,
+      file_path: filePath,
+      file_data: fileData,
+      uploaded_by: uploadedBy,
+      upload_source: 'manual',
+      created_at: new Date(),
+      status: 'draft'
+    };
+    const result = await db.collection('esign_documents').insertOne(doc);
+    dbInserted = true;
+    const documentId = result.insertedId.toString();
+
+    await logAudit(documentId, 'uploaded', uploadedBy, req.ip || req.connection?.remoteAddress);
+
+    res.json({
+      success: true,
+      document: {
+        id: documentId,
+        file_name: fileName,
+        file_path: filePath,
+        uploaded_by: uploadedBy,
+        upload_source: 'manual',
+        created_at: doc.created_at,
+        status: 'draft'
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign document upload error:', error);
+    // If DB insert failed AFTER multer wrote the file, clean up the orphan file
+    // so we don't leave untracked uploads on disk.
+    if (filePath && !dbInserted) {
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {}
+    }
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/from-approval - Create esign document from approval workflow document (same flow as /esign)
+app.post('/api/esign/documents/from-approval', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const {
+      documentId,
+      uploaded_by: uploadedBy,
+      workflowId,
+      requested_by_name: requestedByNameBody,
+      requested_by_email: requestedByEmailBody,
+    } = req.body || {};
+    if (!documentId) return res.status(400).json({ success: false, error: 'documentId is required' });
+
+    const document = await db.collection('documents').findOne({ id: documentId });
+    if (!document) return res.status(404).json({ success: false, error: 'Approval document not found' });
+
+    let fileBuffer;
+    if (Buffer.isBuffer(document.fileData)) {
+      fileBuffer = document.fileData;
+    } else if (document.fileData && document.fileData.buffer) {
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (typeof document.fileData === 'string') {
+      fileBuffer = Buffer.from(document.fileData, 'base64');
+    } else {
+      return res.status(400).json({ success: false, error: 'Document has no file data' });
+    }
+
+    const ext = path.extname(document.fileName || '') || '.pdf';
+    const fileName = (document.fileName || `${documentId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const diskFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+    const filePath = path.join(documentsDir, diskFileName);
+    fs.writeFileSync(filePath, fileBuffer);
+
+    const requestedByName =
+      typeof requestedByNameBody === 'string' && requestedByNameBody.trim()
+        ? requestedByNameBody.trim()
+        : null;
+    const requestedByEmail =
+      typeof requestedByEmailBody === 'string' && requestedByEmailBody.trim()
+        ? requestedByEmailBody.trim()
+        : uploadedBy && uploadedBy !== 'approval-workflow'
+          ? String(uploadedBy).trim()
+          : null;
+
+    const doc = {
+      file_name: fileName,
+      file_path: filePath,
+      file_data: fileBuffer.toString('base64'),
+      uploaded_by: uploadedBy || 'approval-workflow',
+      upload_source: 'approval',
+      source_document_id: documentId,
+      requested_by_name: requestedByName,
+      requested_by_email: requestedByEmail,
+      created_at: new Date(),
+      status: 'draft',
+      // Copy date-editing snapshot from source document so the editor can re-render later.
+      // Legacy source documents won't have these; the modal degrades gracefully.
+      dates: document.dates || null,
+      templateData: document.templateData || null,
+      templateId: document.templateId || null,
+      customLineItems: Array.isArray(document.customLineItems) ? document.customLineItems : [],
+      dateHistory: []
+    };
+    const result = await db.collection('esign_documents').insertOne(doc);
+    const esignId = result.insertedId.toString();
+
+    await logAudit(esignId, 'uploaded', doc.uploaded_by, req.ip || req.connection?.remoteAddress);
+
+    if (workflowId && typeof workflowId === 'string' && workflowId.trim()) {
+      try {
+        await db.collection('approval_workflows').updateOne(
+          { id: workflowId.trim() },
+          { $set: { esignDocumentId: esignId, updatedAt: new Date().toISOString() } }
+        );
+      } catch (linkErr) {
+        console.warn('E-sign from-approval: could not link esign doc to workflow', workflowId, linkErr);
+      }
+    }
+
+    res.json({
+      success: true,
+      document: {
+        id: esignId,
+        file_name: doc.file_name,
+        file_path: doc.file_path,
+        uploaded_by: doc.uploaded_by,
+        created_at: doc.created_at,
+        status: doc.status
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign from-approval error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id - Get document metadata
+app.get('/api/esign/documents/:id', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let doc;
+    try {
+      // Exclude heavy base64 PDF blobs — this metadata endpoint never returns them, and loading
+      // them made the View Status modal slow (it polls this endpoint every 10s).
+      doc = await db.collection('esign_documents').findOne(
+        { _id: new ObjectId(req.params.id) },
+        { projection: { file_data: 0, signed_file_data: 0 } }
+      );
+    } catch {
+      doc = null;
+    }
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (req.query.audit === 'open' && doc.status !== 'voided') {
+      await logAudit(doc._id.toString(), 'opened', req.query.signer_email || null, req.ip || req.connection?.remoteAddress);
+    }
+    res.json({
+      success: true,
+      document: {
+        id: doc._id.toString(),
+        file_name: doc.file_name,
+        file_path: doc.file_path,
+        uploaded_by: doc.uploaded_by,
+        creator_name: doc.requested_by_name || null,
+        creator_email: doc.requested_by_email || (String(doc.uploaded_by || '').includes('@') ? doc.uploaded_by : null),
+        created_at: doc.created_at,
+        sent_at: doc.sent_at || null,
+        signed_at: doc.signed_at || null,
+        status: doc.status,
+        upload_source: doc.upload_source || 'manual',
+        signing_order_enforced: doc.signing_order_enforced || false,
+        signed_file_path: doc.signed_file_path,
+        void_reason: doc.void_reason || null,
+        voided_by: doc.voided_by || null,
+        voided_at: doc.voided_at || null
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign get document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/file - Serve PDF file from disk
+app.get('/api/esign/documents/:id/file', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let doc;
+    try {
+      doc = await db.collection('esign_documents').findOne({ _id: new ObjectId(req.params.id) });
+    } catch {
+      doc = null;
+    }
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const attachment = req.query.attachment === '1' || req.query.download === '1';
+    const safeFileName = (doc.file_name || 'document.pdf').replace(/["\r\n\\]/g, '').trim() || 'document.pdf';
+
+    // Try disk paths in priority order: signed → review-merged → original
+    const filePath = doc.signed_file_path || doc.review_merged_file_path || doc.file_path;
+    if (filePath && fs.existsSync(filePath)) {
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
+      if (attachment) res.set('Cache-Control', 'no-store');
+      return res.sendFile(path.resolve(filePath));
+    }
+
+    // Disk file missing — try stored base64 data in MongoDB (signed first, then original)
+    const storedBase64 = doc.signed_file_data || doc.file_data || null;
+    if (storedBase64) {
+      try {
+        const fileBuffer = Buffer.from(storedBase64, 'base64');
+        // Restore to disk so future requests hit the fast path
+        const restoreDir = doc.signed_file_data ? signedDir : documentsDir;
+        const restoredPath = path.join(restoreDir, `${Date.now()}-restored-${doc._id}.pdf`);
+        try {
+          fs.mkdirSync(restoreDir, { recursive: true });
+          fs.writeFileSync(restoredPath, fileBuffer);
+          const updateField = doc.signed_file_data ? 'signed_file_path' : 'file_path';
+          await db.collection('esign_documents').updateOne(
+            { _id: doc._id },
+            { $set: { [updateField]: restoredPath } }
+          );
+        } catch (writeErr) {
+          console.warn('⚠️ Could not restore esign file to disk:', writeErr.message);
+        }
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
+        if (attachment) res.set('Cache-Control', 'no-store');
+        return res.send(fileBuffer);
+      } catch (b64Err) {
+        console.warn('⚠️ Failed to decode stored base64 file data:', b64Err.message);
+      }
+    }
+
+    // Last resort for approval-sourced docs: recover from the original documents collection
+    if (doc.upload_source === 'approval') {
+      try {
+        let sourceDocId = doc.source_document_id || null;
+        if (!sourceDocId) {
+          const workflow = await db.collection('approval_workflows').findOne({ esignDocumentId: req.params.id });
+          sourceDocId = workflow && workflow.documentId ? workflow.documentId : null;
+        }
+        if (sourceDocId) {
+          const sourceDoc = await db.collection('documents').findOne({ id: sourceDocId });
+          if (sourceDoc && sourceDoc.fileData) {
+            const fileBuffer = typeof sourceDoc.fileData === 'string'
+              ? Buffer.from(sourceDoc.fileData, 'base64')
+              : Buffer.isBuffer(sourceDoc.fileData) ? sourceDoc.fileData : Buffer.from(sourceDoc.fileData.buffer);
+            const restoredPath = path.join(documentsDir, `${Date.now()}-restored-${doc._id}.pdf`);
+            try {
+              fs.mkdirSync(documentsDir, { recursive: true });
+              fs.writeFileSync(restoredPath, fileBuffer);
+              await db.collection('esign_documents').updateOne(
+                { _id: doc._id },
+                { $set: { file_path: restoredPath, source_document_id: sourceDocId, file_data: sourceDoc.fileData } }
+              );
+            } catch (writeErr) {
+              console.warn('⚠️ Could not restore esign file to disk:', writeErr.message);
+            }
+            res.set('Content-Type', 'application/pdf');
+            res.set('Content-Disposition', attachment ? `attachment; filename="${safeFileName}"` : `inline; filename="${safeFileName}"`);
+            if (attachment) res.set('Cache-Control', 'no-store');
+            return res.send(fileBuffer);
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn('⚠️ Esign approval-source recovery failed:', fallbackErr.message);
+      }
+    }
+
+    console.warn('⚠️ E-sign file missing — no disk file, no DB base64, no recoverable source', {
+      documentId: req.params.id,
+      file_path: doc.file_path,
+      upload_source: doc.upload_source
+    });
+    return res.status(404).json({
+      success: false,
+      error: 'File not found',
+      code: 'FILE_MISSING',
+      message: 'The document file is missing from storage. Please re-upload the document and resend it for signature.',
+      documentId: req.params.id
+    });
+  } catch (error) {
+    console.error('❌ E-sign get file error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/send - Mark as sent (no email sending from this page)
+app.post('/api/esign/documents/:id/send', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const docId = new ObjectId(req.params.id);
+    const { signer_email } = req.body || {};
+
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const signingUrl = `${process.env.APP_BASE_URL || 'http://localhost:5173'}/sign/${docId}`;
+
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { status: 'sent', sent_at: new Date(), signer_email: signer_email || null } }
+    );
+
+    await logAudit(docId, 'sent', req.body.uploaded_by || 'system', req.ip || req.connection?.remoteAddress);
+
+    res.json({
+      success: true,
+      signing_url: signingUrl,
+      message: 'Document marked as sent'
+    });
+  } catch (error) {
+    console.error('❌ E-sign send document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/esign/documents/:id - Delete document, its fields, audit logs, and files
+app.delete('/api/esign/documents/:id', async (req, res) => {
+  const idParam = req.params.id;
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(idParam); } catch {
+      console.warn('E-sign DELETE: invalid document id', idParam);
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) {
+      console.warn('E-sign DELETE: document not found', idParam);
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can delete this document' });
+    }
+
+    await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
+    await db.collection('esign_recipients').deleteMany({ document_id: docId });
+    await db.collection('esign_signature_secrets').deleteMany({
+      $or: [{ document_id: docId }, { document_id: docId.toString() }],
+    });
+    await db.collection('audit_logs').deleteMany({ document_id: docId });
+    await db.collection('esign_documents').deleteOne({ _id: docId });
+
+    [doc.file_path, doc.signed_file_path, doc.review_merged_file_path].filter(Boolean).forEach((filePath) => {
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn('Could not delete file:', filePath, e.message); }
+    });
+
+    console.log('E-sign DELETE: document deleted', idParam, doc.file_name);
+    res.json({ success: true, message: 'Document deleted' });
+  } catch (error) {
+    console.error('❌ E-sign delete document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/void - Void a sent document (invalidates links, keeps record)
+app.post('/api/esign/documents/:id/void', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can void this document' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be voided' });
+    }
+    const voidReason = (req.body?.void_reason || '').toString().trim().slice(0, 1000);
+    if (!voidReason) {
+      return res.status(400).json({ success: false, error: 'A reason is required when voiding a document' });
+    }
+    await db.collection('esign_recipients').updateMany(
+      { document_id: docId },
+      { $unset: { signing_token: '' } }
+    );
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      {
+        $set: {
+          status: 'voided',
+          voided_at: new Date(),
+          voided_by: actorEmail || null,
+          void_reason: voidReason,
+        },
+      }
+    );
+    await db.collection('esign_signature_secrets').deleteMany({
+      $or: [{ document_id: docId }, { document_id: docId.toString() }],
+    });
+    try {
+      await logAudit(docId.toString(), 'voided', actorEmail || req.body?.voided_by || req.ip || null, req.ip || req.connection?.remoteAddress, { void_reason: voidReason });
+    } catch (auditErr) { /* non-fatal */ }
+    console.log('E-sign VOID: document voided', req.params.id, doc.file_name, '|', actorEmail, '|', voidReason);
+    res.json({ success: true, message: 'Document voided. Signing links no longer work.', void_reason: voidReason });
+  } catch (error) {
+    console.error('❌ E-sign void document error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/remind - Manually send reminder emails to all pending recipients
+app.post('/api/esign/documents/:id/remind', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const actorEmail = req.body?.actor_email || req.body?.user_email || '';
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can send reminders for this document' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only documents with status "sent" can be reminded' });
+    }
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(500).json({ success: false, error: 'Email service not configured' });
+    }
+
+    const recipients = await db.collection('esign_recipients').find({
+      document_id: docId,
+      status: { $in: ['pending', 'viewed'] },
+      email: { $exists: true, $ne: '' },
+      signing_token: { $exists: true, $ne: '' },
+    }).toArray();
+
+    if (!recipients.length) {
+      return res.status(400).json({ success: false, error: 'No pending recipients to remind' });
+    }
+
+    let sentCount = 0;
+    const errors = [];
+    for (const recipient of recipients) {
+      try {
+        if (isEsignTokenExpired(recipient)) {
+          errors.push(`${recipient.email}: signing link expired`);
+          continue;
+        }
+        const { signingUrl, inboxUrl } = getEsignRecipientUrls(recipient.signing_token);
+        const { subject, html } = buildEsignRecipientEmail(doc, recipient, signingUrl, inboxUrl, {
+          mode: 'reminder',
+          tokenExpiresAt: recipient.token_expires_at,
+        });
+        const result = await sendEmail(recipient.email, subject, html);
+        if (!result.success) {
+          errors.push(`${recipient.email}: ${result.error?.message || result.error || 'send failed'}`);
+          continue;
+        }
+        await db.collection('esign_recipients').updateOne(
+          { _id: recipient._id },
+          { $set: { expiry_reminder_sent_at: new Date() } }
+        );
+        sentCount++;
+      } catch (recErr) {
+        errors.push(`${recipient.email}: ${recErr.message}`);
+      }
+    }
+
+    try {
+      await logAudit(docId.toString(), 'manual_reminder_sent', req.body?.actor_email || req.ip || 'system', req.ip || null);
+    } catch (_) { /* non-fatal */ }
+
+    if (sentCount === 0) {
+      return res.status(500).json({ success: false, error: errors.join('; ') || 'No reminders sent' });
+    }
+    res.json({
+      success: true,
+      message: `Reminder sent to ${sentCount} recipient${sentCount === 1 ? '' : 's'}.`,
+      sent: sentCount,
+      errors: errors.length ? errors : undefined,
+    });
+  } catch (error) {
+    console.error('❌ E-sign remind error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/approval-workflows/:workflowId/reset-esign
+// Deletes the linked esign document (all recipients, fields, secrets, files) and
+// clears esignDocumentId from the workflow so the user can start a fresh signing request.
+app.post('/api/approval-workflows/:workflowId/reset-esign', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const workflowId = req.params.workflowId;
+    if (!workflowId) return res.status(400).json({ success: false, error: 'Invalid workflow ID' });
+
+    // Workflows use a string `id` field (e.g. "WF-1775162752752"), not a MongoDB ObjectId
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow) return res.status(404).json({ success: false, error: 'Workflow not found' });
+
+    const esignDocIdStr = workflow.esignDocumentId;
+    if (esignDocIdStr) {
+      let docId;
+      try { docId = new ObjectId(esignDocIdStr); } catch { /* invalid id — skip document deletion */ }
+
+      if (docId) {
+        const esignDoc = await db.collection('esign_documents').findOne({ _id: docId });
+
+        await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
+        await db.collection('esign_recipients').deleteMany({ document_id: docId });
+        await db.collection('esign_signature_secrets').deleteMany({
+          $or: [{ document_id: docId }, { document_id: docId.toString() }],
+        });
+        await db.collection('audit_logs').deleteMany({ document_id: docId });
+        await db.collection('esign_documents').deleteOne({ _id: docId });
+
+        if (esignDoc) {
+          [esignDoc.file_path, esignDoc.signed_file_path, esignDoc.review_merged_file_path]
+            .filter(Boolean)
+            .forEach((filePath) => {
+              try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {
+                console.warn('reset-esign: could not delete file:', filePath, e.message);
+              }
+            });
+        }
+        console.log('reset-esign: esign document deleted', esignDocIdStr);
+      }
+    }
+
+    // Clear the esignDocumentId reference so the next "Proceed to e-Sign" creates a fresh doc
+    await db.collection('approval_workflows').updateOne(
+      { id: workflowId },
+      { $unset: { esignDocumentId: '' } }
+    );
+
+    res.json({ success: true, message: 'E-sign reset. You can now create a new signing request.' });
+  } catch (error) {
+    console.error('❌ reset-esign error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/recipients - List recipients for a document
+app.get('/api/esign/documents/:id/recipients', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const docIdStr = docId.toString();
+    const recipients = await db.collection('esign_recipients')
+      .find({ $or: [{ document_id: docId }, { document_id: docIdStr }] })
+      .sort({ order: 1, _id: 1 })
+      .toArray();
+    res.json({
+      success: true,
+      recipients: recipients.map((r) => ({
+        id: r._id.toString(),
+        name: r.name || r.email || 'Recipient',
+        email: r.email,
+        role: r.role || 'signer',
+        action: r.action || null,
+        status: r.status || 'pending',
+        order: r.order,
+        comment: r.comment || null,
+        email_message: r.email_message || null,
+        signing_token: r.signing_token || null,
+        token_expires_at: r.token_expires_at || null,
+        expiry_reminder_sent_at: r.expiry_reminder_sent_at || null,
+        // Activity timestamps for tracking
+        sent_at: r.sent_at || null,
+        viewed_at: r.viewed_at || null,
+        signed_at: r.signed_at || null,
+        // Forwarding fields
+        forwarded_to_email: r.forwarded_to_email || null,
+        forwarded_to_name: r.forwarded_to_name || null,
+        forwarded_at: r.forwarded_at || null,
+        forward_count: r.forward_count || 0,
+        forwarded_from_email: r.forwarded_from_email || null,
+        forwarded_from_name: r.forwarded_from_name || null,
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign get recipients error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/activity - Activity timeline (from audit_logs) for the tracking UI
+app.get('/api/esign/documents/:id/activity', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const docIdStr = docId.toString();
+    const logs = await db.collection('audit_logs')
+      .find({ $or: [{ document_id: docId }, { document_id: docIdStr }] })
+      .sort({ timestamp: 1 })
+      .toArray();
+    res.json({
+      success: true,
+      activity: logs.map((l) => ({
+        action: l.action,
+        actor: l.user_email || null,
+        timestamp: l.timestamp,
+        recipient: (l.metadata && l.metadata.recipient) || null,
+        metadata: l.metadata || null,
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign activity error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/recipients - Sync recipients (upsert by email so _id stays stable for signature_fields.recipient_id)
+app.post('/api/esign/documents/:id/recipients', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    const { recipients: list } = req.body || {};
+    if (!Array.isArray(list)) return res.status(400).json({ success: false, error: 'recipients array required' });
+    const MAX_EMAIL_MESSAGE_LENGTH = 1000;
+    const listFiltered = list.filter((r) => r && (r.email || r.name));
+    const existingAll = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).toArray();
+    const incomingEmails = new Set();
+
+    if (!listFiltered.length) {
+      if (existingAll.length) {
+        await db.collection('signature_fields').updateMany(
+          { $and: [signatureFieldsDocumentFilter(docId), { recipient_id: { $in: existingAll.map((x) => x._id) } }] },
+          { $unset: { recipient_id: '' } }
+        );
+        await db.collection('esign_recipients').deleteMany(esignRecipientsDocumentFilter(docId));
+      }
+      return res.json({ success: true, recipients: [] });
+    }
+
+    for (let idx = 0; idx < listFiltered.length; idx++) {
+      const r = listFiltered[idx];
+      const email = (r.email || '').trim().toLowerCase();
+      if (!email) continue;
+      incomingEmails.add(email);
+      const name = (r.name || r.email || `Recipient ${idx + 1}`).trim();
+      const prev = await db.collection('esign_recipients').findOne({
+        $and: [esignRecipientsDocumentFilter(docId), { email }],
+      });
+
+      const $set = {
+        document_id: docId,
+        name,
+        email,
+        role: r.role || 'signer',
+        order: idx,
+      };
+      if (r.action === 'signer' || r.action === 'reviewer') {
+        $set.action = r.action;
+      }
+      if (r.email_message != null && typeof r.email_message === 'string') {
+        const trimmed = r.email_message.trim().slice(0, MAX_EMAIL_MESSAGE_LENGTH);
+        if (trimmed) $set.email_message = trimmed;
+        else $set.email_message = '';
+      }
+      const updatePayload = { $set };
+      if (r.action !== 'signer' && r.action !== 'reviewer') {
+        updatePayload.$unset = { action: '' };
+      }
+
+      if (prev) {
+        await db.collection('esign_recipients').updateOne({ _id: prev._id }, updatePayload);
+      } else {
+        const newDoc = {
+          document_id: docId,
+          name,
+          email,
+          role: r.role || 'signer',
+          status: 'pending',
+          order: idx,
+        };
+        if (r.action === 'signer' || r.action === 'reviewer') newDoc.action = r.action;
+        if (r.email_message != null && typeof r.email_message === 'string') {
+          const trimmed = r.email_message.trim().slice(0, MAX_EMAIL_MESSAGE_LENGTH);
+          if (trimmed) newDoc.email_message = trimmed;
+        }
+        if (r.signing_token != null && r.signing_token !== '') newDoc.signing_token = r.signing_token;
+        await db.collection('esign_recipients').insertOne(newDoc);
+      }
+    }
+
+    const removed = existingAll.filter((ex) => !incomingEmails.has((ex.email || '').toLowerCase()));
+    if (removed.length) {
+      const removedIds = removed.map((x) => x._id);
+      await db.collection('signature_fields').updateMany(
+        { $and: [signatureFieldsDocumentFilter(docId), { recipient_id: { $in: removedIds } }] },
+        { $unset: { recipient_id: '' } }
+      );
+      await db.collection('esign_recipients').deleteMany({ _id: { $in: removedIds } });
+    }
+
+    const recipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).sort({ order: 1, _id: 1 }).toArray();
+    res.json({
+      success: true,
+      recipients: recipients.map((r) => ({
+        id: r._id.toString(),
+        name: r.name || r.email || 'Recipient',
+        email: r.email,
+        role: r.role || 'signer',
+        action: r.action || null,
+        status: r.status || 'pending',
+        email_message: r.email_message || null,
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign set recipients error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Shared helper: send e-sign document to signers (used by POST route and by approval-completion auto-send)
+async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}) {
+  const { uploadedBy = 'system', signingOrderEnforced = false } = options;
+  if (!db) return { success: false, error: 'Database not available' };
+  let docId;
+  try {
+    docId = new ObjectId(esignDocumentIdStr);
+  } catch {
+    return { success: false, error: 'Invalid esign document id' };
+  }
+  const doc = await db.collection('esign_documents').findOne({ _id: docId });
+  if (!doc) return { success: false, error: 'Document not found' };
+  if (doc.status === 'sent') {
+    console.log('📧 E-sign document already sent, skipping auto-send');
+    return { success: true, emails_sent: 0, already_sent: true, emails_sent_to: [] };
+  }
+  let recipients = await db.collection('esign_recipients').find(esignRecipientsDocumentFilter(docId)).sort({ order: 1, _id: 1 }).toArray();
+  if (!recipients.length) return { success: false, error: 'Add at least one recipient before sending' };
+
+  const envelopeHasSigner = recipients.some((r) => !recipientIsEsignReviewer(r));
+  if (envelopeHasSigner) {
+    const placementFields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).toArray();
+    if (!placementFields.length) {
+      return {
+        success: false,
+        error:
+          'Add at least one field on the document before sending. Signers need at least one signature field (place fields on the PDF first).',
+      };
+    }
+    for (const rec of recipients) {
+      if (recipientIsEsignReviewer(rec)) continue;
+      const recFields = await getEsignFieldsForRecipient(db, docId, rec._id.toString());
+      const hasSignatureField = recFields.some((f) => (f.type || 'signature') === 'signature');
+      if (!hasSignatureField) {
+        const label = rec.name || rec.email || 'Signer';
+        return {
+          success: false,
+          error: `Each signer needs at least one signature field. "${label}" has none visible for them. Assign a signature field to this signer, or use unassigned fields so all signers share the same placements.`,
+        };
+      }
+    }
+  }
+  let emailsSent = 0;
+  const emailsSentTo = [];
+  for (let recIdx = 0; recIdx < recipients.length; recIdx++) {
+    const rec = recipients[recIdx];
+    const token = crypto.randomUUID();
+    const tokenCreatedAt = new Date();
+    const tokenExpiresAt = new Date(tokenCreatedAt.getTime() + ESIGN_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    // Sequential mode: only send email to the first recipient; others wait until previous signs.
+    // Deferred recipients get a token now but no `sent_at` until their email actually goes out.
+    const isDeferred = signingOrderEnforced && recIdx > 0;
+    await db.collection('esign_recipients').updateOne(
+      { _id: rec._id },
+      { $set: { signing_token: token, status: 'pending', token_created_at: tokenCreatedAt, token_expires_at: tokenExpiresAt, ...(isDeferred ? {} : { sent_at: tokenCreatedAt }) } }
+    );
+    if (isDeferred) continue;
+    const { signingUrl, inboxUrl } = getEsignRecipientUrls(token);
+    if (process.env.SENDGRID_API_KEY && rec.email) {
+      if (emailsSent === 0) {
+        console.log('📧 E-sign email URLs:', { signing: signingUrl.substring(0, 60) + '...', dashboard: inboxUrl.substring(0, 60) + '...' });
+        console.log('📧 Sender (EMAIL_FROM):', process.env.EMAIL_FROM || 'noreply@yourdomain.com', '— must be verified in SendGrid');
+      }
+      const { subject, html } = buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, {
+        mode: 'initial',
+        tokenExpiresAt,
+      });
+      try {
+        const result = await sendEmail(rec.email, subject, html);
+        if (result.success) {
+          emailsSent++;
+          emailsSentTo.push(String(rec.email).trim());
+          console.log('✅ E-sign email sent to', rec.email);
+        } else {
+          console.warn('❌ E-sign email not sent to', rec.email, '—', result.error?.message || result.error?.code || result.error);
+        }
+      } catch (err) {
+        console.warn('E-sign send email failed for', rec.email, err?.message || err);
+      }
+    } else if (rec.email) {
+      console.warn('📧 E-sign skip (no SENDGRID_API_KEY):', rec.email);
+    }
+  }
+  const hasRecipientsWithEmail = recipients.some(r => r.email);
+  // If SendGrid is configured but every email failed, do NOT mark the document as 'sent'.
+  // Leaving it in 'draft' allows the user to retry the send once the issue is fixed
+  // (e.g. verified sender in SendGrid, corrected API key, etc.).
+  if (emailsSent === 0 && hasRecipientsWithEmail && process.env.SENDGRID_API_KEY) {
+    console.error('❌ E-sign: no emails were delivered even though SENDGRID_API_KEY is set.');
+    console.error('   Document NOT marked as sent — you can retry once the issue is resolved.');
+    console.error('   Common causes:');
+    console.error('   1) EMAIL_FROM (' + (process.env.EMAIL_FROM || 'not set') + ') is not verified in SendGrid');
+    console.error('      → https://app.sendgrid.com/settings/sender_auth');
+    console.error('   2) SENDGRID_API_KEY is invalid or lacks "Mail Send" permission');
+    console.error('      → https://app.sendgrid.com/settings/api_keys');
+    console.error('   3) Recipient email is on the suppression/bounce list');
+    console.error('      → https://app.sendgrid.com/suppressions/bounces');
+    return { success: false, emails_sent: 0, emails_sent_to: [], error: 'Email delivery failed. Check server logs for details (sender verification, API key, suppression list).' };
+  }
+  if (emailsSent === 0 && hasRecipientsWithEmail) {
+    // No SENDGRID_API_KEY — offline/dev mode; mark sent so the flow can proceed without email.
+    console.warn('📧 No e-sign emails sent (SENDGRID_API_KEY not configured). Marking as sent in offline mode.');
+  }
+  await db.collection('esign_documents').updateOne(
+    { _id: docId },
+    { $set: { status: 'sent', sent_at: new Date(), signing_order_enforced: signingOrderEnforced } }
+  );
+  await logAudit(docId, 'sent', uploadedBy, null);
+  return { success: true, emails_sent: emailsSent, emails_sent_to: emailsSentTo };
+}
+
+// POST /api/esign/documents/:id/send-for-signature - Generate tokens, send emails, mark sent
+app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const result = await sendDocumentForSignatureInternal(req.params.id, {
+      uploadedBy: req.body.uploaded_by || 'system',
+      signingOrderEnforced: req.body.signing_order_enforced === true,
+    });
+    if (!result.success) {
+      return res.status(result.error === 'Document not found' ? 404 : 400).json({ success: false, error: result.error });
+    }
+    const sentList = Array.isArray(result.emails_sent_to) ? result.emails_sent_to : [];
+    const message =
+      result.emails_sent > 0
+        ? `Successfully sent email to ${result.emails_sent} recipient(s).`
+        : 'Document already sent.';
+    res.json({
+      success: true,
+      message,
+      emails_sent: result.emails_sent,
+      emails_sent_to: sentList,
+    });
+  } catch (error) {
+    console.error('❌ E-sign send-for-signature error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/documents/:id/extend-expiry - Creator-only: reissue fresh links for pending recipients
+app.post('/api/esign/documents/:id/extend-expiry', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(400).json({ success: false, error: 'Email delivery is not configured. Configure SENDGRID_API_KEY before extending expiry.' });
+    }
+    let docId;
+    try {
+      docId = new ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const actorEmail = (req.body?.actor_email || req.body?.user_email || '').toString().trim();
+    if (!esignActorIsDocumentCreator(doc, actorEmail)) {
+      return res.status(403).json({ success: false, error: 'Only the document creator can extend expiry for this document' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only documents with status "sent" can have their expiry extended' });
+    }
+
+    const requestedDays = Number(req.body?.days);
+    const expiryDays = Number.isFinite(requestedDays) && requestedDays > 0
+      ? Math.min(Math.floor(requestedDays), 90)
+      : ESIGN_LINK_EXPIRY_DAYS;
+
+    const pendingRecipients = await db.collection('esign_recipients')
+      .find({
+        ...esignRecipientsDocumentFilter(docId),
+        status: { $in: ['pending', 'viewed'] },
+        email: { $exists: true, $ne: '' },
+      })
+      .sort({ order: 1, _id: 1 })
+      .toArray();
+
+    if (!pendingRecipients.length) {
+      return res.status(400).json({ success: false, error: 'No pending recipients are eligible for expiry extension' });
+    }
+
+    const emailsSentTo = [];
+    const failedRecipients = [];
+    const signingLinks = [];
+    const now = new Date();
+    const tokenExpiresAt = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000);
+
+    for (const rec of pendingRecipients) {
+      const token = crypto.randomUUID();
+      const { signingUrl, inboxUrl } = getEsignRecipientUrls(token);
+      const { subject, html } = buildEsignRecipientEmail(doc, rec, signingUrl, inboxUrl, {
+        mode: 'extended',
+        tokenExpiresAt,
+        expiryDays,
+      });
+      const previousRecipientState = {
+        signing_token: rec.signing_token,
+        token_created_at: rec.token_created_at,
+        token_expires_at: rec.token_expires_at,
+        expiry_reminder_sent_at: rec.expiry_reminder_sent_at,
+        expiry_extended_at: rec.expiry_extended_at,
+        expiry_extended_by: rec.expiry_extended_by,
+        expiry_extension_count: rec.expiry_extension_count,
+      };
+
+      await db.collection('esign_recipients').updateOne(
+        { _id: rec._id },
+        {
+          $set: {
+            signing_token: token,
+            token_created_at: now,
+            token_expires_at: tokenExpiresAt,
+            expiry_extended_at: now,
+            expiry_extended_by: actorEmail || 'system',
+            expiry_extension_count: Number(rec.expiry_extension_count || 0) + 1,
+          },
+          $unset: { expiry_reminder_sent_at: '' },
+        }
+      );
+
+      try {
+        const result = await sendEmail(rec.email, subject, html);
+        if (!result.success) throw result.error || new Error('Email send failed');
+        emailsSentTo.push(String(rec.email).trim());
+        signingLinks.push({
+          recipient_id: rec._id.toString(),
+          name: rec.name || '',
+          email: String(rec.email).trim(),
+          signing_url: signingUrl,
+          expires_at: tokenExpiresAt,
+        });
+        try {
+          await logAudit(docId.toString(), 'expiry_extended', actorEmail || rec.email || 'system', req.ip || req.connection?.remoteAddress);
+        } catch (_) { /* non-fatal */ }
+      } catch (mailErr) {
+        failedRecipients.push({
+          email: rec.email,
+          error: mailErr?.message || String(mailErr || 'Email send failed'),
+        });
+        const restoreUpdate = buildEsignRecipientRestoreUpdate(previousRecipientState);
+        if (Object.keys(restoreUpdate).length) {
+          await db.collection('esign_recipients').updateOne({ _id: rec._id }, restoreUpdate);
+        }
+      }
+    }
+
+    if (!emailsSentTo.length) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to extend expiry for pending recipients',
+        failed_recipients: failedRecipients,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Expiry extended for ${emailsSentTo.length} pending recipient(s).`,
+      emails_sent: emailsSentTo.length,
+      emails_sent_to: emailsSentTo,
+      failed_recipients: failedRecipients,
+      expires_at: tokenExpiresAt,
+      extension_days: expiryDays,
+    });
+  } catch (error) {
+    console.error('❌ E-sign extend-expiry error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/documents/:id/edit-context
+// Same shape as the esign variant but targets the `documents` collection. Looked up
+// by the custom `id` field (e.g. "ContactCompanyInc_JohnSmith_37728"), not Mongo _id.
+// Used by the Edit Dates modal when invoked from the Approval Workflow dashboard
+// (before the document has been sent for e-signature).
+app.get('/api/documents/:id/edit-context', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const doc = await db.collection('documents').findOne({ id: req.params.id });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    res.json({
+      success: true,
+      context: {
+        id: req.params.id,
+        file_name: doc.fileName || null,
+        status: doc.status || 'active',
+        source_document_id: null, // not applicable for the source row itself
+        dates: doc.dates || null,
+        templateData: doc.templateData || null,
+        templateId: doc.templateId || null,
+        customLineItems: Array.isArray(doc.customLineItems) ? doc.customLineItems : [],
+        dateHistory: Array.isArray(doc.dateHistory) ? doc.dateHistory : [],
+        clientInfo: {
+          clientName: doc.clientName || null,
+          clientEmail: doc.clientEmail || null,
+          company: doc.company || null,
+        },
+        canRerender: !!(doc.templateData && doc.templateId),
+      }
+    });
+  } catch (error) {
+    console.error('❌ documents edit-context error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/documents/:id/dates
+// Updates the three contract dates on a documents-collection row (the source document
+// created from QuoteGenerator). Cascades to any linked esign_documents row so the
+// approval-side and e-sign-side stay in sync. Mirrors the esign variant otherwise.
+app.patch('/api/documents/:id/dates', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+
+    const doc = await db.collection('documents').findOne({ id: req.params.id });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const {
+      dates: newDates,
+      reason,
+      actorEmail,
+      pdfFileData,
+      pdfFileName,
+      docxFileData,
+      docxFileName,
+    } = req.body || {};
+
+    if (!newDates || typeof newDates !== 'object') {
+      return res.status(400).json({ success: false, error: 'dates object is required' });
+    }
+
+    // Authorization: only the document creator OR an approval admin can edit dates.
+    if (!(await actorCanEditSourceDocumentDates(doc, actorEmail))) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can edit dates' });
+    }
+
+    const normalizedNewDates = {
+      projectStartDate: newDates.projectStartDate || null,
+      effectiveDate: newDates.effectiveDate || null,
+      quoteExpiryDate: newDates.quoteExpiryDate || null,
+    };
+
+    const historyEntry = {
+      changedAt: new Date(),
+      changedBy: (actorEmail && String(actorEmail).trim()) || 'unknown',
+      oldDates: doc.dates || null,
+      newDates: normalizedNewDates,
+      reason: (reason && String(reason).trim()) || null,
+      reRendered: !!(pdfFileData || docxFileData),
+    };
+
+    let newPdfBuffer = null;
+    if (pdfFileData) {
+      try {
+        newPdfBuffer = Buffer.from(pdfFileData, 'base64');
+        if (!newPdfBuffer || newPdfBuffer.length === 0) {
+          return res.status(400).json({ success: false, error: 'pdfFileData decoded to empty buffer' });
+        }
+      } catch (decodeErr) {
+        return res.status(400).json({ success: false, error: 'Invalid pdfFileData base64' });
+      }
+    }
+
+    let newDocxBuffer = null;
+    if (docxFileData) {
+      try {
+        const decoded = Buffer.from(docxFileData, 'base64');
+        if (decoded.length > 0) newDocxBuffer = decoded;
+      } catch (decodeErr) {
+        console.warn('PATCH documents dates: ignored invalid docxFileData base64', decodeErr?.message);
+      }
+    }
+
+    const docUpdate = {
+      $set: {
+        dates: normalizedNewDates,
+        last_dates_updated_at: new Date(),
+      },
+      $push: {
+        dateHistory: historyEntry,
+      },
+    };
+    if (newPdfBuffer) {
+      docUpdate.$set.fileData = newPdfBuffer;
+      docUpdate.$set.fileSize = newPdfBuffer.length;
+      if (pdfFileName) docUpdate.$set.fileName = pdfFileName;
+    }
+    if (newDocxBuffer) {
+      docUpdate.$set.docxFileData = newDocxBuffer;
+      if (docxFileName) docUpdate.$set.docxFileName = docxFileName;
+    }
+
+    await db.collection('documents').updateOne({ id: req.params.id }, docUpdate);
+
+    // Cascade: find any esign_documents that point at this source and update them too.
+    // This is the inverse of the cascade in PATCH /api/esign/documents/:id/dates.
+    try {
+      const linkedEsignDocs = await db.collection('esign_documents')
+        .find({ source_document_id: req.params.id })
+        .toArray();
+
+      for (const esignDoc of linkedEsignDocs) {
+        const esignUpdate = {
+          $set: {
+            dates: normalizedNewDates,
+            last_dates_updated_at: new Date(),
+          },
+          $push: {
+            dateHistory: historyEntry,
+          },
+        };
+        if (newPdfBuffer) {
+          esignUpdate.$set.file_data = newPdfBuffer.toString('base64');
+          if (pdfFileName) esignUpdate.$set.file_name = pdfFileName;
+          // Also overwrite the on-disk file so the e-sign download endpoint serves the new bytes.
+          if (esignDoc.file_path && typeof esignDoc.file_path === 'string') {
+            try {
+              fs.writeFileSync(esignDoc.file_path, newPdfBuffer);
+            } catch (diskErr) {
+              console.warn('PATCH documents dates: failed to overwrite esign file on disk', esignDoc._id?.toString(), diskErr?.message);
+            }
+          }
+        }
+        await db.collection('esign_documents').updateOne({ _id: esignDoc._id }, esignUpdate);
+      }
+    } catch (cascadeErr) {
+      console.warn('PATCH documents dates: cascade to esign_documents failed', cascadeErr?.message);
+    }
+
+    res.json({
+      success: true,
+      message: newPdfBuffer
+        ? 'Dates updated and document re-rendered.'
+        : 'Dates updated. Document file was not re-rendered (no new blob supplied).',
+      dates: normalizedNewDates,
+      historyEntry,
+    });
+  } catch (error) {
+    console.error('❌ PATCH documents dates error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/documents/:id/edit-context
+// Returns everything the EditDatesModal needs to re-render the document with new dates:
+// current dates, the templateData snapshot, templateId, customLineItems, and dateHistory.
+// If the document was generated before date-editing was supported, fields may be null —
+// the modal handles that case by either degrading to a metadata-only update or showing
+// a "cannot re-render legacy document" warning.
+app.get('/api/esign/documents/:id/edit-context', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    let docId;
+    try {
+      docId = new ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    // If esign doc doesn't have the snapshot (e.g. created before this feature shipped or
+    // uploaded manually), try to backfill from the source document.
+    let dates = doc.dates || null;
+    let templateData = doc.templateData || null;
+    let templateId = doc.templateId || null;
+    let customLineItems = Array.isArray(doc.customLineItems) ? doc.customLineItems : [];
+    let dateHistory = Array.isArray(doc.dateHistory) ? doc.dateHistory : [];
+    let sourceClientInfo = null;
+
+    if (doc.source_document_id) {
+      try {
+        const sourceDoc = await db.collection('documents').findOne({ id: doc.source_document_id });
+        if (sourceDoc) {
+          if (!dates && sourceDoc.dates) dates = sourceDoc.dates;
+          if (!templateData && sourceDoc.templateData) templateData = sourceDoc.templateData;
+          if (!templateId && sourceDoc.templateId) templateId = sourceDoc.templateId;
+          if ((!customLineItems || customLineItems.length === 0) && Array.isArray(sourceDoc.customLineItems)) {
+            customLineItems = sourceDoc.customLineItems;
+          }
+          // dateHistory should reflect the linked source if the esign row hasn't recorded any yet.
+          if (dateHistory.length === 0 && Array.isArray(sourceDoc.dateHistory)) {
+            dateHistory = sourceDoc.dateHistory;
+          }
+          sourceClientInfo = {
+            clientName: sourceDoc.clientName || null,
+            clientEmail: sourceDoc.clientEmail || null,
+            company: sourceDoc.company || null,
+          };
+        }
+      } catch (sourceErr) {
+        console.warn('edit-context: failed to read source document', sourceErr?.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      context: {
+        id: req.params.id,
+        file_name: doc.file_name,
+        status: doc.status,
+        source_document_id: doc.source_document_id || null,
+        upload_source: doc.upload_source || null,   // 'manual' | 'approval' | null
+        dates,
+        templateData,
+        templateId,
+        customLineItems,
+        dateHistory,
+        clientInfo: sourceClientInfo,
+        canRerender: !!(templateData && templateId),
+      }
+    });
+  } catch (error) {
+    console.error('❌ E-sign edit-context error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/esign/documents/:id/dates
+// Updates the three contract dates on an esign document. Per product decisions:
+//   - allowed in ALL statuses including signed (creator confirms warning in UI)
+//   - existing approvals/signatures are NOT reset, even if document is re-rendered
+//   - every change is appended to dateHistory for audit
+//
+// Body shape:
+//   {
+//     dates:     { projectStartDate, effectiveDate, quoteExpiryDate },  // required
+//     reason:    string | null,                                          // optional
+//     actorEmail: string,                                                // who is making the change
+//     // Optional new blobs from client-side re-render. If absent, dates are updated as metadata
+//     // only and the stored PDF/DOCX keep their old date values until the user re-renders.
+//     pdfFileData:  base64 string (optional),
+//     pdfFileName:  string (optional),
+//     docxFileData: base64 string (optional),
+//     docxFileName: string (optional),
+//   }
+app.patch('/api/esign/documents/:id/dates', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    let docId;
+    try {
+      docId = new ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document ID' });
+    }
+
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const {
+      dates: newDates,
+      reason,
+      actorEmail,
+      pdfFileData,
+      pdfFileName,
+      docxFileData,
+      docxFileName,
+    } = req.body || {};
+
+    if (!newDates || typeof newDates !== 'object') {
+      return res.status(400).json({ success: false, error: 'dates object is required' });
+    }
+
+    // Authorization: only the document creator OR an approval admin can edit dates.
+    if (!(await actorCanEditEsignDates(doc, actorEmail))) {
+      return res.status(403).json({ success: false, error: 'Only the document creator or an approval admin can edit dates' });
+    }
+
+    const normalizedNewDates = {
+      projectStartDate: newDates.projectStartDate || null,
+      effectiveDate: newDates.effectiveDate || null,
+      quoteExpiryDate: newDates.quoteExpiryDate || null,
+    };
+
+    const historyEntry = {
+      changedAt: new Date(),
+      changedBy: (actorEmail && String(actorEmail).trim()) || doc.uploaded_by || 'unknown',
+      oldDates: doc.dates || null,
+      newDates: normalizedNewDates,
+      reason: (reason && String(reason).trim()) || null,
+      reRendered: !!(pdfFileData || docxFileData),
+    };
+
+    // If client supplied a new PDF blob, write it to disk + update file_data.
+    // We overwrite the same on-disk path so e-sign download endpoints continue to work.
+    let newPdfBuffer = null;
+    if (pdfFileData) {
+      try {
+        newPdfBuffer = Buffer.from(pdfFileData, 'base64');
+        if (!newPdfBuffer || newPdfBuffer.length === 0) {
+          return res.status(400).json({ success: false, error: 'pdfFileData decoded to empty buffer' });
+        }
+      } catch (decodeErr) {
+        return res.status(400).json({ success: false, error: 'Invalid pdfFileData base64' });
+      }
+    }
+
+    if (newPdfBuffer) {
+      try {
+        // Write to existing file_path if present, else a new path under documentsDir.
+        const targetPath = doc.file_path && typeof doc.file_path === 'string'
+          ? doc.file_path
+          : path.join(documentsDir, `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+        fs.writeFileSync(targetPath, newPdfBuffer);
+        if (!doc.file_path) {
+          // Persist the newly assigned path so subsequent reads succeed.
+          await db.collection('esign_documents').updateOne(
+            { _id: docId },
+            { $set: { file_path: targetPath } }
+          );
+        }
+      } catch (diskErr) {
+        console.error('PATCH dates: failed to write new PDF to disk', diskErr);
+        return res.status(500).json({ success: false, error: 'Failed to write new PDF to disk' });
+      }
+    }
+
+    const esignUpdate = {
+      $set: {
+        dates: normalizedNewDates,
+        last_dates_updated_at: new Date(),
+      },
+      $push: {
+        dateHistory: historyEntry,
+      },
+    };
+    if (newPdfBuffer) {
+      esignUpdate.$set.file_data = newPdfBuffer.toString('base64');
+      if (pdfFileName) esignUpdate.$set.file_name = pdfFileName;
+    }
+
+    await db.collection('esign_documents').updateOne({ _id: docId }, esignUpdate);
+
+    // Cascade to source documents row if linked, so the original PDF/DOCX in the
+    // "documents" collection also reflects the updated dates and audit trail.
+    if (doc.source_document_id) {
+      const sourceUpdate = {
+        $set: {
+          dates: normalizedNewDates,
+          last_dates_updated_at: new Date(),
+        },
+        $push: {
+          dateHistory: historyEntry,
+        },
+      };
+      if (newPdfBuffer) {
+        sourceUpdate.$set.fileData = newPdfBuffer;
+        sourceUpdate.$set.fileSize = newPdfBuffer.length;
+        if (pdfFileName) sourceUpdate.$set.fileName = pdfFileName;
+      }
+      if (docxFileData) {
+        try {
+          const docxBuffer = Buffer.from(docxFileData, 'base64');
+          if (docxBuffer.length > 0) {
+            sourceUpdate.$set.docxFileData = docxBuffer;
+            if (docxFileName) sourceUpdate.$set.docxFileName = docxFileName;
+          }
+        } catch (decodeErr) {
+          console.warn('PATCH dates: ignored invalid docxFileData base64', decodeErr?.message);
+        }
+      }
+      try {
+        await db.collection('documents').updateOne(
+          { id: doc.source_document_id },
+          sourceUpdate
+        );
+      } catch (cascadeErr) {
+        console.warn('PATCH dates: cascade to documents collection failed', cascadeErr?.message);
+      }
+    }
+
+    try {
+      await logAudit(req.params.id, 'dates_updated', historyEntry.changedBy, req.ip || req.connection?.remoteAddress);
+    } catch (_) { /* non-fatal */ }
+
+    res.json({
+      success: true,
+      message: newPdfBuffer
+        ? 'Dates updated and document re-rendered.'
+        : 'Dates updated. Document file was not re-rendered (no new blob supplied).',
+      dates: normalizedNewDates,
+      historyEntry,
+    });
+  } catch (error) {
+    console.error('❌ PATCH dates error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/fixed-role-recipients - Get Team → Tech → Legal → Deal Desk recipients (for approval-style e-sign)
+app.get('/api/esign/fixed-role-recipients', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const teamParam = (req.query.team || '').toString().trim().toUpperCase();
+    const settingsCollection = db.collection('team_approval_settings');
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+    const teamLeads = (settings && settings.teamLeads) ? settings.teamLeads : {};
+    const teamIds = Object.keys(teamLeads || {});
+    const team = teamParam && teamLeads[teamParam] ? teamParam : (teamIds[0] || 'DEV');
+    const teamLeadEmail = teamLeads[team] || process.env.TEAM_APPROVAL_EMAIL || '';
+    const techEmail = process.env.TECHNICAL_TEAM_EMAIL || process.env.TECH_EMAIL || 'cpq.zenop.ai.technical@cloudfuze.com';
+    const legalEmail = process.env.LEGAL_TEAM_EMAIL || process.env.LEGAL_EMAIL || 'cpq.zenop.ai.legal@cloudfuze.com';
+    const dealDeskEmail = process.env.DEAL_DESK_EMAIL || 'salesops@cloudfuze.com';
+    const recipients = [
+      { role: 'Team Approval', name: `Team Lead (${team})`, email: teamLeadEmail, order: 0 },
+      { role: 'Technical Team', name: 'Technical Team', email: techEmail, order: 1 },
+      { role: 'Legal Team', name: 'Legal Team', email: legalEmail, order: 2 },
+      { role: 'Deal Desk', name: 'Deal Desk', email: dealDeskEmail, order: 3 },
+    ].filter((r) => r.email);
+    res.json({ success: true, recipients, selectedTeam: team });
+  } catch (error) {
+    console.error('❌ E-sign fixed-role-recipients error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/pending-for-email - List documents pending signature for an email (for E-Sign Portal / Team Lead Dashboard)
+app.get('/api/esign/pending-for-email', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const email = (req.query.email || '').toString().trim().toLowerCase();
+    if (!email) return res.status(400).json({ success: false, error: 'email query required' });
+    // Case-insensitive email match so dashboard finds items regardless of how email was stored
+    const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const recipients = await db.collection('esign_recipients')
+      .find({ email: emailRegex, status: { $in: ['pending', 'viewed'] }, signing_token: { $exists: true, $ne: '' } })
+      .toArray();
+    const docIds = [...new Set(recipients.map((r) => r.document_id).filter(Boolean))];
+    const docs = await db.collection('esign_documents')
+      .find({ _id: { $in: docIds }, status: 'sent' })
+      .toArray();
+    const docMap = new Map(docs.map((d) => [d._id.toString(), d]));
+    const items = recipients
+      .map((r) => {
+        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
+        const doc = docMap.get(docId);
+        if (!doc || !r.signing_token) return null;
+        return {
+          documentId: docId,
+          file_name: doc.file_name || 'Document',
+          signing_token: r.signing_token,
+          role: r.role || 'signer',
+        };
+      })
+      .filter(Boolean);
+    res.json({ success: true, items });
+  } catch (error) {
+    console.error('❌ E-sign pending-for-email error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/inbox-by-token - Open dashboard by link from email (no login). Token = signing_token.
+// Returns queue (pending docs for this recipient's email) and history (signed/reviewed).
+app.get('/api/esign/inbox-by-token', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
+    const token = (req.query.token || '').toString().trim();
+    if (!token) return res.status(400).json({ success: false, error: 'Token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(403).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
+    const email = (recipient.email || '').toString().trim().toLowerCase();
+    if (!email) return res.status(403).json({ success: false, error: 'Invalid link' });
+    const emailRegex = new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+    const role = (recipient.role || 'Signer').toString();
+    const nameLower = (recipient.name || '').toString().toLowerCase().trim();
+    let roleLabel = role === 'Technical Team' ? 'Technical' : role === 'Legal Team' ? 'Legal' : role === 'Team Approval' ? 'Team Lead' : role;
+    if (roleLabel === role && (nameLower === 'technical' || nameLower === 'legal')) roleLabel = nameLower.charAt(0).toUpperCase() + nameLower.slice(1);
+
+    // Queue: all pending for this email (doc status 'sent')
+    const pendingRecipients = await db.collection('esign_recipients')
+      .find({ email: emailRegex, status: { $in: ['pending', 'viewed'] }, signing_token: { $exists: true, $ne: '' } })
+      .sort({ _id: 1 })
+      .toArray();
+    const pendingDocIds = [...new Set(pendingRecipients.map((r) => r.document_id).filter(Boolean))];
+    const pendingDocs = await db.collection('esign_documents')
+      .find({ _id: { $in: pendingDocIds.map((id) => (id instanceof ObjectId ? id : new ObjectId(id.toString()))) }, status: 'sent' })
+      .toArray();
+    const pendingDocMap = new Map(pendingDocs.map((d) => [d._id.toString(), d]));
+    const queue = pendingRecipients
+      .map((r) => {
+        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
+        const doc = pendingDocMap.get(docId);
+        if (!doc || !r.signing_token) return null;
+        return {
+          documentId: docId,
+          file_name: doc.file_name || 'Document',
+          signing_token: r.signing_token,
+          role: (r.role || 'signer').toString(),
+        };
+      })
+      .filter(Boolean);
+
+    // History: signed or reviewed for this email
+    const historyRecipients = await db.collection('esign_recipients')
+      .find({ email: emailRegex, status: { $in: ['signed', 'reviewed'] } })
+      .sort({ _id: -1 })
+      .limit(50)
+      .toArray();
+    const historyDocIds = [...new Set(historyRecipients.map((r) => r.document_id).filter(Boolean))];
+    const historyDocs = historyDocIds.length
+      ? await db.collection('esign_documents').find({ _id: { $in: historyDocIds.map((id) => (id instanceof ObjectId ? id : new ObjectId(id.toString()))) } }).toArray()
+      : [];
+    const historyDocMap = new Map(historyDocs.map((d) => [d._id.toString(), d]));
+    const history = historyRecipients
+      .map((r) => {
+        const docId = r.document_id && (r.document_id.toString ? r.document_id.toString() : String(r.document_id));
+        const doc = historyDocMap.get(docId);
+        if (!doc) return null;
+        return {
+          documentId: docId,
+          file_name: doc.file_name || 'Document',
+          status: r.status,
+          documentStatus: doc.status || 'sent',
+        };
+      })
+      .filter(Boolean);
+
+    res.json({
+      success: true,
+      role: roleLabel,
+      workflow: 'Team Lead → Technical → Legal → Deal Desk',
+      queue,
+      history,
+    });
+  } catch (error) {
+    console.error('❌ E-sign inbox-by-token error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/sign-by-token/:token - Resolve token to recipient + document + fields (only that recipient's fields)
+app.get('/api/esign/sign-by-token/:token', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const token = (req.params.token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'Token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      console.warn('E-sign sign-by-token: invalid document_id on recipient', recipient._id, recipient.document_id);
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) {
+      console.warn('E-sign sign-by-token: document not found for docId=', docId.toString(), 'recipient=', recipient._id);
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+    if (doc.status === 'voided') {
+      return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    }
+    // Track first "viewed": when a recipient opens their signing link, promote pending → viewed
+    // (never downgrade signed/reviewed/denied). Record viewed_at once for the activity timeline.
+    if (recipient.status === 'pending') {
+      const now = new Date();
+      await db.collection('esign_recipients').updateOne(
+        { _id: recipient._id, status: 'pending' },
+        { $set: { status: 'viewed', ...(recipient.viewed_at ? {} : { viewed_at: now }) } }
+      );
+      if (!recipient.viewed_at) {
+        recipient.viewed_at = now;
+        try { await logAudit(docId, 'viewed', recipient.email, req.ip || req.connection?.remoteAddress, { recipient: recipient.email }); } catch (_) { /* non-fatal */ }
+      }
+      recipient.status = 'viewed';
+    }
+    const recipientIdStr = recipient._id.toString();
+    let fields = await getEsignFieldsForRecipient(db, docId, recipientIdStr);
+    /** Reviewers: same recipient-scoped fields as signers for name/title/date/text (no signature boxes). */
+    if (recipientIsEsignReviewer(recipient)) {
+      fields = fields.filter((f) => (f.type || 'signature').toLowerCase() !== 'signature');
+    }
+    const prefillPayload = (f) => {
+      const p = esignEffectivePrefillForField(doc, f);
+      return p !== undefined ? { prefill: p } : {};
+    };
+    res.json({
+      success: true,
+      recipient: {
+        id: recipient._id.toString(),
+        name: recipient.name,
+        email: recipient.email,
+        role: recipient.role,
+        action: recipient.action || null,
+        status: recipient.status,
+        show_dashboard: recipient.role === 'Team Lead' || recipient.role === 'Team Approval' || recipient.role === 'Technical Team' || recipient.role === 'Legal Team',
+        ...(recipientIsEsignReviewer(recipient)
+          ? {
+              reviewer_fields_saved:
+                !!(esignDocReviewerFieldMap(doc) && Object.keys(esignDocReviewerFieldMap(doc)).length > 0),
+            }
+          : {}),
+      },
+      document: {
+        id: doc._id.toString(),
+        file_name: doc.file_name,
+        status: doc.status,
+      },
+      fields: fields.map((f) => ({
+        _id: f._id?.toString(),
+        page: f.page,
+        type: f.type,
+        x: f.x,
+        y: f.y,
+        width: f.width,
+        height: f.height,
+        xNorm: f.xNorm,
+        yNorm: f.yNorm,
+        widthNorm: f.widthNorm,
+        heightNorm: f.heightNorm,
+        xPct: f.xPct,
+        yPct: f.yPct,
+        widthPct: f.widthPct,
+        heightPct: f.heightPct,
+        recipient_id: f.recipient_id?.toString(),
+        ...prefillPayload(f),
+        ...(f.text_color ? { text_color: f.text_color } : {}),
+        ...(f.text_font ? { text_font: f.text_font } : {}),
+      })),
+    });
+  } catch (error) {
+    console.error('❌ E-sign sign-by-token error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/forward-signing-request - Recipient forwards a pending request to another person.
+app.post('/api/esign/forward-signing-request', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(400).json({ success: false, error: 'Email delivery is not configured. Configure SENDGRID_API_KEY before forwarding requests.' });
+    }
+
+    const token = (req.body?.signing_token || '').toString().trim();
+    const newEmail = (req.body?.new_email || '').toString().trim().toLowerCase();
+    const newName = (req.body?.new_name || '').toString().trim();
+    const forwardComment = (req.body?.comment || '').toString().trim().slice(0, 1000);
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    if (!newEmail) return res.status(400).json({ success: false, error: 'New recipient email is required' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      return res.status(400).json({ success: false, error: 'Enter a valid email address for the new recipient' });
+    }
+
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
+    if ((recipient.status || 'pending') !== 'pending') {
+      return res.status(400).json({ success: false, error: 'Only pending requests can be forwarded' });
+    }
+    if (String(recipient.email || '').trim().toLowerCase() === newEmail) {
+      return res.status(400).json({ success: false, error: 'Enter a different email address to forward this request' });
+    }
+
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') {
+      return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    }
+    if (doc.status !== 'sent') {
+      return res.status(400).json({ success: false, error: 'Only sent documents can be forwarded' });
+    }
+
+    const duplicateRecipient = await db.collection('esign_recipients').findOne({
+      $and: [
+        esignRecipientsDocumentFilter(docId),
+        { email: newEmail },
+        { _id: { $ne: recipient._id } },
+      ],
+    });
+    if (duplicateRecipient) {
+      return res.status(400).json({ success: false, error: 'That email is already a recipient on this document' });
+    }
+
+    const now = new Date();
+    const freshToken = crypto.randomUUID();
+    const tokenExpiresAt = new Date(now.getTime() + ESIGN_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    const forwardedRecipient = {
+      ...recipient,
+      name: newName || newEmail,
+      email: newEmail,
+    };
+    const previousRecipientState = {
+      name: recipient.name,
+      email: recipient.email,
+      status: recipient.status,
+      signing_token: recipient.signing_token,
+      token_created_at: recipient.token_created_at,
+      token_expires_at: recipient.token_expires_at,
+      expiry_reminder_sent_at: recipient.expiry_reminder_sent_at,
+      expiry_extended_at: recipient.expiry_extended_at,
+      expiry_extended_by: recipient.expiry_extended_by,
+      expiry_extension_count: recipient.expiry_extension_count,
+      original_recipient_email: recipient.original_recipient_email,
+      original_recipient_name: recipient.original_recipient_name,
+      forwarded_from_email: recipient.forwarded_from_email,
+      forwarded_from_name: recipient.forwarded_from_name,
+      forwarded_by_email: recipient.forwarded_by_email,
+      forwarded_to_email: recipient.forwarded_to_email,
+      forwarded_to_name: recipient.forwarded_to_name,
+      forwarded_at: recipient.forwarded_at,
+      forward_comment: recipient.forward_comment,
+      forward_count: recipient.forward_count,
+    };
+
+    await db.collection('esign_recipients').updateOne(
+      { _id: recipient._id },
+      {
+        $set: {
+          name: forwardedRecipient.name,
+          email: forwardedRecipient.email,
+          signing_token: freshToken,
+          token_created_at: now,
+          token_expires_at: tokenExpiresAt,
+          original_recipient_email: recipient.original_recipient_email || recipient.email || null,
+          original_recipient_name: recipient.original_recipient_name || recipient.name || null,
+          forwarded_from_email: recipient.email || null,
+          forwarded_from_name: recipient.name || null,
+          forwarded_by_email: recipient.email || null,
+          forwarded_to_email: newEmail,
+          forwarded_to_name: forwardedRecipient.name,
+          forwarded_at: now,
+          forward_comment: forwardComment || null,
+          forward_count: Number(recipient.forward_count || 0) + 1,
+        },
+        $unset: {
+          expiry_reminder_sent_at: '',
+          expiry_extended_at: '',
+          expiry_extended_by: '',
+          expiry_extension_count: '',
+        },
+      }
+    );
+
+    try {
+      const { signingUrl, inboxUrl } = getEsignRecipientUrls(freshToken);
+      const { subject, html } = buildEsignRecipientEmail(doc, forwardedRecipient, signingUrl, inboxUrl, {
+        mode: 'forwarded',
+        tokenExpiresAt,
+        forwardedByName: recipient.name || '',
+        forwardedByEmail: recipient.email || '',
+        forwardComment,
+      });
+      const result = await sendEmail(newEmail, subject, html);
+      if (!result.success) throw result.error || new Error('Email send failed');
+    } catch (mailErr) {
+      const restoreUpdate = buildEsignRecipientRestoreUpdate(previousRecipientState);
+      if (Object.keys(restoreUpdate).length) {
+        await db.collection('esign_recipients').updateOne({ _id: recipient._id }, restoreUpdate);
+      }
+      return res.status(500).json({ success: false, error: mailErr?.message || 'Failed to forward request' });
+    }
+
+    try {
+      await sendEsignForwardedNotificationToCreator(
+        doc,
+        { name: recipient.name, email: recipient.email },
+        { name: forwardedRecipient.name, email: newEmail },
+        forwardComment
+      );
+    } catch (_) { /* non-fatal */ }
+    try {
+      await logAudit(docId.toString(), 'forwarded', recipient.email || 'system', req.ip || req.connection?.remoteAddress);
+    } catch (_) { /* non-fatal */ }
+
+    res.json({
+      success: true,
+      message: `Request forwarded to ${newEmail}`,
+      forwarded_to: {
+        name: forwardedRecipient.name,
+        email: newEmail,
+      },
+      expires_at: tokenExpiresAt,
+    });
+  } catch (error) {
+    console.error('❌ E-sign forward-signing-request error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/reviewer-save-fields - Reviewer saves name/title/date/text before Approve (persists to document for signers + PDF)
+app.post('/api/esign/reviewer-save-fields', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token, field_values: fieldValuesBody } = req.body || {};
+    const token = (signing_token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
+    if (!recipientIsEsignReviewer(recipient)) {
+      return res.status(403).json({ success: false, error: 'Only reviewers can save field entries' });
+    }
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    if (recipient.status === 'reviewed') {
+      return res.status(400).json({ success: false, error: 'Review already completed' });
+    }
+    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody, recipient._id.toString());
+    return res.json({ success: true, message: 'Field entries saved' });
+  } catch (error) {
+    console.error('❌ E-sign reviewer-save-fields error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/mark-reviewed - Reviewer approves or denies (option: comment; deny requires comment)
+app.post('/api/esign/mark-reviewed', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token, action, comment, field_values: fieldValuesBody } = req.body || {};
+    const token = (signing_token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    const esignEnvelopeWasAlreadyCompleted = doc.status === 'completed';
+    if (recipient.status === 'reviewed') {
+      return res.json({ success: true, message: 'Already reviewed', already_reviewed: true });
+    }
+    if (recipient.status === 'denied') {
+      return res.json({ success: true, message: 'Already denied', already_denied: true });
+    }
+    const act = (action || 'approve').toString().toLowerCase();
+    if (act === 'deny' && (!comment || typeof comment !== 'string' || !comment.trim())) {
+      return res.status(400).json({ success: false, error: 'Comment is required when denying' });
+    }
+    if (act === 'deny') {
+      const commentTrimmed = (comment || '').trim();
+      await db.collection('esign_recipients').updateOne(
+        { signing_token: token },
+        { $set: { status: 'denied', review_decision: 'denied', comment: commentTrimmed } }
+      );
+      await db.collection('esign_documents').updateOne(
+        { _id: docId },
+        { $set: { status: 'denied' } }
+      );
+      try {
+        await logAudit(docId.toString(), 'review_denied', recipient.email || null, req.ip || req.connection?.remoteAddress);
+      } catch (auditErr) { /* non-fatal */ }
+      try {
+        await sendEsignDeniedNotificationToCreator(doc, recipient, commentTrimmed, 'review');
+      } catch (mailErr) { /* non-fatal */ }
+      return res.json({
+        success: true,
+        message: 'Review denied',
+        action: 'deny',
+        document_id: docId.toString(),
+      });
+    }
+    // approve (default) — merge latest field_values from client (should match last Save; same merge as reviewer-save-fields)
+    await esignMergeReviewerSubmittedFields(db, docId, doc, fieldValuesBody, recipient._id.toString());
+
+    await db.collection('esign_recipients').updateOne(
+      { signing_token: token },
+      { $set: { status: 'reviewed', review_decision: 'approved', ...(comment != null && String(comment).trim() ? { comment: String(comment).trim() } : {}) } }
+    );
+    const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
+    const completedCount = await db.collection('esign_recipients').countDocuments({
+      document_id: docId,
+      status: { $in: ['signed', 'reviewed'] },
+    });
+    if (totalCount > 0 && completedCount >= totalCount) {
+      await db.collection('esign_documents').updateOne(
+        { _id: docId },
+        { $set: { status: 'completed', signed_at: doc.signed_at || new Date() } }
+      );
+      if (!esignEnvelopeWasAlreadyCompleted) {
+        try {
+          const docFresh = await db.collection('esign_documents').findOne({ _id: docId });
+          await sendEsignCompletedNotificationToAllRecipients(docFresh || doc);
+        } catch (completeNotifyErr) {
+          console.warn('E-sign completion email failed (non-fatal):', completeNotifyErr?.message || completeNotifyErr);
+        }
+      }
+    }
+    try {
+      await logAudit(docId.toString(), 'reviewed', recipient.email || null, req.ip || req.connection?.remoteAddress);
+    } catch (auditErr) {
+      // non-fatal
+    }
+    res.json({
+      success: true,
+      message: 'Document marked as reviewed',
+      action: 'approve',
+      document_id: docId.toString(),
+    });
+  } catch (error) {
+    console.error('❌ E-sign mark-reviewed error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/deny-signing - Signer declines to sign (comment required)
+app.post('/api/esign/deny-signing', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token, comment } = req.body || {};
+    const token = (signing_token || '').trim();
+    if (!token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    if (!comment || typeof comment !== 'string' || !comment.trim()) {
+      return res.status(400).json({ success: false, error: 'Comment is required when declining to sign' });
+    }
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: token });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+    if (isEsignTokenExpired(recipient)) {
+      return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+    }
+    let docId = recipient.document_id;
+    if (!docId) return res.status(404).json({ success: false, error: 'Document not found' });
+    try {
+      docId = docId instanceof ObjectId ? docId : new ObjectId(docId.toString());
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (doc && doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    if (recipient.status === 'signed') {
+      return res.status(400).json({ success: false, error: 'You have already signed this document' });
+    }
+    if (recipient.status === 'denied') {
+      return res.json({ success: true, message: 'Already declined', already_denied: true });
+    }
+    const commentTrimmed = comment.trim();
+    await db.collection('esign_recipients').updateOne(
+      { signing_token: token },
+      { $set: { status: 'denied', sign_decision: 'denied', comment: commentTrimmed } }
+    );
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { status: 'denied' } }
+    );
+    try {
+      await logAudit(docId.toString(), 'sign_denied', recipient.email || null, req.ip || req.connection?.remoteAddress);
+    } catch (auditErr) { /* non-fatal */ }
+    try {
+      await sendEsignDeniedNotificationToCreator(doc, recipient, commentTrimmed, 'sign');
+    } catch (mailErr) { /* non-fatal */ }
+    res.json({
+      success: true,
+      message: 'You have declined to sign',
+      action: 'deny',
+      document_id: docId.toString(),
+    });
+  } catch (error) {
+    console.error('❌ E-sign deny-signing error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/signature-fields - Save signature field placements (optional recipient_id per field)
+app.post('/api/esign/signature-fields', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, fields } = req.body;
+    if (!document_id || !Array.isArray(fields)) {
+      return res.status(400).json({ success: false, error: 'document_id and fields array required' });
+    }
+    const docId = new ObjectId(document_id);
+    const existing = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!existing) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    await db.collection('signature_fields').deleteMany(signatureFieldsDocumentFilter(docId));
+    const toInsert = fields.map((f) => {
+      let recipientId = null;
+      if (f.recipient_id) {
+        try { recipientId = new ObjectId(f.recipient_id); } catch { recipientId = f.recipient_id; }
+      }
+      const base = { document_id: docId, page: Number(f.page) || 1, type: f.type || 'signature', recipient_id: recipientId };
+      const typeLower = (f.type || 'signature').toString().toLowerCase();
+      let textFieldExtras = {};
+      if (typeLower === 'text') {
+        const tc = typeof f.text_color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(f.text_color.trim()) ? f.text_color.trim() : '#dc2626';
+        const tfRaw = (f.text_font || 'helvetica').toString().toLowerCase();
+        const tf = tfRaw === 'times' || tfRaw === 'courier' ? tfRaw : 'helvetica';
+        textFieldExtras = {
+          ...(typeof f.prefill === 'string' ? { prefill: f.prefill.slice(0, 8000) } : {}),
+          text_color: tc,
+          text_font: tf,
+        };
+      } else if ((typeLower === 'name' || typeLower === 'title') && typeof f.prefill === 'string') {
+        textFieldExtras = { prefill: f.prefill.slice(0, 500) };
+      }
+      if (f.xPct != null) {
+        return { ...base, ...textFieldExtras, xPct: Number(f.xPct), yPct: Number(f.yPct), widthPct: Number(f.widthPct) || 20, heightPct: Number(f.heightPct) || 4 };
+      }
+      const row = {
+        ...base,
+        ...textFieldExtras,
+        x: Number(f.x) || 0,
+        y: Number(f.y) || 0,
+        width: Number(f.width) || 100,
+        height: Number(f.height) || 40,
+      };
+      if (f.xNorm != null && f.yNorm != null && f.widthNorm != null && f.heightNorm != null) {
+        row.xNorm = Number(f.xNorm);
+        row.yNorm = Number(f.yNorm);
+        row.widthNorm = Number(f.widthNorm);
+        row.heightNorm = Number(f.heightNorm);
+      }
+      return row;
+    });
+    if (toInsert.length) await db.collection('signature_fields').insertMany(toInsert);
+    res.json({ success: true, message: 'Signature fields saved' });
+  } catch (error) {
+    console.error('❌ E-sign save signature fields error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/signature-fields/:documentId
+app.get('/api/esign/signature-fields/:documentId', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.documentId); } catch { return res.status(400).json({ success: false, error: 'Invalid document ID' }); }
+    const fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).toArray();
+    res.json({ success: true, fields });
+  } catch (error) {
+    console.error('❌ E-sign get signature fields error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/signatures/store-encrypted — deprecated: signatures are sent in POST /api/esign/documents/generate-signed field_values; merged PDF is authoritative. Validates token/doc like before but does not write esign_signature_secrets (legacy clients should upgrade).
+app.post('/api/esign/signatures/store-encrypted', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, signing_token, field_index: fieldIndexRaw, payload } = req.body || {};
+    if (document_id === undefined || document_id === null || !signing_token || fieldIndexRaw === undefined || fieldIndexRaw === null) {
+      return res.status(400).json({ success: false, error: 'document_id, signing_token, and field_index required' });
+    }
+    const field_index = Number(fieldIndexRaw);
+    if (!Number.isInteger(field_index) || field_index < 0) {
+      return res.status(400).json({ success: false, error: 'Invalid field_index' });
+    }
+    let docId;
+    try { docId = new ObjectId(String(document_id)); } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document_id' });
+    }
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: String(signing_token).trim() });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    let rDocId;
+    try {
+      rDocId = recipient.document_id instanceof ObjectId ? recipient.document_id : new ObjectId(String(recipient.document_id));
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document' });
+    }
+    if (rDocId.toString() !== docId.toString()) {
+      return res.status(400).json({ success: false, error: 'Document does not match signing link' });
+    }
+    const img = payload && typeof payload.imagePngBase64 === 'string' ? payload.imagePngBase64.trim() : '';
+    if (!img || (!img.startsWith('data:image') && img.length < 80)) {
+      return res.status(400).json({ success: false, error: 'payload.imagePngBase64 required' });
+    }
+    return res.json({ success: true, deprecated: true });
+  } catch (error) {
+    console.error('❌ E-sign store-encrypted error:', error?.message || error);
+    return res.status(500).json({ success: false, error: 'Failed to store signature' });
+  }
+});
+
+// POST /api/esign/signatures/clear-stored — remove encrypted blobs for this signing link (e.g. user clicked Edit).
+app.post('/api/esign/signatures/clear-stored', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { signing_token } = req.body || {};
+    if (!signing_token) return res.status(400).json({ success: false, error: 'signing_token required' });
+    const recipient = await db.collection('esign_recipients').findOne({ signing_token: String(signing_token).trim() });
+    if (!recipient) return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+    await db.collection('esign_signature_secrets').deleteMany({ recipient_id: recipient._id });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('❌ E-sign clear-stored error:', error?.message || error);
+    return res.status(500).json({ success: false, error: 'Failed to clear stored signatures' });
+  }
+});
+
+// POST /api/esign/signatures/save - Save signature image and link to document
+app.post('/api/esign/signatures/save', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, field_id, signature_data, signer_email } = req.body;
+    if (!document_id || !signature_data) return res.status(400).json({ success: false, error: 'document_id and signature_data required' });
+
+    const docId = new ObjectId(document_id);
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const buf = Buffer.from(signature_data.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+    const sigFilename = `sig-${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
+    const sigPath = path.join(signaturesDir, sigFilename);
+    fs.writeFileSync(sigPath, buf);
+
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $set: { signature_path: sigPath, signer_email: signer_email || null, signed_at: new Date() } }
+    );
+
+    await logAudit(docId, 'signed', signer_email, req.ip || req.connection?.remoteAddress);
+
+    res.json({ success: true, signature_path: sigPath });
+  } catch (error) {
+    console.error('❌ E-sign save signature error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/** Parse #RRGGBB for pdf-lib rgb(); invalid → default red. */
+function esignHexToPdfRgb(hex) {
+  const s = String(hex || '').trim();
+  const m = /^#([0-9a-f]{6})$/i.exec(s);
+  if (!m) return rgb(220 / 255, 38 / 255, 38 / 255);
+  const n = parseInt(m[1], 16);
+  return rgb((n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
+
+function esignPdfFontForTextField(fontId, helvetica, timesRoman, courier) {
+  const id = (fontId || 'helvetica').toString().toLowerCase();
+  if (id === 'times') return timesRoman;
+  if (id === 'courier') return courier;
+  return helvetica;
+}
+
+/** Lazy-load sharp (WebP/GIF/SVG/etc. → PNG for pdf-lib). */
+let esignSharpModule;
+function getEsignSharp() {
+  if (esignSharpModule === undefined) {
+    try {
+      esignSharpModule = require('sharp');
+    } catch {
+      esignSharpModule = null;
+    }
+  }
+  return esignSharpModule;
+}
+
+/**
+ * Signatures may be PNG, JPEG, WebP, GIF, etc. pdf-lib only embeds PNG/JPEG; other formats → 500 without conversion.
+ */
+async function embedEsignSignatureImage(pdfDoc, imgBytes, dataUrlHint) {
+  const hint = typeof dataUrlHint === 'string' ? dataUrlHint : '';
+  const sharp = getEsignSharp();
+  const trySharpToPng = async () => {
+    if (!sharp || !imgBytes || imgBytes.length === 0) return null;
+    try {
+      const pngBuf = await sharp(Buffer.from(imgBytes)).png().toBuffer();
+      return await pdfDoc.embedPng(pngBuf);
+    } catch {
+      return null;
+    }
+  };
+
+  const looksJpegFromUrl = /^data:image\/jpe?g/i.test(hint);
+  const looksJpegFromMagic = imgBytes.length >= 2 && imgBytes[0] === 0xff && imgBytes[1] === 0xd8;
+  if (looksJpegFromUrl || looksJpegFromMagic) {
+    try {
+      return await pdfDoc.embedJpg(imgBytes);
+    } catch (e) {
+      const fromSharp = await trySharpToPng();
+      if (fromSharp) return fromSharp;
+      try {
+        return await pdfDoc.embedPng(imgBytes);
+      } catch {
+        throw e;
+      }
+    }
+  }
+  try {
+    return await pdfDoc.embedPng(imgBytes);
+  } catch (e) {
+    const fromSharp = await trySharpToPng();
+    if (fromSharp) return fromSharp;
+    try {
+      return await pdfDoc.embedJpg(imgBytes);
+    } catch {
+      throw e;
+    }
+  }
+}
+
+/** Widen effective maxWidth so name/title/date draw on one line (pdf-lib wraps when text exceeds maxWidth). */
+function esignPdfSingleLineMaxWidth(page, helvetica, text, fontSize, placedWidth, x) {
+  const t = String(text || '').trim();
+  if (!t) return Math.max(8, placedWidth);
+  const tw = helvetica.widthOfTextAtSize(t, fontSize);
+  const pad = 8;
+  const edge = Math.max(placedWidth, page.getWidth() - x - 6);
+  return Math.min(Math.max(placedWidth, tw + pad), edge);
+}
+
+/** Word-wrap plain text for pdf-lib StandardFonts (used for multiline "text" fields). */
+function wrapTextForPdf(font, text, fontSize, maxWidth) {
+  const s = String(text || '').replace(/\r/g, '').slice(0, 8000);
+  const lines = [];
+  for (const para of s.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      lines.push('');
+      continue;
+    }
+    let line = '';
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (font.widthOfTextAtSize(test, fontSize) <= maxWidth) line = test;
+      else {
+        if (line) lines.push(line);
+        line = word;
+      }
+    }
+    if (line) lines.push(line);
+  }
+  return lines;
+}
+
+/**
+ * Burn reviewer/template text (name/title/date/text) onto a copy of the original upload so downloads include data
+ * before anyone runs generate-signed. Signatures are never drawn here.
+ */
+async function esignRegenerateReviewMergedPdf(db, docId) {
+  const doc = await db.collection('esign_documents').findOne({ _id: docId });
+  if (!doc || !doc.file_path || !fs.existsSync(doc.file_path)) return;
+  const prevReview = doc.review_merged_file_path;
+  const fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+  const values = {};
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    if ((f.type || 'signature').toLowerCase() === 'signature') continue;
+    const ev = esignEffectivePrefillForField(doc, f);
+    if (ev !== undefined && String(ev).trim() !== '') values[String(i)] = String(ev);
+  }
+  if (!Object.keys(values).length) {
+    await db.collection('esign_documents').updateOne(
+      { _id: docId },
+      { $unset: { review_merged_file_path: '', review_merged_at: '' } }
+    );
+    if (prevReview && fs.existsSync(prevReview)) {
+      try { fs.unlinkSync(prevReview); } catch (_) { /* ignore */ }
+    }
+    return;
+  }
+  const pdfBytes = fs.readFileSync(doc.file_path);
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const pages = pdfDoc.getPages();
+  const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const fType = (f.type || 'signature').toLowerCase();
+    if (fType === 'signature') continue;
+    const val = values[String(i)];
+    if (!val) continue;
+    const pageNum = (f.page || 1) - 1;
+    if (pageNum < 0 || pageNum >= pages.length) continue;
+    const page = pages[pageNum];
+    const w = page.getWidth();
+    const h = page.getHeight();
+    let x; let y; let width; let height;
+    if (
+      f.xNorm != null &&
+      f.yNorm != null &&
+      f.widthNorm != null &&
+      f.heightNorm != null &&
+      !Number.isNaN(Number(f.xNorm)) &&
+      !Number.isNaN(Number(f.yNorm))
+    ) {
+      width = Number(f.widthNorm) * w;
+      height = Number(f.heightNorm) * h;
+      x = Number(f.xNorm) * w;
+      const yFromTop = Number(f.yNorm) * h;
+      y = h - yFromTop - height;
+    } else if (f.xPct != null || f.yPct != null) {
+      const xPct = (Number(f.xPct) ?? 10) / 100;
+      const yPct = (Number(f.yPct) ?? 80) / 100;
+      const wPct = (Number(f.widthPct) ?? 20) / 100;
+      const hPct = (Number(f.heightPct) ?? 4) / 100;
+      x = w * xPct;
+      y = h - (h * yPct) - (h * hPct);
+      width = w * wPct;
+      height = h * hPct;
+    } else {
+      x = Number(f.x) ?? (w * 0.1);
+      y = h - Number(f.y) - (Number(f.height) || 40);
+      width = Number(f.width) || 100;
+      height = Number(f.height) || 40;
+    }
+    if (fType === 'text') {
+      const raw = typeof val === 'string' ? val : String(val);
+      const fontSize = Math.min(11, Math.max(7, height * 0.11));
+      const lineHeight = fontSize * 1.2;
+      const innerW = Math.max(8, width - 4);
+      const pdfFont = esignPdfFontForTextField(f.text_font, helvetica, timesRoman, courier);
+      const textRgb = esignHexToPdfRgb(f.text_color);
+      const lines = wrapTextForPdf(pdfFont, raw, fontSize, innerW);
+      let cursorY = y + height - fontSize;
+      for (const line of lines) {
+        if (cursorY < y) break;
+        if (line) {
+          page.drawText(line, {
+            x: x + 2,
+            y: cursorY,
+            size: fontSize,
+            font: pdfFont,
+            color: textRgb,
+            maxWidth: innerW,
+          });
+        }
+        cursorY -= lineHeight;
+      }
+    } else {
+      const text = typeof val === 'string' ? val : String(val);
+      const safe = text.substring(0, fType === 'date' ? 32 : 500);
+      const fontSize = Math.min(12, height * 0.8);
+      const lineMax = esignPdfSingleLineMaxWidth(page, helvetica, safe, fontSize, width, x);
+      page.drawText(safe, {
+        x,
+        y: y + (height - fontSize) / 2,
+        size: fontSize,
+        font: helvetica,
+        color: rgb(0, 0, 0),
+        maxWidth: lineMax,
+      });
+    }
+  }
+  const outPath = path.join(signedDir, `review-${docId.toString()}-${Date.now()}.pdf`);
+  fs.writeFileSync(outPath, await pdfDoc.save());
+  await db.collection('esign_documents').updateOne(
+    { _id: docId },
+    { $set: { review_merged_file_path: outPath, review_merged_at: new Date() } }
+  );
+  if (prevReview && prevReview !== outPath && fs.existsSync(prevReview)) {
+    try { fs.unlinkSync(prevReview); } catch (_) { /* ignore */ }
+  }
+}
+
+// POST /api/esign/documents/generate-signed - Merge field values (signature/name/title/date/text) into PDF
+app.post('/api/esign/documents/generate-signed', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const { document_id, signature_data, field_coords, field_values, signer_email, signing_token } = req.body;
+    if (!document_id) return res.status(400).json({ success: false, error: 'document_id required' });
+
+    let docId;
+    try {
+      docId = new ObjectId(String(document_id).trim());
+    } catch {
+      return res.status(400).json({ success: false, error: 'Invalid document_id' });
+    }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (doc.status === 'voided') return res.status(410).json({ success: false, error: 'This signing request has been voided.' });
+    const esignDocWasAlreadyCompleted = doc.status === 'completed';
+    const sourcePath = (doc.signed_file_path && fs.existsSync(doc.signed_file_path)) ? doc.signed_file_path : doc.file_path;
+    if (!fs.existsSync(sourcePath)) return res.status(404).json({ success: false, error: 'Source file not found' });
+
+    const pdfBytes = fs.readFileSync(sourcePath);
+    let pdfDoc;
+    try {
+      pdfDoc = await PDFDocument.load(pdfBytes);
+    } catch (loadErr) {
+      console.error('❌ E-sign generate-signed: PDFDocument.load failed:', loadErr?.message || loadErr);
+      return res.status(400).json({
+        success: false,
+        error: 'Could not read the document PDF. The file may be corrupted, encrypted, or not a valid PDF.',
+      });
+    }
+    const pages = pdfDoc.getPages();
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+
+    let recipient = null;
+    let fields;
+    if (field_coords && field_coords.length) {
+      fields = field_coords;
+    } else if (signing_token) {
+      recipient = await db.collection('esign_recipients').findOne({ signing_token });
+      if (!recipient) {
+        return res.status(404).json({ success: false, error: 'Invalid or expired signing link' });
+      }
+      if (isEsignTokenExpired(recipient)) {
+        return res.status(410).json({ success: false, error: 'This signing link has expired. Please contact the sender to request a new link.', expired: true });
+      }
+      let rDocId;
+      try {
+        rDocId = recipient.document_id instanceof ObjectId ? recipient.document_id : new ObjectId(String(recipient.document_id));
+      } catch {
+        return res.status(400).json({ success: false, error: 'Invalid document' });
+      }
+      if (rDocId.toString() !== docId.toString()) {
+        return res.status(400).json({ success: false, error: 'Document does not match signing link' });
+      }
+      fields = await getEsignFieldsForRecipient(db, docId, recipient._id.toString());
+    } else {
+      fields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+    }
+
+    const values = { ...(field_values && typeof field_values === 'object' && !Array.isArray(field_values) ? field_values : {}) };
+    if (signature_data && !Object.keys(values).length && fields.length) {
+      values['0'] = signature_data;
+    }
+
+    // Prefer field_values for signature images. Legacy fallback: encrypted rows in esign_signature_secrets (e.g. old clients that still called store-encrypted before submit).
+    if (signing_token && recipient) {
+      const secrets = await db.collection('esign_signature_secrets').find({
+        document_id: docId,
+        recipient_id: recipient._id,
+      }).toArray();
+      const byIdx = new Map(secrets.map((s) => [s.field_index, s]));
+      for (let i = 0; i < fields.length; i++) {
+        const f = fields[i];
+        if ((f.type || 'signature').toLowerCase() !== 'signature') continue;
+        if (esignSignatureFieldValueProvided(values[String(i)])) continue;
+        const sec = byIdx.get(i);
+        if (!sec) continue;
+        try {
+          const plain = decryptEsignSignatureStoredDoc(sec);
+          const p = JSON.parse(plain);
+          let img = typeof p.imagePngBase64 === 'string' ? p.imagePngBase64.trim() : '';
+          if (img && !img.startsWith('data:')) img = `data:image/png;base64,${img}`;
+          if (img) values[String(i)] = img;
+        } catch (_) {
+          return res.status(400).json({
+            success: false,
+            error: 'Could not load stored signature. Please apply your signature again.',
+          });
+        }
+      }
+    }
+
+    const docForReviewerMerge = await db.collection('esign_documents').findOne({ _id: docId });
+    esignApplyReviewerMapToFieldValues(docForReviewerMerge || doc, fields, values);
+
+    const sigIndices = fields
+      .map((f, i) => (((f.type || 'signature').toLowerCase() === 'signature') ? i : -1))
+      .filter((i) => i >= 0);
+    for (const i of sigIndices) {
+      const val = values[String(i)] ?? values[fields[i]._id?.toString()];
+      if (!val) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing signature for one or more fields. Open each signature box and click Apply.',
+        });
+      }
+    }
+
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      const fType = (f.type || 'signature').toLowerCase();
+      let val = values[String(i)] ?? values[f._id?.toString()];
+      if ((fType === 'text' || fType === 'name' || fType === 'title') && (val == null || val === '')) {
+        const p = f.prefill;
+        if (typeof p === 'string' && p.length) val = p;
+      }
+      if (!val) continue;
+
+      const pageNum = (f.page || 1) - 1;
+      if (pageNum < 0 || pageNum >= pages.length) continue;
+      const page = pages[pageNum];
+      const w = page.getWidth();
+      const h = page.getHeight();
+      let x, y, width, height;
+      if (
+        f.xNorm != null &&
+        f.yNorm != null &&
+        f.widthNorm != null &&
+        f.heightNorm != null &&
+        !Number.isNaN(Number(f.xNorm)) &&
+        !Number.isNaN(Number(f.yNorm))
+      ) {
+        width = Number(f.widthNorm) * w;
+        height = Number(f.heightNorm) * h;
+        x = Number(f.xNorm) * w;
+        const yFromTop = Number(f.yNorm) * h;
+        y = h - yFromTop - height;
+      } else if (f.xPct != null || f.yPct != null) {
+        const xPct = (Number(f.xPct) ?? 10) / 100;
+        const yPct = (Number(f.yPct) ?? 80) / 100;
+        const wPct = (Number(f.widthPct) ?? 20) / 100;
+        const hPct = (Number(f.heightPct) ?? 4) / 100;
+        x = w * xPct;
+        y = h - (h * yPct) - (h * hPct);
+        width = w * wPct;
+        height = h * hPct;
+      } else {
+        x = Number(f.x) ?? (w * 0.1);
+        y = h - Number(f.y) - (Number(f.height) || 40);
+        width = Number(f.width) || 100;
+        height = Number(f.height) || 40;
+      }
+
+      const isBase64Image = typeof val === 'string' && /^data:image\/[^;]+;base64,/i.test(val);
+      if ((fType === 'signature' && isBase64Image)) {
+        const b64 = val.replace(/^data:image\/[^;]+;base64,/i, '').replace(/\s/g, '');
+        let imgBytes;
+        try {
+          imgBytes = Buffer.from(b64, 'base64');
+        } catch {
+          return res.status(400).json({ success: false, error: 'Invalid signature image encoding.' });
+        }
+        if (!imgBytes || imgBytes.length === 0) {
+          return res.status(400).json({ success: false, error: 'Invalid signature image data.' });
+        }
+        let embedded;
+        try {
+          embedded = await embedEsignSignatureImage(pdfDoc, imgBytes, val);
+        } catch (imgErr) {
+          console.error('❌ E-sign signature embed failed:', imgErr?.message || imgErr);
+          return res.status(400).json({
+            success: false,
+            error:
+              'Could not place the signature image on the PDF. Try uploading a PNG or JPG, or draw/type your signature again.',
+          });
+        }
+        page.drawImage(embedded, { x, y, width, height });
+      } else if (fType === 'text') {
+        const raw = typeof val === 'string' ? val : String(val);
+        const fontSize = Math.min(11, Math.max(7, height * 0.11));
+        const lineHeight = fontSize * 1.2;
+        const innerW = Math.max(8, width - 4);
+        const pdfFont = esignPdfFontForTextField(f.text_font, helvetica, timesRoman, courier);
+        const textRgb = esignHexToPdfRgb(f.text_color);
+        const lines = wrapTextForPdf(pdfFont, raw, fontSize, innerW);
+        let cursorY = y + height - fontSize;
+        for (const line of lines) {
+          if (cursorY < y) break;
+          if (line) {
+            page.drawText(line, {
+              x: x + 2,
+              y: cursorY,
+              size: fontSize,
+              font: pdfFont,
+              color: textRgb,
+              maxWidth: innerW,
+            });
+          }
+          cursorY -= lineHeight;
+        }
+      } else {
+        const text = typeof val === 'string' ? val : String(val);
+        const safe = text.substring(0, fType === 'date' ? 32 : 500);
+        const fontSize = Math.min(12, height * 0.8);
+        const lineMax = esignPdfSingleLineMaxWidth(page, helvetica, safe, fontSize, width, x);
+        page.drawText(safe, {
+          x,
+          y: y + (height - fontSize) / 2,
+          size: fontSize,
+          font: helvetica,
+          color: rgb(0, 0, 0),
+          maxWidth: lineMax,
+        });
+      }
+    }
+
+    const outFilename = `signed-${doc._id}-${Date.now()}.pdf`;
+    const outPath = path.join(signedDir, outFilename);
+    const signedBytes = await pdfDoc.save();
+    fs.writeFileSync(outPath, signedBytes);
+    const signedFileData = Buffer.from(signedBytes).toString('base64');
+
+    if (signing_token) {
+      await db.collection('esign_recipients').updateOne(
+        { signing_token },
+        { $set: { status: 'signed', signed_at: new Date() } }
+      );
+      const totalCount = await db.collection('esign_recipients').countDocuments({ document_id: docId });
+      const completedCount = await db.collection('esign_recipients').countDocuments({
+        document_id: docId,
+        status: { $in: ['signed', 'reviewed'] },
+      });
+      if (totalCount > 0 && completedCount >= totalCount) {
+        await db.collection('esign_documents').updateOne(
+          { _id: docId },
+          { $set: { status: 'completed', signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date() } }
+        );
+        if (!esignDocWasAlreadyCompleted) {
+          try {
+            const docFresh = await db.collection('esign_documents').findOne({ _id: docId });
+            await sendEsignCompletedNotificationToAllRecipients(docFresh || doc);
+          } catch (completeNotifyErr) {
+            console.warn('E-sign completion email failed (non-fatal):', completeNotifyErr?.message || completeNotifyErr);
+          }
+        }
+      } else {
+        await db.collection('esign_documents').updateOne(
+          { _id: docId },
+          { $set: { signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date(), signer_email: signer_email || null } }
+        );
+      }
+    } else {
+      await db.collection('esign_documents').updateOne(
+        { _id: docId },
+        { $set: { status: 'signed', signed_file_path: outPath, signed_file_data: signedFileData, signed_at: new Date(), signer_email: signer_email || null } }
+      );
+    }
+
+    await logAudit(docId, 'signed', signer_email, req.ip || req.connection?.remoteAddress);
+
+    if (signing_token && recipient) {
+      try {
+        await db.collection('esign_signature_secrets').deleteMany({ recipient_id: recipient._id });
+      } catch (_) { /* non-fatal */ }
+    }
+
+    // Sequential signing: send email to the next pending recipient
+    try {
+      const freshDoc = await db.collection('esign_documents').findOne({ _id: docId });
+      if (freshDoc?.signing_order_enforced && freshDoc.status !== 'completed') {
+        const nextRecipient = await db.collection('esign_recipients').findOne(
+          { document_id: docId, status: 'pending', signing_token: { $exists: true } },
+          { sort: { order: 1, _id: 1 } }
+        );
+        if (nextRecipient?.email && nextRecipient.signing_token) {
+          const { signingUrl, inboxUrl } = getEsignRecipientUrls(nextRecipient.signing_token);
+          const tokenExpiresAt = nextRecipient.token_expires_at;
+          const { subject, html } = buildEsignRecipientEmail(freshDoc, nextRecipient, signingUrl, inboxUrl, { mode: 'initial', tokenExpiresAt });
+          await sendEmail(nextRecipient.email, subject, html);
+          await db.collection('esign_recipients').updateOne({ _id: nextRecipient._id }, { $set: { sent_at: new Date() } });
+          await logAudit(docId, 'sent', nextRecipient.email, null, { recipient: nextRecipient.email, sequential: true });
+          console.log('📧 Sequential e-sign: sent signing email to next recipient', nextRecipient.email);
+        }
+      }
+    } catch (seqErr) {
+      console.warn('Sequential e-sign: failed to send next recipient email (non-fatal):', seqErr?.message || seqErr);
+    }
+
+    res.json({
+      success: true,
+      signed_file_path: outPath,
+      download_url: `/api/esign/documents/${docId}/file`
+    });
+  } catch (error) {
+    console.error('❌ E-sign generate signed PDF error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// List esign documents
+app.get('/api/esign/documents', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — list view doesn't need them.
+    const docs = await db.collection('esign_documents')
+      .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
+      .sort({ created_at: -1 })
+      .toArray();
+    res.json({
+      success: true,
+      documents: docs.map((d) => ({
+        id: d._id.toString(),
+        file_name: d.file_name,
+        uploaded_by: d.uploaded_by,
+        created_at: d.created_at,
+        status: d.status
+      }))
+    });
+  } catch (error) {
+    console.error('❌ E-sign list documents error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/esign/agreement-status - All documents with recipient status for tracking dashboard
+app.get('/api/esign/agreement-status', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    // Exclude inline PDF blobs (file_data / signed_file_data can be MBs each) — dashboard reads metadata only.
+    const docs = await db.collection('esign_documents')
+      .find({}, { projection: { file_data: 0, signed_file_data: 0 } })
+      .sort({ created_at: -1 })
+      .toArray();
+    const docIds = docs.map((d) => d._id);
+    const docIdStrings = docIds.map((id) => id.toString());
+    const workflowsLinked = await db.collection('approval_workflows')
+      .find({ esignDocumentId: { $in: docIdStrings } })
+      .toArray();
+    const requestedByFromWorkflow = {};
+    workflowsLinked.forEach((w) => {
+      const eid = w.esignDocumentId != null ? String(w.esignDocumentId) : '';
+      if (!eid) return;
+      const label = (w.creatorName && String(w.creatorName).trim()) || (w.creatorEmail && String(w.creatorEmail).trim()) || '';
+      if (label && !requestedByFromWorkflow[eid]) requestedByFromWorkflow[eid] = label;
+    });
+    // document_id can be stored as ObjectId or string depending on where it was set
+    const recipientsByDoc = await db.collection('esign_recipients')
+      .find({ $or: [{ document_id: { $in: docIdStrings } }, { document_id: { $in: docIds } }] })
+      .toArray();
+    const byDocId = {};
+    recipientsByDoc.forEach((r) => {
+      const docIdStr = r.document_id && typeof r.document_id.toString === 'function' ? r.document_id.toString() : String(r.document_id || '');
+      if (!docIdStr) return;
+      if (!byDocId[docIdStr]) byDocId[docIdStr] = [];
+      byDocId[docIdStr].push({
+        id: r._id.toString(),
+        name: r.name || r.email || 'Recipient',
+        email: r.email || '',
+        role: r.role || 'signer',
+        status: r.status || 'pending',
+        order: r.order ?? 999,
+        comment: r.comment || null,
+        // Activity timestamps for tracking
+        sent_at: r.sent_at || null,
+        viewed_at: r.viewed_at || null,
+        signed_at: r.signed_at || null,
+        token_expires_at: r.token_expires_at || null,
+        // Forwarding fields
+        forwarded_to_email: r.forwarded_to_email || null,
+        forwarded_to_name: r.forwarded_to_name || null,
+        forwarded_at: r.forwarded_at || null,
+        forward_count: r.forward_count || 0,
+        forwarded_from_email: r.forwarded_from_email || null,
+        forwarded_from_name: r.forwarded_from_name || null,
+      });
+    });
+    const agreements = docs.map((d) => {
+      const recs = (byDocId[d._id.toString()] || []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      const idStr = d._id.toString();
+      const requestedByStored =
+        (d.requested_by_name && String(d.requested_by_name).trim()) ||
+        (d.requested_by_email && String(d.requested_by_email).trim()) ||
+        null;
+      const requestedBy = requestedByStored || requestedByFromWorkflow[idStr] || null;
+      const uploader = (d.uploaded_by && String(d.uploaded_by).trim()) || '';
+      let creator_name = null;
+      let creator_email = null;
+      if (uploader.includes('@')) {
+        creator_email = uploader;
+      } else {
+        creator_name = (d.requested_by_name && String(d.requested_by_name).trim()) || null;
+        creator_email = (d.requested_by_email && String(d.requested_by_email).trim()) || null;
+      }
+      if (!creator_email && !creator_name && uploader) {
+        creator_name = uploader;
+      }
+      return {
+        id: idStr,
+        file_name: d.file_name,
+        uploaded_by: d.uploaded_by,
+        upload_source: d.upload_source || 'manual',
+        requested_by: requestedBy,
+        creator_name,
+        creator_email,
+        created_at: d.created_at,
+        sent_at: d.sent_at,
+        signed_at: d.signed_at,
+        voided_at: d.voided_at,
+        status: d.status,
+        recipients: recs
+      };
+    });
+    res.json({ success: true, agreements });
+  } catch (error) {
+    console.error('❌ E-sign agreement-status error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API endpoint to fetch PDF documents from MongoDB
+// NOTE: This endpoint is replaced by the one below at line 3725 to avoid duplicates
+// Keeping this comment for reference but the endpoint below should be used
+
+/** Resolve a documents row by exact id or workflow-style id (company_client_timestamp). */
+async function resolveStoredDocumentById(db, idParam) {
+  const id = String(idParam || '');
+  let document = await db.collection('documents').findOne({ id });
+  if (document) return document;
+  console.log('⚠️ Exact ID not found, attempting smart search...');
+  const parts = id.split('_');
+  if (parts.length < 2) return null;
+  const companyPart = parts[0].replace(/[0-9]/g, '');
+  const clientPart = parts[1].replace(/[0-9]/g, '');
+  if (!companyPart || !clientPart) return null;
+  console.log('🔍 Searching by company/client pattern:', { companyPart, clientPart });
+  const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
+  let matchingDocs = await db
+    .collection('documents')
+    .find({ id: { $regex: idPattern } })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .toArray();
+  if (matchingDocs.length > 0) {
+    console.log(`✅ Found matching document: ${matchingDocs[0].id} (searched for: ${id})`);
+    return matchingDocs[0];
+  }
+  const searchQuery = {
+    $and: [
+      { company: { $regex: companyPart, $options: 'i' } },
+      { clientName: { $regex: clientPart, $options: 'i' } },
+    ],
+  };
+  matchingDocs = await db
+    .collection('documents')
+    .find(searchQuery)
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .toArray();
+  if (matchingDocs.length > 0) {
+    console.log(`✅ Found matching document by client/company: ${matchingDocs[0].id} (searched for: ${id})`);
+    return matchingDocs[0];
+  }
+  const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
+  matchingDocs = await db
+    .collection('documents')
+    .find({ clientName: { $regex: clientNamePattern, $options: 'i' } })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .toArray();
+  if (matchingDocs.length > 0) {
+    console.log(`✅ Found matching document by client name only: ${matchingDocs[0].id} (searched for: ${id})`);
+    console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${matchingDocs[0].company}`);
+  }
+  return matchingDocs[0] || null;
+}
+
+function fileDataToBuffer(fileData) {
+  if (Buffer.isBuffer(fileData)) return fileData;
+  if (fileData && fileData.buffer) return Buffer.from(fileData.buffer);
+  if (fileData && fileData.data) return Buffer.from(fileData.data);
+  if (typeof fileData === 'string') {
+    const s = fileData.trim();
+    const m = /^data:[^;]+;base64,([\s\S]+)$/i.exec(s);
+    return Buffer.from(m ? m[1] : s, 'base64');
+  }
+  throw new Error('Unsupported document fileData format');
+}
+
+// API endpoint to get specific PDF document file
+app.get('/api/documents/:id/file', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch document files without database connection'
+      });
+    }
+
+    const { id } = req.params;
+
+    console.log('📄 Fetching document file:', id);
+
+    // Block file *downloads* when an active approval workflow exists.
+    // Inline preview requests (inline=1) are always allowed so that the approval portal
+    // can display the document to approvers — they must see it to approve it.
+    const inline = req.query.inline === '1' || req.query.inline === 'true';
+    if (!inline) {
+      const activeWorkflow = await db.collection('approval_workflows').findOne({
+        documentId: id,
+        status: { $in: ['pending', 'in_progress'] }
+      });
+      if (activeWorkflow) {
+        return res.status(403).json({
+          success: false,
+          error: 'Download restricted',
+          message: 'This document has a pending approval workflow. Downloads are not permitted until the workflow is fully approved.'
+        });
+      }
+    }
+
+    const document = await resolveStoredDocumentById(db, id);
+    
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    // Normalize fileData to Buffer (support Buffer, BSON Binary, or base64 string)
+    let fileBuffer;
+    try {
+      fileBuffer = fileDataToBuffer(document.fileData);
+    } catch (e) {
+      throw new Error(e?.message || 'Unsupported document fileData format');
+    }
+    
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': inline ? `inline; filename="${document.fileName}"` : `attachment; filename="${document.fileName}"`,
+      'Content-Length': fileBuffer.length
+    });
+    
+    res.send(fileBuffer);
+    
+  } catch (error) {
+    console.error('❌ Error fetching document file:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get PDF preview data (base64 encoded for inline display)
+app.get('/api/documents/:id/preview', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch document previews without database connection'
+      });
+    }
+
+    const { id } = req.params;
+    
+    console.log('📄 Fetching document preview:', id);
+    
+    const document = await resolveStoredDocumentById(db, id);
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    let fileBuffer;
+    try {
+      fileBuffer = fileDataToBuffer(document.fileData);
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        error: e?.message || 'Unsupported document fileData format',
+      });
+    }
+    
+    console.log('✅ PDF preview data found:', document.fileName);
+    
+    // Convert binary data to base64 for inline display (legacy clients)
+    const base64Data = fileBuffer.toString('base64');
+    const dataUrl = `data:application/pdf;base64,${base64Data}`;
+    
+    res.json({
+      success: true,
+      dataUrl,
+      documentId: document.id,
+      fileName: document.fileName,
+      fileSize: document.fileSize,
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching PDF preview:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// API endpoint to create test documents
+app.post('/api/documents/test', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot create test documents without database connection'
+      });
+    }
+
+    console.log('📄 Creating test documents...');
+
+    const testDocuments = [
+      {
+        id: `doc_${Date.now()}_test1`,
+        fileName: 'Contact_Company_Inc__2025-10-07.pdf',
+        fileData: Buffer.from('Test PDF content 1'),
+        fileSize: 206427,
+        clientName: 'John Smith',
+        company: 'Contact Company Inc.',
+        quoteId: 'Q-509892-Z51G3F',
+        metadata: {
+          totalCost: 21527.2
+        },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        generatedDate: new Date().toISOString()
+      },
+      {
+        id: `doc_${Date.now()}_test2`,
+        fileName: 'Test_Client_2025-10-08.pdf',
+        fileData: Buffer.from('Test PDF content 2'),
+        fileSize: 156789,
+        clientName: 'Jane Doe',
+        company: 'Test Company Ltd.',
+        quoteId: 'Q-692746-ZR6R2F',
+        metadata: {
+          totalCost: 18450.0
+        },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        generatedDate: new Date().toISOString()
+      },
+      {
+        id: `doc_${Date.now()}_test3`,
+        fileName: 'Sample_Quote_2025-10-08.pdf',
+        fileData: Buffer.from('Test PDF content 3'),
+        fileSize: 98765,
+        clientName: 'Bob Wilson',
+        company: 'Sample Corp',
+        quoteId: 'Q-514467-J0776B',
+        metadata: {
+          totalCost: 32400.0
+        },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        generatedDate: new Date().toISOString()
+      }
+    ];
+
+    // Insert test documents
+    const result = await db.collection('documents').insertMany(testDocuments);
+
+    console.log(`✅ Created ${result.insertedCount} test documents`);
+
+    res.json({
+      success: true,
+      message: `Successfully created ${result.insertedCount} test documents`,
+      documents: testDocuments.map(doc => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        clientName: doc.clientName,
+        company: doc.company,
+        quoteId: doc.quoteId,
+        totalCost: doc.metadata.totalCost
+      }))
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating test documents:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Simple email test endpoint (no attachment)
+app.post('/api/email/test', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        message: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+    
+    const testTo = process.env.EMAIL_FROM; // Send to the configured from address for testing
+    console.log('📧 Testing email configuration...');
+    
+    const result = await sendEmail(
+      testTo, 
+      'CPQ Email Test', 
+      'This is a test email from CPQ system using Resend. If you receive this, email is working correctly!'
+    );
+    
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: 'Test email sent successfully!',
+        messageId: result.data?.id,
+        sentTo: testTo,
+        data: result.data
+      });
+    } else {
+      throw new Error(result.error?.message || 'Failed to send test email');
+    }
+  } catch (error) {
+    console.error('❌ Email test failed:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Email test failed',
+      error: error.message,
+      code: error.code
+    });
+  }
+});
+
+// ============================================
+// AI CHAT ENDPOINT
+// ============================================
+
+// Cache exhibit names fetched from MongoDB (refreshed every 10 minutes)
+let _exhibitCache = null;
+let _exhibitCacheTime = 0;
+
+async function getExhibitContext() {
+  const TEN_MIN = 10 * 60 * 1000;
+  if (_exhibitCache && Date.now() - _exhibitCacheTime < TEN_MIN) return _exhibitCache;
+  try {
+    if (!db) return '';
+    const exhibits = await db.collection('exhibits')
+      .find({}, { projection: { name: 1, combinations: 1 } })
+      .toArray();
+
+    // Group unique exhibit names by their primary combination
+    const groups = {};
+    exhibits.forEach(e => {
+      const combo = (e.combinations && e.combinations[0]) || 'general';
+      if (!groups[combo]) groups[combo] = new Set();
+      if (e.name) groups[combo].add(e.name);
+    });
+
+    let context = '\nAVAILABLE EXHIBITS IN THIS TOOL (grouped by migration type):\n';
+    for (const [combo, names] of Object.entries(groups)) {
+      const label = combo.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      context += `\n[${label}]\n`;
+      names.forEach(n => { context += `  - ${n}\n`; });
+    }
+
+    _exhibitCache = context;
+    _exhibitCacheTime = Date.now();
+    return context;
+  } catch {
+    return '';
+  }
+}
+
+app.post('/api/chat/message', async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+    if (!message) return res.status(400).json({ success: false, error: 'Message required' });
+
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) return res.status(500).json({ success: false, error: 'AI not configured' });
+
+    // Log the user question for analytics
+    if (db) {
+      db.collection('chat_logs').insertOne({
+        question: message,
+        timestamp: new Date(),
+        userAgent: req.headers['user-agent'] || ''
+      }).catch(() => {});
+    }
+
+    const exhibitContext = await getExhibitContext();
+
+    const messages = [
+      {
+        role: 'system',
+        content: `You are a helpful assistant for the CloudFuze CPQ (Configure-Price-Quote) tool built for cloud/data migration sales.
+You help users understand how to use the tool. Key features include:
+- Quote generation for cloud/data migration projects
+- Selecting migration exhibits (Standard/Advanced plans with included/not-included features) grouped by migration type
+- E-signature workflows: upload agreements, assign signers, track signing status
+- Approval workflows: Legal, Technical, and General team review stages before e-sign
+- Pricing tier configuration and comparison
+- HubSpot CRM integration for syncing deals and contacts
+- Template management for generating agreement documents (DOCX/PDF)
+- Client quote expiry dates, effective dates, and project start dates
+
+DATE FIELDS IN THE TOOL:
+- Effective Date: The date the agreement/contract terms become active. Set by the user — no fixed number of days.
+- Project Start Date: The date the migration project begins. Must be after the Effective Date (enforced by the tool).
+- Quote Expiry Date: The date the quote offer expires. Set freely by the user — there is no system-enforced fixed number of days or deadline. The user picks any future date they want. It is just a label printed on the agreement document.
+- There are no automatic expiry timers in the tool. All three dates are manually entered by the user when generating a quote.
+${exhibitContext}
+Answer concisely and helpfully. If you do not know a specific detail about this tool, say so honestly.`
+      },
+      ...history,
+      { role: 'user', content: message }
+    ];
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        max_tokens: 4096,
+        messages
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const reply = response.data.choices[0].message.content;
+    res.json({ success: true, data: { response: reply } });
+
+  } catch (error) {
+    console.error('❌ Chat error:', error.response?.data || error.message);
+    const apiError = error.response?.data?.error;
+    const userMessage = apiError?.code === 'insufficient_quota'
+      ? 'The AI service is temporarily unavailable (billing limit reached). Please contact your administrator.'
+      : 'Failed to get AI response. Please try again.';
+    res.status(500).json({ success: false, error: userMessage });
+  }
+});
+
+// GET all raw chat logs (paginated)
+app.get('/api/chat/logs', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+    const logs = await db.collection('chat_logs')
+      .find({})
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+    const total = await db.collection('chat_logs').countDocuments();
+    res.json({ success: true, data: { logs, total, page, totalPages: Math.ceil(total / limit) } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET most-asked chat questions grouped by frequency
+app.get('/api/chat/analytics', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+
+    const limit = parseInt(req.query.limit) || 20;
+
+    // Group by question text, count occurrences, sort by most frequent
+    const topQuestions = await db.collection('chat_logs').aggregate([
+      {
+        $group: {
+          _id: { $toLower: '$question' },
+          question: { $first: '$question' },
+          count: { $sum: 1 },
+          lastAsked: { $max: '$timestamp' }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: limit },
+      { $project: { _id: 0, question: 1, count: 1, lastAsked: 1 } }
+    ]).toArray();
+
+    const totalQuestions = await db.collection('chat_logs').countDocuments();
+
+    res.json({ success: true, data: { topQuestions, totalQuestions } });
+  } catch (error) {
+    console.error('❌ Chat analytics error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to fetch chat analytics' });
+  }
+});
+
+// ============================================
+// APPROVAL WORKFLOW ENDPOINTS
+// ============================================
+
+// Create approval workflow
+app.post('/api/approval-workflows', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot create workflow without database connection'
+      });
+    }
+
+    const workflowData = req.body;
+    console.log('📋 Creating approval workflow:', workflowData);
+
+    // Generate unique ID
+    const workflowId = `WF-${Date.now()}`;
+
+    const workflow = {
+      id: workflowId,
+      ...workflowData,
+      status: 'pending',
+      currentStep: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Save to MongoDB
+    console.log('💾 Attempting to save workflow to database...');
+    console.log('💾 Database object:', !!db);
+    console.log('💾 Collection exists:', !!db?.collection);
+
+    const result = await db.collection('approval_workflows').insertOne(workflow);
+    console.log('💾 Insert result:', result);
+
+    if (result.insertedId) {
+      console.log('✅ Approval workflow created:', workflowId);
+
+      res.json({
+        success: true,
+        workflowId: workflowId,
+        workflow: workflow
+      });
+    } else {
+      console.log('❌ Failed to insert workflow - no insertedId');
+      throw new Error('Failed to insert workflow');
+    }
+  } catch (error) {
+    console.error('❌ Error creating approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create approval workflow',
+      details: error.message
+    });
+  }
+});
+
+// Helper function to check if all approval steps (Team, Tech, Legal) are approved
+function areAllApprovalStepsComplete(workflowSteps) {
+  if (!Array.isArray(workflowSteps)) return false;
+  
+  const approvalRoles = ['Team Approval', 'Technical Team', 'Legal Team'];
+  const approvalSteps = workflowSteps.filter(s => approvalRoles.includes(s.role));
+  
+  const teamStep = approvalSteps.find(s => s.role === 'Team Approval');
+  const techStep = approvalSteps.find(s => s.role === 'Technical Team');
+  const legalStep = approvalSteps.find(s => s.role === 'Legal Team');
+  
+  const hasTeamApproval = !!teamStep;
+  
+  // If Team Approval exists, all three must be approved. Otherwise, just Tech and Legal.
+  return hasTeamApproval
+    ? (teamStep?.status === 'approved' &&
+       techStep?.status === 'approved' &&
+       legalStep?.status === 'approved')
+    : (techStep?.status === 'approved' &&
+       legalStep?.status === 'approved');
+}
+
+// Get all approval workflows
+app.get('/api/approval-workflows', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+        message: 'Cannot fetch workflows without database connection'
+      });
+    }
+
+    console.log('📄 Fetching approval workflows from MongoDB...');
+    
+    // Sort by createdAt (most recent first) - descending order
+    const workflows = await db.collection('approval_workflows')
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+    
+    console.log(`✅ Found ${workflows.length} workflows in database`);
+    
+    // Re-evaluate workflows that might be incorrectly marked as 'in_progress'
+    // when all approval steps (Team, Tech, Legal) are actually complete
+    const workflowsToUpdate = [];
+    for (const workflow of workflows) {
+      if (workflow.status === 'in_progress' || workflow.status === 'pending') {
+        if (areAllApprovalStepsComplete(workflow.workflowSteps)) {
+          workflowsToUpdate.push(workflow.id);
+        }
+      }
+    }
+    
+    // Update workflows that should be marked as approved
+    if (workflowsToUpdate.length > 0) {
+      console.log(`🔄 Updating ${workflowsToUpdate.length} workflows to 'approved' status (all approval steps complete)`);
+      await db.collection('approval_workflows').updateMany(
+        { id: { $in: workflowsToUpdate } },
+        { 
+          $set: { 
+            status: 'approved',
+            updatedAt: new Date().toISOString()
+          }
+        }
+      );
+      
+      // Refresh the workflows after update
+      const updatedWorkflows = await db.collection('approval_workflows')
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+      
+      res.json({
+        success: true,
+        workflows: updatedWorkflows,
+        count: updatedWorkflows.length
+      });
+    } else {
+      res.json({
+        success: true,
+        workflows: workflows,
+        count: workflows.length
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error fetching approval workflows:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Verify approval portal access (token required for role-based portals)
+app.get('/api/approval-workflows/verify-access', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { workflowId, role, token } = req.query;
+    if (!workflowId || !role || !token) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Missing workflowId, role, or token'
+      });
+    }
+
+    const normalizedRole = String(role).toLowerCase();
+    const validRoles = ['teamlead', 'technical', 'legal'];
+    if (!validRoles.includes(normalizedRole)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Invalid role'
+      });
+    }
+
+    const record = await db.collection('approval_access_tokens').findOne({
+      workflowId: String(workflowId),
+      role: normalizedRole,
+      token: String(token)
+    });
+
+    if (!record) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Invalid or unknown token'
+      });
+    }
+
+    const now = new Date();
+    const expiresAt = record.expiresAt instanceof Date ? record.expiresAt : new Date(record.expiresAt);
+    if (expiresAt < now) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied',
+        message: 'Token has expired'
+      });
+    }
+
+    res.json({
+      success: true,
+      workflowId: record.workflowId,
+      role: normalizedRole
+    });
+  } catch (error) {
+    console.error('❌ Error verifying approval access:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Access Denied'
+    });
+  }
+});
+
+// Download workflow document (for Deal Desk email link - final signed PDF)
+app.get('/api/approval-workflows/:workflowId/document', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).send('Database not available');
+    }
+    const { workflowId } = req.params;
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow || !workflow.documentId) {
+      return res.status(404).send('Workflow or document not found');
+    }
+    // Block download if the workflow has not been fully approved
+    if (workflow.status !== 'approved') {
+      return res.status(403).send('This document cannot be downloaded until the approval workflow is complete.');
+    }
+    const document = await db.collection('documents').findOne({ id: workflow.documentId });
+    if (!document || !document.fileData) {
+      return res.status(404).send('Document file not found');
+    }
+    let fileBuffer;
+    if (Buffer.isBuffer(document.fileData)) {
+      fileBuffer = document.fileData;
+    } else if (document.fileData.buffer) {
+      fileBuffer = Buffer.from(document.fileData.buffer);
+    } else if (document.fileData.data) {
+      fileBuffer = Buffer.from(document.fileData.data);
+    } else {
+      return res.status(500).send('Invalid document data');
+    }
+    const filename = document.fileName || `${workflow.documentId}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error('❌ Error serving workflow document:', error);
+    res.status(500).send('Failed to download document');
+  }
+});
+
+// Get single approval workflow
+app.get('/api/approval-workflows/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    console.log('📄 Fetching approval workflow:', id);
+    console.log('📄 Database available:', !!db);
+    console.log('📄 Collection available:', !!db?.collection);
+    
+    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    console.log('📄 Workflow found:', !!workflow);
+    console.log('📄 Workflow data:', workflow ? { id: workflow.id, status: workflow.status, currentStep: workflow.currentStep } : 'null');
+    
+    if (!workflow) {
+      console.log('❌ Workflow not found in database for ID:', id);
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      workflow: workflow
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update approval workflow
+app.put('/api/approval-workflows/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    const updates = req.body;
+    
+    console.log('📝 Updating approval workflow:', id, updates);
+    
+    // Add updatedAt timestamp
+    updates.updatedAt = new Date().toISOString();
+    
+    const result = await db.collection('approval_workflows').updateOne(
+      { id: id },
+      { $set: updates }
+    );
+    
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    console.log('✅ Approval workflow updated');
+    res.json({
+      success: true,
+      message: 'Workflow updated successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error updating approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update workflow step
+app.put('/api/approval-workflows/:id/step/:stepNumber', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id, stepNumber } = req.params;
+    const stepUpdates = req.body;
+    
+    console.log('📝 Updating workflow step:', id, stepNumber, stepUpdates);
+    
+    // Get current workflow
+    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    // Update the specific step
+    const updatedSteps = workflow.workflowSteps.map(step =>
+      step.step === parseInt(stepNumber)
+        ? { ...step, ...stepUpdates, timestamp: new Date().toISOString() }
+        : step
+    );
+    
+    // Update current step and status based on step updates
+    let newCurrentStep = workflow.currentStep;
+    let newStatus = workflow.status;
+
+    if (stepUpdates.status === 'approved') {
+      if (parseInt(stepNumber) < workflow.totalSteps) {
+        newCurrentStep = parseInt(stepNumber) + 1;
+        newStatus = 'in_progress';
+      } else {
+        newStatus = 'approved';
+      }
+
+      // Check if all approval steps (Team, Tech, Legal) are approved
+      // Deal Desk is just a notification, so it doesn't block approval status
+      const approvalRoles = ['Team Approval', 'Technical Team', 'Legal Team'];
+
+      // Get all approval steps (excluding Deal Desk)
+      const approvalSteps = updatedSteps.filter(s =>
+        approvalRoles.includes(s.role)
+      );
+
+      // Check if all required approval steps (Team, Tech, Legal) are approved
+      // Note: Some workflows might not have Team Approval (manual workflows), so we check what exists
+      const teamStep = approvalSteps.find(s => s.role === 'Team Approval');
+      const techStep = approvalSteps.find(s => s.role === 'Technical Team');
+      const legalStep = approvalSteps.find(s => s.role === 'Legal Team');
+
+      const hasTeamApproval = !!teamStep;
+      const hasTechApproval = !!techStep;
+      const hasLegalApproval = !!legalStep;
+
+      // If Team Approval exists, all three must be approved. Otherwise, just Tech and Legal.
+      const allRequiredApprovalsComplete = hasTeamApproval
+        ? (teamStep?.status === 'approved' &&
+           techStep?.status === 'approved' &&
+           legalStep?.status === 'approved')
+        : (techStep?.status === 'approved' &&
+           legalStep?.status === 'approved');
+
+      if (allRequiredApprovalsComplete) {
+        // Mark as approved when all required approval steps are approved
+        // Deal Desk notification can still be sent, but doesn't block approval
+        newStatus = 'approved';
+        console.log('✅ All required approval steps (Team, Tech, Legal) are approved. Workflow marked as approved.');
+        console.log('📋 Approval status check:', {
+          hasTeamApproval,
+          teamStatus: teamStep?.status,
+          techStatus: techStep?.status,
+          legalStatus: legalStep?.status,
+          allComplete: allRequiredApprovalsComplete
+        });
+
+        // Email notifications (Deal Desk, creator, next-step) are sent by the
+        // frontend via dedicated endpoints (/api/send-deal-desk-email, etc.)
+        // to avoid duplicate emails. This handler only updates DB state.
+      }
+    } else if (stepUpdates.status === 'denied') {
+      newStatus = 'denied';
+
+      // Notify the workflow creator about denial
+      try {
+        const deniedStep = workflow.workflowSteps.find(s => s.step === parseInt(stepNumber));
+        const toEmail = workflow.creatorEmail || process.env.WORKFLOW_FALLBACK_EMAIL || 'abhilasha.kandakatla@cloudfuze.com';
+        console.log('📧 Denial notification prepared:', {
+          to: toEmail,
+          deniedBy: deniedStep?.role,
+          workflowId: workflow.id,
+          documentId: workflow.documentId
+        });
+        if (toEmail && isEmailConfigured) {
+          const subject = `Approval Denied by ${deniedStep?.role || 'Approver'} - ${workflow.documentId}`;
+          const html = generateDenialEmailHTML({
+            workflowData: { ...workflow, workflowId: workflow.id },
+            deniedBy: deniedStep?.role || 'Approver',
+            comments: stepUpdates.comments || deniedStep?.comments || ''
+          });
+          // Best-effort; do not block the API on email failure
+          sendEmail(toEmail, subject, html)
+            .then(() => console.log('✅ Denial notification email sent to creator:', toEmail))
+            .catch(err => {
+              console.error('❌ Failed to send denial email to creator:', err);
+            });
+        }
+      } catch (e) {
+        console.error('❌ Error preparing denial notification:', e);
+      }
+    }
+    
+    const updateData = {
+      workflowSteps: updatedSteps,
+      currentStep: newCurrentStep,
+      status: newStatus,
+      updatedAt: new Date().toISOString()
+    };
+    
+    await db.collection('approval_workflows').updateOne(
+      { id: id },
+      { $set: updateData }
+    );
+    
+    console.log('✅ Workflow step updated');
+    res.json({
+      success: true,
+      message: 'Workflow step updated successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error updating workflow step:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ── Approval Reminder ────────────────────────────────────────────────────────
+// Sends a reminder email to the current pending approver for a workflow.
+// Regenerates a fresh 7-day token so the link in the reminder is always valid.
+app.post('/api/approval-workflows/:workflowId/remind', async (req, res) => {
+  if (!db) return res.status(503).json({ success: false, error: 'Database unavailable' });
+
+  const { workflowId } = req.params;
+
+  try {
+    // 1. Fetch workflow
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow) {
+      return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+
+    // 2. Only remind for pending / in_progress workflows
+    if (!['pending', 'in_progress'].includes(workflow.status)) {
+      return res.status(400).json({ success: false, error: 'Workflow is not awaiting approval' });
+    }
+
+    // 3. Find the first step that is still pending
+    const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
+    const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
+
+    if (!pendingStep) {
+      return res.status(400).json({ success: false, error: 'No pending step found' });
+    }
+
+    const role       = pendingStep.role;
+    const approverEmail = pendingStep.email;
+
+    if (!approverEmail) {
+      return res.status(400).json({ success: false, error: 'No email address for pending step' });
+    }
+
+    // 4. Map role → token role key
+    const roleKeyMap = {
+      'Team Approval':   'teamlead',
+      'Technical Team':  'technical',
+      'Legal Team':      'legal',
+    };
+    const tokenRole = roleKeyMap[role] || role.toLowerCase().replace(/\s+/g, '-');
+
+    // 5. Regenerate token (fresh 7-day expiry)
+    const token = await createApprovalAccessToken(db, workflowId, tokenRole);
+
+    // 6. Build workflowData shape expected by HTML generators
+    const workflowData = {
+      ...workflow,
+      workflowId:     workflow.id,
+      teamGroup:      pendingStep.group || workflow.teamGroup,
+      requestedByName: workflow.creatorName || workflow.requestedByName,
+    };
+
+    // 7. Fetch document PDF for attachment (best-effort)
+    const attachments = [];
+    if (workflow.documentId) {
+      try {
+        const doc = await db.collection('documents').findOne({ id: workflow.documentId });
+        if (doc && doc.fileData) {
+          let fileBuffer;
+          if (Buffer.isBuffer(doc.fileData))        fileBuffer = doc.fileData;
+          else if (doc.fileData.buffer)             fileBuffer = Buffer.from(doc.fileData.buffer);
+          else if (doc.fileData.data)               fileBuffer = Buffer.from(doc.fileData.data);
+          if (fileBuffer) {
+            attachments.push({ filename: doc.fileName || `${workflow.documentId}.pdf`, content: fileBuffer, contentType: 'application/pdf' });
+          }
+        }
+      } catch (e) {
+        console.error('⚠️ Reminder: could not attach document:', e.message);
+      }
+    }
+
+    // 8. Build HTML using existing role-specific generators
+    let baseHtml;
+    if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
+    else if (role === 'Technical Team') baseHtml = generateTechnicalTeamEmailHTML(workflowData, token);
+    else if (role === 'Legal Team')     baseHtml = generateLegalTeamEmailHTML(workflowData, token);
+    else {
+      // Generic fallback for any other role
+      const baseUrl      = process.env.BASE_URL || 'http://localhost:5173';
+      const approvalLink = `${baseUrl}/approval/${workflowId}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
+      baseHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333">
+        <div style="max-width:600px;margin:0 auto;padding:20px">
+          <div style="background:linear-gradient(135deg,#0ea5e9,#0369a1);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0">
+            <h1>⏰ Approval Reminder</h1>
+          </div>
+          <div style="background:white;padding:30px;border:1px solid #E5E7EB">
+            <p>Hello,</p>
+            <p>Your approval is still pending for the following document:</p>
+            <div style="background:#F3F4F6;padding:20px;border-radius:8px;margin:20px 0">
+              <p><strong>Document:</strong> ${workflow.documentId}</p>
+              <p><strong>Client:</strong> ${workflow.clientName}</p>
+              <p><strong>Amount:</strong> $${formatUsdAmount(workflow.amount)}</p>
+              <p><strong>Requested by:</strong> ${workflow.creatorName || workflow.creatorEmail || '—'}</p>
+            </div>
+            <div style="text-align:center;margin:30px 0">
+              <a href="${approvalLink}" style="background:#0ea5e9;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold">Review &amp; Approve</a>
+            </div>
+            <p><strong>Note:</strong> This link is secure and will expire in 7 days.</p>
+          </div>
+        </div>
+      </body></html>`;
+    }
+
+    // 9. Inject a prominent reminder banner at the top of the email body
+    const reminderBanner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;margin:0 0 0 0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
+      ⏰ <strong>Reminder:</strong> Your approval for <strong>${workflow.documentId}</strong> is still pending. Please review and take action at your earliest convenience.
+    </div>`;
+    const htmlWithBanner = baseHtml.replace(/<body([^>]*)>/, `<body$1>${reminderBanner}`);
+
+    // 10. Update lastReminderSentAt in the workflow document
+    const reminderTimestamp = new Date().toISOString();
+    await db.collection('approval_workflows').updateOne(
+      { id: workflowId },
+      { $set: { lastReminderSentAt: reminderTimestamp, updatedAt: reminderTimestamp } }
+    );
+
+    // 11. Send (fire-and-forget)
+    const subject = `Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`;
+    sendEmail(approverEmail, subject, htmlWithBanner, attachments)
+      .then(r  => console.log(`✅ Reminder sent to ${approverEmail} [${role}]: ${r.success}`))
+      .catch(e => console.error(`❌ Reminder email error [${role}]:`, e));
+
+    res.json({
+      success: true,
+      message: `Reminder sent to ${approverEmail}`,
+      role,
+      email: approverEmail,
+      lastReminderSentAt: reminderTimestamp,
+    });
+
+  } catch (err) {
+    console.error('❌ Error sending approval reminder:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Returns a secure, ready-to-share approval portal link for the workflow's current pending step.
+// Mints a fresh 7-day token (same shape as the reminder email link) so whoever opens the link
+// lands on the role-based approval portal (/approval/:workflowId?role=..&token=..) — NOT the dashboard.
+app.get('/api/approval-workflows/:workflowId/portal-link', async (req, res) => {
+  if (!db) return res.status(503).json({ success: false, error: 'Database unavailable' });
+
+  const { workflowId } = req.params;
+
+  try {
+    const workflow = await db.collection('approval_workflows').findOne({ id: workflowId });
+    if (!workflow) {
+      return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+
+    if (!['pending', 'in_progress'].includes(workflow.status)) {
+      return res.status(400).json({ success: false, error: 'Workflow is not awaiting approval' });
+    }
+
+    const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
+    const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
+    if (!pendingStep) {
+      return res.status(400).json({ success: false, error: 'No pending step found' });
+    }
+
+    const role = pendingStep.role;
+    const roleKeyMap = {
+      'Team Approval':   'teamlead',
+      'Technical Team':  'technical',
+      'Legal Team':      'legal',
+    };
+    const tokenRole = roleKeyMap[role] || String(role || '').toLowerCase().replace(/\s+/g, '-');
+
+    const token = await createApprovalAccessToken(db, workflowId, tokenRole);
+    const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+    const link = `${baseUrl}/approval/${workflowId}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
+
+    res.json({ success: true, link, role, tokenRole, email: pendingStep.email || null });
+  } catch (err) {
+    console.error('❌ Error building approval portal link:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Legacy route: previously emailed client-signature-form links backed by signature_forms (removed).
+app.post('/api/approval-workflows/send-esign', (req, res) => {
+  res.status(410).json({
+    success: false,
+    message:
+      'Legacy quote signature emails are disabled. Use CPQ e-sign (/esign): upload or create the PDF, place fields, add recipients, and send from there.',
+  });
+});
+
+// Delete approval workflow
+app.delete('/api/approval-workflows/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    const { id } = req.params;
+    console.log('🗑️ Deleting approval workflow:', id);
+    
+    const result = await db.collection('approval_workflows').deleteOne({ id: id });
+    
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+    
+    console.log('✅ Approval workflow deleted');
+    res.json({
+      success: true,
+      message: 'Workflow deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error deleting approval workflow:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ========================================
+// Documents API
+// ========================================
+
+// Get all saved documents (without raw fileData)
+app.get('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    console.log('📄 Fetching PDF documents from database...');
+    
+    // Pagination: by default return ALL matches (metadata only; binary fields excluded). Pass limit=<positive int> to cap (e.g. limit=100).
+    const skip = Math.max(0, parseInt(String(req.query.skip || 0), 10) || 0);
+    const limitRaw = req.query.limit;
+    const limitSingle = Array.isArray(limitRaw) ? limitRaw[0] : limitRaw;
+    const allFlag = String(req.query.all ?? req.query.full ?? '').toLowerCase();
+    const forceAll = allFlag === '1' || allFlag === 'true';
+
+    let listLimit = 100;
+    let listUnlimited = true;
+    if (!forceAll && limitSingle !== undefined && String(limitSingle).trim() !== '') {
+      const parsed = parseInt(String(limitSingle), 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        listUnlimited = false;
+        listLimit = parsed;
+      }
+    }
+
+
+    // Filter by whether a saved agreement is linked to any approval workflow (approval_workflows.documentId)
+    const approvalFilterRaw = (req.query.approvalFilter || 'all').toString().toLowerCase();
+    const approvalFilter =
+      approvalFilterRaw === 'in_workflow' || approvalFilterRaw === 'no_workflow'
+        ? approvalFilterRaw
+        : 'all';
+
+    let workflowDocumentIds = [];
+    if (approvalFilter !== 'all') {
+      const distinctIds = await db
+        .collection('approval_workflows')
+        .distinct('documentId');
+      workflowDocumentIds = distinctIds.filter((id) => id != null && String(id).trim() !== '');
+    }
+
+    const approvalMatch =
+      approvalFilter === 'in_workflow'
+        ? { id: { $in: workflowDocumentIds } }
+        : approvalFilter === 'no_workflow'
+          ? workflowDocumentIds.length > 0
+            ? { id: { $nin: workflowDocumentIds } }
+            : {}
+          : {};
+
+    const totalCount = await db.collection('documents').countDocuments(approvalMatch);
+
+    const pipeline = [
+      { $project: { fileData: 0, docxFileData: 0 } },
+      ...(Object.keys(approvalMatch).length ? [{ $match: approvalMatch }] : []),
+      { $sort: { createdAt: -1, generatedDate: -1 } },
+      { $skip: skip },
+      ...(listUnlimited ? [] : [{ $limit: listLimit }]),
+    ];
+
+    // Use aggregation with allowDiskUse so large sorts don't hit MongoDB's 32MB memory limit
+    const documents = await db
+      .collection('documents')
+      .aggregate(pipeline, { allowDiskUse: true })
+      .toArray();
+
+    // Serialize dates to strings for frontend compatibility
+    const serializedDocuments = documents.map(doc => ({
+      ...doc,
+      generatedDate: doc.generatedDate ? (doc.generatedDate instanceof Date ? doc.generatedDate.toISOString() : doc.generatedDate) : new Date().toISOString(),
+      createdAt: doc.createdAt ? (doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt) : new Date().toISOString(),
+    }));
+
+    console.log(
+      `✅ Found ${serializedDocuments.length} documents (total for filter "${approvalFilter}": ${totalCount}, limit: ${
+        listUnlimited ? 'none' : listLimit
+      }, skip: ${skip})`
+    );
+
+    res.json({
+      success: true,
+      documents: serializedDocuments,
+      count: serializedDocuments.length,
+      totalCount,
+      approvalFilter,
+      limited: !listUnlimited && serializedDocuments.length >= listLimit && totalCount > serializedDocuments.length,
+    });
+  } catch (error) {
+    console.error('❌ Error fetching documents:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Save a new document
+app.post('/api/documents', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const payload = req.body || {};
+
+    if (!payload.fileName || !payload.fileData) {
+      return res.status(400).json({
+        success: false,
+        error: 'fileName and fileData are required',
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    const documentId =
+      payload.id ||
+      generateDocumentId(payload.clientName || 'UnknownClient', payload.company || 'UnknownCompany');
+
+    const documentToSave = {
+      ...payload,
+      id: documentId,
+      status: payload.status || 'active',
+      createdAt: payload.createdAt || nowIso,
+      generatedDate: payload.generatedDate || nowIso,
+    };
+
+    await db.collection('documents').updateOne(
+      { id: documentId },
+      { $set: documentToSave },
+      { upsert: true }
+    );
+
+    const { fileData, ...safeDoc } = documentToSave;
+
+    res.json({
+      success: true,
+      documentId,
+      document: safeDoc,
+    });
+  } catch (error) {
+    console.error('❌ Error saving document:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Get raw PDF file for a document
+app.get('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { id } = req.params;
+    let doc = await db.collection('documents').findOne({ id });
+
+    // Smart search fallback: if exact ID doesn't match, try to find by client/company
+    if (!doc) {
+      console.log('⚠️ Exact ID not found in raw fetch, attempting smart search...');
+      
+      // Extract client and company from ID pattern: Company_Client_Timestamp
+      const parts = id.split('_');
+      if (parts.length >= 2) {
+        // Search for documents where ID starts with the same company_client pattern
+        const idPattern = new RegExp(`^${parts[0]}_${parts[1]}_`, 'i');
+        const matchingDocs = await db.collection('documents')
+          .find({ id: { $regex: idPattern } })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .toArray();
+        
+        if (matchingDocs.length > 0) {
+          doc = matchingDocs[0];
+          console.log(`✅ Found matching document: ${doc.id} (searched for: ${id})`);
+        } else {
+          // Fallback: search by company and clientName fields
+          const companyPart = parts[0].replace(/[0-9]/g, '');
+          const clientPart = parts[1].replace(/[0-9]/g, '');
+          
+          if (companyPart && clientPart) {
+            const searchQuery = {
+              $and: [
+                { company: { $regex: companyPart, $options: 'i' } },
+                { clientName: { $regex: clientPart, $options: 'i' } }
+              ]
+            };
+            
+            const matchingDocs2 = await db.collection('documents')
+              .find(searchQuery)
+              .sort({ createdAt: -1 })
+              .limit(1)
+              .toArray();
+            
+            if (matchingDocs2.length > 0) {
+              doc = matchingDocs2[0];
+              console.log(`✅ Found matching document by client/company: ${doc.id} (searched for: ${id})`);
+            } else {
+              // Fallback: search by clientName only (in case company name changed or is different)
+              // Convert sanitized client name (e.g., "JasonWoods") to regex that matches with spaces (e.g., "Jason Woods")
+              // Insert optional spaces before capital letters (camelCase handling)
+              const clientNamePattern = clientPart.replace(/([a-z])([A-Z])/g, '$1\\s*$2');
+              // For "JasonWoods" -> "Jason\\s*Woods" (allows "Jason Woods", "JasonWoods", etc.)
+              const clientOnlyQuery = {
+                clientName: { $regex: clientNamePattern, $options: 'i' }
+              };
+              
+              const matchingDocs3 = await db.collection('documents')
+                .find(clientOnlyQuery)
+                .sort({ createdAt: -1 })
+                .limit(1)
+                .toArray();
+              
+              if (matchingDocs3.length > 0) {
+                doc = matchingDocs3[0];
+                console.log(`✅ Found matching document by client name only: ${doc.id} (searched for: ${id})`);
+                console.log(`   Note: Company mismatch - workflow: ${companyPart}, document: ${doc.company}`);
+              }
+            }
+          }
+        }
+      }
+      
+      if (!doc || !doc.fileData) {
+        return res.status(404).json({
+          success: false,
+          error: 'Document not found',
+        });
+      }
+    }
+
+    const buffer = Buffer.from(doc.fileData, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${doc.fileName || 'document.pdf'}"`
+    );
+    res.send(buffer);
+  } catch (error) {
+    console.error('❌ Error fetching document file:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Smart document search by client name and company (fallback when exact ID doesn't match)
+app.get('/api/documents/search', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { clientName, company } = req.query;
+    
+    if (!clientName && !company) {
+      return res.status(400).json({
+        success: false,
+        error: 'clientName or company query parameter required',
+      });
+    }
+
+    console.log('🔍 Searching documents by:', { clientName, company });
+
+    const query = {};
+    if (clientName) {
+      query.clientName = { $regex: clientName.trim(), $options: 'i' };
+    }
+    if (company) {
+      query.company = { $regex: company.trim(), $options: 'i' };
+    }
+
+    const docs = await db.collection('documents')
+      .find(query)
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .toArray();
+
+    if (docs.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No documents found matching criteria',
+      });
+    }
+
+    console.log(`✅ Found ${docs.length} matching document(s)`);
+
+    res.json({
+      success: true,
+      documents: docs.map(doc => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        clientName: doc.clientName,
+        company: doc.company,
+        createdAt: doc.createdAt
+      })),
+      count: docs.length
+    });
+  } catch (error) {
+    console.error('❌ Error searching documents:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Get a base64 preview for a document
+app.get('/api/documents/:id/preview', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { id } = req.params;
+    const doc = await db.collection('documents').findOne({ id });
+
+    if (!doc || !doc.fileData) {
+      // Try smart search as fallback if exact ID doesn't match
+      console.log('⚠️ Exact ID not found, attempting smart search...');
+      
+      // Extract client and company from ID pattern: Company_Client_Timestamp
+      const parts = id.split('_');
+      if (parts.length >= 2) {
+        const sanitizeForSearch = (str) => {
+          if (!str) return null;
+          // Remove numbers and special chars, keep letters
+          return str.replace(/[0-9]/g, '').replace(/[^a-zA-Z]/g, ' ').trim();
+        };
+        
+        const possibleCompany = sanitizeForSearch(parts[0]);
+        const possibleClient = sanitizeForSearch(parts[1]);
+        
+        if (possibleCompany && possibleClient) {
+          console.log('🔍 Searching by:', { company: possibleCompany, client: possibleClient });
+          const searchQuery = {
+            $or: [
+              { company: { $regex: possibleCompany, $options: 'i' } },
+              { clientName: { $regex: possibleClient, $options: 'i' } }
+            ]
+          };
+          
+          const matchingDocs = await db.collection('documents')
+            .find(searchQuery)
+            .sort({ createdAt: -1 })
+            .limit(1)
+            .toArray();
+          
+          if (matchingDocs.length > 0) {
+            const matchedDoc = matchingDocs[0];
+            console.log(`✅ Found matching document: ${matchedDoc.id} (searched for: ${id})`);
+            
+            // Return the matched document
+            const dataUrl = typeof matchedDoc.fileData === 'string' 
+              ? `data:application/pdf;base64,${matchedDoc.fileData}`
+              : `data:application/pdf;base64,${Buffer.from(matchedDoc.fileData).toString('base64')}`;
+            
+            return res.json({
+              success: true,
+              dataUrl,
+              fileName: matchedDoc.fileName || 'document.pdf',
+              documentId: matchedDoc.id,
+              originalSearchedId: id,
+              matched: true
+            });
+          }
+        }
+      }
+      
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    const dataUrl = typeof doc.fileData === 'string'
+      ? `data:application/pdf;base64,${doc.fileData}`
+      : `data:application/pdf;base64,${Buffer.from(doc.fileData).toString('base64')}`;
+
+    res.json({
+      success: true,
+      dataUrl,
+      fileName: doc.fileName || 'document.pdf',
+      documentId: id,
+    });
+  } catch (error) {
+    console.error('❌ Error generating document preview:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Delete a document
+app.delete('/api/documents/:id', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available',
+      });
+    }
+
+    const { id } = req.params;
+    const result = await db.collection('documents').deleteOne({ id });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Document deleted successfully',
+    });
+  } catch (error) {
+    console.error('❌ Error deleting document:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Serve the React app for the Microsoft callback (SPA handles the code)
+app.get('/auth/microsoft/callback', (req, res) => {
+  sendIndexHtml(res);
+});
+
+// SPA catch-all: do NOT match /assets/* or *.js/*.css (so they get correct MIME and avoid "Cannot access 'ze' before initialization")
+app.get(/^(?!\/api)(?!\/assets)(?!\/[^/]*\.(js|mjs|css|ico|svg|woff2?)(\?.*)?$).*/, (req, res) => {
+  sendIndexHtml(res);
+});
+
+// Start server after database initialization
+async function startServer() {
+  try {
+    console.log('🔍 Initializing database connection...');
+    databaseAvailable = await initializeDatabase();
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📐 DOCX preprocessor v3 loaded (sorts anchors by horizontal page position before tabling)`);
+      console.log(`📊 Database available: ${databaseAvailable}`);
+      console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
+      const appBase = process.env.APP_BASE_URL || 'http://localhost:5173';
+      console.log(`🔗 Signing links in emails use: ${appBase} (set APP_BASE_URL in .env to change)`);
+      console.log(`🔗 HubSpot API key: ${HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'}`);
+      console.log(`🌐 Available endpoints:`);
+      console.log(`   - GET  /`);
+      console.log(`   - GET  /api/health`);
+      console.log(`   - GET  /api/database/health`);
+      console.log(`   - GET  /api/test-mongodb`);
+      console.log(`   - POST /api/auth/register`);
+      console.log(`   - POST /api/auth/login`);
+      console.log(`   - GET  /api/auth/me`);
+      console.log(`   - POST /api/auth/microsoft`);
+      console.log(`   - GET  /api/quotes`);
+      console.log(`   - POST /api/quotes`);
+      console.log(`   - PUT  /api/quotes/:id`);
+      console.log(`   - DELETE /api/quotes/:id`);
+      console.log(`   - GET  /api/pricing-tiers`);
+      console.log(`   - POST /api/pricing-tiers`);
+      console.log(`   - GET  /api/hubspot/contacts`);
+      console.log(`   - GET  /api/hubspot/deals`);
+      console.log(`   - POST /api/hubspot/contacts`);
+      console.log(`   - POST /api/templates`);
+      console.log(`   - GET  /api/templates`);
+      console.log(`   - GET  /api/templates/:id/file`);
+      console.log(`   - PUT  /api/templates/:id`);
+      console.log(`   - DELETE /api/templates/:id`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+
+// LibreOffice system health check
+app.get('/api/libreoffice/health', async (req, res) => {
+  try {
+    // Test if LibreOffice is available
+    const isWindows = os.platform() === 'win32';
+    const sofficeCmd = process.env.SOFFICE_PATH || (isWindows ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe' : 'libreoffice');
+    
+    await new Promise((resolve, reject) => {
+      exec(`${sofficeCmd} --version`, { timeout: 5000 }, (error, stdout, stderr) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(stdout);
+        }
+      });
+    });
+    
+    res.json({
+      success: true,
+      service: 'LibreOffice System',
+      status: 'Available',
+      type: 'System LibreOffice'
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      message: 'LibreOffice is not installed or not in PATH',
+      error: error.message,
+      instructions: [
+        '1. Install LibreOffice from https://www.libreoffice.org/download/',
+        '2. Add LibreOffice to your system PATH',
+        '3. Restart the server after installation'
+      ]
+    });
+  }
+});
+
+// ============================================
+// Team Approval Settings API (MongoDB)
+// ============================================
+
+// GET /api/team-approval-settings - Get all team approval settings
+app.get('/api/team-approval-settings', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const settingsCollection = db.collection('team_approval_settings');
+    
+    // Get settings (there should be only one document)
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+    
+    if (settings) {
+      // Remove MongoDB _id and return the settings
+      const { _id, ...settingsData } = settings;
+      return res.json({ success: true, data: settingsData });
+    } else {
+      // Return default settings if none exist
+      const defaultSettings = {
+        teamLeads: {
+          SMB: 'chitradip.saha@cloudfuze.com',
+          AM: 'joy.prakash@cloudfuze.com',
+          ENT: 'anthony@cloudfuze.com',
+          DEV: 'anushreddydasari@gmail.com',
+          DEV2: 'raya.durai@cloudfuze.com',
+        },
+        additionalRecipients: {
+          SMB: [],
+          AM: [],
+          ENT: [],
+          DEV: [],
+          DEV2: [],
+        },
+      };
+      return res.json({ success: true, data: defaultSettings });
+    }
+  } catch (error) {
+    console.error('❌ Error fetching team approval settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/team-approval-settings - Update team approval settings
+app.put('/api/team-approval-settings', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const settingsCollection = db.collection('team_approval_settings');
+    const newSettings = req.body;
+
+    // Validate structure
+    if (!newSettings.teamLeads) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid settings structure. Must include teamLeads.'
+      });
+    }
+    // Strip the deprecated authorizedSenders field if it's still being sent
+    if (newSettings.authorizedSenders) {
+      delete newSettings.authorizedSenders;
+    }
+
+    // Upsert (update or insert) the settings document
+    await settingsCollection.updateOne(
+      { _id: 'main' },
+      { 
+        $set: {
+          ...newSettings,
+          updatedAt: new Date().toISOString()
+        }
+      },
+      { upsert: true }
+    );
+
+    console.log('✅ Team approval settings updated in MongoDB');
+    res.json({ success: true, message: 'Settings saved successfully' });
+  } catch (error) {
+    console.error('❌ Error updating team approval settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/team-approval-settings/team/:teamName - Get settings for a specific team
+app.get('/api/team-approval-settings/team/:teamName', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const teamName = req.params.teamName.toUpperCase();
+    const settingsCollection = db.collection('team_approval_settings');
+    const settings = await settingsCollection.findOne({ _id: 'main' });
+
+    if (settings) {
+      const teamSettings = {
+        teamLead: settings.teamLeads?.[teamName] || '',
+        additionalRecipients: settings.additionalRecipients?.[teamName] || []
+      };
+      return res.json({ success: true, data: teamSettings });
+    } else {
+      return res.json({ success: true, data: { teamLead: '', additionalRecipients: [] } });
+    }
+  } catch (error) {
+    console.error('❌ Error fetching team settings:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// Authorization Request API
+// ============================================
+
+// POST /api/send-authorization-request - Send authorization request email to team lead and save to MongoDB
+app.post('/api/send-authorization-request', async (req, res) => {
+  try {
+    if (!isEmailConfigured) {
+      return res.status(500).json({
+        success: false,
+        error: 'Email not configured. Check SENDGRID_API_KEY in .env file.'
+      });
+    }
+
+    const { requesterEmail, requesterName, teamLeadEmail, teamName, message } = req.body;
+
+    if (!requesterEmail || !teamLeadEmail || !teamName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: requesterEmail, teamLeadEmail, teamName'
+      });
+    }
+
+    // Save authorization request to MongoDB
+    if (db) {
+      try {
+        const requestsCollection = db.collection('authorization_requests');
+        const requestDoc = {
+          requesterEmail,
+          requesterName: requesterName || requesterEmail.split('@')[0],
+          teamLeadEmail,
+          teamName: teamName.toUpperCase(),
+          message: message || '',
+          status: 'pending', // pending, approved, rejected
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        await requestsCollection.insertOne(requestDoc);
+        console.log(`✅ Authorization request saved to MongoDB for ${requesterEmail}`);
+      } catch (dbError) {
+        console.error('❌ Error saving authorization request to MongoDB:', dbError);
+        // Continue even if DB save fails - still send email
+      }
+    }
+
+    // Send email to team lead
+    const emailSubject = `Authorization Request for ${teamName} Team Approval Workflows`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #4F46E5;">Authorization Request</h2>
+        <p><strong>${requesterName}</strong> (${requesterEmail}) is requesting authorization to send approval workflows to the <strong>${teamName}</strong> team.</p>
+        
+        <div style="background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0;"><strong>Message:</strong></p>
+          <p style="margin: 10px 0 0 0;">${message || 'No message provided.'}</p>
+        </div>
+        
+        <p>To authorize this user:</p>
+        <ol>
+          <li>Go to the Approval Workflow page</li>
+          <li>Click "Edit Settings"</li>
+          <li>Select the ${teamName} team tab</li>
+          <li>Add <strong>${requesterEmail}</strong> to the "Authorized Senders" list</li>
+        </ol>
+        
+        <p style="color: #6B7280; font-size: 12px; margin-top: 30px;">
+          This is an automated email from the CPQ Approval System.
+        </p>
+      </div>
+    `;
+
+    const msg = {
+      to: teamLeadEmail,
+      from: EMAIL_FROM,
+      subject: emailSubject,
+      html: emailHtml,
+    };
+
+    await sgMail.send(msg);
+    console.log(`✅ Authorization request email sent to ${teamLeadEmail} for ${requesterEmail}`);
+
+    res.json({
+      success: true,
+      message: 'Authorization request sent successfully and saved to database'
+    });
+  } catch (error) {
+    console.error('❌ Error sending authorization request email:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to send authorization request email'
+    });
+  }
+});
+
+// GET /api/authorization-requests - Get authorization request history
+app.get('/api/authorization-requests', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const { teamLeadEmail, requesterEmail, status, teamName } = req.query;
+    const requestsCollection = db.collection('authorization_requests');
+    
+    // Build query filter
+    const filter = {};
+    if (teamLeadEmail) filter.teamLeadEmail = teamLeadEmail;
+    if (requesterEmail) filter.requesterEmail = requesterEmail;
+    if (status) filter.status = status;
+    if (teamName) filter.teamName = teamName.toUpperCase();
+
+    const requests = await requestsCollection
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+
+    res.json({ success: true, data: requests });
+  } catch (error) {
+    console.error('❌ Error fetching authorization requests:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/authorization-requests/:id/status - Update authorization request status
+app.put('/api/authorization-requests/:id/status', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body; // 'pending', 'approved', 'rejected'
+
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid status. Must be: pending, approved, or rejected' 
+      });
+    }
+
+    const requestsCollection = db.collection('authorization_requests');
+    const result = await requestsCollection.updateOne(
+      { _id: id },
+      { 
+        $set: { 
+          status,
+          updatedAt: new Date().toISOString()
+        }
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Request not found' });
+    }
+
+    res.json({ success: true, message: 'Request status updated' });
+  } catch (error) {
+    console.error('❌ Error updating authorization request status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Start the server
+startServer();
+
+// ─── E-sign Expiry Reminder Scheduler ────────────────────────────────────────
+// Runs hourly and sends one reminder when a pending recipient is within the
+// pre-expiry reminder window.
+async function runEsignExpiryReminderJob() {
+  if (!db || !process.env.SENDGRID_API_KEY) return;
+
+  try {
+    const now = new Date();
+    const reminderWindowEnd = new Date(now.getTime() + ESIGN_EXPIRY_REMINDER_DAYS_BEFORE * 24 * 60 * 60 * 1000);
+    const dueRecipients = await db.collection('esign_recipients').find({
+      status: 'pending',
+      email: { $exists: true, $ne: '' },
+      signing_token: { $exists: true, $ne: '' },
+      token_expires_at: { $gt: now, $lte: reminderWindowEnd },
+      $or: [
+        { expiry_reminder_sent_at: { $exists: false } },
+        { expiry_reminder_sent_at: null },
+      ],
+    }).sort({ token_expires_at: 1, _id: 1 }).toArray();
+
+    if (!dueRecipients.length) return;
+
+    console.log(`⏰ E-sign expiry reminder check: ${dueRecipients.length} recipient(s) due`);
+
+    for (const recipient of dueRecipients) {
+      try {
+        if (isEsignTokenExpired(recipient)) continue;
+        const doc = await getEsignDocumentForRecipient(recipient);
+        if (!doc || doc.status !== 'sent') continue;
+
+        const { signingUrl, inboxUrl } = getEsignRecipientUrls(recipient.signing_token);
+        const { subject, html } = buildEsignRecipientEmail(doc, recipient, signingUrl, inboxUrl, {
+          mode: 'reminder',
+          tokenExpiresAt: recipient.token_expires_at,
+        });
+        const result = await sendEmail(recipient.email, subject, html);
+        if (!result.success) {
+          console.warn('❌ E-sign reminder email not sent to', recipient.email, result.error?.message || result.error);
+          continue;
+        }
+
+        const reminderTimestamp = new Date();
+        await db.collection('esign_recipients').updateOne(
+          { _id: recipient._id },
+          { $set: { expiry_reminder_sent_at: reminderTimestamp } }
+        );
+        try {
+          await logAudit(doc._id.toString(), 'expiry_reminder_sent', recipient.email || 'system', null);
+        } catch (_) { /* non-fatal */ }
+        console.log(`⏰ E-sign expiry reminder sent to ${recipient.email} for document ${doc._id.toString()}`);
+      } catch (recipientErr) {
+        console.error(`❌ E-sign expiry reminder error for ${recipient.email || recipient._id}:`, recipientErr.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ E-sign expiry reminder job failed:', err.message);
+  }
+}
+
+// ─── Auto-Reminder Scheduler ─────────────────────────────────────────────────
+// Runs every hour. For each pending/in_progress workflow with reminderDays > 0,
+// sends a reminder if enough time has elapsed since the last reminder (or since
+// the workflow was created if no reminder has been sent yet).
+const AUTO_REMINDER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+async function runAutoReminderJob() {
+  if (!db) return; // skip if DB not yet available
+
+  try {
+    const now = Date.now();
+
+    // Fetch all pending/in_progress workflows that have a reminderDays schedule
+    const workflows = await db.collection('approval_workflows').find({
+      status: { $in: ['pending', 'in_progress'] },
+      reminderDays: { $gt: 0 },
+    }).toArray();
+
+    if (workflows.length === 0) return;
+
+    console.log(`⏰ Auto-reminder check: ${workflows.length} workflow(s) with reminder schedule`);
+
+    for (const workflow of workflows) {
+      try {
+        const intervalMs = workflow.reminderDays * 24 * 60 * 60 * 1000;
+
+        // Last reference time: last reminder sent, or workflow creation time
+        const lastRef = workflow.lastReminderSentAt
+          ? new Date(workflow.lastReminderSentAt).getTime()
+          : new Date(workflow.createdAt).getTime();
+
+        if (now - lastRef < intervalMs) continue; // not due yet
+
+        // Find first pending step
+        const steps = (workflow.workflowSteps || []).slice().sort((a, b) => Number(a.step || 0) - Number(b.step || 0));
+        const pendingStep = steps.find(s => s.status === 'pending' || s.status === 'in_progress');
+        if (!pendingStep || !pendingStep.email) continue;
+
+        const role = pendingStep.role;
+        const approverEmail = pendingStep.email;
+
+        // Map role → token key
+        const roleKeyMap = {
+          'Team Approval':  'teamlead',
+          'Technical Team': 'technical',
+          'Legal Team':     'legal',
+        };
+        const tokenRole = roleKeyMap[role] || role.toLowerCase().replace(/\s+/g, '-');
+
+        // Regenerate token
+        const token = await createApprovalAccessToken(db, workflow.id, tokenRole);
+
+        // Build workflowData
+        const workflowData = {
+          ...workflow,
+          workflowId:      workflow.id,
+          teamGroup:       pendingStep.group || workflow.teamGroup,
+          requestedByName: workflow.creatorName || workflow.requestedByName,
+        };
+
+        // Fetch PDF attachment (best-effort)
+        const attachments = [];
+        if (workflow.documentId) {
+          try {
+            const doc = await db.collection('documents').findOne({ id: workflow.documentId });
+            if (doc && doc.fileData) {
+              let fileBuffer;
+              if (Buffer.isBuffer(doc.fileData))     fileBuffer = doc.fileData;
+              else if (doc.fileData.buffer)          fileBuffer = Buffer.from(doc.fileData.buffer);
+              else if (doc.fileData.data)            fileBuffer = Buffer.from(doc.fileData.data);
+              if (fileBuffer) {
+                attachments.push({ filename: doc.fileName || `${workflow.documentId}.pdf`, content: fileBuffer, contentType: 'application/pdf' });
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Build HTML
+        let baseHtml;
+        if      (role === 'Team Approval')  baseHtml = generateTeamEmailHTML(workflowData, token);
+        else if (role === 'Technical Team') baseHtml = generateTechnicalTeamEmailHTML(workflowData, token);
+        else if (role === 'Legal Team')     baseHtml = generateLegalTeamEmailHTML(workflowData, token);
+        else {
+          const baseUrl = process.env.BASE_URL || 'http://localhost:5173';
+          const approvalLink = `${baseUrl}/approval/${workflow.id}?role=${encodeURIComponent(tokenRole)}&token=${encodeURIComponent(token)}`;
+          baseHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333">
+            <div style="max-width:600px;margin:0 auto;padding:20px">
+              <p>Hello,</p>
+              <p>Your approval is still pending for <strong>${workflow.documentId}</strong> (${workflow.clientName}).</p>
+              <div style="text-align:center;margin:30px 0">
+                <a href="${approvalLink}" style="background:#0ea5e9;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold">Review &amp; Approve</a>
+              </div>
+            </div>
+          </body></html>`;
+        }
+
+        const reminderBanner = `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 18px;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5">
+          ⏰ <strong>Reminder:</strong> Your approval for <strong>${workflow.documentId}</strong> is still pending. Please review and take action at your earliest convenience.
+        </div>`;
+        const htmlWithBanner = baseHtml.replace(/<body([^>]*)>/, `<body$1>${reminderBanner}`);
+
+        // Update lastReminderSentAt before sending
+        const reminderTimestamp = new Date().toISOString();
+        await db.collection('approval_workflows').updateOne(
+          { id: workflow.id },
+          { $set: { lastReminderSentAt: reminderTimestamp, updatedAt: reminderTimestamp } }
+        );
+
+        const subject = `Reminder: Approval Pending — ${workflow.documentId} (${workflow.clientName})`;
+        sendEmail(approverEmail, subject, htmlWithBanner, attachments)
+          .then(r  => console.log(`⏰ Auto-reminder sent to ${approverEmail} [${role}] for workflow ${workflow.id}: ${r.success}`))
+          .catch(e => console.error(`❌ Auto-reminder email error [${role}]:`, e));
+
+      } catch (wErr) {
+        console.error(`❌ Auto-reminder error for workflow ${workflow.id}:`, wErr.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Auto-reminder job failed:', err.message);
+  }
+}
+
+// Delay first run by 2 minutes after server start (let DB warm up), then run hourly
+setTimeout(() => {
+  runEsignExpiryReminderJob();
+  setInterval(runEsignExpiryReminderJob, ESIGN_EXPIRY_REMINDER_INTERVAL_MS);
+  runAutoReminderJob();
+  setInterval(runAutoReminderJob, AUTO_REMINDER_INTERVAL_MS);
+}, 2 * 60 * 1000);

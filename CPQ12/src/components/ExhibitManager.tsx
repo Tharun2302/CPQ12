@@ -1,0 +1,2024 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Upload, 
+  FileText, 
+  Edit, 
+  Trash2, 
+  X, 
+  CheckCircle,
+  AlertCircle,
+  Search,
+  Plus,
+  Loader2,
+  Eye,
+  Info,
+  Shield,
+  UserPlus
+} from 'lucide-react';
+import { BACKEND_URL } from '../config/api';
+import { getCombinationsForCategory } from '../utils/exhibitAutoDetect';
+import { useAuth } from '../hooks/useAuth';
+import '../assets/docx-preview.css';
+
+function getAuthHeaders(): Record<string, string> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
+// Helper function to generate name from combination
+function generateNameFromCombination(combination: string): string {
+  if (!combination || combination.trim() === '' || combination === 'all') {
+    return 'New Exhibit';
+  }
+  
+  // Convert combination like "slack-to-teams" to "Slack to Teams"
+  // Also handles single words like "testing" -> "Testing"
+  const parts = combination.split('-');
+  const formatted = parts
+    .filter(part => part.trim() !== '' && part !== 'to')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+  
+  // If formatted is empty (e.g., only "to" was in the combination), use the original
+  return formatted || combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase();
+}
+
+// Normalize folder/combo text into a stable slug key for grouping
+function normalizeFolderKey(input: string): string {
+  if (!input) return '';
+  let s = String(input).toLowerCase();
+  s = s
+    .replace(/&/g, 'and')
+    .replace(/\//g, '-') // treat "/" as separator
+    .replace(/[^a-z0-9]+/g, '-') // any non-alphanum -> "-"
+    .replace(/-+/g, '-') // collapse dashes
+    .replace(/^-+|-+$/g, ''); // trim
+
+  // Strip any trailing include/plan suffixes if user typed them into the folder name
+  s = s.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+  s = s.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+
+  // Collapse duplicated halves: "onedrive-sharepoint-onedrive-sharepoint" -> "onedrive-sharepoint"
+  const parts = s.split('-').filter(Boolean);
+  if (parts.length > 0 && parts.length % 2 === 0) {
+    const half = parts.length / 2;
+    const first = parts.slice(0, half).join('-');
+    const second = parts.slice(half).join('-');
+    if (first === second) s = first;
+  }
+
+  return s;
+}
+
+function buildCombinationKey(base: string, includeType: string, planType: string): string {
+  // IMPORTANT: Combination key should ONLY be the base migration path.
+  // Include type and plan type are stored separately in the exhibit document.
+  // They should NOT be part of the combination key, otherwise exhibits don't group together.
+  // Example: Both "Include" and "Not Include" should use "sharefile-to-google-sharedrive"
+  const b = normalizeFolderKey(base);
+  return b || 'all';
+}
+
+interface Exhibit {
+  _id: string;
+  id?: string;
+  name: string;
+  description: string;
+  fileName: string;
+  fileSize: number;
+  category: 'messaging' | 'content' | 'email';
+  combinations: string[];
+  displayOrder: number;
+  keywords: string[];
+  isRequired: boolean;
+  includeType?: 'included' | 'notincluded'; // from upload selection; used by agreement merger
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ExhibitManager: React.FC = () => {
+  const { user } = useAuth();
+  const canManageExhibits = user?.role === 'exhibit_admin';
+
+  const [exhibits, setExhibits] = useState<Exhibit[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingExhibit, setViewingExhibit] = useState<Exhibit | null>(null);
+  const [isLoadingView, setIsLoadingView] = useState(false);
+  const [viewError, setViewError] = useState<string | null>(null);
+  const [isInlineEditMode, setIsInlineEditMode] = useState(false);
+  const [inlineEditName, setInlineEditName] = useState('');
+  const [inlineEditFile, setInlineEditFile] = useState<File | null>(null);
+  const [inlineEditError, setInlineEditError] = useState<string | null>(null);
+  const [inlineEditSuccess, setInlineEditSuccess] = useState<string | null>(null);
+  const [isSavingInlineEdit, setIsSavingInlineEdit] = useState(false);
+  const [isDownloadingInlineDoc, setIsDownloadingInlineDoc] = useState(false);
+  const [editingExhibit, setEditingExhibit] = useState<Exhibit | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string>('');
+
+  // Exhibit Admins modal (only used when canManageExhibits)
+  const [showExhibitAdminsModal, setShowExhibitAdminsModal] = useState(false);
+  const [adminEmails, setAdminEmails] = useState<string[]>([]);
+  const [adminEmailsLoading, setAdminEmailsLoading] = useState(false);
+  const [adminEmailsError, setAdminEmailsError] = useState<string | null>(null);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [addingAdmin, setAddingAdmin] = useState(false);
+  const [removingAdmin, setRemovingAdmin] = useState<string | null>(null);
+
+  // Upload form state
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    category: 'content' as 'messaging' | 'content' | 'email',
+    combination: '',
+    plan: '' as 'basic' | 'standard' | 'advanced' | '',
+    includeType: '' as 'included' | 'notincluded' | '', // Include/Not Include selection
+    displayOrder: 999,
+    keywords: [] as string[],
+    isRequired: false,
+  });
+  const [useCustomCombination, setUseCustomCombination] = useState(false);
+  const [customCombination, setCustomCombination] = useState('');
+  const [selectedFolder, setSelectedFolder] = useState<string>('');
+  const [combinationFolderSearch, setCombinationFolderSearch] = useState('');
+  const [combinationDropdownOpen, setCombinationDropdownOpen] = useState(false);
+  const [createNewFolder, setCreateNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  // Load guide preference from localStorage (default: true for new users)
+  const [showUploadGuide, setShowUploadGuide] = useState(() => {
+    const saved = localStorage.getItem('exhibitUploadGuideHidden');
+    return saved !== 'true'; // Show guide if not hidden
+  });
+
+  // Save guide preference when hidden
+  const handleHideGuide = () => {
+    setShowUploadGuide(false);
+    localStorage.setItem('exhibitUploadGuideHidden', 'true');
+  };
+
+  // Show guide and clear preference
+  const handleShowGuide = () => {
+    setShowUploadGuide(true);
+    localStorage.removeItem('exhibitUploadGuideHidden');
+  };
+
+  // Load exhibits
+  useEffect(() => {
+    loadExhibits();
+  }, []);
+
+  // Cleanup viewer when modal closes
+  useEffect(() => {
+    if (!showViewModal) {
+      const container = document.getElementById('docx-viewer-container');
+      if (container) {
+        container.innerHTML = '';
+      }
+      setIsInlineEditMode(false);
+      setInlineEditName('');
+      setInlineEditFile(null);
+      setInlineEditError(null);
+      setInlineEditSuccess(null);
+    }
+  }, [showViewModal]);
+
+  const closeViewModal = () => {
+    const container = document.getElementById('docx-viewer-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+    setShowViewModal(false);
+    setViewingExhibit(null);
+    setViewError(null);
+    setIsInlineEditMode(false);
+    setInlineEditFile(null);
+    setInlineEditError(null);
+    setInlineEditSuccess(null);
+  };
+
+  const loadExhibits = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(`${BACKEND_URL}/api/exhibits`);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Auto-fix exhibits with "New Exhibit" name by generating from combination
+        const fixedExhibits = (data.exhibits || []).map((exhibit: any) => {
+          if (exhibit.name === 'New Exhibit' && exhibit.combinations && exhibit.combinations.length > 0 && exhibit.combinations[0] !== 'all') {
+            const combination = exhibit.combinations[0];
+            const parts = combination.split('-');
+            const formatted = parts
+              .filter((part: string) => part.trim() !== '' && part !== 'to')
+              .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+              .join(' ');
+            const newName = formatted || (combination.charAt(0).toUpperCase() + combination.slice(1).toLowerCase());
+            
+            // Auto-update the exhibit name in the database
+            if (newName && newName !== 'New Exhibit') {
+              const updateFormData = new FormData();
+              updateFormData.append('name', newName);
+              fetch(`${BACKEND_URL}/api/exhibits/${exhibit._id}`, {
+                method: 'PUT',
+                headers: getAuthHeaders(),
+                body: updateFormData
+              }).catch(err => console.error('Error auto-updating exhibit name:', err));
+              
+              return { ...exhibit, name: newName };
+            }
+          }
+          return exhibit;
+        });
+        
+        setExhibits(fixedExhibits);
+      }
+    } catch (error) {
+      console.error('Error loading exhibits:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAdminEmails = async () => {
+    try {
+      setAdminEmailsLoading(true);
+      setAdminEmailsError(null);
+      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins`, { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminEmailsError(data.error || 'Failed to load list');
+        setAdminEmails([]);
+        return;
+      }
+      setAdminEmails(data.emails || []);
+    } catch {
+      setAdminEmailsError('Failed to load exhibit admins');
+      setAdminEmails([]);
+    } finally {
+      setAdminEmailsLoading(false);
+    }
+  };
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = newAdminEmail.trim();
+    if (!email || !email.includes('@')) {
+      setAdminEmailsError('Please enter a valid email');
+      return;
+    }
+    setAddingAdmin(true);
+    setAdminEmailsError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminEmailsError(data.error || 'Failed to add');
+        return;
+      }
+      setAdminEmails(data.emails || []);
+      setNewAdminEmail('');
+    } catch {
+      setAdminEmailsError('Failed to add email');
+    } finally {
+      setAddingAdmin(false);
+    }
+  };
+
+  const handleRemoveAdmin = async (email: string) => {
+    setRemovingAdmin(email);
+    setAdminEmailsError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/exhibit-admins/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminEmailsError(data.error || 'Failed to remove');
+        return;
+      }
+      setAdminEmails(data.emails || []);
+    } catch {
+      setAdminEmailsError('Failed to remove email');
+    } finally {
+      setRemovingAdmin(null);
+    }
+  };
+
+  useEffect(() => {
+    if (canManageExhibits) fetchAdminEmails();
+  }, [canManageExhibits]);
+
+  useEffect(() => {
+    if (showExhibitAdminsModal && canManageExhibits) fetchAdminEmails();
+  }, [showExhibitAdminsModal]);
+
+  // Handle file upload - manual only; no auto-detection from filename
+  const handleFileSelect = (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      setUploadError('Please upload a DOCX file');
+      return;
+    }
+
+    setUploadFile(file);
+    setUploadError(null);
+    setUseCustomCombination(false);
+    setCustomCombination('');
+
+    // Default/empty form - user selects category, combination, plan, include type manually
+    setFormData({
+      name: '',
+      description: '',
+      category: 'content',
+      combination: '',
+      plan: '',
+      includeType: '',
+      displayOrder: 999,
+      keywords: [],
+      isRequired: false,
+    });
+  };
+
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!uploadFile) {
+      setUploadError('Please select a file');
+      return;
+    }
+    
+    // Validate include/not include selection
+    if (!formData.includeType) {
+      setUploadError('Please select whether this exhibit is for included or not included features.');
+      return;
+    }
+
+    if (!formData.category) {
+      setUploadError('Category is required');
+      return;
+    }
+
+    // Validate plan type (required)
+    if (!formData.plan) {
+      setUploadError('Plan Type is required. Please select Basic, Standard, or Advanced.');
+      return;
+    }
+
+    // Validate folder selection
+    if (!createNewFolder && !selectedFolder) {
+      setUploadError('Please select a folder or create a new one');
+      return;
+    }
+    
+    if (createNewFolder && !newFolderName.trim()) {
+      setUploadError('Please enter a folder name');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+
+    try {
+      // Get clean folder name first (before building combination)
+      let cleanFolderName = '';
+      if (createNewFolder && newFolderName.trim()) {
+        cleanFolderName = newFolderName.trim();
+      } else if (selectedFolder) {
+        cleanFolderName = selectedFolder;
+      }
+      
+      // Auto-generate name from combination if not provided
+      // Use custom combination if checked, otherwise use formData.combination or detected metadata
+      // IMPORTANT: Always generate a consistent combination key for grouping.
+      // Previously, selecting an existing folder didn't append includeType/planType,
+      // which caused the same folder to split into different groups in the UI.
+      let combinationSource = '';
+      if (createNewFolder && newFolderName.trim()) {
+        combinationSource = newFolderName.trim();
+        setUseCustomCombination(true);
+        setCustomCombination(combinationSource);
+      } else if (selectedFolder) {
+        combinationSource = selectedFolder;
+      } else if (useCustomCombination && customCombination) {
+        combinationSource = customCombination;
+      } else {
+        combinationSource = formData.combination || '';
+      }
+
+      const finalCombination = buildCombinationKey(
+        combinationSource || cleanFolderName || formData.combination || '',
+        formData.includeType,
+        formData.plan
+      );
+      
+      // Generate name from clean folder name, plan type, and type
+      // Use clean folder name and form values instead of auto-detected metadata with typos
+      let finalName = formData.name;
+      if (!finalName) {
+        // Use the clean folder name we got earlier
+        let folderName = cleanFolderName;
+        
+        // If no clean folder name, try to extract from combination
+        if (!folderName) {
+          // Extract base combination (remove include/notinclude and plan type suffixes)
+          let baseCombination = finalCombination
+            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '')
+            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '');
+          
+          if (baseCombination && baseCombination !== finalCombination) {
+            folderName = generateNameFromCombination(baseCombination);
+          } else if (formData.combination) {
+            folderName = generateNameFromCombination(formData.combination);
+          } else {
+            folderName = 'New Exhibit';
+          }
+        }
+        
+        // Try to get clean name from predefined combinations if folder name matches
+        const availableCombos = getCombinationsForCategory(formData.category);
+        const folderCombinationValue = folderName.toLowerCase().replace(/\s+/g, '-');
+        const matchingCombo = availableCombos.find(c => c.value === folderCombinationValue);
+        if (matchingCombo) {
+          folderName = matchingCombo.label; // Use clean label from predefined list
+        }
+        
+        // Use plan type from form (manually selected, clean - no typos)
+        const planType = formData.plan || '';
+        
+        // Use includeType from form (required field, user must select)
+        const type = formData.includeType || '';
+        if (!type) {
+          setUploadError('Please select whether this exhibit is for included or not included features.');
+          setIsUploading(false);
+          return;
+        }
+        
+        // Format the name properly: "Folder Name Plan Plan - Plan Type"
+        const planLabel = planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : '';
+        const typeLabel = type === 'included' ? 'Include' : type === 'notincluded' ? 'Not Include' : '';
+        
+        if (planType && type) {
+          finalName = `${folderName} ${planLabel} Plan - ${planLabel} ${typeLabel}`;
+        } else if (planType) {
+          finalName = `${folderName} ${planLabel} Plan`;
+        } else if (type) {
+          finalName = `${folderName} - ${typeLabel}`;
+        } else {
+          finalName = folderName || 'New Exhibit';
+        }
+      }
+      
+      const finalPlanType = formData.plan || '';
+      
+      const formDataToSend = new FormData();
+      formDataToSend.append('file', uploadFile);
+      formDataToSend.append('name', finalName);
+      formDataToSend.append('description', ''); // Empty description
+      formDataToSend.append('category', formData.category);
+      formDataToSend.append('combinations', JSON.stringify([finalCombination || 'all']));
+      formDataToSend.append('planType', finalPlanType); // Send plan type separately
+      formDataToSend.append('includeType', formData.includeType || 'included'); // Include / Not Include from upload
+      formDataToSend.append('displayOrder', formData.displayOrder.toString());
+      formDataToSend.append('keywords', JSON.stringify(formData.keywords));
+      formDataToSend.append('isRequired', formData.isRequired.toString());
+
+      const response = await fetch(`${BACKEND_URL}/api/exhibits`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formDataToSend,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setUploadSuccess('Exhibit uploaded successfully!');
+        setShowUploadModal(false);
+        resetForm();
+        loadExhibits();
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => setUploadSuccess(null), 3000);
+      } else {
+        setUploadError(data.error || 'Failed to upload exhibit');
+      }
+    } catch (error) {
+      console.error('Error uploading exhibit:', error);
+      setUploadError('Failed to upload exhibit. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Handle edit
+  const handleEdit = (exhibit: Exhibit) => {
+    setEditingExhibit(exhibit);
+    const exhibitCombination = exhibit.combinations[0] || '';
+    
+    // Check if combination exists in predefined list
+    const availableCombos = getCombinationsForCategory(exhibit.category);
+    const isPredefined = availableCombos.some(c => c.value === exhibitCombination);
+    
+    // Extract plan from exhibit name or use planType field if available
+    const exhibitName = exhibit.name.toLowerCase();
+    let detectedPlan = '';
+    if (exhibitName.includes('basic') && !exhibitName.includes('standard') && !exhibitName.includes('advanced')) {
+      detectedPlan = 'basic';
+    } else if (exhibitName.includes('standard') && !exhibitName.includes('advanced')) {
+      detectedPlan = 'standard';
+    } else if (exhibitName.includes('advanced')) {
+      detectedPlan = 'advanced';
+    }
+    
+    // Extract include/notinclude type from combination or name
+    const combinationLower = exhibitCombination.toLowerCase();
+    const nameLower = exhibitName;
+    let detectedIncludeType: 'included' | 'notincluded' | '' = '';
+    if (combinationLower.includes('not included') || 
+        combinationLower.includes('not include') ||
+        combinationLower.includes('notincluded') ||
+        combinationLower.includes('notinclude') ||
+        combinationLower.includes('not-include') ||
+        combinationLower.includes('not-included') ||
+        nameLower.includes('not included') ||
+        nameLower.includes('not include') ||
+        nameLower.includes('notincluded') ||
+        nameLower.includes('notinclude') ||
+        nameLower.includes('not-include') ||
+        nameLower.includes('not-included') ||
+        nameLower.includes('not - include') ||
+        nameLower.includes('not - included')) {
+      detectedIncludeType = 'notincluded';
+    } else if (combinationLower.includes('included') || 
+               combinationLower.includes('include') ||
+               nameLower.includes('included') ||
+               nameLower.includes('include')) {
+      detectedIncludeType = 'included';
+    }
+    
+    setFormData({
+      name: exhibit.name,
+      description: exhibit.description,
+      category: exhibit.category,
+      combination: isPredefined ? exhibitCombination : '',
+      plan: (exhibit as any).planType || detectedPlan || '',
+      includeType: exhibit.includeType || detectedIncludeType, // Prefer stored includeType from upload
+      displayOrder: exhibit.displayOrder,
+      keywords: exhibit.keywords,
+      isRequired: exhibit.isRequired,
+    });
+    setUseCustomCombination(!isPredefined);
+    setCustomCombination(!isPredefined ? exhibitCombination : '');
+    
+    // Pre-select folder if exhibit belongs to one
+    const baseCombination = extractBaseCombination(exhibitCombination);
+    if (baseCombination && baseCombination !== 'all') {
+      const folderName = baseCombination
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      setSelectedFolder(folderName);
+    } else {
+      setSelectedFolder('');
+    }
+    
+    setUploadFile(null);
+    setShowEditModal(true);
+  };
+
+  // Helper function to extract base combination (same as in ExhibitSelector)
+  const extractBaseCombination = (combination: string): string => {
+    if (!combination || combination === 'all') return '';
+    
+    let base = combination.toLowerCase();
+    
+    // Remove plan type suffixes
+    base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+    
+    // Remove include/notinclude suffixes
+    base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+
+    // Normalize separators and collapse duplicated halves (keeps folder selection stable)
+    base = base
+      .replace(/\//g, '-')
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const parts = base.split('-').filter(Boolean);
+    if (parts.length > 0 && parts.length % 2 === 0) {
+      const half = parts.length / 2;
+      const first = parts.slice(0, half).join('-');
+      const second = parts.slice(half).join('-');
+      if (first === second) base = first;
+    }
+    
+    // Clean up any trailing dashes
+    base = base.replace(/-+$/, '').trim();
+    
+    return base;
+  };
+
+  // Handle update
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!editingExhibit) return;
+
+    // Validate folder selection
+    if (!createNewFolder && !selectedFolder) {
+      setUploadError('Please select a folder or create a new one');
+      return;
+    }
+    
+    if (createNewFolder && !newFolderName.trim()) {
+      setUploadError('Please enter a folder name');
+      return;
+    }
+    
+    // Validate include/not include selection
+    if (!formData.includeType) {
+      setUploadError('Please select whether this exhibit is for included or not included features.');
+      return;
+    }
+
+    // Validate plan type (required)
+    if (!formData.plan) {
+      setUploadError('Plan Type is required. Please select Basic, Standard, or Advanced.');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+
+    try {
+      const formDataToSend = new FormData();
+      if (uploadFile) {
+        formDataToSend.append('file', uploadFile);
+      }
+      
+      // Build final combination with include/notinclude and plan type
+      let finalCombination = '';
+      let cleanFolderName = '';
+      
+      // If creating new folder, use the new folder name
+      if (createNewFolder && newFolderName.trim()) {
+        cleanFolderName = newFolderName.trim();
+        finalCombination = buildCombinationKey(cleanFolderName, formData.includeType, formData.plan);
+        setUseCustomCombination(true);
+        setCustomCombination(cleanFolderName);
+      } else if (selectedFolder) {
+        cleanFolderName = selectedFolder;
+        finalCombination = buildCombinationKey(cleanFolderName, formData.includeType, formData.plan);
+      } else if (useCustomCombination && customCombination) {
+        cleanFolderName = customCombination;
+        finalCombination = buildCombinationKey(cleanFolderName, formData.includeType, formData.plan);
+      } else {
+        finalCombination = buildCombinationKey(formData.combination || '', formData.includeType, formData.plan);
+        if (finalCombination) {
+          // Use the base for naming (don't include includeType/planType in the folder label)
+          cleanFolderName = generateNameFromCombination(extractBaseCombination(finalCombination));
+        }
+      }
+      
+      // Use includeType from form (required field, user must select)
+      const detectedType = formData.includeType || '';
+      if (!detectedType) {
+        setUploadError('Please select whether this exhibit is for included or not included features.');
+        setIsUploading(false);
+        return;
+      }
+      
+      const planType = formData.plan || '';
+      
+      // Generate name from clean folder name, plan type, and type
+      let finalName = formData.name;
+      if (!finalName) {
+        const planLabel = planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : '';
+        const typeLabel = detectedType === 'included' ? 'Include' : detectedType === 'notincluded' ? 'Not Include' : '';
+        
+        if (planType && detectedType) {
+          finalName = `${cleanFolderName} ${planLabel} Plan - ${planLabel} ${typeLabel}`;
+        } else if (planType) {
+          finalName = `${cleanFolderName} ${planLabel} Plan`;
+        } else if (detectedType) {
+          finalName = `${cleanFolderName} - ${typeLabel}`;
+        } else {
+          finalName = cleanFolderName || 'New Exhibit';
+        }
+      }
+      
+      const finalPlanType = formData.plan || '';
+      
+      formDataToSend.append('name', finalName);
+      formDataToSend.append('description', ''); // Empty description
+      formDataToSend.append('category', formData.category);
+      formDataToSend.append('combinations', JSON.stringify([finalCombination || 'all']));
+      formDataToSend.append('planType', finalPlanType);
+      formDataToSend.append('includeType', formData.includeType || 'included');
+      formDataToSend.append('displayOrder', formData.displayOrder.toString());
+      formDataToSend.append('keywords', JSON.stringify(formData.keywords));
+      formDataToSend.append('isRequired', formData.isRequired.toString());
+
+      const exhibitId = editingExhibit._id || editingExhibit.id;
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: formDataToSend,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setUploadSuccess('Exhibit updated successfully!');
+        setShowEditModal(false);
+        resetForm();
+        loadExhibits();
+        
+        setTimeout(() => setUploadSuccess(null), 3000);
+      } else {
+        setUploadError(data.error || 'Failed to update exhibit');
+      }
+    } catch (error) {
+      console.error('Error updating exhibit:', error);
+      setUploadError('Failed to update exhibit. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Handle view document (show in modal)
+  const handleView = async (exhibit: Exhibit) => {
+    try {
+      setViewingExhibit(exhibit);
+      setShowViewModal(true);
+      setIsLoadingView(true);
+      setViewError(null);
+      setInlineEditName(exhibit.name || '');
+      setInlineEditError(null);
+      setInlineEditSuccess(null);
+
+      const exhibitId = exhibit._id || exhibit.id;
+      if (!exhibitId) {
+        throw new Error('Exhibit ID is missing');
+      }
+
+      console.log('Fetching exhibit file:', exhibitId);
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      
+      if (!response.ok) {
+        // Try to get error message from JSON response
+        let errorMessage = `Failed to fetch exhibit file (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch {
+          // If not JSON, try text
+          try {
+            const errorText = await response.text();
+            if (errorText) errorMessage = errorText;
+          } catch {
+            // Use default message
+          }
+        }
+        console.error('Failed to fetch exhibit:', response.status, errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      // Check if response is actually a blob
+      const contentType = response.headers.get('content-type');
+      console.log('Response content-type:', contentType);
+
+      // Check if response is JSON (error) instead of blob
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Server returned error');
+      }
+
+      const blob = await response.blob();
+      console.log('Blob received, size:', blob.size);
+
+      if (blob.size === 0) {
+        throw new Error('Received empty file');
+      }
+
+      // Verify it's actually a DOCX file
+      if (blob.type && !blob.type.includes('wordprocessingml') && !blob.type.includes('msword') && !blob.type.includes('octet-stream')) {
+        console.warn('Unexpected file type:', blob.type);
+      }
+
+      const arrayBuffer = await blob.arrayBuffer();
+      console.log('ArrayBuffer created, size:', arrayBuffer.byteLength);
+
+      // Wait for modal to render and ensure container exists
+      let container = document.getElementById('docx-viewer-container');
+      let retries = 0;
+      while (!container && retries < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        container = document.getElementById('docx-viewer-container');
+        retries++;
+      }
+
+      if (!container) {
+        throw new Error('Viewer container not found after waiting');
+      }
+
+      // Clear previous content
+      container.innerHTML = '';
+
+      console.log('Rendering DOCX with docx-preview...');
+      // Import and render docx-preview
+      const { renderAsync } = await import('docx-preview');
+      await renderAsync(arrayBuffer, container as HTMLElement, undefined, {
+        className: 'docx-wrapper',
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        ignoreFonts: false,
+        breakPages: true,
+        experimental: false,
+        trimXmlDeclaration: true,
+        useBase64URL: false,
+        useMathMLPolyfill: true,
+        showChanges: false,
+        showInsertions: false,
+        showDeletions: false,
+      } as any);
+
+      console.log('DOCX rendered successfully');
+      setIsLoadingView(false);
+    } catch (error: any) {
+      console.error('Error viewing exhibit:', error);
+      const errorMessage = error?.message || 'Failed to load document. Please try again.';
+      setViewError(errorMessage);
+      setIsLoadingView(false);
+    }
+  };
+
+  const handleInlineSave = async () => {
+    if (!viewingExhibit) return;
+    const exhibitId = viewingExhibit._id || viewingExhibit.id;
+    if (!exhibitId) {
+      setInlineEditError('Exhibit ID is missing');
+      return;
+    }
+
+    const trimmedName = inlineEditName.trim();
+    if (!trimmedName) {
+      setInlineEditError('Name is required');
+      return;
+    }
+
+    try {
+      setIsSavingInlineEdit(true);
+      setInlineEditError(null);
+      setInlineEditSuccess(null);
+
+      const payload = new FormData();
+      payload.append('name', trimmedName);
+      if (inlineEditFile) {
+        if (!inlineEditFile.name.toLowerCase().endsWith('.docx')) {
+          setInlineEditError('Only DOCX files are allowed');
+          setIsSavingInlineEdit(false);
+          return;
+        }
+        payload.append('file', inlineEditFile);
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: payload
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update exhibit');
+      }
+
+      const updatedExhibit: Exhibit = {
+        ...viewingExhibit,
+        name: trimmedName,
+        fileName: inlineEditFile ? inlineEditFile.name : viewingExhibit.fileName
+      };
+
+      setViewingExhibit(updatedExhibit);
+      setExhibits((prev) =>
+        prev.map((ex) => ((ex._id || ex.id) === exhibitId ? { ...ex, ...updatedExhibit } : ex))
+      );
+
+      if (inlineEditFile) {
+        await handleView(updatedExhibit);
+      }
+
+      setInlineEditFile(null);
+      setInlineEditSuccess('Saved successfully');
+      setIsInlineEditMode(false);
+      await loadExhibits();
+    } catch (error: any) {
+      setInlineEditError(error?.message || 'Failed to save changes');
+    } finally {
+      setIsSavingInlineEdit(false);
+    }
+  };
+
+  const handleDownloadViewedDocx = async () => {
+    if (!viewingExhibit) return;
+    const exhibitId = viewingExhibit._id || viewingExhibit.id;
+    if (!exhibitId) {
+      setInlineEditError('Exhibit ID is missing');
+      return;
+    }
+
+    try {
+      setIsDownloadingInlineDoc(true);
+      setInlineEditError(null);
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to download file (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = viewingExhibit.fileName || 'exhibit.docx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error: any) {
+      setInlineEditError(error?.message || 'Failed to download document');
+    } finally {
+      setIsDownloadingInlineDoc(false);
+    }
+  };
+
+  // Handle delete
+  const handleDelete = async (exhibit: Exhibit) => {
+    if (!confirm(`Are you sure you want to delete "${exhibit.name}"?`)) {
+      return;
+    }
+
+    try {
+      const exhibitId = exhibit._id || exhibit.id;
+      const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        loadExhibits();
+      } else {
+        alert(data.error || 'Failed to delete exhibit');
+      }
+    } catch (error) {
+      console.error('Error deleting exhibit:', error);
+      alert('Failed to delete exhibit. Please try again.');
+    }
+  };
+
+  // Reset form
+  const resetForm = () => {
+    setUploadFile(null);
+    setFormData({
+      name: '',
+      description: '',
+      category: 'content',
+      combination: '',
+      plan: '',
+      includeType: '', // Reset include/not include selection
+      displayOrder: 999,
+      keywords: [],
+      isRequired: false,
+    });
+    setUseCustomCombination(false);
+    setCustomCombination('');
+    setSelectedFolder('');
+    setCombinationFolderSearch('');
+    setCombinationDropdownOpen(false);
+    setCreateNewFolder(false);
+    setNewFolderName('');
+    setUploadError(null);
+    // Don't reset guide preference - keep user's choice
+  };
+
+  // Filter and sort exhibits (newest first)
+  const filteredExhibits = exhibits
+    .filter(exhibit => {
+      const q = (searchTerm || '').toLowerCase();
+      const matchesSearch =
+        (exhibit.name || '').toLowerCase().includes(q) ||
+        (exhibit.description || '').toLowerCase().includes(q) ||
+        (exhibit.fileName || '').toLowerCase().includes(q);
+      const matchesCategory = !filterCategory || exhibit.category === filterCategory;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => {
+      // Sort by createdAt in descending order (newest first)
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA; // Descending order (newest first)
+    });
+
+  // Extract unique folders from existing exhibits
+  const availableFolders = useMemo(() => {
+    const folderSet = new Set<string>();
+
+    exhibits.forEach(exhibit => {
+      if (exhibit.combinations && exhibit.combinations.length > 0) {
+        const primaryCombination = exhibit.combinations[0];
+        if (primaryCombination && primaryCombination !== 'all') {
+          // Extract base combination (remove include/notinclude and plan type)
+          const base = primaryCombination
+            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '')
+            .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced|premium|enterprise)$/i, '');
+
+          if (base && base.length >= 1) {
+            // Try to match with predefined combinations to get clean name
+            const allCombos = getCombinationsForCategory(exhibit.category || 'content');
+            const matchingCombo = allCombos.find(c => c.value === base);
+
+            let folderName: string;
+            if (matchingCombo) {
+              // Use clean label from predefined list
+              folderName = matchingCombo.label;
+            } else {
+              // Format for display - try to match exhibit name pattern first
+              // For custom folders, extract from exhibit name (more reliable than reconstructing from key)
+              const dashIdx = (exhibit.name || '').indexOf(' - ');
+              let nameBase = '';
+              if (dashIdx > 0) {
+                nameBase = exhibit.name.substring(0, dashIdx)
+                  .replace(/\s+(Basic|Standard|Advanced)\s+Plan\s*$/i, '')
+                  .replace(/\s+(std|adv|basic|standard|advanced)\s+(inscope|outscope|in scope|out scope|include|not include|included|not included)\s*$/i, '')
+                  .trim();
+              }
+
+              // Use exhibit name base if available, otherwise reconstruct from key
+              if (nameBase && nameBase.length >= 1) {
+                folderName = nameBase;
+              } else {
+                folderName = base
+                  .split('-')
+                  .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                  .join(' ');
+              }
+            }
+
+            folderSet.add(folderName);
+          }
+        }
+      }
+    });
+    return Array.from(folderSet).sort();
+  }, [exhibits]);
+
+  // Filter combination folders by search (for "Select existing combination" dropdown)
+  const filteredAvailableFolders = useMemo(() => {
+    const term = (combinationFolderSearch || '').trim().toLowerCase();
+    if (!term) return availableFolders;
+    return availableFolders.filter((folder) => folder.toLowerCase().includes(term));
+  }, [availableFolders, combinationFolderSearch]);
+
+  return (
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Exhibit Manager</h2>
+          <p className="text-gray-600 mt-1">Manage migration exhibits</p>
+        </div>
+        {canManageExhibits ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowExhibitAdminsModal(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Shield className="w-5 h-5" />
+              Exhibit Admins
+            </button>
+            <button
+              onClick={() => {
+                resetForm();
+                setShowUploadModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Upload Exhibit
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">You can view exhibits only. Only exhibit admins can add, edit, or delete.</p>
+        )}
+      </div>
+
+      {/* Success/Error Messages */}
+      {uploadSuccess && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+          <CheckCircle className="w-5 h-5 text-green-600" />
+          <span className="text-green-800">{uploadSuccess}</span>
+        </div>
+      )}
+
+      {/* Search and Filter */}
+      <div className="mb-6 flex gap-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <input
+            type="text"
+            placeholder="Search exhibits..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+        <select
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="">All Categories</option>
+          <option value="messaging">Messaging</option>
+          <option value="content">Content</option>
+          <option value="email">Email</option>
+        </select>
+      </div>
+
+      {/* Exhibits List */}
+      {isLoading ? (
+        <div className="flex justify-center items-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      ) : filteredExhibits.length === 0 ? (
+        <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600">No exhibits found</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredExhibits.map((exhibit) => (
+            <div
+              key={exhibit._id || exhibit.id}
+              className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+            >
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="font-semibold text-gray-900">{exhibit.name}</h3>
+                <span className={`px-2 py-1 text-xs rounded ${
+                  exhibit.category === 'messaging' ? 'bg-blue-100 text-blue-800' :
+                  exhibit.category === 'content' ? 'bg-green-100 text-green-800' :
+                  'bg-purple-100 text-purple-800'
+                }`}>
+                  {exhibit.category}
+                </span>
+              </div>
+              <p className="text-sm text-gray-600 mb-2 line-clamp-2">{exhibit.description}</p>
+              <div className="text-xs text-gray-500 mb-3">
+                <div>File: {exhibit.fileName}</div>
+                <div>Size: {(exhibit.fileSize / 1024).toFixed(2)} KB</div>
+                <div>Combinations: {exhibit.combinations.join(', ')}</div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleView(exhibit)}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors text-sm"
+                  title="View/Download document"
+                >
+                  <Eye className="w-4 h-4" />
+                  View
+                </button>
+                {canManageExhibits && (
+                  <>
+                    <button
+                      onClick={() => handleEdit(exhibit)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors text-sm"
+                    >
+                      <Edit className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(exhibit)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Exhibit Admins Modal */}
+      {showExhibitAdminsModal && canManageExhibits && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowExhibitAdminsModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-lg max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-blue-600" />
+                  Exhibit Admins
+                </h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  Users with these emails can add, edit, and delete exhibits. You can also set EXHIBIT_ADMIN_EMAILS in .env.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowExhibitAdminsModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <form onSubmit={handleAddAdmin} className="flex gap-2">
+                <input
+                  type="email"
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  disabled={addingAdmin}
+                />
+                <button
+                  type="submit"
+                  disabled={addingAdmin || !newAdminEmail.trim()}
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {addingAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  Add
+                </button>
+              </form>
+              {adminEmailsError && (
+                <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
+                  {adminEmailsError}
+                </div>
+              )}
+              {adminEmailsLoading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                </div>
+              ) : adminEmails.length === 0 ? (
+                <p className="text-gray-500 text-xs">No exhibit admins in the list yet. Add an email above or use .env.</p>
+              ) : (
+                <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                  {adminEmails.map((email) => (
+                    <li key={email} className="py-2 flex items-center justify-between gap-2">
+                      <span className="text-gray-900 text-sm truncate">{email}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAdmin(email)}
+                        disabled={removingAdmin === email}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 text-sm"
+                        title="Remove"
+                      >
+                        {removingAdmin === email ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold">Upload New Exhibit</h3>
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    resetForm();
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">Select category, combination, plan and include type.</p>
+
+              {/* How to Use Guide */}
+              {showUploadGuide && (
+                <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
+                      <Info className="w-5 h-5 text-blue-600" />
+                      <h4 className="text-sm font-semibold text-blue-900">How to Upload an Exhibit</h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleHideGuide}
+                      className="text-blue-600 hover:text-blue-800 text-xs"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                  <ol className="text-xs text-blue-800 space-y-2 ml-7 list-decimal">
+                    <li><strong>Select File:</strong> Click "Click to upload" and choose a DOCX file (Word document)</li>
+                    <li><strong>Choose Category:</strong> Select Messaging, Content, or Email based on your document type</li>
+                    <li><strong>Select Combinations Folder:</strong> Choose an existing folder from the dropdown, or check "Create new combination folder" to create a new one</li>
+                    <li><strong>Plan Type:</strong> Select Basic, Standard, or Advanced (required)</li>
+                    <li><strong>Include/Not Include:</strong> Select whether this exhibit is for included features or not included features</li>
+                    <li><strong>Upload:</strong> Click "Upload Exhibit" button to complete</li>
+                  </ol>
+                </div>
+              )}
+
+              {!showUploadGuide && (
+                <button
+                  type="button"
+                  onClick={handleShowGuide}
+                  className="mb-4 flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"
+                >
+                  <Info className="w-4 h-4" />
+                  Show upload guide
+                </button>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    File (DOCX) *
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    {uploadFile ? (
+                      <div className="space-y-2">
+                        <FileText className="w-12 h-12 text-blue-600 mx-auto" />
+                        <p className="text-sm font-medium">{uploadFile.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {(uploadFile.size / 1024).toFixed(2)} KB
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setUploadFile(null)}
+                          className="text-sm text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                        <label className="cursor-pointer">
+                          <span className="text-blue-600 hover:text-blue-700">Click to upload</span>
+                          <input
+                            type="file"
+                            accept=".docx"
+                            onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
+                            className="hidden"
+                          />
+                        </label>
+                        <p className="text-xs text-gray-500 mt-2">DOCX files only</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Category */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Category *
+                  </label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => {
+                      setFormData({ ...formData, category: e.target.value as any, combination: '' });
+                      setSelectedFolder(''); // Clear folder when category changes
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="messaging">Messaging</option>
+                    <option value="content">Content</option>
+                    <option value="email">Email</option>
+                  </select>
+                </div>
+
+                {/* Folder Selection - Required */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Folder *
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={createNewFolder}
+                        onChange={(e) => {
+                          setCreateNewFolder(e.target.checked);
+                          if (e.target.checked) {
+                            setSelectedFolder('');
+                            setNewFolderName('');
+                          } else {
+                            setNewFolderName('');
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span>Create new combination folder</span>
+                    </label>
+                  </div>
+                  
+                  {createNewFolder ? (
+                    <div>
+                      <input
+                        type="text"
+                        value={newFolderName}
+                        onChange={(e) => {
+                          const folderName = e.target.value;
+                          setNewFolderName(folderName);
+                          
+                          if (folderName.trim()) {
+                            // Convert folder name to combination format
+                            const combinationValue = folderName
+                              .toLowerCase()
+                              .replace(/\s+/g, '-');
+                            
+                            // Check if it's a predefined combination
+                            const availableCombos = getCombinationsForCategory(formData.category);
+                            const isPredefined = availableCombos.some(c => c.value === combinationValue);
+                            
+                            if (isPredefined) {
+                              setUseCustomCombination(false);
+                              setCustomCombination('');
+                              setFormData({ ...formData, combination: combinationValue });
+                            } else {
+                              setUseCustomCombination(true);
+                              setCustomCombination(folderName);
+                              setFormData({ ...formData, combination: combinationValue });
+                            }
+                          }
+                        }}
+                        placeholder="Enter combination folder name (e.g., Testing to Production)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Enter a name for the new combination folder. This will be used to group related exhibits together.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={selectedFolder || combinationFolderSearch}
+                        onChange={(e) => {
+                          setCombinationFolderSearch(e.target.value);
+                          setSelectedFolder('');
+                        }}
+                        onFocus={() => setCombinationDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setCombinationDropdownOpen(false), 200)}
+                        placeholder="Search or select existing combination"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                        autoComplete="off"
+                      />
+                      {combinationDropdownOpen && (
+                        <ul className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                          {filteredAvailableFolders.length > 0 ? (
+                            filteredAvailableFolders.map((folder) => (
+                              <li
+                                key={folder}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setSelectedFolder(folder);
+                                  setCombinationFolderSearch('');
+                                  setCombinationDropdownOpen(false);
+                                  const combinationValue = folder.toLowerCase().replace(/\s+/g, '-');
+                                  const availableCombos = getCombinationsForCategory(formData.category);
+                                  const isPredefined = availableCombos.some(c => c.value === combinationValue);
+                                  if (isPredefined) {
+                                    setUseCustomCombination(false);
+                                    setCustomCombination('');
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  } else {
+                                    setUseCustomCombination(true);
+                                    setCustomCombination(folder);
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  }
+                                }}
+                                className="px-3 py-2 cursor-pointer hover:bg-blue-50 text-sm"
+                              >
+                                {folder}
+                              </li>
+                            ))
+                          ) : (
+                            <li className="px-3 py-2 text-gray-500 text-sm">
+                              {availableFolders.length > 0 ? 'No matches. Try a different search.' : 'No existing combinations. Check "Create new combination folder" to add one.'}
+                            </li>
+                          )}
+                        </ul>
+                      )}
+                      <p className="mt-1 text-xs text-gray-500">
+                        Search or select an existing combination folder to group this exhibit with others.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Combination field is hidden - automatically set from folder selection */}
+
+                {/* Plan Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Plan Type *
+                  </label>
+                  <select
+                    value={formData.plan}
+                    onChange={(e) => setFormData({ ...formData, plan: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="">Select a plan</option>
+                    <option value="basic">Basic</option>
+                    <option value="standard">Standard</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select the plan this exhibit applies to (Basic, Standard, or Advanced).
+                  </p>
+                </div>
+
+                {/* Include/Not Include Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Include / Not Include *
+                  </label>
+                  <select
+                    value={formData.includeType}
+                    onChange={(e) => setFormData({ ...formData, includeType: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="">Select an option</option>
+                    <option value="included">Include</option>
+                    <option value="notincluded">Not Include</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select whether this exhibit is for included or not included features.
+                  </p>
+                </div>
+
+                {/* Error Message */}
+                {uploadError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                    <span className="text-sm text-red-800">{uploadError}</span>
+                  </div>
+                )}
+
+                {/* Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      resetForm();
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUploading}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      'Upload Exhibit'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal - Similar to Upload Modal but with update handler */}
+      {showEditModal && editingExhibit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold">Edit Exhibit</h3>
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    resetForm();
+                    setEditingExhibit(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdate} className="space-y-4">
+                {/* Metadata fields first - primary purpose of Edit */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Category *
+                  </label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => {
+                      setFormData({ ...formData, category: e.target.value as any, combination: '' });
+                      setSelectedFolder(''); // Clear folder when category changes
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="messaging">Messaging</option>
+                    <option value="content">Content</option>
+                    <option value="email">Email</option>
+                  </select>
+                </div>
+
+                {/* Folder Selection - Required */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Folder *
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={createNewFolder}
+                        onChange={(e) => {
+                          setCreateNewFolder(e.target.checked);
+                          if (e.target.checked) {
+                            setSelectedFolder('');
+                            setNewFolderName('');
+                          } else {
+                            setNewFolderName('');
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span>Create new combination folder</span>
+                    </label>
+                  </div>
+                  
+                  {createNewFolder ? (
+                    <div>
+                      <input
+                        type="text"
+                        value={newFolderName}
+                        onChange={(e) => {
+                          const folderName = e.target.value;
+                          setNewFolderName(folderName);
+                          
+                          if (folderName.trim()) {
+                            // Convert folder name to combination format
+                            const combinationValue = folderName
+                              .toLowerCase()
+                              .replace(/\s+/g, '-');
+                            
+                            // Check if it's a predefined combination
+                            const availableCombos = getCombinationsForCategory(formData.category);
+                            const isPredefined = availableCombos.some(c => c.value === combinationValue);
+                            
+                            if (isPredefined) {
+                              setUseCustomCombination(false);
+                              setCustomCombination('');
+                              setFormData({ ...formData, combination: combinationValue });
+                            } else {
+                              setUseCustomCombination(true);
+                              setCustomCombination(folderName);
+                              setFormData({ ...formData, combination: combinationValue });
+                            }
+                          }
+                        }}
+                        placeholder="Enter combination folder name (e.g., Testing to Production)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Enter a name for the new combination folder. This will be used to group related exhibits together.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={selectedFolder || combinationFolderSearch}
+                        onChange={(e) => {
+                          setCombinationFolderSearch(e.target.value);
+                          setSelectedFolder('');
+                        }}
+                        onFocus={() => setCombinationDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setCombinationDropdownOpen(false), 200)}
+                        placeholder="Search or select existing combination"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        required
+                        autoComplete="off"
+                      />
+                      {combinationDropdownOpen && (
+                        <ul className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                          {filteredAvailableFolders.length > 0 ? (
+                            filteredAvailableFolders.map((folder) => (
+                              <li
+                                key={folder}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setSelectedFolder(folder);
+                                  setCombinationFolderSearch('');
+                                  setCombinationDropdownOpen(false);
+                                  const combinationValue = folder.toLowerCase().replace(/\s+/g, '-');
+                                  const availableCombos = getCombinationsForCategory(formData.category);
+                                  const isPredefined = availableCombos.some(c => c.value === combinationValue);
+                                  if (isPredefined) {
+                                    setUseCustomCombination(false);
+                                    setCustomCombination('');
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  } else {
+                                    setUseCustomCombination(true);
+                                    setCustomCombination(folder);
+                                    setFormData((prev) => ({ ...prev, combination: combinationValue }));
+                                  }
+                                }}
+                                className="px-3 py-2 cursor-pointer hover:bg-blue-50 text-sm"
+                              >
+                                {folder}
+                              </li>
+                            ))
+                          ) : (
+                            <li className="px-3 py-2 text-gray-500 text-sm">
+                              {availableFolders.length > 0 ? 'No matches. Try a different search.' : 'No existing combinations. Check "Create new combination folder" to add one.'}
+                            </li>
+                          )}
+                        </ul>
+                      )}
+                      <p className="mt-1 text-xs text-gray-500">
+                        Search or select an existing combination folder to group this exhibit with others.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Combination field is hidden - automatically set from folder selection */}
+
+                {/* Plan Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Plan Type *
+                  </label>
+                  <select
+                    value={formData.plan}
+                    onChange={(e) => setFormData({ ...formData, plan: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="">Select a plan</option>
+                    <option value="basic">Basic</option>
+                    <option value="standard">Standard</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select the plan this exhibit applies to (Basic, Standard, or Advanced).
+                  </p>
+                </div>
+
+                {/* Include/Not Include Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Include / Not Include *
+                  </label>
+                  <select
+                    value={formData.includeType}
+                    onChange={(e) => setFormData({ ...formData, includeType: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    <option value="">Select an option</option>
+                    <option value="included">Include</option>
+                    <option value="notincluded">Not Include</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select whether this exhibit is for included or not included features.
+                  </p>
+                </div>
+
+                {uploadError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                    <span className="text-sm text-red-800">{uploadError}</span>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      resetForm();
+                      setEditingExhibit(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUploading}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      'Update Exhibit'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Document Modal */}
+      {showViewModal && viewingExhibit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">View Document</h3>
+                <p className="text-sm text-gray-600 mt-1">{viewingExhibit.name}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {canManageExhibits && !isInlineEditMode && (
+                  <button
+                    onClick={() => {
+                      setInlineEditName(viewingExhibit.name || '');
+                      setInlineEditFile(null);
+                      setInlineEditError(null);
+                      setInlineEditSuccess(null);
+                      setIsInlineEditMode(true);
+                    }}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={closeViewModal}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-6 bg-gray-50 relative">
+              {canManageExhibits && isInlineEditMode && (
+                <div className="mb-4 p-4 bg-white border border-gray-200 rounded-lg space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={inlineEditName}
+                        onChange={(e) => setInlineEditName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Exhibit name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Replace DOCX (optional)</label>
+                      <input
+                        type="file"
+                        accept=".docx"
+                        onChange={(e) => setInlineEditFile(e.target.files?.[0] || null)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Preview is read-only. To change document content, upload a modified DOCX and click Save Changes.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleDownloadViewedDocx}
+                        disabled={isDownloadingInlineDoc}
+                        className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isDownloadingInlineDoc && <Loader2 className="w-3 h-3 animate-spin" />}
+                        {isDownloadingInlineDoc ? 'Downloading...' : 'Download Current DOCX'}
+                      </button>
+                    </div>
+                  </div>
+                  {inlineEditError && (
+                    <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">{inlineEditError}</div>
+                  )}
+                  {inlineEditSuccess && (
+                    <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700">{inlineEditSuccess}</div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsInlineEditMode(false);
+                        setInlineEditFile(null);
+                        setInlineEditError(null);
+                        setInlineEditSuccess(null);
+                        setInlineEditName(viewingExhibit.name || '');
+                      }}
+                      className="px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                      disabled={isSavingInlineEdit}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleInlineSave}
+                      disabled={isSavingInlineEdit}
+                      className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSavingInlineEdit && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {isSavingInlineEdit ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {isLoadingView && (
+                <div className="flex flex-col items-center justify-center py-12 absolute inset-0 bg-gray-50 z-10">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-4" />
+                  <p className="text-gray-600">Loading document...</p>
+                </div>
+              )}
+              {viewError && !isLoadingView && (
+                <div className="flex flex-col items-center justify-center py-12 absolute inset-0 bg-gray-50 z-10">
+                  <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+                  <p className="text-red-600 text-center mb-2 max-w-md">{viewError}</p>
+                  <button
+                    onClick={() => handleView(viewingExhibit)}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {/* Always render container for docx-preview */}
+              <div className="bg-white shadow-sm rounded-lg min-h-full overflow-auto">
+                <div 
+                  id="docx-viewer-container" 
+                  className="docx-viewer"
+                  style={{ 
+                    minHeight: '100%',
+                    padding: '20px',
+                    display: isLoadingView || viewError ? 'none' : 'block'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ExhibitManager;

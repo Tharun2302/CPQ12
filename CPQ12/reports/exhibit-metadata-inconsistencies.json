@@ -1,0 +1,3372 @@
+{
+  "generatedAt": "2026-02-12T10:30:26.929Z",
+  "totalExhibits": 240,
+  "totalInconsistent": 226,
+  "summary": [
+    {
+      "combo": "sharefile-to-google-sharedrive",
+      "count": 8,
+      "issues": {
+        "missing_planType": 8,
+        "missing_includeType": 8
+      }
+    },
+    {
+      "combo": "dropbox-to-mydrive",
+      "count": 8,
+      "issues": {
+        "missing_planType": 8,
+        "missing_includeType": 8
+      }
+    },
+    {
+      "combo": "sharefile-to-google-mydrive",
+      "count": 8,
+      "issues": {
+        "missing_planType": 8,
+        "missing_includeType": 8
+      }
+    },
+    {
+      "combo": "nfs-to-microsoft",
+      "count": 8,
+      "issues": {
+        "missing_planType": 8,
+        "missing_includeType": 8
+      }
+    },
+    {
+      "combo": "nfs-to-google",
+      "count": 8,
+      "issues": {
+        "missing_planType": 8,
+        "missing_includeType": 8
+      }
+    },
+    {
+      "combo": "all",
+      "count": 8,
+      "issues": {
+        "missing_planType": 8,
+        "missing_includeType": 8
+      }
+    },
+    {
+      "combo": "slack-to-teams",
+      "count": 6,
+      "issues": {
+        "missing_planType": 6,
+        "missing_includeType": 6
+      }
+    },
+    {
+      "combo": "dropbox-to-google",
+      "count": 6,
+      "issues": {
+        "missing_planType": 6,
+        "missing_includeType": 6
+      }
+    },
+    {
+      "combo": "egnyte-to-sharepoint-online",
+      "count": 6,
+      "issues": {
+        "missing_planType": 6,
+        "missing_includeType": 6
+      }
+    },
+    {
+      "combo": "google-mydrive-to-google-mydrive",
+      "count": 6,
+      "issues": {
+        "missing_planType": 6,
+        "missing_includeType": 6
+      }
+    },
+    {
+      "combo": "google-mydrive-to-google-sharedrive",
+      "count": 5,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 5
+      }
+    },
+    {
+      "combo": "onedrive-to-onedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "dropbox-to-box",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "dropbox-to-egnyte",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "box-to-box",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "box-to-dropbox",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "box-to-sharefile",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "dropbox-to-onedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "dropbox-to-sharepoint",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "egnyte-to-onedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "egnyte-to-google-sharedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "egnyte-to-google",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "sharefile-to-sharepoint",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "sharefile-to-sharefile",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "sharefile-to-onedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "onedrive-to-google-mydrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-mydrive-to-sharepoint",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-mydrive-to-onedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-mydrive-to-egnyte",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-mydrive-to-dropbox",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "outlook-to-outlook",
+      "count": 4,
+      "issues": {
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "outlook-to-gmail",
+      "count": 4,
+      "issues": {
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "dropbox-to-azureblob",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-sharedrive-to-google-sharedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-sharedrive-to-sharepoint",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-sharedrive-to-egnyte",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "google-sharedrive-to-onedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "sharepoint-online-to-google-sharedrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "sharepoint-online-to-google-mydrive",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "sharepoint-online-to-egnyte",
+      "count": 4,
+      "issues": {
+        "missing_planType": 4,
+        "missing_includeType": 4
+      }
+    },
+    {
+      "combo": "box-to-google-mydrive",
+      "count": 3,
+      "issues": {
+        "missing_planType": 3,
+        "missing_includeType": 3
+      }
+    },
+    {
+      "combo": "box-to-google-sharedrive",
+      "count": 3,
+      "issues": {
+        "missing_planType": 3,
+        "missing_includeType": 3
+      }
+    },
+    {
+      "combo": "box-to-onedrive",
+      "count": 3,
+      "issues": {
+        "missing_planType": 3,
+        "missing_includeType": 3
+      }
+    },
+    {
+      "combo": "box-to-sharepoint",
+      "count": 3,
+      "issues": {
+        "missing_planType": 3,
+        "missing_includeType": 3
+      }
+    },
+    {
+      "combo": "slack-to-google-chat",
+      "count": 3,
+      "issues": {
+        "missing_planType": 3
+      }
+    },
+    {
+      "combo": "slack-to-slack",
+      "count": 2,
+      "issues": {
+        "missing_includeType": 2
+      }
+    },
+    {
+      "combo": "google-chat-to-teams",
+      "count": 2,
+      "issues": {
+        "missing_planType": 2,
+        "missing_includeType": 2
+      }
+    },
+    {
+      "combo": "gmail-to-outlook",
+      "count": 2,
+      "issues": {
+        "missing_planType": 2,
+        "missing_includeType": 2
+      }
+    },
+    {
+      "combo": "gmail-to-gmail",
+      "count": 2,
+      "issues": {
+        "missing_planType": 2,
+        "missing_includeType": 2
+      }
+    },
+    {
+      "combo": "teams-to-google-chat",
+      "count": 2,
+      "issues": {
+        "missing_includeType": 2
+      }
+    },
+    {
+      "combo": "meta-to-google-chat",
+      "count": 2,
+      "issues": {
+        "missing_includeType": 2
+      }
+    },
+    {
+      "combo": "dropbox-to-google-mydrive",
+      "count": 2,
+      "issues": {
+        "missing_planType": 2,
+        "missing_includeType": 2
+      }
+    },
+    {
+      "combo": "egnyte-to-microsoft",
+      "count": 2,
+      "issues": {
+        "missing_planType": 2
+      }
+    },
+    {
+      "combo": "teams-to-teams",
+      "count": 2,
+      "issues": {
+        "missing_planType": 2,
+        "missing_includeType": 2
+      }
+    }
+  ],
+  "rows": [
+    {
+      "id": "694001b7d19257ee4d202b56",
+      "combo": "slack-to-teams",
+      "category": "messaging",
+      "name": "Slack to Teams Basic Plan - Basic Include",
+      "fileName": "slack-to-teams-basic-plan-included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "basic",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"slack-to-teams\"]"
+    },
+    {
+      "id": "694001b8d19257ee4d202b57",
+      "combo": "slack-to-teams",
+      "category": "messaging",
+      "name": "Slack to Teams Basic Plan - Basic Not Include",
+      "fileName": "slack-to-teams-basic-plan-notincluded.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "basic",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"slack-to-teams\"]"
+    },
+    {
+      "id": "69400400eafb4acacf0b5aaa",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google SharedDrive Advanced Plan - Advanced Included",
+      "fileName": "ShareFile to Google SharedDrive Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "69400400eafb4acacf0b5aab",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google SharedDrive Advanced Plan - Advanced Not Included",
+      "fileName": "ShareFile to Google SharedDrive Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "694017cb3878a2d6dcc8137d",
+      "combo": "onedrive-to-onedrive",
+      "category": "content",
+      "name": "OneDrive to OneDrive Standard Plan - Included Features",
+      "fileName": "OneDrive to OneDrive Standard Plan - Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "69428e24e54890823fd61a97",
+      "combo": "slack-to-teams",
+      "category": "messaging",
+      "name": "Slack to Teams Standard Plan - Standard Include",
+      "fileName": "slack-to-teams-standard-plan-included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"slack-to-teams\"]"
+    },
+    {
+      "id": "69428e25e54890823fd61a98",
+      "combo": "slack-to-teams",
+      "category": "messaging",
+      "name": "Slack to Teams Standard Plan - Standard Not Include",
+      "fileName": "slack-to-teams-standard-plan-notincluded.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"slack-to-teams\"]"
+    },
+    {
+      "id": "69429aef12c8e5a0ca64c7bd",
+      "combo": "slack-to-teams",
+      "category": "messaging",
+      "name": "Slack to Teams Advanced Plan - Advanced Include",
+      "fileName": "slack-to-teams-advanced-plan-included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"slack-to-teams\"]"
+    },
+    {
+      "id": "69429aef12c8e5a0ca64c7be",
+      "combo": "slack-to-teams",
+      "category": "messaging",
+      "name": "Slack to Teams Advanced Plan - Advanced Not Include",
+      "fileName": "slack-to-teams-advanced-plan-notincluded.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"slack-to-teams\"]"
+    },
+    {
+      "id": "6944d1567c81e01956c7b2a5",
+      "combo": "dropbox-to-box",
+      "category": "content",
+      "name": "Dropbox to Box Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to Box Advanced Plan - Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-box\",\"all\"]"
+    },
+    {
+      "id": "6944d1567c81e01956c7b2a6",
+      "combo": "dropbox-to-box",
+      "category": "content",
+      "name": "Dropbox to Box Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to Box Advanced Plan - Not Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-box\",\"all\"]"
+    },
+    {
+      "id": "6944d5979e58b1d93f4c9baa",
+      "combo": "dropbox-to-box",
+      "category": "content",
+      "name": "Dropbox to Box Standard Plan - Standard Include",
+      "fileName": "Dropbox to Box Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-box\",\"all\"]"
+    },
+    {
+      "id": "6944d5979e58b1d93f4c9bab",
+      "combo": "dropbox-to-box",
+      "category": "content",
+      "name": "Dropbox to Box Standard Plan - Standard Not Include",
+      "fileName": "Dropbox to Box Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-box\",\"all\"]"
+    },
+    {
+      "id": "6944d8c82d1b6fa686f16231",
+      "combo": "dropbox-to-egnyte",
+      "category": "content",
+      "name": "Dropbox to Egnyte Standard Plan - Standard Include",
+      "fileName": "Dropbox to Egnyte Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6944d8c82d1b6fa686f16232",
+      "combo": "dropbox-to-egnyte",
+      "category": "content",
+      "name": "Dropbox to Egnyte Standard Plan - Standard Not Include",
+      "fileName": "Dropbox to Egnyte Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6944dd1eb323b3ba931922e9",
+      "combo": "dropbox-to-egnyte",
+      "category": "content",
+      "name": "Dropbox to Egnyte Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to Egnyte Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6944dd1eb323b3ba931922ea",
+      "combo": "dropbox-to-egnyte",
+      "category": "content",
+      "name": "Dropbox to Egnyte Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to Egnyte Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6944e0ff93e170a2e67af87a",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to MyDrive Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to MyDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6944e0ff93e170a2e67af87b",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to MyDrive Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to MyDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6944e81de22c1481c5e2a018",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to MyDrive Standard Plan - Standard Include",
+      "fileName": "Dropbox to MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6944e81ee22c1481c5e2a019",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to MyDrive Standard Plan - Standard Not Include",
+      "fileName": "Dropbox to MyDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6944ed70a65a4961f72fc94a",
+      "combo": "dropbox-to-google",
+      "category": "content",
+      "name": "Dropbox to Google Shared Drive Standard Plan - Standard Include",
+      "fileName": "Dropbox to Google Shared Drive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google\",\"dropbox-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6944ed70a65a4961f72fc94b",
+      "combo": "dropbox-to-google",
+      "category": "content",
+      "name": "Dropbox to Google Shared Drive Standard Plan - Standard Not Include",
+      "fileName": "Dropbox to Google Shared Drive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google\",\"dropbox-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "69494474094bca211f852aa4",
+      "combo": "box-to-box",
+      "category": "content",
+      "name": "Box to Box Advanced Plan - Advanced Include",
+      "fileName": "Box to Box Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-box\",\"all\"]"
+    },
+    {
+      "id": "69494474094bca211f852aa5",
+      "combo": "box-to-box",
+      "category": "content",
+      "name": "Box to Box Advanced Plan - Advanced Not Include",
+      "fileName": "Box to Box Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-box\",\"all\"]"
+    },
+    {
+      "id": "69494606f3df56afd433023a",
+      "combo": "box-to-dropbox",
+      "category": "content",
+      "name": "Box to Dropbox Standard Plan - Standard Include",
+      "fileName": "Box to Dropbox Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "69494606f3df56afd433023b",
+      "combo": "box-to-dropbox",
+      "category": "content",
+      "name": "Box to Dropbox Standard Plan - Standard Not Include",
+      "fileName": "Box to Dropbox Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "694947fccb471b7053ae5a74",
+      "combo": "box-to-dropbox",
+      "category": "content",
+      "name": "Box to Dropbox Advanced Plan - Advanced Include",
+      "fileName": "Box to Dropbox Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "69494e0d913dc8282303f838",
+      "combo": "box-to-dropbox",
+      "category": "content",
+      "name": "Box to Dropbox Advanced Plan - Advanced Not Include",
+      "fileName": "Box to Dropbox Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "694952895489cded3c028aa0",
+      "combo": "box-to-sharefile",
+      "category": "content",
+      "name": "Box to ShareFile Advanced Plan - Advanced Include",
+      "fileName": "Box to ShareFile Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "694952895489cded3c028aa1",
+      "combo": "box-to-sharefile",
+      "category": "content",
+      "name": "Box to ShareFile Advanced Plan - Advanced Not Include",
+      "fileName": "Box to ShareFile Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "694955efda541709a704e7a1",
+      "combo": "box-to-sharefile",
+      "category": "content",
+      "name": "Box to ShareFile Standard Plan - Standard Include",
+      "fileName": "Box to ShareFile Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "694955efda541709a704e7a2",
+      "combo": "box-to-sharefile",
+      "category": "content",
+      "name": "Box to ShareFile Standard Plan - Standard Not Include",
+      "fileName": "Box to ShareFile Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "69495b88b21c440653eeca54",
+      "combo": "box-to-google-mydrive",
+      "category": "content",
+      "name": "Box to Google MyDrive Standard Plan - Standard Include",
+      "fileName": "Box to Google MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "69495b88b21c440653eeca55",
+      "combo": "box-to-google-mydrive",
+      "category": "content",
+      "name": "Box to Google MyDrive Standard Plan - Standard Not Include",
+      "fileName": "Box to Google MyDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "69495db5bed1e3bc412b0581",
+      "combo": "dropbox-to-onedrive",
+      "category": "content",
+      "name": "Dropbox to OneDrive Standard Plan - Standard Include",
+      "fileName": "Dropbox to OneDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "69495db5bed1e3bc412b0582",
+      "combo": "dropbox-to-onedrive",
+      "category": "content",
+      "name": "Dropbox to OneDrive Standard Plan - Standard Not Include",
+      "fileName": "Dropbox to OneDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "69495db5bed1e3bc412b0583",
+      "combo": "dropbox-to-onedrive",
+      "category": "content",
+      "name": "Dropbox to OneDrive Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to OneDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "69495db5bed1e3bc412b0584",
+      "combo": "dropbox-to-onedrive",
+      "category": "content",
+      "name": "Dropbox to OneDrive Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to OneDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "694f937c4018436bbc0e4e92",
+      "combo": "box-to-google-mydrive",
+      "category": "content",
+      "name": "Box to Google MyDrive Advanced Plan - Advanced Include",
+      "fileName": "Box to Google MyDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6953a56ab3e393af920b69da",
+      "combo": "slack-to-slack",
+      "category": "messaging",
+      "name": "Slack to Slack - Included Features",
+      "fileName": "Slack to Slack - Included.docx.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"slack-to-slack\",\"all\"]"
+    },
+    {
+      "id": "6953a56ab3e393af920b69db",
+      "combo": "slack-to-slack",
+      "category": "messaging",
+      "name": "Slack to Slack - Not Included Features",
+      "fileName": "Slack to Slack - Not Included.docx.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_includeType",
+      "combinations": "[\"slack-to-slack\",\"all\"]"
+    },
+    {
+      "id": "6953bb33f8cdb6db861f7da4",
+      "combo": "dropbox-to-sharepoint",
+      "category": "content",
+      "name": "Dropbox to SharePoint Online Standard Plan - Standard Include",
+      "fileName": "Dropbox to SharePoint Online Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6953bb33f8cdb6db861f7da5",
+      "combo": "dropbox-to-sharepoint",
+      "category": "content",
+      "name": "Dropbox to SharePoint Online Standard Plan - Standard Not Include",
+      "fileName": "Dropbox to SharePoint Online Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6953c1ef0ca9a4d254e08ac3",
+      "combo": "dropbox-to-sharepoint",
+      "category": "content",
+      "name": "Dropbox to SharePoint Online Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to SharePoint Online Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6953c1ef0ca9a4d254e08ac4",
+      "combo": "dropbox-to-sharepoint",
+      "category": "content",
+      "name": "Dropbox to SharePoint Online Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to SharePoint Online Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6953e3e9df6cabde114db8b3",
+      "combo": "box-to-google-sharedrive",
+      "category": "content",
+      "name": "Box to Google Shared Drive Standard Plan - Standard Include",
+      "fileName": "Box to Google Shared Drive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6953e3eadf6cabde114db8b4",
+      "combo": "box-to-google-sharedrive",
+      "category": "content",
+      "name": "Box to Google Shared Drive Standard Plan - Standard Not Include",
+      "fileName": "Box to Google Shared Drive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6953e3eadf6cabde114db8b5",
+      "combo": "box-to-onedrive",
+      "category": "content",
+      "name": "Box to OneDrive Advanced Plan - Advanced Include",
+      "fileName": "Box to OneDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6953e3eadf6cabde114db8b6",
+      "combo": "box-to-onedrive",
+      "category": "content",
+      "name": "Box to OneDrive Standard Plan - Standard Include",
+      "fileName": "Box to OneDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6953e3eadf6cabde114db8b7",
+      "combo": "box-to-onedrive",
+      "category": "content",
+      "name": "Box to OneDrive Standard Plan - Standard Not Include",
+      "fileName": "Box to OneDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6953e75af4446a001225e591",
+      "combo": "box-to-sharepoint",
+      "category": "content",
+      "name": "Box to SharePoint Online Advanced Plan - Advanced Include",
+      "fileName": "Box to SharePoint Online Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6953e75af4446a001225e592",
+      "combo": "box-to-sharepoint",
+      "category": "content",
+      "name": "Box to SharePoint Online Standard Plan - Standard Include",
+      "fileName": "Box to SharePoint Online Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6953e75af4446a001225e593",
+      "combo": "box-to-sharepoint",
+      "category": "content",
+      "name": "Box to SharePoint Online Standard Plan - Standard Not Include",
+      "fileName": "Box to SharePoint Online Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6953e96445fdb12e1e8f0c3e",
+      "combo": "egnyte-to-onedrive",
+      "category": "content",
+      "name": "Egnyte to OneDrive Standard Plan - Standard Include",
+      "fileName": "Egnyte to OneDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6953e96445fdb12e1e8f0c3f",
+      "combo": "egnyte-to-onedrive",
+      "category": "content",
+      "name": "Egnyte to OneDrive Standard Plan - Standard Not Include",
+      "fileName": "Egnyte to OneDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6953ea9f041938ef5d1e29a9",
+      "combo": "egnyte-to-google-sharedrive",
+      "category": "content",
+      "name": "Egnyte to Google Shared Drive Standard Plan - Standard Include",
+      "fileName": "Egnyte to Google Shared Drive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6953ea9f041938ef5d1e29aa",
+      "combo": "egnyte-to-google-sharedrive",
+      "category": "content",
+      "name": "Egnyte to Google Shared Drive Standard Plan - Standard Not Include",
+      "fileName": "Egnyte to Google Shared Drive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6953ebbdec22d46e0b0fb483",
+      "combo": "egnyte-to-google",
+      "category": "content",
+      "name": "Egnyte to Google MyDrive Standard Plan - Standard Include",
+      "fileName": "Egnyte to Google MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google\",\"all\"]"
+    },
+    {
+      "id": "6953ebbdec22d46e0b0fb484",
+      "combo": "egnyte-to-google",
+      "category": "content",
+      "name": "Egnyte to Google MyDrive Standard Plan - Standard Not Include",
+      "fileName": "Egnyte to Google MyDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google\",\"all\"]"
+    },
+    {
+      "id": "6953ed7c568ee546e6cc41e2",
+      "combo": "egnyte-to-sharepoint-online",
+      "category": "content",
+      "name": "Egnyte to SharePoint Online Advanced Plan - Advanced Include",
+      "fileName": "Egnyte to SharePoint Online Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-sharepoint-online\",\"all\"]"
+    },
+    {
+      "id": "695e5afaf6e5474b2c7a1221",
+      "combo": "egnyte-to-google-sharedrive",
+      "category": "content",
+      "name": "Egnyte to Google Shared Drive Advanced Plan - Advanced Include",
+      "fileName": "Egnyte to Google Shared Drive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "695e5afaf6e5474b2c7a1222",
+      "combo": "egnyte-to-google-sharedrive",
+      "category": "content",
+      "name": "Egnyte to Google Shared Drive Advanced Plan - Advanced Not Include",
+      "fileName": "Egnyte to Google Shared Drive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "695e5ecd7321cbc525f47e6b",
+      "combo": "egnyte-to-google",
+      "category": "content",
+      "name": "Egnyte to Google MyDrive Advanced Plan - Advanced Include",
+      "fileName": "Egnyte to Google MyDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google\",\"all\"]"
+    },
+    {
+      "id": "695e5ecd7321cbc525f47e6c",
+      "combo": "egnyte-to-google",
+      "category": "content",
+      "name": "Egnyte to Google MyDrive Advanced Plan - Advanced Not Include",
+      "fileName": "Egnyte to Google MyDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-google\",\"all\"]"
+    },
+    {
+      "id": "695e60ff19abab4234dc96dd",
+      "combo": "sharefile-to-sharepoint",
+      "category": "content",
+      "name": "ShareFile to SharePoint Online Advanced Plan - Advanced Include",
+      "fileName": "ShareFile to SharePoint Online Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "695e60ff19abab4234dc96de",
+      "combo": "sharefile-to-sharepoint",
+      "category": "content",
+      "name": "ShareFile to SharePoint Online Advanced Plan - Advanced Not Include",
+      "fileName": "ShareFile to SharePoint Online Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "695e627fd989101704f5c34b",
+      "combo": "sharefile-to-sharefile",
+      "category": "content",
+      "name": "ShareFile to ShareFile Advanced Plan - Advanced Include",
+      "fileName": "ShareFile to ShareFile Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "695e627fd989101704f5c34c",
+      "combo": "sharefile-to-sharefile",
+      "category": "content",
+      "name": "ShareFile to ShareFile Advanced Plan - Advanced Not Include",
+      "fileName": "ShareFile to ShareFile Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "695e6401bdd5ea56437abae6",
+      "combo": "sharefile-to-onedrive",
+      "category": "content",
+      "name": "ShareFile to OneDrive Advanced Plan - Advanced Include",
+      "fileName": "ShareFile to OneDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "695e6401bdd5ea56437abae7",
+      "combo": "sharefile-to-onedrive",
+      "category": "content",
+      "name": "ShareFile to OneDrive Advanced Plan - Advanced Not Include",
+      "fileName": "ShareFile to OneDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "695e661ea4cccb2f54de6606",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google MyDrive Advanced Plan - Advanced Included",
+      "fileName": "ShareFile to Google MyDrive Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "695e661ea4cccb2f54de6607",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google MyDrive Advanced Plan - Advanced Not Included",
+      "fileName": "ShareFile to Google MyDrive Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "695f65268d84acb0d1e61a37",
+      "combo": "onedrive-to-google-mydrive",
+      "category": "content",
+      "name": "OneDrive to Google MyDrive Standard Plan - Standard Include",
+      "fileName": "OneDrive to Google MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "695f65268d84acb0d1e61a38",
+      "combo": "onedrive-to-google-mydrive",
+      "category": "content",
+      "name": "OneDrive to Google MyDrive Standard Plan - Standard Not Include",
+      "fileName": "OneDrive to Google MyDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "695f6a26a70348a8d5e956a8",
+      "combo": "onedrive-to-onedrive",
+      "category": "content",
+      "name": "OneDrive to OneDrive Standard Plan - Not Included Features",
+      "fileName": "onedrive-to-onedrive-standard-plan-notincluded.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "695f6a26a70348a8d5e956a9",
+      "combo": "onedrive-to-onedrive",
+      "category": "content",
+      "name": "OneDrive to OneDrive Advanced Plan - Advanced Include",
+      "fileName": "OneDrive to OneDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "695f6a26a70348a8d5e956aa",
+      "combo": "onedrive-to-onedrive",
+      "category": "content",
+      "name": "OneDrive to OneDrive Advanced Plan - Advanced Not Include",
+      "fileName": "OneDrive to OneDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "695f6caedb1e3b250edc8a74",
+      "combo": "onedrive-to-google-mydrive",
+      "category": "content",
+      "name": "OneDrive to Google MyDrive Advanced Plan - Advanced Include",
+      "fileName": "OneDrive to Google MyDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "695f6caedb1e3b250edc8a75",
+      "combo": "onedrive-to-google-mydrive",
+      "category": "content",
+      "name": "OneDrive to Google MyDrive Advanced Plan - Advanced Not Include",
+      "fileName": "OneDrive to Google MyDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"onedrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "695f6ec09ebab1306b101f7f",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to SharePoint Online Standard Plan - Standard Include",
+      "fileName": "NFS to SharePoint Online Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "695f6ec09ebab1306b101f80",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to SharePoint Online Standard Plan - Standard Not Include",
+      "fileName": "NFS to SharePoint Online Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "695f7141036b9e315ad4387c",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to SharePoint Online Advanced Plan - Advanced Include",
+      "fileName": "NFS to SharePoint Online Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "695f7141036b9e315ad4387d",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to SharePoint Online Advanced Plan - Advanced Not Include",
+      "fileName": "NFS to SharePoint Online Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "695f7a1be1fead4fd516f226",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to OneDrive Standard Plan - Standard Include",
+      "fileName": "NFS to OneDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "695f7a1be1fead4fd516f227",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to OneDrive Standard Plan - Standard Not Include",
+      "fileName": "NFS to OneDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "6960819a8bb27fcc9a384bf9",
+      "combo": "slack-to-google-chat",
+      "category": "messaging",
+      "name": "Slack to Google Chat Advanced Plan - Advanced Include",
+      "fileName": "Slack to Google Chat Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "included",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType",
+      "combinations": "[\"slack-to-google-chat\",\"all\"]"
+    },
+    {
+      "id": "6960819a8bb27fcc9a384bfa",
+      "combo": "slack-to-google-chat",
+      "category": "messaging",
+      "name": "Slack to Google Chat Advanced Plan - Advanced Not Include",
+      "fileName": "Slack to Google Chat Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "notincluded",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType",
+      "combinations": "[\"slack-to-google-chat\",\"all\"]"
+    },
+    {
+      "id": "6960855cf30deb251a707d1d",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google Shared Drive Advanced Plan - Advanced Include",
+      "fileName": "NFS to Google Shared Drive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "6960855cf30deb251a707d1e",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google Shared Drive Advanced Plan - Advanced Not Include",
+      "fileName": "NFS to Google Shared Drive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "696099bc46a4280f356f934f",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google Shared Drive Standard Plan - Standard Include",
+      "fileName": "NFS to Google Shared Drive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "696099bc46a4280f356f9350",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google Shared Drive Standard Plan - Standard Not Include",
+      "fileName": "NFS to Google Shared Drive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "69609b347990d8f5a5ebe9b9",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google MyDrive Standard Plan - Standard Include",
+      "fileName": "NFS to Google MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "69609b347990d8f5a5ebe9ba",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google MyDrive Standard Plan - Standard Not Include",
+      "fileName": "NFS to Google MyDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "69609ce647c07139a4ebe4f7",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google MyDrive Advanced Plan - Advanced Include",
+      "fileName": "NFS to Google MyDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "69609ce647c07139a4ebe4f8",
+      "combo": "nfs-to-google",
+      "category": "content",
+      "name": "NFS to Google MyDrive Advanced Plan - Advanced Not Include",
+      "fileName": "NFS to Google MyDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-google\",\"all\"]"
+    },
+    {
+      "id": "69609f072e021e883a77d772",
+      "combo": "all",
+      "category": "content",
+      "name": "SharePoint to SharePoint Online Advanced Plan - Advanced Include",
+      "fileName": "SharePoint to SharePoint Online Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "69609f072e021e883a77d773",
+      "combo": "all",
+      "category": "content",
+      "name": "SharePoint to SharePoint Online Advanced Plan - Advanced Not Include",
+      "fileName": "SharePoint to SharePoint Online Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "6960a03303f2be2e2efb5876",
+      "combo": "google-mydrive-to-sharepoint",
+      "category": "content",
+      "name": "Google MyDrive to SharePoint Online Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to SharePoint Online Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6960a03303f2be2e2efb5877",
+      "combo": "google-mydrive-to-sharepoint",
+      "category": "content",
+      "name": "Google MyDrive to SharePoint Online Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to SharePoint Online Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6960a23c07a2cd8303200de9",
+      "combo": "google-mydrive-to-onedrive",
+      "category": "content",
+      "name": "Google MyDrive to OneDrive Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to OneDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6960a23c07a2cd8303200dea",
+      "combo": "google-mydrive-to-onedrive",
+      "category": "content",
+      "name": "Google MyDrive to OneDrive Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to OneDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6960a78babe789ae5811ef80",
+      "combo": "google-mydrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google MyDrive to Google Shared Drive Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to Google Shared Drive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6960a78babe789ae5811ef81",
+      "combo": "google-mydrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google MyDrive to Google Shared Drive Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to Google Shared Drive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6960b04b5e2ee52c3b80ec88",
+      "combo": "google-mydrive-to-google-mydrive",
+      "category": "content",
+      "name": "Google MyDrive to Google MyDrive Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to Google MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6960b04b5e2ee52c3b80ec89",
+      "combo": "google-mydrive-to-google-mydrive",
+      "category": "content",
+      "name": "Google MyDrive to Google MyDrive Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to Google MyDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6960b21540221a220ce19c2f",
+      "combo": "google-mydrive-to-egnyte",
+      "category": "content",
+      "name": "Google MyDrive to Egnyte Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to Egnyte Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6960b21540221a220ce19c30",
+      "combo": "google-mydrive-to-egnyte",
+      "category": "content",
+      "name": "Google MyDrive to Egnyte Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to Egnyte Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6960b344ffcb6b9f0c93e6d4",
+      "combo": "google-mydrive-to-dropbox",
+      "category": "content",
+      "name": "Google MyDrive to Dropbox Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to Dropbox Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "6960b344ffcb6b9f0c93e6d5",
+      "combo": "google-mydrive-to-dropbox",
+      "category": "content",
+      "name": "Google MyDrive to Dropbox Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to Dropbox Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "6960b4a433c5a7f666d6c89c",
+      "combo": "all",
+      "category": "content",
+      "name": "Google MyDrive to Box Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to Box Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "6960b4a433c5a7f666d6c89d",
+      "combo": "all",
+      "category": "content",
+      "name": "Google MyDrive to Box Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to Box Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "6960b77d53b13c182d949de4",
+      "combo": "google-mydrive-to-google-mydrive",
+      "category": "content",
+      "name": "Google MyDrive to Google MyDrive Advanced Plan - Advanced Include",
+      "fileName": "Google MyDrive to Google MyDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6960b77d53b13c182d949de5",
+      "combo": "google-mydrive-to-google-mydrive",
+      "category": "content",
+      "name": "Google MyDrive to Google MyDrive Advanced Plan - Advanced Not Include",
+      "fileName": "Google MyDrive to Google MyDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6960b909017c0edc9d1fe338",
+      "combo": "google-mydrive-to-onedrive",
+      "category": "content",
+      "name": "Google MyDrive to OneDrive Advanced Plan - Advanced Include",
+      "fileName": "Google MyDrive to OneDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6960b909017c0edc9d1fe339",
+      "combo": "google-mydrive-to-onedrive",
+      "category": "content",
+      "name": "Google MyDrive to OneDrive Advanced Plan - Advanced Not Include",
+      "fileName": "Google MyDrive to OneDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6960ba75c96ec65811ffbe50",
+      "combo": "google-mydrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google MyDrive to Google Shared Drive Advanced Plan - Advanced Include",
+      "fileName": "Google MyDrive to Google Shared Drive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6960ba75c96ec65811ffbe51",
+      "combo": "google-mydrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google MyDrive to Google Shared Drive Advanced Plan - Advanced Not Include",
+      "fileName": "Google MyDrive to Google Shared Drive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6960bc110a41c034b416fca1",
+      "combo": "google-mydrive-to-egnyte",
+      "category": "content",
+      "name": "Google MyDrive to Egnyte Advanced Plan - Advanced Include",
+      "fileName": "Google MyDrive to Egnyte Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6960bc110a41c034b416fca2",
+      "combo": "google-mydrive-to-egnyte",
+      "category": "content",
+      "name": "Google MyDrive to Egnyte Advanced Plan - Advanced Not Include",
+      "fileName": "Google MyDrive to Egnyte Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "6960bd3bf6e267b8c3a6d9df",
+      "combo": "google-mydrive-to-dropbox",
+      "category": "content",
+      "name": "Google MyDrive to Dropbox Advanced Plan - Advanced Include",
+      "fileName": "Google MyDrive to Dropbox Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "6960bd3bf6e267b8c3a6d9e0",
+      "combo": "google-mydrive-to-dropbox",
+      "category": "content",
+      "name": "Google MyDrive to Dropbox Advanced Plan - Advanced Not Include",
+      "fileName": "Google MyDrive to Dropbox Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-dropbox\",\"all\"]"
+    },
+    {
+      "id": "6960be510a2b315165727c5b",
+      "combo": "all",
+      "category": "content",
+      "name": "Google MyDrive to Box Advanced Plan - Advanced Include",
+      "fileName": "Google MyDrive to Box Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "6960be510a2b315165727c5c",
+      "combo": "all",
+      "category": "content",
+      "name": "Google MyDrive to Box Advanced Plan - Advanced Not Include",
+      "fileName": "Google MyDrive to Box Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "6960cbd5909248c0b552d5e3",
+      "combo": "egnyte-to-sharepoint-online",
+      "category": "content",
+      "name": "Egnyte to SharePoint Online Standard Plan - Standard Include",
+      "fileName": "Egnyte to SharePoint Online Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-sharepoint-online\",\"all\"]"
+    },
+    {
+      "id": "6960cbd5909248c0b552d5e4",
+      "combo": "egnyte-to-sharepoint-online",
+      "category": "content",
+      "name": "Egnyte to SharePoint Online Standard Plan - Standard Not Include",
+      "fileName": "Egnyte to SharePoint Online Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-sharepoint-online\",\"all\"]"
+    },
+    {
+      "id": "6960cd58301b0ad4710f8b0d",
+      "combo": "egnyte-to-sharepoint-online",
+      "category": "content",
+      "name": "Egnyte to SharePoint Online Advanced Plan - Advanced Not Include",
+      "fileName": "Egnyte to SharePoint Online Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-sharepoint-online\",\"all\"]"
+    },
+    {
+      "id": "6960f5f4192eca62e3ac5d5a",
+      "combo": "box-to-box",
+      "category": "content",
+      "name": "Box to Box Standard Plan - Standard Include",
+      "fileName": "Box to Box Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-box\",\"all\"]"
+    },
+    {
+      "id": "6960f5f4192eca62e3ac5d5b",
+      "combo": "box-to-box",
+      "category": "content",
+      "name": "Box to Box Standard Plan - Standard Not Include",
+      "fileName": "Box to Box Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-box\",\"all\"]"
+    },
+    {
+      "id": "6960f8383c0a8b035c047a0a",
+      "combo": "google-mydrive-to-sharepoint",
+      "category": "content",
+      "name": "Google MyDrive to SharePoint Online Advanced Plan - Advanced Include",
+      "fileName": "Google MyDrive to SharePoint Online Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6960f8383c0a8b035c047a0b",
+      "combo": "google-mydrive-to-sharepoint",
+      "category": "content",
+      "name": "Google MyDrive to SharePoint Online Advanced Plan - Advanced Not Include",
+      "fileName": "Google MyDrive to SharePoint Online Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6960fa898c5f6d11a5a61b7b",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to OneDrive Advanced Plan - Advanced Include",
+      "fileName": "NFS to OneDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "6960fa898c5f6d11a5a61b7c",
+      "combo": "nfs-to-microsoft",
+      "category": "content",
+      "name": "NFS to OneDrive Advanced Plan - Advanced Not Include",
+      "fileName": "NFS to OneDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"nfs-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "69610205ece769212d33ccda",
+      "combo": "sharefile-to-sharefile",
+      "category": "content",
+      "name": "ShareFile to ShareFile Standard Plan - Standard Include",
+      "fileName": "ShareFile to ShareFile Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "69610205ece769212d33ccdb",
+      "combo": "sharefile-to-sharefile",
+      "category": "content",
+      "name": "ShareFile to ShareFile Standard Plan - Standard Not Include",
+      "fileName": "ShareFile to ShareFile Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharefile\",\"all\"]"
+    },
+    {
+      "id": "696104094dc5d091bc6ed72e",
+      "combo": "sharefile-to-onedrive",
+      "category": "content",
+      "name": "ShareFile to OneDrive Standard Plan - Standard Include",
+      "fileName": "ShareFile to OneDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "696104094dc5d091bc6ed72f",
+      "combo": "sharefile-to-onedrive",
+      "category": "content",
+      "name": "ShareFile to OneDrive Standard Plan - Standard Not Include",
+      "fileName": "ShareFile to OneDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "696106ab4ef6e2a09b405393",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google MyDrive Standard Plan - Standard Include",
+      "fileName": "ShareFile to Google MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "696106ab4ef6e2a09b405394",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google MyDrive Standard Plan - Standard Not Include",
+      "fileName": "ShareFile to Google MyDrive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "6961087c549a926950baf3aa",
+      "combo": "sharefile-to-sharepoint",
+      "category": "content",
+      "name": "ShareFile to SharePoint Online Standard Plan - Standard Include",
+      "fileName": "ShareFile to SharePoint Online Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "6961087c549a926950baf3ab",
+      "combo": "sharefile-to-sharepoint",
+      "category": "content",
+      "name": "ShareFile to SharePoint Online Standard Plan - Standard Not Include",
+      "fileName": "ShareFile to SharePoint Online Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "69610cf23547b19ad8d5d7ca",
+      "combo": "all",
+      "category": "content",
+      "name": "SharePoint to SharePoint Online Standard Plan - Standard Include",
+      "fileName": "SharePoint to SharePoint Online Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "69610cf23547b19ad8d5d7cb",
+      "combo": "all",
+      "category": "content",
+      "name": "SharePoint to SharePoint Online Standard Plan - Standard Not Include",
+      "fileName": "SharePoint to SharePoint Online Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"all\"]"
+    },
+    {
+      "id": "6961122e248c36af361e6057",
+      "combo": "egnyte-to-onedrive",
+      "category": "content",
+      "name": "Egnyte to OneDrive Advanced Plan - Advanced Include",
+      "fileName": "Egnyte to OneDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "6961122e248c36af361e6058",
+      "combo": "egnyte-to-onedrive",
+      "category": "content",
+      "name": "Egnyte to OneDrive Advanced Plan - Advanced Not Include",
+      "fileName": "Egnyte to OneDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "69651aaca38329fa37bb6bfb",
+      "combo": "google-chat-to-teams",
+      "category": "messaging",
+      "name": "Google Chat to Teams Advanced Plan - Advanced Include",
+      "fileName": "google-chat-to-teams-advanced-plan-included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-chat-to-teams\"]"
+    },
+    {
+      "id": "69651aaca38329fa37bb6bfc",
+      "combo": "google-chat-to-teams",
+      "category": "messaging",
+      "name": "Google Chat to Teams Advanced Plan - Advanced Not Include",
+      "fileName": "google-chat-to-teams-advanced-plan-notincluded.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-chat-to-teams\"]"
+    },
+    {
+      "id": "6966598efe0fbb24853923a4",
+      "combo": "gmail-to-outlook",
+      "category": "email",
+      "name": "Gmail to Outlook Standard Plan - Standard Include",
+      "fileName": "Gmail to Outlook Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"gmail-to-outlook\",\"all\"]"
+    },
+    {
+      "id": "6966598efe0fbb24853923a5",
+      "combo": "gmail-to-outlook",
+      "category": "email",
+      "name": "Gmail to Outlook Standard Plan - Standard Not Include",
+      "fileName": "Gmail to Outlook Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"gmail-to-outlook\",\"all\"]"
+    },
+    {
+      "id": "69666f5b1dd31d683c881e49",
+      "combo": "gmail-to-gmail",
+      "category": "email",
+      "name": "Gmail to Gmail Standard Plan - Standard Include",
+      "fileName": "Gmail to Gmail Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"gmail-to-gmail\",\"all\"]"
+    },
+    {
+      "id": "69666f5b1dd31d683c881e4a",
+      "combo": "gmail-to-gmail",
+      "category": "email",
+      "name": "Gmail to Gmail Standard Plan - Standard Not Include",
+      "fileName": "Gmail to Gmail Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"gmail-to-gmail\",\"all\"]"
+    },
+    {
+      "id": "6967694a3b13a06c6ca3fc73",
+      "combo": "outlook-to-outlook",
+      "category": "email",
+      "name": "Outlook to Outlook - Included Features",
+      "fileName": "Outlook to Outlook - Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-outlook\",\"all\"]"
+    },
+    {
+      "id": "6967694a3b13a06c6ca3fc74",
+      "combo": "outlook-to-outlook",
+      "category": "email",
+      "name": "Outlook to Outlook - Not Included Features",
+      "fileName": "Outlook to Outlook - Not Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-outlook\",\"all\"]"
+    },
+    {
+      "id": "69676e71c84be3eb7ff440bb",
+      "combo": "outlook-to-gmail",
+      "category": "email",
+      "name": "Outlook to Gmail - Included Features",
+      "fileName": "Outlook to Gmail - Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-gmail\",\"all\"]"
+    },
+    {
+      "id": "69676e71c84be3eb7ff440bc",
+      "combo": "outlook-to-gmail",
+      "category": "email",
+      "name": "Outlook to Gmail - Not Included Features",
+      "fileName": "Outlook to Gmail - Not Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-gmail\",\"all\"]"
+    },
+    {
+      "id": "69677e9c092ca2d1d59d54c0",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include",
+      "fileName": "ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "69677e9c092ca2d1d59d54c1",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include",
+      "fileName": "ShareFile to Google Drive (MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6967906d0d2cb1db2f4aec0b",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"dropbox-to-google-sharedrive\",\"dropbox-to-google\",\"all\"]"
+    },
+    {
+      "id": "6967906d0d2cb1db2f4aec0c",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to Google Drive (MyDrive & Shared Drive) Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"dropbox-to-google-sharedrive\",\"dropbox-to-google\",\"all\"]"
+    },
+    {
+      "id": "696794cfefad1346d9b6b87f",
+      "combo": "google-mydrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google Drive to Google(MyDrive & Shared Drive) - Included Features",
+      "fileName": "Google Drive to Google(MyDrive & Shared Drive) - Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-sharedrive\",\"google-sharedrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "69679bc62f0ef8fcd31a6083",
+      "combo": "google-mydrive-to-google-mydrive",
+      "category": "content",
+      "name": "Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include",
+      "fileName": "Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-mydrive\",\"google-mydrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "69679d6e0f005aa81af00acd",
+      "combo": "google-mydrive-to-google-mydrive",
+      "category": "content",
+      "name": "Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include",
+      "fileName": "Google MyDrive to Google(MyDrive & Shared Drive) Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-mydrive-to-google-mydrive\",\"google-mydrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea6e",
+      "combo": "outlook-to-gmail",
+      "category": "email",
+      "name": "Outlook to Gmail - Included Features",
+      "fileName": "Outlook to Gmail - Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-gmail\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea6f",
+      "combo": "outlook-to-gmail",
+      "category": "email",
+      "name": "Outlook to Gmail - Not Included Features",
+      "fileName": "Outlook to Gmail - Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-gmail\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea70",
+      "combo": "outlook-to-outlook",
+      "category": "email",
+      "name": "Outlook to Outlook - Included Features",
+      "fileName": "Outlook to Outlook - Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-outlook\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea71",
+      "combo": "outlook-to-outlook",
+      "category": "email",
+      "name": "Outlook to Outlook - Not Included Features",
+      "fileName": "Outlook to Outlook - Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_includeType",
+      "combinations": "[\"outlook-to-outlook\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea72",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google Shared Drive Standard Plan - Standard Include",
+      "fileName": "ShareFile to Google Shared Drive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea73",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google Shared Drive Standard Plan - Standard Not Include",
+      "fileName": "ShareFile to Google Shared Drive Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea74",
+      "combo": "dropbox-to-google",
+      "category": "content",
+      "name": "Dropbox to Google Shared Drive Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to Google Shared Drive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google\",\"dropbox-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6967c696a7d7c1972a07ea75",
+      "combo": "dropbox-to-google",
+      "category": "content",
+      "name": "Dropbox to Google Shared Drive Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to Google Shared Drive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google\",\"dropbox-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6967c697a7d7c1972a07ea76",
+      "combo": "box-to-google-sharedrive",
+      "category": "content",
+      "name": "Box to Google Shared Drive Advanced Plan - Advanced Include",
+      "fileName": "Box to Google Shared Drive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"box-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "6967c6f61c43c340eba3effa",
+      "combo": "egnyte-to-sharepoint-online",
+      "category": "content",
+      "name": "Egnyte to SharePoint Standard Plan - Standard Include",
+      "fileName": "Egnyte to SharePoint Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-sharepoint-online\",\"all\"]"
+    },
+    {
+      "id": "6967c6f61c43c340eba3effb",
+      "combo": "egnyte-to-sharepoint-online",
+      "category": "content",
+      "name": "Egnyte to SharePoint Standard Plan - Standard Not Include",
+      "fileName": "Egnyte to SharePoint Standard Plan - Standard Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"egnyte-to-sharepoint-online\",\"all\"]"
+    },
+    {
+      "id": "6968e05996a48833c61e2e8f",
+      "combo": "teams-to-google-chat",
+      "category": "messaging",
+      "name": "Teams to Google Chat - Included Features",
+      "fileName": "Teams to Google Chat - Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"teams-to-google-chat\",\"all\"]"
+    },
+    {
+      "id": "6968e05a96a48833c61e2e90",
+      "combo": "teams-to-google-chat",
+      "category": "messaging",
+      "name": "Teams to Google Chat - Not Included Feature",
+      "fileName": "Teams to Google Chat - Not Included Feature.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_includeType",
+      "combinations": "[\"teams-to-google-chat\",\"all\"]"
+    },
+    {
+      "id": "69690924837643c641dc027e",
+      "combo": "meta-to-google-chat",
+      "category": "messaging",
+      "name": "Meta to Google Chat - Included Features",
+      "fileName": "Meta to Google Chat - Included Features.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "included",
+      "issues": "missing_includeType",
+      "combinations": "[\"meta-to-google-chat\",\"all\"]"
+    },
+    {
+      "id": "69690924837643c641dc027f",
+      "combo": "meta-to-google-chat",
+      "category": "messaging",
+      "name": "Meta to Google Chat - Not Included Feature",
+      "fileName": "Meta to Google Chat - Not Included Feature.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_includeType",
+      "combinations": "[\"meta-to-google-chat\",\"all\"]"
+    },
+    {
+      "id": "696a3263ff83000a522caa86",
+      "combo": "dropbox-to-azureblob",
+      "category": "content",
+      "name": "Dropbox to AzureBlob Standard Plan - Standard Included",
+      "fileName": "Dropbox to AzureBlob Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-azureblob\",\"all\"]"
+    },
+    {
+      "id": "696a3264ff83000a522caa87",
+      "combo": "dropbox-to-azureblob",
+      "category": "content",
+      "name": "Dropbox to AzureBlob Standard Plan - Standard Not Included",
+      "fileName": "Dropbox to AzureBlob Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-azureblob\",\"all\"]"
+    },
+    {
+      "id": "696a388e881ea6ca2b2a5fc1",
+      "combo": "dropbox-to-azureblob",
+      "category": "content",
+      "name": "Dropbox to AzureBlob Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to AzureBlob Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-azureblob\",\"all\"]"
+    },
+    {
+      "id": "696a388e881ea6ca2b2a5fc2",
+      "combo": "dropbox-to-azureblob",
+      "category": "content",
+      "name": "Dropbox to AzureBlob Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to AzureBlob Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-azureblob\",\"all\"]"
+    },
+    {
+      "id": "696a3dde5a70af93128b6172",
+      "combo": "dropbox-to-google",
+      "category": "content",
+      "name": "DropBox for Business to Google SharedDrive Advanced Plan - Advanced Include",
+      "fileName": "DropBox for Business to Google SharedDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google\",\"dropbox-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696a3dde5a70af93128b6173",
+      "combo": "dropbox-to-google",
+      "category": "content",
+      "name": "DropBox for Business to Google SharedDrive Advanced Plan - Advanced Not Include",
+      "fileName": "DropBox for Business to Google SharedDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google\",\"dropbox-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696a45415d18434d1b410b51",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to Google MyDrive Advanced Plan - Advanced Include",
+      "fileName": "Dropbox to Google MyDrive Advanced Plan - Advanced Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"dropbox-to-google\",\"all\"]"
+    },
+    {
+      "id": "696a45415d18434d1b410b52",
+      "combo": "dropbox-to-mydrive",
+      "category": "content",
+      "name": "Dropbox to Google MyDrive Advanced Plan - Advanced Not Include",
+      "fileName": "Dropbox to Google MyDrive Advanced Plan - Advanced Not Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-mydrive\",\"dropbox-to-google\",\"all\"]"
+    },
+    {
+      "id": "696f33944eb870c3ba651965",
+      "combo": "dropbox-to-google-mydrive",
+      "category": "content",
+      "name": "Dropbox to Google MyDrive Standard Plan - Standard Include",
+      "fileName": "Dropbox to Google MyDrive Standard Plan - Standard Include.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google-mydrive\",\"dropbox-to-mydrive\"]"
+    },
+    {
+      "id": "696f33944eb870c3ba651966",
+      "combo": "dropbox-to-google-mydrive",
+      "category": "content",
+      "name": "Dropbox to Google MyDrive Standard Plan - Standard Not Included",
+      "fileName": "Dropbox to Google MyDrive Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"dropbox-to-google-mydrive\",\"dropbox-to-mydrive\"]"
+    },
+    {
+      "id": "696f38a6d4801a6e36648227",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google SharedDrive Standard Plan - Standard Included",
+      "fileName": "ShareFile to Google SharedDrive Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f38a6d4801a6e36648228",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google SharedDrive Standard Plan - Standard Not Included",
+      "fileName": "ShareFile to Google SharedDrive Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f78ffeb26b2aa1cd79fe8",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google MyDrive Standard Plan - Standard Included",
+      "fileName": "ShareFile to Google MyDrive Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "696f78ffeb26b2aa1cd79fe9",
+      "combo": "sharefile-to-google-mydrive",
+      "category": "content",
+      "name": "ShareFile to Google MyDrive Standard Plan - Standard Not Included",
+      "fileName": "ShareFile to Google MyDrive Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "696f7900eb26b2aa1cd79fea",
+      "combo": "google-sharedrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google Shared Drive to Google Shared Drive Standard Plan - Standard Included",
+      "fileName": "Google Shared Drive to Google Shared Drive Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f7900eb26b2aa1cd79feb",
+      "combo": "google-sharedrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google Shared Drive to Google Shared Drive Standard Plan - Standard Not Included",
+      "fileName": "Google Shared Drive to Google Shared Drive Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f7900eb26b2aa1cd79fec",
+      "combo": "google-sharedrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Included",
+      "fileName": "Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f7900eb26b2aa1cd79fed",
+      "combo": "google-sharedrive-to-google-sharedrive",
+      "category": "content",
+      "name": "Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Not Included",
+      "fileName": "Google Shared Drive to Google Shared Drive Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f7e26f09b5547ac44e2be",
+      "combo": "google-sharedrive-to-sharepoint",
+      "category": "content",
+      "name": "Google Shared Drive to SharePoint Online Standard Plan - Standard Included",
+      "fileName": "Google Shared Drive to SharePoint Online Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "696f7e26f09b5547ac44e2bf",
+      "combo": "google-sharedrive-to-sharepoint",
+      "category": "content",
+      "name": "Google Shared Drive to SharePoint Online Standard Plan - Standard Not Included",
+      "fileName": "Google Shared Drive to SharePoint Online Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "696f7e26f09b5547ac44e2c0",
+      "combo": "google-sharedrive-to-sharepoint",
+      "category": "content",
+      "name": "Google Shared Drive to SharePoint Online Advanced Plan - Advanced Included",
+      "fileName": "Google Shared Drive to SharePoint Online Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "696f7e26f09b5547ac44e2c1",
+      "combo": "google-sharedrive-to-sharepoint",
+      "category": "content",
+      "name": "Google Shared Drive to SharePoint Online Advanced Plan - Advanced Not Included",
+      "fileName": "Google Shared Drive to SharePoint Online Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-sharepoint\",\"all\"]"
+    },
+    {
+      "id": "696f8421f3047be71dccf558",
+      "combo": "google-sharedrive-to-egnyte",
+      "category": "content",
+      "name": "Google Shared Drive to Egnyte Standard Plan - Standard Included",
+      "fileName": "Google Shared Drive to Egnyte Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "696f8421f3047be71dccf559",
+      "combo": "google-sharedrive-to-egnyte",
+      "category": "content",
+      "name": "Google Shared Drive to Egnyte Standard Plan - Standard Not Included",
+      "fileName": "Google Shared Drive to Egnyte Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "696f8421f3047be71dccf55a",
+      "combo": "google-sharedrive-to-egnyte",
+      "category": "content",
+      "name": "Google Shared Drive to Egnyte Advanced Plan - Advanced Included",
+      "fileName": "Google Shared Drive to Egnyte Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "696f8421f3047be71dccf55b",
+      "combo": "google-sharedrive-to-egnyte",
+      "category": "content",
+      "name": "Google Shared Drive to Egnyte Advanced Plan - Advanced Not Included",
+      "fileName": "Google Shared Drive to Egnyte Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "696f875d4cdcc4428b8e8f77",
+      "combo": "google-sharedrive-to-onedrive",
+      "category": "content",
+      "name": "Google Shared Drive to OneDrive Standard Plan - Standard Included",
+      "fileName": "Google Shared Drive to OneDrive Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "696f875d4cdcc4428b8e8f78",
+      "combo": "google-sharedrive-to-onedrive",
+      "category": "content",
+      "name": "Google Shared Drive to OneDrive Standard Plan - Standard Not Included",
+      "fileName": "Google Shared Drive to OneDrive Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "696f875d4cdcc4428b8e8f79",
+      "combo": "google-sharedrive-to-onedrive",
+      "category": "content",
+      "name": "Google Shared Drive to OneDrive Advanced Plan - Advanced Included",
+      "fileName": "Google Shared Drive to OneDrive Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "696f875d4cdcc4428b8e8f7a",
+      "combo": "google-sharedrive-to-onedrive",
+      "category": "content",
+      "name": "Google Shared Drive to OneDrive Advanced Plan - Advanced Not Included",
+      "fileName": "Google Shared Drive to OneDrive Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"google-sharedrive-to-onedrive\",\"all\"]"
+    },
+    {
+      "id": "696f8f5dc2467ec897cdd7f1",
+      "combo": "sharepoint-online-to-google-sharedrive",
+      "category": "content",
+      "name": "SharePoint to Google Shared Drive Standard Plan - Standard Included",
+      "fileName": "SharePoint to Google Shared Drive Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f8f5dc2467ec897cdd7f2",
+      "combo": "sharepoint-online-to-google-sharedrive",
+      "category": "content",
+      "name": "SharePoint to Google Shared Drive Standard Plan - Standard Not Included",
+      "fileName": "SharePoint to Google Shared Drive Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f8f5dc2467ec897cdd7f3",
+      "combo": "sharepoint-online-to-google-sharedrive",
+      "category": "content",
+      "name": "SharePoint to Google Shared Drive Advanced Plan - Advanced Included",
+      "fileName": "SharePoint to Google Shared Drive Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f8f5dc2467ec897cdd7f4",
+      "combo": "sharepoint-online-to-google-sharedrive",
+      "category": "content",
+      "name": "SharePoint to Google Shared Drive Advanced Plan - Advanced Not Included",
+      "fileName": "SharePoint to Google Shared Drive Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "696f926ad5e7e0c7b4e9e302",
+      "combo": "sharepoint-online-to-google-mydrive",
+      "category": "content",
+      "name": "SharePoint to Google MyDrive Standard Plan - Standard Included",
+      "fileName": "SharePoint to Google MyDrive Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "696f926ad5e7e0c7b4e9e303",
+      "combo": "sharepoint-online-to-google-mydrive",
+      "category": "content",
+      "name": "SharePoint to Google MyDrive Standard Plan - Standard Not Included",
+      "fileName": "SharePoint to Google MyDrive Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "696f926ad5e7e0c7b4e9e304",
+      "combo": "sharepoint-online-to-google-mydrive",
+      "category": "content",
+      "name": "SharePoint to Google MyDrive Advanced Plan - Advanced Included",
+      "fileName": "SharePoint to Google MyDrive Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "696f926ad5e7e0c7b4e9e305",
+      "combo": "sharepoint-online-to-google-mydrive",
+      "category": "content",
+      "name": "SharePoint to Google MyDrive Advanced Plan - Advanced Not Included",
+      "fileName": "SharePoint to Google MyDrive Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-google-mydrive\",\"all\"]"
+    },
+    {
+      "id": "696f951864f816edff35bf2b",
+      "combo": "sharepoint-online-to-egnyte",
+      "category": "content",
+      "name": "SharePoint to Egnyte Standard Plan - Standard Included",
+      "fileName": "SharePoint to Egnyte Standard Plan - Standard Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "696f951864f816edff35bf2c",
+      "combo": "sharepoint-online-to-egnyte",
+      "category": "content",
+      "name": "SharePoint to Egnyte Standard Plan - Standard Not Included",
+      "fileName": "SharePoint to Egnyte Standard Plan - Standard Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "696f951964f816edff35bf2d",
+      "combo": "sharepoint-online-to-egnyte",
+      "category": "content",
+      "name": "SharePoint to Egnyte Advanced Plan - Advanced Included",
+      "fileName": "SharePoint to Egnyte Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "696f951964f816edff35bf2e",
+      "combo": "sharepoint-online-to-egnyte",
+      "category": "content",
+      "name": "SharePoint to Egnyte Advanced Plan - Advanced Not Included",
+      "fileName": "SharePoint to Egnyte Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharepoint-online-to-egnyte\",\"all\"]"
+    },
+    {
+      "id": "69705d075db342c1893897ad",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google Shared Drive Advanced Plan - Included Features",
+      "fileName": "sharefile-to-google-sharedrive-advanced-plan-included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "69705d085db342c1893897ae",
+      "combo": "sharefile-to-google-sharedrive",
+      "category": "content",
+      "name": "ShareFile to Google Shared Drive Advanced Plan - Not Included Features",
+      "fileName": "sharefile-to-google-sharedrive-advanced-plan-notincluded.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"sharefile-to-google-sharedrive\",\"all\"]"
+    },
+    {
+      "id": "69806f486e2187fba0c865fa",
+      "combo": "egnyte-to-microsoft",
+      "category": "content",
+      "name": "Egnyte to Microsoft Standard Exhibit",
+      "fileName": "egnyte-to-microsoft-standard.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "standard",
+      "inferredIncludeType": "",
+      "issues": "missing_planType",
+      "combinations": "[\"egnyte-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "69806f486e2187fba0c865fb",
+      "combo": "egnyte-to-microsoft",
+      "category": "content",
+      "name": "Egnyte to Microsoft Advanced Exhibit",
+      "fileName": "egnyte-to-microsoft-advanced.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "",
+      "issues": "missing_planType",
+      "combinations": "[\"egnyte-to-microsoft\",\"all\"]"
+    },
+    {
+      "id": "698c5c4482063125b325c48e",
+      "combo": "slack-to-google-chat",
+      "category": "messaging",
+      "name": "Slack to Google Chat Basic Plan - Basic Not Include",
+      "fileName": "Slack to Google Chat Basic Plan - Basic Not Include.docx",
+      "planType": "",
+      "includeType": "notincluded",
+      "inferredPlan": "basic",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType",
+      "combinations": "[\"slack-to-google-chat\",\"all\"]"
+    },
+    {
+      "id": "698da99698c677ec58d51e2f",
+      "combo": "teams-to-teams",
+      "category": "messaging",
+      "name": "Teams to Teams Advanced Plan - Advanced Included",
+      "fileName": "Teams to Teams Advanced Plan - Advanced Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "included",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"teams-to-teams\"]"
+    },
+    {
+      "id": "698da99698c677ec58d51e30",
+      "combo": "teams-to-teams",
+      "category": "messaging",
+      "name": "Teams to Teams Advanced Plan - Advanced Not Included",
+      "fileName": "Teams to Teams Advanced Plan - Advanced Not Included.docx",
+      "planType": "",
+      "includeType": "",
+      "inferredPlan": "advanced",
+      "inferredIncludeType": "notincluded",
+      "issues": "missing_planType|missing_includeType",
+      "combinations": "[\"teams-to-teams\"]"
+    }
+  ]
+}

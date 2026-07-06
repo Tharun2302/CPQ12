@@ -1,0 +1,63 @@
+# Deployment Workflow
+
+## Description
+Pipeline for deploying code to staging and production environments.
+
+## Phases
+
+### Phase 1: Build
+
+- Build Docker image
+- Run tests in Docker
+- Verify build succeeds
+- Tag image with version
+
+### Phase 2: Staging Deployment
+
+- Deploy to staging environment
+- Run smoke tests
+- Verify all services running
+- Check database migrations
+- Test critical workflows
+- Monitor error logs
+
+### Phase 3: Staging Verification
+
+- Perform manual testing
+- Verify features working
+- Check performance metrics
+- Verify integrations working
+- Verify no regressions
+
+### Phase 4: Production Deployment
+
+- Create backup of production database
+- Deploy to production
+- Run health checks
+- Verify services started
+- Monitor for errors
+
+### Phase 5: Post-Deployment Verification
+
+- Smoke test production
+- Monitor error logs
+- Check performance metrics
+- Verify critical features
+- Monitor for 1 hour minimum
+
+### Phase 6: Rollback (if needed)
+
+- Identify issue
+- Rollback to previous version
+- Verify rollback successful
+- Investigate root cause
+- Plan fix
+
+## Success Criteria
+
+- [ ] All services running
+- [ ] Health checks passing
+- [ ] No critical errors in logs
+- [ ] Performance metrics normal
+- [ ] Features working as expected
+- [ ] No customer complaints

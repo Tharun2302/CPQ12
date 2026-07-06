@@ -1,0 +1,21 @@
+CLEAN TEMPLATE CODE (No Extra Spaces)
+
+Copy this into your Word template:
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month{{#exhibitOveragePerGB}} | {{exhibitOveragePerGB}} per GB{{/exhibitOveragePerGB}}{{/exhibits}}
+
+IMPORTANT: 
+- Put everything on ONE line (no line breaks)
+- This will create one bullet point per exhibit with no extra spacing
+- Each exhibit will appear on its own line automatically
+
+ALTERNATIVE (If you want each exhibit on a separate line with proper spacing):
+
+{{#exhibits}}Overage Charges for {{exhibitCombinationName}}: {{exhibitOveragePerUser}} per User | {{exhibitOveragePerServer}} per server per month{{#exhibitOveragePerGB}} | {{exhibitOveragePerGB}} per GB{{/exhibitOveragePerGB}}
+{{/exhibits}}
+
+This version:
+- Keeps exhibits on separate lines
+- Removes extra blank lines between them
+- Maintains clean formatting
+

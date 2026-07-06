@@ -1,0 +1,12005 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
+import { formatCurrency, getInstanceTypeCost, manageUserCost, MANAGE_STANDALONE_DATA_RATE } from '../utils/pricing';
+import {
+  FileText,
+  Download,
+  Send,
+  User,
+  Mail,
+  Building,
+  Check,
+  CheckCircle,
+  Users,
+  Sparkles,
+  Eye,
+  Briefcase,
+  Calendar,
+  Workflow,
+  X,
+  Settings,
+  PenLine,
+  Plus,
+  Trash2,
+  RefreshCw,
+  Save,
+  Shield,
+  UserPlus,
+  Loader2,
+  ChevronDown
+} from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import { downloadAndSavePDF } from '../utils/pdfProcessor';
+import { sanitizeNameInput, sanitizeEmailInput, sanitizeCompanyInput } from '../utils/emojiSanitizer';
+import { useApprovalWorkflows } from '../hooks/useApprovalWorkflows';
+import { BACKEND_URL, API_ENDPOINTS } from '../config/api';
+import { useNavigate } from 'react-router-dom';
+import { trackQuoteOperation, trackDocumentOperation, trackApprovalEvent } from '../analytics/clarity';
+import { getEffectiveDurationMonths, formatMonths } from '../utils/configDuration';
+import { getCurrentUser } from '../utils/authUtils';
+import { useAuth } from '../hooks/useAuth';
+import CustomDatePicker from './CustomDatePicker';
+import OnlyOfficeEditor from './OnlyOfficeEditor';
+// EmailJS import removed - now using server-side email with attachment support
+
+// Date formatting helper for mm/dd/yyyy format
+function formatDateMMDDYYYY(dateString: string): string {
+  console.log('🔍 formatDateMMDDYYYY called with:', dateString, 'type:', typeof dateString);
+  
+  if (!dateString || dateString === 'N/A' || dateString === 'undefined' || dateString === 'null') {
+    console.log('  Returning N/A - empty or invalid dateString');
+    return 'N/A';
+  }
+  
+  try {
+    let date: Date;
+    
+    // Handle different date formats
+    if (dateString.includes('-')) {
+      // Handle YYYY-MM-DD format (from HTML date input)
+      date = new Date(dateString + 'T00:00:00');
+    } else if (dateString.includes('/')) {
+      // Handle MM/DD/YYYY format
+      date = new Date(dateString);
+    } else {
+      // Try parsing as-is
+      date = new Date(dateString);
+    }
+    
+    console.log('  Parsed date object:', date);
+    console.log('  Date is valid:', !isNaN(date.getTime()));
+    console.log('  Date toString:', date.toString());
+    
+    if (isNaN(date.getTime())) {
+      console.log('  Invalid date, returning N/A');
+      return 'N/A';
+    }
+    
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const result = `${month}/${day}/${year}`;
+    console.log('  Formatted result:', result);
+    return result;
+  } catch (error) {
+    console.error('Error formatting date:', dateString, error);
+    return 'N/A';
+  }
+}
+
+function formatDateMMDDYYYYForUi(dateString: string): string {
+  if (!dateString) return '';
+  const parts = dateString.split('-');
+  if (parts.length === 3) {
+    const [year, month, day] = parts;
+    if (year && month && day) return `${month}-${day}-${year}`;
+  }
+  return dateString;
+}
+
+// Today in YYYY-MM-DD (default for Project Start Date)
+function getTodayDate(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// One month from today in YYYY-MM-DD (default for Effective Date)
+function getDefaultDateOneMonthFromToday(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Thirty days from today in YYYY-MM-DD (default for Quote Expiry Date)
+function getDefaultQuoteExpiryDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  const year = d.getFullYear();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Format date as "20th of May, 2026" for quote validity display
+function formatDateLongOrdinal(dateString: string): string {
+  if (!dateString || dateString === 'N/A' || dateString === 'undefined' || dateString === 'null') {
+    return '';
+  }
+  try {
+    const date = dateString.includes('-')
+      ? new Date(dateString + 'T00:00:00')
+      : new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+
+    const day = date.getDate();
+    const suffix = day >= 11 && day <= 13
+      ? 'th'
+      : day % 10 === 1
+        ? 'st'
+        : day % 10 === 2
+          ? 'nd'
+          : day % 10 === 3
+            ? 'rd'
+            : 'th';
+
+    const month = date.toLocaleString('en-US', { month: 'long' });
+    const year = date.getFullYear();
+    return `${day}${suffix} of ${month}, ${year}`;
+  } catch {
+    return '';
+  }
+}
+
+// Helper function to limit consecutive spaces to maximum 5
+function limitConsecutiveSpaces(value: string, maxSpaces: number = 5): string {
+  // Replace any sequence of more than maxSpaces spaces with exactly maxSpaces spaces
+  const spaceRegex = new RegExp(`\\s{${maxSpaces + 1},}`, 'g');
+  return value.replace(spaceRegex, ' '.repeat(maxSpaces));
+}
+
+// Helper function to get display name for exhibit category (all combinations use CloudFuze Migrate)
+function getCategoryDisplayName(category: string): string {
+  return 'CloudFuze Migrate';
+}
+
+// Normalize exhibit display name for agreement table: avoid "Basic Plan - Basic Include", show " - Basic - Included Features"
+function normalizeExhibitDisplayNameForTable(rawName: string): string {
+  let name = (rawName || '').trim();
+  if (!name) return name;
+  // "Slack to Teams Basic Plan - Basic Include" → "Slack to Teams - Basic - Included Features"
+  // "Slack to Teams Basic Plan - Basic Not Include" → "Slack to Teams - Basic - Not Included Features"
+  const planTypes = ['Basic', 'Standard', 'Advanced', 'Premium', 'Enterprise'];
+  for (const plan of planTypes) {
+    const re = new RegExp(`\\s+${plan}\\s+Plan\\s*-\\s*${plan}\\s+(Include)(\\s+Features?)?$`, 'i');
+    if (re.test(name)) {
+      name = name.replace(re, ` - ${plan} - Included Features`);
+      break;
+    }
+    const reNot = new RegExp(`\\s+${plan}\\s+Plan\\s*-\\s*${plan}\\s+(Not\\s+Include)(\\s+Features?)?$`, 'i');
+    if (reNot.test(name)) {
+      name = name.replace(reNot, ` - ${plan} - Not Included Features`);
+      break;
+    }
+  }
+  // Fallback: " - Basic Include" → " - Basic - Included Features", " - Basic Not Include" → " - Basic - Not Included Features"
+  name = name.replace(/\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)\s+Include(\s+Features?)?$/i, ' - $1 - Included Features');
+  name = name.replace(/\s*-\s*(Basic|Standard|Advanced|Premium|Enterprise)\s+Not\s+Include(\s+Features?)?$/i, ' - $1 - Not Included Features');
+  // Normalize multiple spaces to single space (fixes "Slack  To  Teams" -> "Slack To Teams")
+  name = name.replace(/\s+/g, ' ').trim();
+  return name;
+}
+
+// Helper function to format combination name for display
+// Converts "Onedrive To Sharepoint" to "OneDrive / SharePoint - OneDrive / SharePoint"
+function formatCombinationNameForDisplay(name: string): string {
+  if (!name) return name;
+  const normalized = name.toLowerCase().replace(/\s+/g, ' ').trim();
+  
+  // Special case: "Onedrive To Sharepoint" or "OneDrive To SharePoint" should display as "OneDrive / SharePoint - OneDrive / SharePoint"
+  if (normalized === 'onedrive to sharepoint' || normalized === 'onedrive to share point') {
+    return 'OneDrive / SharePoint - OneDrive / SharePoint';
+  }
+
+  // Special case: "Box To Google Mydrive" covers both MyDrive and Shared Drive
+  if (normalized === 'box to google mydrive') {
+    return 'Box to Google My Drive & Shared Drive';
+  }
+
+  // Special case: google-to-google (split-capitalized as "Google To Google")
+  if (normalized === 'google to google') {
+    return 'Google MyDrive/SharedDrive - Google MyDrive/SharedDrive';
+  }
+
+  // Special case: full exhibit name after suffix-stripping
+  if (
+    normalized === 'google my drive & shareddrive to google my drive & shareddrive' ||
+    normalized === 'google my drive & share drive to google my drive & share drive'
+  ) {
+    return 'Google MyDrive/SharedDrive - Google MyDrive/SharedDrive';
+  }
+
+  return name;
+}
+
+// Helper function to format exhibit description with configuration details
+function formatExhibitDescription(exhibit: any, configuration: ConfigurationData, exhibitConfig?: any): string {
+  const category = (exhibit.category || 'content').toLowerCase();
+  let exhibitName = exhibit.name || '';
+  
+  // Remove plan type and Included/Not Included suffixes from display name
+  // Patterns to remove:
+  // - " Standard Plan - Standard Include"
+  // - " Advanced Plan - Advanced Include"
+  // - " Standard Plan - Included Features"
+  // - " - Included Features"
+  // - " - Not Included Features"
+  const cleanPatterns = [
+    /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Standard|Advanced|Basic|Premium|Enterprise)\s+(Include|Not\s+Include|Included|Not\s+Included)(\s+Features?)?$/i,
+    /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Included|Not\s+Included)\s+Features?$/i,
+    /\s+-\s*(Included|Not\s+Included|Include|Not\s+Include)(\s+Features?)?$/i,
+  ];
+  
+  for (const pattern of cleanPatterns) {
+    exhibitName = exhibitName.replace(pattern, '');
+  }
+  
+  // Also remove any trailing plan type if it exists (e.g., "Some Exhibit Standard")
+  exhibitName = exhibitName.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)$/i, '');
+  // Normalize multiple spaces to single space (fixes "Slack  To  Teams" -> "Slack To Teams")
+  exhibitName = exhibitName.replace(/\s+/g, ' ').trim();
+  
+  // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+  exhibitName = formatCombinationNameForDisplay(exhibitName);
+  
+  // For Multi combination, use the specific config for this exhibit
+  // For single migrations, fall back to main configuration if exhibitConfig doesn't have the value
+  let config = exhibitConfig || configuration;
+  
+  // Special handling for dataSizeGB: use whichever has a valid (non-zero) value
+  // This fixes the issue where single Content migrations might not have dataSizeGB in exhibitConfig
+  if (category === 'content') {
+    // Check both exhibitConfig and configuration for dataSizeGB
+    // For single migrations, exhibitConfig might be the same as configuration, but we still check both
+    const exhibitDataSize = exhibitConfig?.dataSizeGB;
+    const configDataSize = configuration?.dataSizeGB;
+    
+    // Use the first valid (non-zero) value found
+    let finalDataSize = 0;
+    if (exhibitDataSize && exhibitDataSize > 0) {
+      finalDataSize = exhibitDataSize;
+    } else if (configDataSize && configDataSize > 0) {
+      finalDataSize = configDataSize;
+    }
+    
+    // Always update config with the final dataSize, even if it's 0 (for debugging)
+    config = { ...config, dataSizeGB: finalDataSize };
+    
+    // Debug logging to help identify the issue
+    console.log('🔍 formatExhibitDescription - Content migration:', {
+      category,
+      exhibitName,
+      exhibitConfigDataSizeGB: exhibitDataSize,
+      configurationDataSizeGB: configDataSize,
+      finalDataSize: finalDataSize,
+      configAfterUpdate: config.dataSizeGB
+    });
+  }
+  
+  if (category === 'messaging' || category === 'message') {
+    const users = config?.numberOfUsers || 1;
+    const messages = config?.messages || 0;
+    // Format: Exhibit name, dashed line separator, then details
+    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | All Channels and DMs | ${messages} Messages`;
+  } else if (category === 'content') {
+    const users = config?.numberOfUsers || 1;
+    const dataSize = config?.dataSizeGB || 0;
+    // Format: Exhibit name, dashed line separator, then details
+    return `${exhibitName}\n---------------------------------\nUp to ${users} Users | ${dataSize} GBs`;
+  } else if (category === 'email') {
+    const mailboxes = config?.numberOfUsers || 1;
+    // Get dataSizeGB from exhibitConfig or configuration (similar to content handling)
+    const exhibitDataSize = exhibitConfig?.dataSizeGB;
+    const configDataSize = configuration?.dataSizeGB;
+    const dataSize = (exhibitDataSize && exhibitDataSize > 0) ? exhibitDataSize : 
+                     (configDataSize && configDataSize > 0) ? configDataSize : 0;
+    // Format: Exhibit name, dashed line separator, then details with mailboxes and data size
+    return `${exhibitName}\n---------------------------------\nUp to ${mailboxes} Mailboxes | ${dataSize} GBs`;
+  }
+  
+  return exhibitName;
+}
+
+// Helper function to calculate exhibit pricing
+function calculateExhibitPrice(exhibit: any, configuration: ConfigurationData, calculation: PricingCalculation | null, exhibitConfig?: any): number {
+  const category = (exhibit.category || 'content').toLowerCase();
+  
+  // For Multi combination, use specific calculation if available
+  if (configuration?.migrationType === 'Multi combination') {
+    if ((category === 'messaging' || category === 'message') && calculation?.messagingCalculation) {
+      return calculation.messagingCalculation.totalCost || 0;
+    } else if (category === 'content' && calculation?.contentCalculation) {
+      return calculation.contentCalculation.totalCost || 0;
+    } else if (category === 'email' && calculation?.emailCalculation) {
+      return calculation.emailCalculation.totalCost || 0;
+    }
+  }
+  
+  // For single migration type, use the overall calculation
+  if (calculation) {
+    return calculation.totalCost || 0;
+  }
+  
+  // Fallback: estimate based on configuration
+  const config = exhibitConfig || configuration;
+  const users = config?.numberOfUsers || 1;
+  const perUserCost = 40; // Default per user cost
+  return users * perUserCost;
+}
+
+
+interface DealData {
+  dealId: string;
+  dealName: string;
+  amount: string;
+  closeDate?: string;
+  stage?: string;
+  ownerId?: string;
+  company?: string;
+  companyByContact?: string;
+  contactName?: string;
+  contactEmail?: string;
+}
+
+interface QuoteGeneratorProps {
+  calculation: PricingCalculation;
+  configuration: ConfigurationData;
+  onGenerateQuote: (quote: Quote) => void;
+  onConfigurationChange?: (config: ConfigurationData) => void;
+  hubspotState?: {
+    isConnected: boolean;
+    hubspotContacts: any[];
+    selectedContact: any;
+  };
+  onSelectHubSpotContact?: (contact: any) => void;
+  companyInfo?: {
+    name: string;
+    address: string;
+    city: string;
+    email: string;
+    phone: string;
+  };
+  selectedTemplate?: any;
+  onClientInfoChange?: (clientInfo: ClientInfo) => void;
+  dealData?: DealData | null;
+  configureContactInfo?: {
+    clientName: string;
+    clientEmail: string;
+    company: string;
+  } | null;
+  selectedExhibits?: string[];
+}
+
+interface ClientInfo {
+  clientName: string;
+  clientEmail: string;
+  company: string;
+  effectiveDate?: string;
+  quoteExpiryDate?: string;
+  discount?: number;
+  paymentTerms?: string;
+}
+
+interface CustomLineItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+}
+
+const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
+  calculation,
+  configuration,
+  onGenerateQuote,
+  onConfigurationChange,
+  hubspotState,
+  onSelectHubSpotContact,
+  companyInfo,
+  selectedExhibits = [],
+  selectedTemplate,
+  onClientInfoChange,
+  dealData,
+  configureContactInfo
+}) => {
+  const navigate = useNavigate();
+  // Reduced logging for performance
+  if (!calculation) {
+    console.log('🔍 QuoteGenerator render - calculation is null/undefined');
+  }
+  
+  // Create a fallback calculation if none exists
+  const safeCalculation = calculation || {
+    userCost: 0,
+    dataCost: 0,
+    migrationCost: 0,
+    instanceCost: 0,
+    totalCost: 0,
+    tier: {
+      id: 'default',
+      name: 'Basic' as const,
+      perUserCost: 30.0,
+      perGBCost: 1.00,
+      managedMigrationCost: 300,
+      instanceCost: 500,
+      userLimits: { from: 1, to: 1000 },
+      gbLimits: { from: 1, to: 10000 },
+      features: ['Basic support', 'Standard migration', 'Email support', 'Basic reporting']
+    }
+  };
+
+  // Helper: user-friendly template name for UI
+  const getSelectedTemplateDisplayName = (): string => {
+    const rawName: string = selectedTemplate?.name || '';
+
+    // For overage agreements, hide the "Content"/"Messaging" suffix
+    const isOverageCombination =
+      (configuration?.combination || '').toLowerCase() === 'overage-agreement';
+    const isOverageMigrationType =
+      (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+
+    if ((isOverageCombination || isOverageMigrationType) &&
+        rawName.toUpperCase().startsWith('OVERAGE AGREEMENT')) {
+      return 'OVERAGE AGREEMENT';
+    }
+
+    // Hide "Multi" from the Multi Combination template name to match the renamed dropdown UI.
+    if (rawName.toLowerCase() === 'multi combination') {
+      return 'Combination';
+    }
+
+    return rawName || 'Selected Template';
+  };
+
+  // Safety check - if calculation is undefined, show warning but continue
+  if (!calculation) {
+    console.warn('⚠️ QuoteGenerator: calculation is undefined, using fallback');
+    console.warn('⚠️ QuoteGenerator: calculation value:', calculation);
+    console.warn('⚠️ QuoteGenerator: configuration value:', configuration);
+  }
+  const [clientInfo, setClientInfo] = useState<ClientInfo>({
+    clientName: '',
+    clientEmail: '',
+    company: '',
+    effectiveDate: getDefaultDateOneMonthFromToday(),
+    quoteExpiryDate: getDefaultQuoteExpiryDate(),
+    discount: undefined,
+    paymentTerms: '100% Upfront'
+  });
+
+  // Read discount entered in Configure session
+  useEffect(() => {
+    const loadDiscount = () => {
+      try {
+        const saved = localStorage.getItem('cpq_discount');
+        if (saved !== null && saved !== '' && !isNaN(Number(saved))) {
+          const val = Number(saved);
+          setClientInfo(prev => ({ ...prev, discount: val }));
+        } else {
+          // Clear discount if empty
+          setClientInfo(prev => ({ ...prev, discount: undefined }));
+        }
+      } catch {
+        setClientInfo(prev => ({ ...prev, discount: undefined }));
+      }
+    };
+
+    // Load initial discount
+    loadDiscount();
+
+    // Listen for storage events (changes from other components)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'cpq_discount') {
+        loadDiscount();
+      }
+    };
+
+    // Listen for custom events (immediate updates from same page)
+    const handleDiscountUpdate = () => {
+      loadDiscount();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('discountUpdated', handleDiscountUpdate);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('discountUpdated', handleDiscountUpdate);
+    };
+  }, []);
+
+  // Load configuration from sessionStorage if prop is undefined
+  useEffect(() => {
+    if (!configuration || !calculation) {
+      try {
+        const savedConfig = sessionStorage.getItem('cpq_configuration_session');
+        const savedNav = sessionStorage.getItem('cpq_navigation_state');
+        
+        if (savedConfig) {
+          const parsedConfig = JSON.parse(savedConfig);
+          console.log('✅ QuoteGenerator: Loaded configuration from sessionStorage:', parsedConfig);
+        }
+        
+        if (savedNav) {
+          const parsedNav = JSON.parse(savedNav);
+          if (parsedNav.sessionState?.selectedTier) {
+            console.log('✅ QuoteGenerator: Found selectedTier in navigation state:', parsedNav.sessionState.selectedTier);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not load configuration/calculation from storage:', error);
+      }
+    }
+  }, [configuration, calculation]);
+
+  // Persist and restore Quote session client inputs so they remain across navigation
+  useEffect(() => {
+    // Load client info from storage on mount
+    try {
+      const saved = localStorage.getItem('cpq_quote_client_info');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setClientInfo((prev) => ({
+          ...prev,
+          clientName: parsed.clientName || '',
+          clientEmail: parsed.clientEmail || '',
+          company: parsed.company || '',
+          effectiveDate: parsed.effectiveDate || getDefaultDateOneMonthFromToday(),
+          quoteExpiryDate: parsed.quoteExpiryDate || getDefaultQuoteExpiryDate(),
+          paymentTerms: parsed.paymentTerms || '100% Upfront'
+        }));
+      }
+    } catch {}
+  }, []);
+
+  // Default Project Start Date to today when configuration has no startDate (once). User can change if they want.
+  const defaultStartDateSetRef = useRef(false);
+  useEffect(() => {
+    if (defaultStartDateSetRef.current || !configuration || !onConfigurationChange) return;
+    if (configuration.startDate && configuration.startDate.trim() !== '') return;
+    defaultStartDateSetRef.current = true;
+    const defaultStart = getTodayDate();
+    onConfigurationChange({ ...configuration, startDate: defaultStart });
+  }, [configuration, onConfigurationChange]);
+
+  const [showPreview, setShowPreview] = useState(false);
+  
+  // Add debugging to track discount changes
+  useEffect(() => {
+    console.log('🔍 Discount changed in QuoteGenerator:', {
+      clientInfoDiscount: clientInfo.discount,
+      discountPercent: clientInfo.discount ?? 0,
+      totalCost: calculation?.totalCost ?? safeCalculation.totalCost,
+      showPreview
+    });
+  }, [clientInfo.discount, showPreview]);
+  const [showContactSelector, setShowContactSelector] = useState(false);
+  const [quoteId, setQuoteId] = useState<string>('');
+  const [isSendingToDealDesk, setIsSendingToDealDesk] = useState(false);
+  const [isEmailingAgreement, setIsEmailingAgreement] = useState(false);
+  const [dateValidationErrors, setDateValidationErrors] = useState({
+    projectStartDate: false,
+    effectiveDate: false,
+    quoteExpiryDate: false,
+    projectStartNotAfterEffective: false,
+  });
+  
+  // Calculate discount logic - source discount primarily from Configure session (localStorage)
+  const getEffectiveTotalCost = (
+    cfg: typeof configuration,
+    calc: typeof calculation | typeof safeCalculation
+  ): number => {
+    const c: any = calc || {};
+    if (cfg?.migrationType === 'Multi combination') {
+      const sumBreakdowns = (arr: any[] | undefined) =>
+        Array.isArray(arr) ? arr.reduce((acc, b) => acc + (Number(b?.totalCost) || 0), 0) : 0;
+
+      const messagingTotal =
+        sumBreakdowns(c.messagingCombinationBreakdowns) ||
+        (Number(c.messagingCalculation?.totalCost) || 0);
+      const contentTotal =
+        sumBreakdowns(c.contentCombinationBreakdowns) ||
+        (Number(c.contentCalculation?.totalCost) || 0);
+      const emailTotal =
+        sumBreakdowns(c.emailCombinationBreakdowns) ||
+        (Number(c.emailCalculation?.totalCost) || 0);
+
+      const combined = messagingTotal + contentTotal + emailTotal;
+      // Fall back to the top-level totalCost if for some reason the above is empty
+      return combined > 0 ? combined : (Number(c.totalCost) || 0);
+    }
+    return Number(c.totalCost) || 0;
+  };
+
+  const totalCost = getEffectiveTotalCost(configuration, calculation || safeCalculation);
+  // Read latest discount from sessionStorage as the source of truth, fallback to state
+  const storedDiscountPercent = (() => {
+    try {
+      const raw = sessionStorage.getItem('cpq_discount_session');
+      return raw !== null && raw !== '' && !isNaN(Number(raw)) ? Number(raw) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const discountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
+  
+  // Discount can apply at ANY amount - no minimum threshold
+  const hasValidDiscount = discountPercent > 0;
+
+  // Calculate final total after discount
+  const discountAmount = hasValidDiscount ? totalCost * (discountPercent / 100) : 0;
+  const finalTotalAfterDiscount = totalCost - discountAmount;
+
+  // Should we show and apply the discount? (no minimum amount required)
+  const shouldApplyDiscount = hasValidDiscount;
+  
+  
+
+
+  // Generate unique quote ID
+  const generateUniqueQuoteId = (): string => {
+    const timestamp = Date.now().toString();
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return `Q-${timestamp.slice(-6)}-${random}`;
+  };
+
+  // Helper function to update client info and notify parent
+  const updateClientInfo = (updates: Partial<ClientInfo>) => {
+    // Apply sanitization and space limitation for clientName field
+    let processedUpdates = { ...updates };
+    if (updates.clientName) {
+      processedUpdates.clientName = sanitizeNameInput(updates.clientName);
+      processedUpdates.clientName = limitConsecutiveSpaces(processedUpdates.clientName);
+    }
+    if (updates.clientEmail) {
+      processedUpdates.clientEmail = sanitizeEmailInput(updates.clientEmail);
+    }
+    if (updates.company) {
+      processedUpdates.company = sanitizeCompanyInput(updates.company);
+    }
+    
+    const newClientInfo = { ...clientInfo, ...processedUpdates };
+    setClientInfo(newClientInfo);
+    // Persist to localStorage so the Quote session remains sticky
+    try { localStorage.setItem('cpq_quote_client_info', JSON.stringify(newClientInfo)); } catch {}
+    
+    // Only notify parent when user makes actual changes (not during auto-fill)
+    if (onClientInfoChange && (updates.clientName || updates.clientEmail || updates.company || updates.effectiveDate || updates.quoteExpiryDate || updates.discount !== undefined || updates.paymentTerms !== undefined)) {
+      onClientInfoChange(newClientInfo);
+    }
+  };
+
+  // Generate quote ID once when component mounts
+  useEffect(() => {
+    if (!quoteId) {
+      setQuoteId(generateUniqueQuoteId());
+    }
+  }, []); // Empty dependency array - run only once
+
+  // Inject date format styles on component mount
+  useEffect(() => {
+    ensureDateFormatStylesInjected();
+    
+    // Force US date format by setting locale
+    const dateInputs = document.querySelectorAll('input[type="date"][data-format="mm-dd-yyyy"]');
+    dateInputs.forEach((input) => {
+      const htmlInput = input as HTMLInputElement;
+      htmlInput.lang = 'en-US';
+      htmlInput.setAttribute('locale', 'en-US');
+    });
+  }, []); // Empty dependency array - run only once
+  const [showPlaceholderPreview, setShowPlaceholderPreview] = useState(false);
+  const [placeholderPreviewData, setPlaceholderPreviewData] = useState<{
+    originalText: string;
+    replacedText: string;
+    placeholders: Array<{placeholder: string, value: string}>;
+  } | null>(null);
+
+  // Agreement preview state
+  const [processedAgreement, setProcessedAgreement] = useState<Blob | null>(null);
+  const [originalDocxAgreement, setOriginalDocxAgreement] = useState<Blob | null>(null); // Store original DOCX for Word downloads
+  const [showAgreementPreview, setShowAgreementPreview] = useState(false);
+  const [isGeneratingAgreement, setIsGeneratingAgreement] = useState(false);
+  const [showInlinePreview, setShowInlinePreview] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [iframeKey, setIframeKey] = useState(0);
+  /** True when iframe shows application/pdf (browser PDF viewer); false for docx-preview div or HTML blob. */
+  const [agreementPreviewIsPdf, setAgreementPreviewIsPdf] = useState(false);
+  /** PDF from DOCX conversion — reused for download / e-sign / View Document. */
+  const [cachedPdfAgreement, setCachedPdfAgreement] = useState<Blob | null>(null);
+  /** Snapshot of the last token map sent to the DOCX processor — enables date editing
+   *  post-generation. Saved alongside the document so EditDatesModal can re-render. */
+  const [lastTemplateDataSnapshot, setLastTemplateDataSnapshot] = useState<Record<string, string> | null>(null);
+
+  /** Build the date-editing snapshot to persist with the saved document. Called at every
+   *  saveDocument site. Returns null fields gracefully when state isn't populated yet
+   *  (e.g. user is saving a manually-uploaded PDF) so the backend just stores nulls. */
+  const buildDateEditSnapshot = (): {
+    dates: { projectStartDate: string | null; effectiveDate: string | null; quoteExpiryDate: string | null };
+    templateData: Record<string, string> | null;
+    templateId: string | null;
+    customLineItems: Array<{ name: string; description: string; price: number }>;
+  } => ({
+    dates: {
+      // Project Start Date lives on configuration.startDate, NOT on clientInfo.
+      projectStartDate: configuration?.startDate || null,
+      effectiveDate: clientInfo.effectiveDate || null,
+      quoteExpiryDate: clientInfo.quoteExpiryDate || null,
+    },
+    templateData: lastTemplateDataSnapshot,
+    templateId: selectedTemplate?.id ? String(selectedTemplate.id) : null,
+    customLineItems: customLineItems.map((it) => ({
+      name: it.name,
+      description: it.description,
+      price: it.price,
+    })),
+  });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSavingAgreementToMongo, setIsSavingAgreementToMongo] = useState(false);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Custom line items — extra rows the user adds to the agreement pricing table.
+  // Added on top of the standard CloudFuze pricing (after any discount), and injected
+  // into the agreement's pricing table just above the "Total Price" row.
+  // Persisted to localStorage so they survive navigating away from and back to the Quote page.
+  const [customLineItems, setCustomLineItems] = useState<CustomLineItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('cpq_quote_custom_line_items');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((it) => it && typeof it === 'object')
+            .map((it: any) => ({
+              id: it.id || `${it.name || 'item'}-${it.price || 0}`,
+              name: String(it.name || ''),
+              description: String(it.description || ''),
+              price: Number(it.price) || 0,
+            }));
+        }
+      }
+    } catch {}
+    return [];
+  });
+  const [customLineItemsDiscount, setCustomLineItemsDiscount] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('cpq_quote_custom_line_items_discount');
+      if (saved !== null && saved !== '' && !isNaN(Number(saved))) return Number(saved);
+    } catch {}
+    return 0;
+  });
+
+  // Persist custom line items and their discount so they remain across navigation
+  useEffect(() => {
+    try {
+      localStorage.setItem('cpq_quote_custom_line_items', JSON.stringify(customLineItems));
+    } catch {}
+  }, [customLineItems]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('cpq_quote_custom_line_items_discount', String(customLineItemsDiscount));
+    } catch {}
+  }, [customLineItemsDiscount]);
+
+  // Grand total that matches the agreement PDF: base total (after the main discount) PLUS the
+  // discounted custom line items. The PDF adds the discounted custom-items block on top of the
+  // base total (see the {{total price}} merge), so the saved card amount and approval emails must
+  // do the same — otherwise the card/email under-reports vs the PDF whenever custom items exist.
+  const customLineItemsTotalForTotal = customLineItems.reduce((sum, item) => sum + (item.price || 0), 0);
+  const customLineItemsDiscountAmountForTotal =
+    customLineItemsDiscount > 0 ? customLineItemsTotalForTotal * (customLineItemsDiscount / 100) : 0;
+  const finalTotalWithCustomItems =
+    finalTotalAfterDiscount + (customLineItemsTotalForTotal - customLineItemsDiscountAmountForTotal);
+  // Start expanded if there are already saved custom line items or a discount, so returning
+  // to the Quote page shows the previously entered values immediately (no need to click "+").
+  const [isCustomLineItemsExpanded, setIsCustomLineItemsExpanded] = useState(
+    () => customLineItems.length > 0 || customLineItemsDiscount > 0
+  );
+  const [newCustomItem, setNewCustomItem] = useState<{ name: string; description: string; price: string }>({
+    name: '',
+    description: '',
+    price: '',
+  });
+
+  // Inline-edit agreement state — user can tweak the generated agreement before sending for approval
+  const [isEditingAgreement, setIsEditingAgreement] = useState(false);
+  const [editableAgreementHtml, setEditableAgreementHtml] = useState<string>('');
+  const [isSavingAgreementEdits, setIsSavingAgreementEdits] = useState(false);
+  const editableAgreementRef = useRef<HTMLDivElement | null>(null);
+  // Snapshot of the last-saved edited HTML, so re-opening Edit after Save Changes works without the original DOCX.
+  const [lastEditedAgreementHtml, setLastEditedAgreementHtml] = useState<string>('');
+  // Original paragraph text snapshot (taken when Edit is opened). Used to diff against the user's edits
+  // so we can patch the original DOCX in place (preserving all Word formatting).
+  const [originalParagraphTexts, setOriginalParagraphTexts] = useState<string[]>([]);
+
+  // OnlyOffice editor state — real Word-style editor that preserves 100% format on save.
+  const [showOnlyOfficeEditor, setShowOnlyOfficeEditor] = useState(false);
+  const [onlyOfficeSessionId, setOnlyOfficeSessionId] = useState<string | null>(null);
+  const [onlyOfficeEditorUrl, setOnlyOfficeEditorUrl] = useState<string>('');
+  const [onlyOfficeConfig, setOnlyOfficeConfig] = useState<any>(null);
+  const [isStartingOnlyOffice, setIsStartingOnlyOffice] = useState(false);
+  const [isFinalizingOnlyOffice, setIsFinalizingOnlyOffice] = useState(false);
+
+  // Approval workflow state
+  const { createWorkflow, workflows } = useApprovalWorkflows();
+  // Tracks the MongoDB document ID of the most recently submitted approval workflow
+  const [activeWorkflowDocumentId, setActiveWorkflowDocumentId] = useState<string | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  // Use centralized hardcoded defaults (original team addresses)
+  const defaultTechEmail = 'cpq.zenop.ai.technical@cloudfuze.com';
+  const defaultLegalEmail = 'cpq.zenop.ai.legal@cloudfuze.com';
+  const defaultDealDeskEmail = 'salesops@cloudfuze.com';
+  const workflowCreatorEmail = (() => {
+    try {
+      const raw = localStorage.getItem('cpq_user');
+      if (raw) {
+        const user = JSON.parse(raw);
+        if (user?.email) return user.email;
+      }
+    } catch {}
+    return 'abhilasha.kandakatla@cloudfuze.com';
+  })();
+  const [approvalEmails, setApprovalEmails] = useState({
+    role1: defaultTechEmail,
+    role2: defaultLegalEmail,
+    role4: defaultDealDeskEmail
+  });
+  const [isStartingWorkflow, setIsStartingWorkflow] = useState(false);
+  const [isAddingEsignFields, setIsAddingEsignFields] = useState(false);
+  const [addEsignFieldsProgress, setAddEsignFieldsProgress] = useState('');
+
+  // SessionStorage key for "Add e-sign fields first" flow (read by EsignPlaceFieldsPage)
+  const QUOTE_PENDING_APPROVAL_KEY = 'quotePendingApproval';
+
+  // Team Approval settings - loaded from MongoDB API
+  const [teamApprovalSettings, setTeamApprovalSettings] = useState<{
+    teamLeads: Record<string, string>;
+    additionalRecipients: Record<string, string[]>; // Keep for backward compatibility
+  }>({
+    teamLeads: {
+      SMB: 'chitradip.saha@cloudfuze.com',
+      AM: 'joy.prakash@cloudfuze.com',
+      ENT: 'anthony@cloudfuze.com',
+      DEV: 'anushreddydasari@gmail.com',
+      DEV2: 'raya.durai@cloudfuze.com',
+    },
+    additionalRecipients: {
+      SMB: [],
+      AM: [],
+      ENT: [],
+      DEV: [],
+      DEV2: [],
+    },
+  });
+
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  // Load settings from MongoDB API on component mount; fallback to localStorage if backend unreachable
+  useEffect(() => {
+    const loadSettings = async () => {
+      const applyFromStorage = () => {
+        try {
+          const saved = localStorage.getItem('cpq_team_approval_settings');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            const teamIds = Object.keys(parsed.teamLeads || {});
+            if (!parsed.additionalRecipients) parsed.additionalRecipients = {};
+            teamIds.forEach((k) => {
+              if (!Array.isArray(parsed.additionalRecipients[k])) parsed.additionalRecipients[k] = [];
+            });
+            delete parsed.authorizedSenders;
+            setTeamApprovalSettings(parsed);
+            return true;
+          }
+        } catch {}
+        return false;
+      };
+
+      try {
+        setIsLoadingSettings(true);
+        setSettingsError(null);
+
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`);
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          const teamIds = Object.keys(result.data.teamLeads || {});
+          if (!result.data.additionalRecipients) result.data.additionalRecipients = {};
+          teamIds.forEach((k) => {
+            if (!Array.isArray(result.data.additionalRecipients[k])) result.data.additionalRecipients[k] = [];
+          });
+          delete result.data.authorizedSenders;
+          setTeamApprovalSettings(result.data);
+
+          try {
+            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(result.data));
+          } catch {}
+        } else {
+          applyFromStorage();
+        }
+      } catch (error) {
+        const isNetworkError =
+          error instanceof TypeError &&
+          (error.message === 'Failed to fetch' || (error as Error).message?.toLowerCase().includes('network'));
+        const hadFallback = applyFromStorage();
+        if (hadFallback) {
+          setSettingsError('Backend unreachable. Using saved settings.');
+          if (import.meta.env.DEV && isNetworkError) {
+            console.warn('Team approval settings: backend unreachable, using localStorage. Ensure server is running on', BACKEND_URL);
+          }
+        } else {
+          setSettingsError('Failed to load settings. Using defaults.');
+          if (import.meta.env.DEV) console.error('Error loading team approval settings:', error);
+        }
+      } finally {
+        setIsLoadingSettings(false);
+      }
+    };
+
+    loadSettings();
+  }, []);
+
+  // Save settings to MongoDB API whenever they change (with debounce)
+  useEffect(() => {
+    if (isLoadingSettings) return; // Don't save on initial load
+    
+    const saveSettings = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/team-approval-settings`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(teamApprovalSettings),
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          console.log('✅ Team approval settings saved to MongoDB');
+          // Also save to localStorage as backup/cache
+          try {
+            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
+          } catch {}
+        } else {
+          console.error('Failed to save settings to MongoDB:', result.error);
+          // Fallback: save to localStorage
+          try {
+            localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
+          } catch {}
+        }
+      } catch (error) {
+        try {
+          localStorage.setItem('cpq_team_approval_settings', JSON.stringify(teamApprovalSettings));
+        } catch {}
+        if (import.meta.env.DEV) {
+          const isNetworkError =
+            error instanceof TypeError &&
+            (error.message === 'Failed to fetch' || (error as Error).message?.toLowerCase().includes('network'));
+          if (isNetworkError) {
+            console.warn('Team approval settings: backend unreachable, saved to localStorage. Ensure server is running on', BACKEND_URL);
+          } else {
+            console.error('Error saving team approval settings:', error);
+          }
+        }
+      }
+    };
+
+    // Debounce: wait 1 second after last change before saving
+    const timeoutId = setTimeout(saveSettings, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [teamApprovalSettings, isLoadingSettings]);
+
+  // Get logged-in user from auth context (reactive — re-renders when AuthContext refreshes the user)
+  const { user: authUser } = useAuth();
+  const loggedInUserEmail = authUser?.email || getCurrentUser()?.email || '';
+  const userIsAdmin = Boolean((authUser as any)?.isApprovalAdmin);
+
+  // Helper function to get team approval email
+  const getTeamApprovalEmail = (team: string): string => {
+    const key = (team || '').toUpperCase();
+    return teamApprovalSettings.teamLeads?.[key] ?? '';
+  };
+
+  const teamIds = Object.keys(teamApprovalSettings.teamLeads || {});
+
+  const handleAddTeam = () => {
+    const code = newTeamCode.trim().toUpperCase();
+    if (!code) {
+      alert('Please enter a team code (e.g. DEV3).');
+      return;
+    }
+    if (!/^[A-Za-z0-9_]+$/.test(code)) {
+      alert('Team code can only contain letters, numbers, and underscores.');
+      return;
+    }
+    if (teamApprovalSettings.teamLeads?.[code] !== undefined) {
+      alert(`Team "${code}" already exists.`);
+      return;
+    }
+    setTeamApprovalSettings((prev) => ({
+      ...prev,
+      teamLeads: { ...prev.teamLeads, [code]: '' },
+      additionalRecipients: { ...prev.additionalRecipients, [code]: [] },
+    }));
+    setEditingTeam(code);
+    setNewTeamCode('');
+    setShowAddTeamInput(false);
+  };
+
+  const handleRemoveTeam = () => {
+    const ids = Object.keys(teamApprovalSettings.teamLeads || {});
+    if (ids.length <= 1) {
+      alert('Cannot remove the last team. At least one team is required.');
+      return;
+    }
+    if (!window.confirm(`Remove team "${editingTeam}"? This cannot be undone.`)) return;
+    const next = ids.find((t) => t !== editingTeam) || ids[0];
+    setTeamApprovalSettings((prev) => {
+      const { [editingTeam]: _lead, ...teamLeads } = prev.teamLeads || {};
+      const { [editingTeam]: _recips, ...additionalRecipients } = prev.additionalRecipients || {};
+      return { ...prev, teamLeads, additionalRecipients };
+    });
+    setEditingTeam(next);
+    setManualTeamSelection((current) => (current === editingTeam ? next : current));
+  };
+
+  // State for settings modal
+  const [showTeamSettingsModal, setShowTeamSettingsModal] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<string>('SMB');
+  const [newRecipientEmail, setNewRecipientEmail] = useState<string>('');
+  const [newTeamCode, setNewTeamCode] = useState<string>('');
+  const [showAddTeamInput, setShowAddTeamInput] = useState(false);
+
+  // Team picked by the user in the Send for Approval modal
+  const [manualTeamSelection, setManualTeamSelection] = useState<string>('SMB');
+
+  // Approval Admins modal — manages who can edit Team Approval Settings
+  const [showApprovalAdminsModal, setShowApprovalAdminsModal] = useState(false);
+  const [approvalAdminEmails, setApprovalAdminEmails] = useState<string[]>([]);
+  const [approvalAdminLoading, setApprovalAdminLoading] = useState(false);
+  const [approvalAdminError, setApprovalAdminError] = useState<string | null>(null);
+  const [newApprovalAdminEmail, setNewApprovalAdminEmail] = useState('');
+  const [addingApprovalAdmin, setAddingApprovalAdmin] = useState(false);
+  const [removingApprovalAdmin, setRemovingApprovalAdmin] = useState<string | null>(null);
+
+  const getApprovalAdminAuthHeaders = (): Record<string, string> => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const fetchApprovalAdmins = async () => {
+    try {
+      setApprovalAdminLoading(true);
+      setApprovalAdminError(null);
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins`, { headers: getApprovalAdminAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to load admins');
+        setApprovalAdminEmails([]);
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+    } catch {
+      setApprovalAdminError('Failed to load approval admins');
+      setApprovalAdminEmails([]);
+    } finally {
+      setApprovalAdminLoading(false);
+    }
+  };
+
+  const handleAddApprovalAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = newApprovalAdminEmail.trim();
+    if (!email || !email.includes('@')) {
+      setApprovalAdminError('Please enter a valid email');
+      return;
+    }
+    setAddingApprovalAdmin(true);
+    setApprovalAdminError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getApprovalAdminAuthHeaders() },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to add');
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+      setNewApprovalAdminEmail('');
+    } catch {
+      setApprovalAdminError('Failed to add email');
+    } finally {
+      setAddingApprovalAdmin(false);
+    }
+  };
+
+  const handleRemoveApprovalAdmin = async (email: string) => {
+    setRemovingApprovalAdmin(email);
+    setApprovalAdminError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/settings/approval-admins/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: getApprovalAdminAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalAdminError(data.error || 'Failed to remove');
+        return;
+      }
+      setApprovalAdminEmails(data.emails || []);
+    } catch {
+      setApprovalAdminError('Failed to remove email');
+    } finally {
+      setRemovingApprovalAdmin(null);
+    }
+  };
+
+  useEffect(() => {
+    if (showApprovalAdminsModal && userIsAdmin) {
+      fetchApprovalAdmins();
+    }
+  }, [showApprovalAdminsModal, userIsAdmin]);
+
+  // Keep editingTeam and manualTeamSelection valid when team list changes (e.g. load from API)
+  useEffect(() => {
+    const ids = Object.keys(teamApprovalSettings.teamLeads || {});
+    if (ids.length === 0) return;
+    const first = ids[0];
+    if (!ids.includes(editingTeam)) setEditingTeam(first);
+    if (!ids.includes(manualTeamSelection)) setManualTeamSelection(first);
+  }, [teamApprovalSettings]);
+
+  // Team displayed in the approval modal is always the user's manual pick now.
+  const displayTeamForModal = manualTeamSelection;
+
+  const ensureDocxPreviewStylesInjected = () => {
+    const existing = document.getElementById('docx-preview-css');
+    if (existing) return;
+    const link = document.createElement('link');
+    link.id = 'docx-preview-css';
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/docx-preview@0.4.1/dist/docx-preview.css';
+    document.head.appendChild(link);
+  };
+
+  const ensureDateFormatStylesInjected = () => {
+    const existing = document.getElementById('date-format-css');
+    if (existing) return;
+    const style = document.createElement('style');
+    style.id = 'date-format-css';
+    style.textContent = `
+      /* Force US date format order for Chrome/Safari */
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-fields-wrapper {
+        flex-direction: row;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-month-field {
+        order: 1;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-text:nth-of-type(1) {
+        order: 2;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-day-field {
+        order: 3;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-text:nth-of-type(2) {
+        order: 4;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]::-webkit-datetime-edit-year-field {
+        order: 5;
+      }
+      
+      /* Custom placeholder for empty date inputs */
+      input[type="date"][data-format="mm-dd-yyyy"]:not(:focus):invalid {
+        color: transparent;
+        background-image: none;
+        position: relative;
+      }
+      input[type="date"][data-format="mm-dd-yyyy"]:not(:focus):invalid::before {
+        content: "mm-dd-yyyy";
+        color: #9CA3AF;
+        font-size: 18px;
+        position: absolute;
+        left: 24px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+      }
+      
+      /* Hide default calendar icon when showing custom placeholder */
+      input[type="date"][data-format="mm-dd-yyyy"]:not(:focus):invalid::-webkit-calendar-picker-indicator {
+        opacity: 0.5;
+      }
+    `;
+    document.head.appendChild(style);
+  };
+
+  const delayFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  const hidePreviewLogoTableBorders = (container: HTMLElement) => {
+    const pageSelectors = ['.docx .page', '.docx .docx-page', '.docx-page', '.page'];
+    const pages = pageSelectors.flatMap((selector) =>
+      Array.from(container.querySelectorAll<HTMLElement>(selector))
+    );
+    const pageRoots = pages.length > 0 ? Array.from(new Set(pages)) : [container];
+
+    const stripBrandingTableBorders = (table: HTMLTableElement) => {
+      table.removeAttribute('border');
+      table.removeAttribute('frame');
+      table.removeAttribute('rules');
+      table.dataset.previewLogoTable = 'true';
+
+      const stripEl = (node: HTMLElement) => {
+        node.style.setProperty('border', 'none', 'important');
+        node.style.setProperty('border-top', 'none', 'important');
+        node.style.setProperty('border-right', 'none', 'important');
+        node.style.setProperty('border-bottom', 'none', 'important');
+        node.style.setProperty('border-left', 'none', 'important');
+        node.style.setProperty('outline', 'none', 'important');
+        node.style.setProperty('box-shadow', 'none', 'important');
+        node.style.setProperty('background-clip', 'padding-box', 'important');
+      };
+
+      stripEl(table);
+      table.style.setProperty('border-collapse', 'collapse', 'important');
+      table.style.setProperty('border-spacing', '0', 'important');
+
+      Array.from(table.querySelectorAll<HTMLElement>('*')).forEach((node) => {
+        stripEl(node);
+        if (node.tagName === 'TD' || node.tagName === 'TH') {
+          node.style.setProperty('background', 'transparent', 'important');
+        }
+      });
+    };
+
+    pageRoots.forEach((pageRoot) => {
+      const pageRect = pageRoot.getBoundingClientRect();
+      if (pageRect.height < 40) return;
+
+      Array.from(pageRoot.querySelectorAll<HTMLTableElement>('table')).forEach((table) => {
+        const rect = table.getBoundingClientRect();
+        const isNearTop = rect.top - pageRoot.getBoundingClientRect().top < Math.max(pageRect.height * 0.45, 320);
+
+        const t = (table.textContent || '').replace(/\s+/g, ' ').toLowerCase();
+        const hasLogoMedia = table.querySelectorAll('img, svg, picture source, canvas').length > 0;
+        const isBrandingHeader =
+          hasLogoMedia &&
+          (t.includes('microsoft') ||
+            t.includes('partner') ||
+            t.includes('gold cloud') ||
+            t.includes('cloud productivity') ||
+            t.includes('cloudfuze'));
+
+        if (isNearTop && isBrandingHeader) {
+          stripBrandingTableBorders(table);
+        }
+      });
+    });
+  };
+
+  const renderDocxPreview = async (blob: Blob) => {
+    try {
+      // Validate blob before processing
+      if (!blob || blob.size === 0) {
+        throw new Error('Document blob is empty or invalid');
+      }
+      
+      console.log('📄 Rendering DOCX preview, blob size:', blob.size, 'bytes, type:', blob.type);
+      
+      // Check if blob has valid ZIP signature
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
+        throw new Error('Document is not a valid ZIP/DOCX file (missing ZIP signature)');
+      }
+      
+      ensureDocxPreviewStylesInjected();
+      // @ts-ignore - resolved at runtime; types provided via ambient declaration
+      const { renderAsync } = await import('docx-preview');
+      
+      // Ensure container exists in DOM
+      setShowInlinePreview(true);
+      setAgreementPreviewIsPdf(false);
+      await delayFrame();
+      
+      // Wait for container to be available
+      let attempts = 0;
+      while (!previewContainerRef.current && attempts < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
+      if (!previewContainerRef.current) {
+        throw new Error('Preview container not available after waiting');
+      }
+      
+      previewContainerRef.current.innerHTML = '';
+      
+      await renderAsync(arrayBuffer, previewContainerRef.current as HTMLElement, undefined, {
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        className: 'docx',
+        debug: false
+      } as any);
+      await delayFrame();
+      hidePreviewLogoTableBorders(previewContainerRef.current as HTMLElement);
+      setPreviewUrl(null);
+      console.log('✅ DOCX rendered with docx-preview');
+    } catch (err) {
+      console.warn('⚠️ docx-preview failed, falling back to HTML conversion via mammoth.', err);
+      try {
+        const mammoth = await import('mammoth');
+        const arrayBuffer = await blob.arrayBuffer();
+        
+        // Validate arrayBuffer for mammoth
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error('Document arrayBuffer is empty');
+        }
+        
+        const result = await mammoth.convertToHtml({ arrayBuffer } as any);
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Document Preview</title></head><body>${result.value}</body></html>`;
+        const htmlBlob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(htmlBlob);
+        setPreviewUrl(url);
+        setShowInlinePreview(true);
+        setAgreementPreviewIsPdf(false);
+        console.log('✅ DOCX converted to HTML with mammoth');
+      } catch (fallbackErr) {
+        console.error('❌ HTML fallback also failed:', fallbackErr);
+        // Show error message to user
+        if (previewContainerRef.current) {
+          previewContainerRef.current.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #666;">
+              <h3>Document Preview Unavailable</h3>
+              <p>The document could not be previewed due to formatting issues.</p>
+              <p>You can still download the document using the buttons below.</p>
+            </div>
+          `;
+        }
+      }
+    }
+  };
+
+  // Auto-populate client info from configure session (HIGHEST PRIORITY). Preserve or default effectiveDate (Quote field).
+  useEffect(() => {
+    console.log('🔍 QuoteGenerator: configureContactInfo changed:', configureContactInfo);
+    if (configureContactInfo) {
+      console.log('✅ HIGHEST PRIORITY: Auto-filling client info from configure session:', configureContactInfo);
+      const src = configureContactInfo as ClientInfo | null;
+      setClientInfo((prev) => ({
+        ...configureContactInfo,
+        effectiveDate: (src?.effectiveDate && String(src.effectiveDate).trim()) || prev.effectiveDate || getDefaultDateOneMonthFromToday(),
+        quoteExpiryDate: (src?.quoteExpiryDate && String(src.quoteExpiryDate).trim()) || prev.quoteExpiryDate || getDefaultQuoteExpiryDate(),
+        paymentTerms: src?.paymentTerms || prev.paymentTerms || '100% Upfront',
+        discount: src?.discount !== undefined ? src.discount : prev.discount
+      }));
+    } else {
+      console.log('⚠️ No configureContactInfo available, will use HubSpot or default');
+    }
+  }, [configureContactInfo]);
+
+  // Auto-populate client info when HubSpot contact is selected (only if no configure contact info)
+  useEffect(() => {
+    if (hubspotState?.selectedContact && !configureContactInfo) {
+      const contact = hubspotState.selectedContact;
+      console.log('🔍 Auto-filling client info from HubSpot contact:', contact);
+      console.log('📄 Contact properties:', contact.properties);
+      
+      // Extract company name from email domain if company field is not available
+      const extractCompanyFromEmail = (email: string): string => {
+        if (!email) return '';
+        const domain = email.split('@')[1];
+        if (!domain) return '';
+        
+        // Remove common TLDs and format as company name
+        const companyName = domain
+          .replace(/\.(com|org|net|edu|gov|co|io|ai)$/i, '')
+          .split('.')
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ');
+        
+        return companyName;
+      };
+      
+      const newClientInfo = {
+        clientName: `${contact.properties.firstname || ''} ${contact.properties.lastname || ''}`.trim(),
+        clientEmail: contact.properties.email || '',
+        company: contact.properties.company || extractCompanyFromEmail(contact.properties.email || '')
+      };
+      
+      console.log('✅ New client info to set:', newClientInfo);
+      console.log('🏢 Company source:', contact.properties.company ? 'HubSpot company field' : 'Email domain extraction');
+      setClientInfo((prev) => ({
+        ...prev,
+        ...newClientInfo,
+        effectiveDate: prev.effectiveDate?.trim() || getDefaultDateOneMonthFromToday(),
+        quoteExpiryDate: prev.quoteExpiryDate?.trim() || getDefaultQuoteExpiryDate(),
+        paymentTerms: prev.paymentTerms || '100% Upfront'
+      }));
+    }
+  }, [hubspotState?.selectedContact, configureContactInfo]);
+
+  // Clear only HubSpot-sourced fields when HubSpot is disconnected. Effective Date does not depend on HubSpot — preserve it.
+  useEffect(() => {
+    if (!hubspotState?.isConnected) {
+      setClientInfo((prev) => ({
+        ...prev,
+        clientName: '',
+        clientEmail: '',
+        company: ''
+      }));
+    }
+  }, [hubspotState?.isConnected]);
+
+  // Auto-populate client info from deal data (only if no configure contact info). Preserve or default effectiveDate.
+  useEffect(() => {
+    if (dealData && !hubspotState?.selectedContact && !configureContactInfo) {
+      console.log('🔍 Auto-filling client info from deal data:', dealData);
+      
+      const newClientInfo = {
+        clientName: dealData.contactName || dealData.dealName || '',
+        clientEmail: dealData.contactEmail || '',
+        company: dealData.companyByContact || dealData.company || dealData.dealName.split(' ')[0] + ' Inc.'
+      };
+      
+      console.log('✅ New client info from deal data:', newClientInfo);
+      setClientInfo((prev) => ({
+        ...prev,
+        ...newClientInfo,
+        effectiveDate: prev.effectiveDate?.trim() || getDefaultDateOneMonthFromToday(),
+        quoteExpiryDate: prev.quoteExpiryDate?.trim() || getDefaultQuoteExpiryDate(),
+        paymentTerms: prev.paymentTerms || '100% Upfront'
+      }));
+    } else if (configureContactInfo) {
+      console.log('⏭️ Skipping deal data auto-fill - configureContactInfo has priority');
+    }
+  }, [dealData, hubspotState?.selectedContact, configureContactInfo]);
+
+  // REMOVED: useEffect that was causing infinite loop by calling onClientInfoChange on every render
+  // onClientInfoChange will be called only when user makes actual changes to client info
+
+  // REMOVED: Duplicate useEffect that was causing infinite loop
+
+  // Debug logging removed to prevent console spam
+
+  // Safety check - ensure we have required props
+  if (!calculation || !configuration) {
+    return (
+      <div className="max-w-4xl mx-auto p-8">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FileText className="w-8 h-8 text-gray-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Missing Configuration</h2>
+          <p className="text-gray-600">
+            Please ensure you have selected a pricing tier and configuration before generating a quote.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const handleSendToDealDesk = async () => {
+    // Discount validation removed - discounts now apply at any amount
+    setIsSendingToDealDesk(true);
+    
+    try {
+      // Create quote data for deal desk
+      const quoteData: Quote = {
+        id: `quote-${Date.now()}`,
+        clientName: clientInfo.clientName,
+        clientEmail: clientInfo.clientEmail,
+        company: clientInfo.company,
+        configuration: configuration,
+        selectedTier: safeCalculation.tier,
+        calculation: safeCalculation,
+        status: 'draft' as const,
+        createdAt: new Date(),
+        templateUsed: selectedTemplate ? {
+          id: selectedTemplate.id,
+          name: selectedTemplate.name,
+          isDefault: false
+        } : { id: 'default', name: 'Default Template', isDefault: true },
+        dealData: dealData
+      };
+      
+      console.log('📤 Sending quote to Deal Desk:', quoteData);
+      // Prepare email content
+      const emailSubject = `New Quote Request - ${clientInfo.company} - ${clientInfo.clientName}`;
+      const emailBody = `
+New Quote Request for Deal Desk Review
+
+CONTACT INFORMATION:
+- Contact Name: ${clientInfo.clientName}
+- Email: ${clientInfo.clientEmail}
+- Legal Entity Name: ${clientInfo.company}
+- Discount Applied: ${clientInfo.discount ?? 0}%
+
+PROJECT CONFIGURATION:
+- Number of Users: ${configuration?.numberOfUsers || 'N/A'}
+- Instance Type: ${configuration?.instanceType || 'N/A'}
+- Number of Instances: ${configuration?.numberOfInstances || 'N/A'}
+- Duration: ${configuration?.duration || 'N/A'} months
+- Migration Type: ${configuration?.migrationType || 'N/A'}
+- Data Size: ${configuration?.dataSizeGB || 'N/A'} GB
+
+PRICING BREAKDOWN (${safeCalculation.tier.name} Plan):
+- User Costs: ${formatCurrency(safeCalculation.userCost)}
+- Data Costs: ${formatCurrency(safeCalculation.dataCost)}
+- Migration Services: ${formatCurrency(safeCalculation.migrationCost)}
+- Instance Costs: ${formatCurrency(safeCalculation.instanceCost)}
+- Subtotal: ${formatCurrency(safeCalculation.totalCost)}
+${(clientInfo.discount ?? 0) > 0 ? `- Discount (${clientInfo.discount}%): -${formatCurrency(safeCalculation.totalCost * ((clientInfo.discount ?? 0) / 100))}` : ''}
+- Final Total: ${formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost)}
+
+DEAL INFORMATION:
+- Deal ID: ${dealData?.dealId || 'N/A'}
+- Deal Name: ${dealData?.dealName || 'N/A'}
+- Deal Amount: ${dealData?.amount || 'N/A'}
+- Deal Stage: ${dealData?.stage || 'N/A'}
+
+TEMPLATE USED:
+- Template: ${selectedTemplate?.name || 'Default Template'}
+- Template ID: ${selectedTemplate?.id || 'default'}
+
+Please review this quote and approve or provide feedback.
+
+Generated on: ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}
+Quote ID: ${quoteData.id}
+      `.trim();
+
+      // Send email directly through backend API
+      const dealDeskEmail = 'salesops@cloudfuze.com'; // Deal Desk email
+      
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: dealDeskEmail,
+          subject: emailSubject,
+          message: emailBody
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        
+        // Handle specific email configuration errors
+        if (response.status === 500 && errorData.message?.includes('Email configuration not set')) {
+          alert(`❌ Email Not Configured\n\nThe server needs email configuration to send emails.\n\nPlease contact your administrator to:\n1. Create a .env file with EMAIL_USER and EMAIL_PASS\n2. Set up Gmail App Password\n3. Restart the server\n\nAlternatively, you can use the manual email option.`);
+          
+          // Fallback to mailto link
+          const mailtoLink = `mailto:${dealDeskEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+      window.open(mailtoLink, '_blank');
+          alert('📧 Email client opened as fallback. Please send the email manually.');
+          return;
+        }
+        
+        throw new Error(errorData.message || `Server error ${response.status}`);
+      }
+      
+      const result = await response.json();
+      if (result?.success) {
+        alert(`✅ Quote sent to Deal Desk successfully!\n\n📧 Message ID: ${result.messageId}\n📧 Sent to: ${dealDeskEmail}\n\nThe Deal Desk team will review your quote and provide feedback.`);
+      } else {
+        throw new Error(result?.message || 'Unknown server response');
+      }
+      
+    } catch (error) {
+      console.error('Error sending to Deal Desk:', error);
+      alert('Error preparing email. Please try again or contact support.');
+    } finally {
+      setIsSendingToDealDesk(false);
+    }
+  };
+
+  // Send generated agreement via email (DOCX attachment)
+  const handleEmailAgreement = async () => {
+    try {
+      if (!selectedTemplate) {
+        alert('Please select a template first in the Template session.');
+        return;
+      }
+
+      setIsEmailingAgreement(true);
+
+      // Ensure we have an agreement generated
+      let agreementBlob: Blob | null = processedAgreement;
+
+      // Always attempt to fetch the latest template file from backend (cache-bust),
+      // so backend template edits (e.g. removing "Dedicated") show up immediately
+      // without re-selecting the template in the UI.
+      const fetchLatestTemplateFile = async (): Promise<File | null> => {
+        try {
+          if (!selectedTemplate?.id) return null;
+          // Combo-attached templates (id starts with 'combo-') live in /api/combinations, not /api/templates.
+          if (selectedTemplate.id.startsWith('combo-')) {
+            if (selectedTemplate.file) return selectedTemplate.file;
+            const comboId = selectedTemplate.id.slice('combo-'.length);
+            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
+            if (!comboRes.ok) {
+              console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
+              return null;
+            }
+            const comboBlob = await comboRes.blob();
+            return new File([comboBlob], selectedTemplate.fileName || 'agreement.docx', { type: comboBlob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+          }
+          const fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          if (!fr.ok) {
+            console.warn(`⚠️ Template fetch failed with status ${fr.status}: ${fr.statusText}`);
+            return null;
+          }
+
+          // Check if the response is actually a file (not JSON error)
+          const contentType = fr.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errorData = await fr.json();
+            console.warn('⚠️ Backend returned JSON instead of file:', errorData);
+            return null;
+          }
+          
+          const blob = await fr.blob();
+          
+          // Check for empty blob
+          if (blob.size === 0) {
+            console.warn('⚠️ Template file is empty, falling back to cached file');
+            return null;
+          }
+          
+          // Validate that the blob is actually a DOCX file (ZIP signature: PK)
+          const arrayBuffer = await blob.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          // Check for ZIP signature (0x50 0x4B = "PK")
+          if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
+            // Try to detect what we actually got
+            const textDecoder = new TextDecoder('utf-8');
+            const preview = textDecoder.decode(uint8Array.slice(0, Math.min(100, uint8Array.length)));
+            console.error('❌ Invalid file signature. File preview:', preview);
+            
+            if (preview.toLowerCase().includes('<html') || preview.toLowerCase().includes('<!doctype')) {
+              console.error('❌ Backend returned HTML instead of DOCX file');
+            } else if (preview.includes('{') && preview.includes('"error"')) {
+              console.error('❌ Backend returned JSON error:', preview);
+            }
+            
+            console.warn('⚠️ Fetched file is not a valid DOCX file, falling back to cached file');
+            return null;
+          }
+          
+          return new File(
+            [blob],
+            selectedTemplate.fileName || selectedTemplate.file?.name || 'template.docx',
+            {
+              type:
+                selectedTemplate.fileType ||
+                selectedTemplate.file?.type ||
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            }
+          );
+        } catch (e) {
+          console.warn('⚠️ Unable to fetch latest template file, falling back to cached file:', e);
+          return null;
+        }
+      };
+
+      const latestTemplateFile = await fetchLatestTemplateFile();
+      const templateFileForEmail = latestTemplateFile || selectedTemplate?.file || null;
+
+      // Validate template file if we're going to use it
+      if (templateFileForEmail) {
+        console.log('📄 Using template file for email:', {
+          name: templateFileForEmail.name,
+          size: templateFileForEmail.size,
+          type: templateFileForEmail.type,
+          source: latestTemplateFile ? 'backend' : 'cached'
+        });
+
+        if (templateFileForEmail.size === 0) {
+          throw new Error('Template file is empty. Please re-select the template or contact support.');
+        }
+      }
+
+      if (!agreementBlob && templateFileForEmail && templateFileForEmail.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
+
+        const companyName = (clientInfo.company || configureContactInfo?.company || dealData?.companyByContact || dealData?.company || 'Your Company');
+        const finalCompanyName = (!companyName || companyName === 'undefined' || companyName === 'null' || companyName === '' || companyName === 'Demo Company Inc.') ? 'Your Company' : companyName;
+        // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+        const userCount = configuration?.servicePlan === 'Manage'
+          ? (configuration?.manageUsers || 1)
+          : (configuration?.numberOfUsers || 1);
+        const userCost = calculation?.userCost ?? safeCalculation.userCost;
+        const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+        const totalCost = getEffectiveTotalCost(configuration, calculation || safeCalculation);
+        const duration = getEffectiveDurationMonths(configuration) || 1;
+        const migrationType = configuration?.migrationType || 'Content';
+        const clientName = clientInfo.clientName || dealData?.contactName || 'Contact Name';
+        const clientEmail = clientInfo.clientEmail || dealData?.contactEmail || 'contact@email.com';
+
+        // Calculate comprehensive pricing breakdown
+        const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
+        const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
+        const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
+        const instanceType = configuration?.instanceType || 'Standard';
+        const numberOfInstances = configuration?.numberOfInstances || 1;
+
+        // Data size (GB)
+        // - Email agreements do not have a GB/data-size concept -> 0 / blank tokens
+        // - Multi combination should use the CONTENT side's data size (messaging has no data size)
+        const isEmailAgreement =
+          migrationType === 'Email' ||
+          (String(configuration?.combination || '').toLowerCase().includes('gmail')) ||
+          (String(configuration?.combination || '').toLowerCase().includes('outlook'));
+
+        const dataSizeGB = (() => {
+          // For email agreements, use the actual dataSizeGB from configuration
+          if (isEmailAgreement) {
+            return Number(configuration?.dataSizeGB ?? 0);
+          }
+          if (configuration?.migrationType === 'Multi combination') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfgAny: any = configuration as any;
+            const fromContentConfig = Number(cfgAny?.contentConfig?.dataSizeGB ?? 0);
+            const fromContentConfigs = Number(cfgAny?.contentConfigs?.[0]?.dataSizeGB ?? 0);
+            return fromContentConfig > 0 ? fromContentConfig : fromContentConfigs;
+          }
+          return Number(configuration?.dataSizeGB ?? 0);
+        })();
+        
+        // Debug: Log data size for docx generation path
+        console.log('🔍 AGREEMENT DOCX PATH - DATA SIZE DEBUG:');
+        console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
+        console.log('  migrationType:', migrationType);
+        console.log('  isEmailAgreement:', isEmailAgreement);
+        console.log('  Final dataSizeGB value:', dataSizeGB);
+        console.log('  dataCost value:', dataCost);
+        
+        // Calculate discount for this function scope (use sessionStorage as source of truth)
+        const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
+        // Discount applies at any amount - no minimum threshold and no maximum cap
+        const localHasValidDiscount = localDiscountPercent > 0;
+        const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
+        const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
+        const localShouldApplyDiscount = localHasValidDiscount;
+        
+        // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+        const combinationNameForPreview = (configuration?.combination || '').toLowerCase();
+        const isBundledPricing299ForPreview = combinationNameForPreview.includes('bundled pricing 2.99') || combinationNameForPreview.includes('bundled pricing 2.99$');
+        const perUserPriceForPreview = isBundledPricing299ForPreview ? 2.99 : 3.99;
+        
+        const templateData: Record<string, string> = {
+          // Core company and client information
+          '{{Company Name}}': finalCompanyName,
+          '{{ Company Name }}': finalCompanyName,
+          '{{Company_Name}}': finalCompanyName,
+          '{{ Company_Name }}': finalCompanyName,
+          '{{company name}}': finalCompanyName,
+          '{{clientName}}': clientName,
+          '{{client_name}}': clientName,
+          '{{email}}': clientEmail,
+          '{{client_email}}': clientEmail,
+          
+          // Project configuration
+          '{{users_count}}': (userCount || 1).toString(),
+          '{{userscount}}': (userCount || 1).toString(),
+          '{{users}}': (userCount || 1).toString(),
+          '{{number_of_users}}': (userCount || 1).toString(),
+          // User label: "Mailboxes" for email migrations, "Users" for others
+          '{{user_label}}': isEmailAgreement ? 'Mailboxes' : 'Users',
+          '{{instance_type}}': instanceType,
+          '{{instanceType}}': instanceType,
+          // Instance type monthly cost (per server per month)
+          // Multi combination requirement: sum messaging + content base monthly rates.
+          '{{instance_type_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgType = configuration.messagingConfig?.instanceType || 'Small';
+              const contentType = configuration.contentConfig?.instanceType || 'Small';
+              return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+            }
+            return formatCurrency(getInstanceTypeCost(instanceType));
+          })(),
+          '{{number_of_instances}}': numberOfInstances.toString(),
+          '{{numberOfInstances}}': numberOfInstances.toString(),
+          '{{instances}}': numberOfInstances.toString(),
+          '{{Duration of months}}': (duration || 1).toString(),
+          '{{Duration_of_months}}': (duration || 1).toString(),
+          '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
+          '{{duration_months}}': (duration || 1).toString(),
+          '{{duration}}': (duration || 1).toString(),
+          // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
+          '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
+          '{{migration type}}': migrationType,
+          '{{migration_type}}': migrationType,
+          '{{migrationType}}': migrationType,
+          // Data size tokens (include for Email migration)
+          '{{data_size}}': dataSizeGB.toString(),
+          '{{dataSizeGB}}': dataSizeGB.toString(),
+          '{{data_size_gb}}': dataSizeGB.toString(),
+          
+          // Pricing breakdown - Row1=(user+data), Row2=migration, Row3=instance so rows sum to total
+          '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)), // User Cost + Data Cost combined
+          '{{user_cost}}': formatCurrency(userCost || 0),
+          '{{userCost}}': formatCurrency(userCost || 0),
+          '{{price_data}}': formatCurrency((userCost || 0) + (dataCost || 0)),
+          '{{data_cost}}': formatCurrency(dataCost),
+          '{{dataCost}}': formatCurrency(dataCost),
+          '{{manag_data_size}}': (configuration?.manageDataGB ?? 0).toString(),
+          '{{manag_data_cost}}': formatCurrency(dataCost),
+          '{{price_migration}}': formatCurrency(migrationCost || 0),
+          '{{migration_cost}}': formatCurrency(migrationCost || 0),
+          '{{migration_price}}': formatCurrency(migrationCost || 0),
+          '{{migrationCost}}': formatCurrency(migrationCost || 0),
+          // CloudFuze Manage user total (userCount * 12 * perUserPrice)
+          // Uses perUserPriceForPreview calculated above (2.99 for "bundled pricing 2.99$", 3.99 for others)
+          '{{cfm_user_total}}': formatCurrency((userCount || 1) * 12 * perUserPriceForPreview),
+          '{{cloudfuze_manage_user_total}}': formatCurrency((userCount || 1) * 12 * perUserPriceForPreview),
+          '{{cloudfuzeManageUserTotal}}': formatCurrency((userCount || 1) * 12 * perUserPriceForPreview),
+          // 10% discount amount per row (Bundled column shows discount, total = total - sum of these) — only for Bundle plans
+          '{{cfm_user_total_b}}': '',
+          '{{cloudfuze_manage_user_total_bundled}}': '',
+          '{{cfm_user_bundled}}': '',
+          '{{migrationBundled}}': '',
+          '{{price_migration_bundled}}': '',
+          '{{migration_cost_bundled}}': '',
+          '{{migration_price_bundled}}': '',
+          '{{migrationCostBundled}}': '',
+          '{{instance_cost}}': formatCurrency(instanceCost),
+          '{{instanceCost}}': formatCurrency(instanceCost),
+          '{{instance_costs}}': formatCurrency(instanceCost),
+          '{{instance_cost_bundled}}': '',
+          '{{instanceCostBundled}}': '',
+          
+          // Per-user cost calculations
+          // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
+          '{{per_user_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              // Try to calculate from breakdowns first (more accurate)
+              let maxPerUser = 0;
+              
+              // Check messaging breakdowns
+              const messagingBreakdowns = calculation?.messagingCombinationBreakdowns ?? safeCalculation.messagingCombinationBreakdowns ?? [];
+              for (const breakdown of messagingBreakdowns) {
+                const users = breakdown.numberOfUsers || 0;
+                const userCost = breakdown.userCost || 0;
+                if (users > 0 && userCost > 0) {
+                  const perUser = userCost / users;
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+              
+              // Check content breakdowns
+              const contentBreakdowns = calculation?.contentCombinationBreakdowns ?? safeCalculation.contentCombinationBreakdowns ?? [];
+              for (const breakdown of contentBreakdowns) {
+                const users = breakdown.numberOfUsers || 0;
+                const userCost = breakdown.userCost || 0;
+                if (users > 0 && userCost > 0) {
+                  const perUser = userCost / users;
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+              
+              // If we found a per-user cost from breakdowns, use it
+              if (maxPerUser > 0) {
+                return formatCurrency(maxPerUser);
+              }
+              
+              // Fallback: calculate from messaging/content calculation userCost
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              const calculatedMax = Math.max(msgPerUser, contentPerUser);
+              
+              // If still 0, try calculating from exhibit prices (will be populated later)
+              if (calculatedMax > 0) {
+                return formatCurrency(calculatedMax);
+              }
+              
+              // Final fallback: use tier's per-user cost if available
+              const tier = calculation?.tier ?? safeCalculation.tier;
+              if (tier?.perUserCost && tier.perUserCost > 0) {
+                return formatCurrency(tier.perUserCost);
+              }
+              
+              return formatCurrency(0);
+            }
+            // For single migrations, calculate from userCost if available
+            if (userCost && userCost > 0 && userCount > 0) {
+              return formatCurrency(userCost / userCount);
+            }
+            // For single migrations, the cost is typically in the exhibit price (which equals totalCost)
+            // Calculate per-user cost from totalCost excluding migration and instance costs
+            const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
+            const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+            const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
+            
+            // Try userCost + dataCost first (this is the exhibit price for single migrations)
+            const combinedUserDataCost = (userCost || 0) + (dataCost || 0);
+            if (combinedUserDataCost > 0 && userCount > 0) {
+              return formatCurrency(combinedUserDataCost / userCount);
+            }
+            
+            // Fallback: calculate from totalCost excluding migration and instance
+            // This gives us the exhibit price (userCost + dataCost) for single migrations
+            if (totalCost && totalCost > 0 && userCount > 0) {
+              const userDataOnlyCost = totalCost - (migrationCost || 0) - (instanceCost || 0);
+              if (userDataOnlyCost > 0) {
+                return formatCurrency(userDataOnlyCost / userCount);
+              }
+            }
+            
+            // If all else fails, return 0
+            return formatCurrency(0);
+          })(),
+          '{{per_user_monthly_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
+          '{{user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+            }
+            return formatCurrency((userCost || 0) / (userCount || 1));
+          })(),
+          '{{monthly_user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
+          
+          // Per-data cost calculations - cost per GB
+          '{{per_data_cost}}': (() => {
+            // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
+            const isMulti = configuration?.migrationType === 'Multi combination';
+            const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
+            const safeDataCost = isMulti
+              ? (calculation?.contentCalculation?.dataCost ?? safeCalculation.contentCalculation?.dataCost ?? 0)
+              : (dataCost ?? 0);
+            
+            // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
+            // use the tier's perGBCost directly instead of calculating from division
+            const tierPerGbRaw = isMulti
+              ? (calculation?.tier?.perGBCost ??
+                  safeCalculation.tier?.perGBCost ??
+                  0)
+              : (calculation?.tier?.perGBCost ?? safeCalculation.tier?.perGBCost ?? 0);
+
+            const tierNameForFallback = (
+              calculation?.tier?.name ??
+              safeCalculation.tier?.name ??
+              ''
+            ).toString().toLowerCase();
+
+            // Fallback defaults if tier.perGBCost is 0/undefined
+            const fallbackPerGb =
+              tierNameForFallback === 'basic' ? 1.0 :
+              tierNameForFallback === 'standard' ? 1.5 :
+              tierNameForFallback === 'advanced' ? 1.8 :
+              1.5; // Default to Standard rate if tier unknown
+
+            const tierPerGb = (tierPerGbRaw && tierPerGbRaw > 0) ? tierPerGbRaw : fallbackPerGb;
+
+            // Use tier's per-GB cost when dataSize is 0 (common in Email/Overage)
+            const perDataCost = safeDataSize > 0 ? (safeDataCost / safeDataSize) : tierPerGb;
+            
+            console.log('🔍 PER_DATA_COST CALCULATION (handleEmailAgreement):', {
+              migType: configuration?.migrationType,
+              dataSizeGB: safeDataSize,
+              dataCost: safeDataCost,
+              'calculation.tier': calculation?.tier,
+              'safeCalculation.tier': safeCalculation.tier,
+              tierPerGbRaw,
+              tierNameForFallback,
+              fallbackPerGb,
+              tierPerGb,
+              perDataCost,
+              formatted: formatCurrency(perDataCost)
+            });
+            return formatCurrency(perDataCost);
+          })(),
+          
+          // Total pricing
+          '{{total price}}': formatCurrency(totalCost || 0),
+          '{{total_price}}': formatCurrency(totalCost || 0),
+          '{{totalPrice}}': formatCurrency(totalCost || 0),
+          '{{prices}}': formatCurrency(totalCost || 0),
+          '{{subtotal}}': formatCurrency(totalCost || 0),
+          '{{sub_total}}': formatCurrency(totalCost || 0),
+          
+          // Discount information - hide discount tokens when discount is 0
+          '{{discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{Discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_percentage}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{Discount Amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discountAmount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount_text}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `Discount (${localDiscountPercent}%)` : '',
+          '{{discount_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          // Some templates may have a static label cell; clear it when no discount
+          '{{discount_label}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'Discount' : '',
+          // Special tokens for conditional display in templates
+          '{{show_discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'true' : '',
+          '{{hide_discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? '' : 'true',
+          // Additional conditional tokens
+          '{{if_discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'show' : 'hide',
+          '{{discount_row}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `<tr><td>Discount (${localDiscountPercent}%)</td><td>-${formatCurrency(localDiscountAmount)}</td></tr>` : '',
+          '{{total_after_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{Total After Discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{total_price_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          // Quote validity line tokens (long ordinal format: "20th of May, 2026")
+          '{{quote_expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDateLong}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quote_validity_line}}': clientInfo.quoteExpiryDate ? `This quote is valid till ${formatDateLongOrdinal(clientInfo.quoteExpiryDate)}` : `This quote is valid till ${formatDateLongOrdinal(getDefaultQuoteExpiryDate())}`,
+          '{{final_total}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{finalTotal}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          
+          // Plan and tier information
+          '{{tier_name}}': tierName,
+          '{{tierName}}': tierName,
+          '{{plan_name}}': tierName,
+          '{{planName}}': tierName,
+          '{{plan}}': tierName,
+          
+          // Date information
+          '{{date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{current_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{currentDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Effective Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+
+          // Service term tokens (Manage Plan SaaS Agreement)
+          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{service_end_date}}': (() => {
+            const start = configuration?.startDate;
+            if (!start) return 'N/A';
+            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
+            if (!months) return 'N/A';
+            try {
+              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+              if (isNaN(d.getTime())) return 'N/A';
+              d.setMonth(d.getMonth() + months);
+              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+            } catch { return 'N/A'; }
+          })(),
+          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
+            ? '3-Month Free Trial'
+            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+
+          // Payment terms information (overage agreements)
+          '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{paymentTerms}}': clientInfo.paymentTerms || '100% Upfront',
+          
+          // Deal information (if available)
+          '{{deal_id}}': dealData?.dealId || 'N/A',
+          '{{dealId}}': dealData?.dealId || 'N/A',
+          '{{deal_name}}': dealData?.dealName || 'N/A',
+          '{{dealName}}': dealData?.dealName || 'N/A',
+          '{{deal_amount}}': dealData?.amount || 'N/A',
+          '{{dealAmount}}': dealData?.amount || 'N/A',
+          '{{deal_stage}}': dealData?.stage || 'N/A',
+          '{{dealStage}}': dealData?.stage || 'N/A',
+          
+          // Messages from configuration
+          '{{messages}}': (configuration?.messages || 0).toString(),
+          '{{message}}': (configuration?.messages || 0).toString(),
+          '{{message_count}}': (configuration?.messages || 0).toString(),
+          '{{notes}}': (configuration?.messages || 0).toString(),
+          '{{additional_notes}}': (configuration?.messages || 0).toString(),
+          '{{additionalNotes}}': (configuration?.messages || 0).toString(),
+          '{{custom_message}}': (configuration?.messages || 0).toString(),
+          '{{customMessage}}': (configuration?.messages || 0).toString(),
+          '{{number_of_messages}}': (configuration?.messages || 0).toString(),
+          '{{numberOfMessages}}': (configuration?.messages || 0).toString(),
+          '{{messages_count}}': (configuration?.messages || 0).toString(),
+          
+          // Additional metadata
+          '{{template_name}}': selectedTemplate?.name || 'Default Template',
+          '{{templateName}}': selectedTemplate?.name || 'Default Template',
+          '{{agreement_id}}': `AGR-${Date.now().toString().slice(-8)}`,
+          '{{agreementId}}': `AGR-${Date.now().toString().slice(-8)}`,
+          '{{quote_id}}': `QTE-${Date.now().toString().slice(-8)}`,
+          '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
+        };
+        
+        // Add user description tokens for email agreements
+        // For email migration, use "Mailboxes" instead of "Users"
+        const isEmailForEmail = migrationType === 'Email' || 
+          (configuration?.combination || '').toLowerCase().includes('gmail') ||
+          (configuration?.combination || '').toLowerCase().includes('outlook');
+        const emailUserDescription = isEmailForEmail 
+          ? `Up to ${userCount || 1} Mailboxes`
+          : `Up to ${userCount || 1} Users`;
+        templateData['{{user_description}}'] = emailUserDescription;
+        templateData['{{userDescription}}'] = emailUserDescription;
+        templateData['{{users_description}}'] = emailUserDescription;
+        
+        // Add data size description tokens - include GBs for email agreements if dataSizeGB > 0
+        const emailDataSizeGB = isEmailForEmail ? Number(configuration?.dataSizeGB ?? 0) : 0;
+        const emailDataDescription = emailDataSizeGB > 0 ? `${emailDataSizeGB} GBs` : '';
+        templateData['{{data_description}}'] = emailDataDescription;
+        templateData['{{dataDescription}}'] = emailDataDescription;
+        
+        // Add combined description token for email agreements - show "Up to X Mailboxes | Y GBs" format
+        const emailCombinedDescription = emailDataDescription 
+          ? `${emailUserDescription} | ${emailDataDescription}`
+          : emailUserDescription;
+        templateData['{{user_data_description}}'] = emailCombinedDescription;
+        templateData['{{userDataDescription}}'] = emailCombinedDescription;
+        templateData['{{description}}'] = emailCombinedDescription;
+
+        // Custom line items: add their total on top of the (already discounted) total tokens.
+        if (customLineItems.length > 0 && customLineItemsTotal > 0) {
+          const parseCurrencyToNumber = (s: string | undefined): number => {
+            if (!s) return 0;
+            const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
+            return Number.isFinite(n) ? n : 0;
+          };
+          // Apply discount to custom line items at any amount (no minimum required)
+          let discountedCustomTotal = customLineItemsTotal;
+          let customLineItemsDiscountAmount = 0;
+          if (customLineItemsDiscount > 0) {
+            const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
+            discountedCustomTotal = customLineItemsTotal - discountAmount;
+            customLineItemsDiscountAmount = discountAmount;
+          }
+          [
+            '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
+            '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
+            '{{final_total}}', '{{finalTotal}}',
+          ].forEach((tok) => {
+            if (tok in templateData) {
+              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + discountedCustomTotal);
+            }
+          });
+
+          // Update discount tokens to include BOTH main discount AND custom line items discount
+          if (customLineItemsDiscountAmount > 0) {
+            const existingDiscountStr = templateData['{{discount_amount}}'] || '0';
+            const existingDiscount = Math.abs(parseCurrencyToNumber(existingDiscountStr));
+            const totalDiscountAmount = existingDiscount + customLineItemsDiscountAmount;
+            templateData['{{discount_amount}}'] = totalDiscountAmount > 0 ? `-${formatCurrency(totalDiscountAmount)}` : '';
+            templateData['{{Discount Amount}}'] = totalDiscountAmount > 0 ? `-${formatCurrency(totalDiscountAmount)}` : '';
+            templateData['{{discountAmount}}'] = totalDiscountAmount > 0 ? `-${formatCurrency(totalDiscountAmount)}` : '';
+            // Update discount line with combined discount
+            const combinedDiscountPercent = ((existingDiscount + customLineItemsDiscountAmount) / parseCurrencyToNumber(templateData['{{total price}}'] || '1')) * 100;
+            templateData['{{discount_line}}'] = totalDiscountAmount > 0 ? `Discount - ${formatCurrency(totalDiscountAmount)}` : '';
+            templateData['{{discount_row}}'] = totalDiscountAmount > 0 ? `<tr><td>Discount</td><td>-${formatCurrency(totalDiscountAmount)}</td></tr>` : '';
+          }
+        }
+
+        // Snapshot the full token map so we can re-render this agreement later with
+        // different dates (EditDatesModal uses this).
+        setLastTemplateDataSnapshot({ ...templateData });
+
+        const result = await DocxTemplateProcessor.processDocxTemplate(
+          templateFileForEmail as File,
+          templateData,
+          {
+            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
+          }
+        );
+        if (result.success && result.processedDocx) {
+          agreementBlob = result.processedDocx;
+          
+          // Merge selected exhibits ONLY for Multi combination migration type
+          const uniqueSelectedExhibitsForMerge = Array.from(
+            new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean))
+          );
+          if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
+            console.log('📎 Fetching and merging selected exhibits for Multi combination email...', {
+              raw: selectedExhibits,
+              unique: uniqueSelectedExhibitsForMerge
+            });
+            
+            try {
+              // Fetch all exhibit files
+              const exhibitBlobs: Blob[] = [];
+              // Fetch exhibit metadata once (used for: de-dupe, sort order, and merger grouping)
+              const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
+              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+              let allExhibits: any[] = [];
+              if (metaResp.ok) {
+                const metaData = await metaResp.json();
+                if (metaData.success && metaData.exhibits) {
+                  allExhibits = metaData.exhibits;
+                }
+              }
+
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              // Ensure we always merge BOTH Included + Not Included exhibit variants for a selected migration.
+              // Users often select a "folder" (migration) and expect both to appear in the agreement.
+              const getPlanLowerFromExhibit = (ex: any): string => {
+                const pt = (ex?.planType || '').toString().toLowerCase();
+                if (pt) return pt;
+                const name = (ex?.name || '').toString().toLowerCase();
+                if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'basic';
+                if (name.includes('standard') && !name.includes('advanced')) return 'standard';
+                if (name.includes('advanced')) return 'advanced';
+                return '';
+              };
+
+              const getNormalizedBaseCombination = (ex: any): string => {
+                // Pick the LONGEST non-"all" combination key — handles exhibits tagged
+                // with both a short form and a more specific form (e.g. dropbox-to-google
+                // AND dropbox-to-google-sharedrive). See getBaseCombination above for the
+                // same fix.
+                const candidates = (ex?.combinations || []).filter((c: any) => c && c !== 'all');
+                if (candidates.length === 0) return '';
+                const primary = candidates.reduce((longest: string, c: string) =>
+                  (String(c).length > longest.length ? String(c) : longest), String(candidates[0]));
+                let base = primary.toLowerCase();
+                // Strip common suffixes (may be missing on some legacy uploads)
+                base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+                base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+                base = base.replace(/-+$/, '').trim();
+
+                // Normalize separators + collapse duplicated halves
+                base = base
+                  .replace(/\//g, '-')
+                  .replace(/[^a-z0-9-]+/g, '-')
+                  .replace(/-+/g, '-')
+                  .replace(/^-+|-+$/g, '');
+
+                const parts = base.split('-').filter(Boolean);
+                if (parts.length > 0 && parts.length % 2 === 0) {
+                  const half = parts.length / 2;
+                  const first = parts.slice(0, half).join('-');
+                  const second = parts.slice(half).join('-');
+                  if (first === second) base = first;
+                }
+
+                // Mirror ExhibitSelector.extractBaseCombination alias rules so the merge
+                // expansion treats UI-grouped exhibits as one combination.
+                if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                  base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  base === 'box-to-google-mydrive-shareddrive' ||
+                  base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  base === 'box-to-google-sharedrive' ||
+                  base.startsWith('box-to-google-sharedrive-') ||
+                  base === 'box-to-google-mydrive-sharedrive' ||
+                  base.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  base = 'box-to-google-mydrive';
+                }
+                return base;
+              };
+
+              // Expand merge list to include sibling Included/Not Included exhibits for the same base combo + plan.
+              const expandedForMerge = new Set<string>();
+              for (const id of uniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  expandedForMerge.add(id);
+                  continue;
+                }
+                const category = (ex?.category || 'content').toString().toLowerCase();
+                const baseCombo = getNormalizedBaseCombination(ex);
+                const planLower = getPlanLowerFromExhibit(ex);
+                expandedForMerge.add(id);
+
+                if (!baseCombo || !planLower) continue;
+
+                for (const other of allExhibits) {
+                  if (!other?._id) continue;
+                  const otherCat = (other?.category || 'content').toString().toLowerCase();
+                  if (otherCat !== category) continue;
+                  if (getPlanLowerFromExhibit(other) !== planLower) continue;
+                  if (getNormalizedBaseCombination(other) !== baseCombo) continue;
+                  // Only consider the intended includeType variants
+                  const it = (other?.includeType || '').toString();
+                  if (it !== 'included' && it !== 'notincluded') continue;
+                  expandedForMerge.add(other._id.toString());
+                }
+              }
+
+              const expandedUniqueSelectedExhibitsForMerge = Array.from(expandedForMerge).filter(Boolean);
+              if (expandedUniqueSelectedExhibitsForMerge.length !== uniqueSelectedExhibitsForMerge.length) {
+                console.log('📎 Expanded exhibit merge list (include both Included/Not Included variants):', {
+                  before: uniqueSelectedExhibitsForMerge.length,
+                  after: expandedUniqueSelectedExhibitsForMerge.length
+                });
+              }
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                if (ex?.includeType === 'notincluded') return true;
+                if (ex?.includeType === 'included') return false;
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                // Remove "not included" variants so Included/Not Included can share the same base
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+online\b/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by a stable "migration key" so we don't merge the same exhibit content twice
+              // when the UI selection contains multiple IDs representing the same migration.
+              // IMPORTANT: Deduplicate the EXPANDED list, not the original selection
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of expandedUniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const desc = formatExhibitDescription(ex, configuration);
+                const displayName = (desc.split('\n')[0] || ex.name || '').trim();
+                const baseName = normalizeExhibitBaseName(displayName || ex.name || '');
+                const category = (ex?.category || 'content').toLowerCase();
+                const includedness = isNotIncludedExhibit(ex) ? 'not' : 'in';
+                const key = `${category}|${baseName.toLowerCase()}|${includedness}`;
+                if (seenKeys.has(key)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same migration key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    key
+                  });
+                  continue;
+                }
+                seenKeys.add(key);
+                dedupedIds.push(id);
+              }
+
+              // Sort exhibits: Included first, then Not Included; within each group: category and displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sortIds = (ids: string[]) => {
+                const included: Array<{ id: string; exhibit: any }> = [];
+                const notIncluded: Array<{ id: string; exhibit: any }> = [];
+                for (const id of ids) {
+                  const ex = lookup.get(id);
+                  if (!ex) continue;
+                  (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+                }
+                const sorter = (a: any, b: any) => {
+                  const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                  if (catDiff !== 0) return catDiff;
+                  return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+                };
+                included.sort(sorter);
+                notIncluded.sort(sorter);
+                return [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+              };
+
+              const sortedExhibits = sortIds(dedupedIds);
+
+              // Detect if the same ID appears multiple times
+              const sortedExhibitsSet = new Set(sortedExhibits);
+              if (sortedExhibitsSet.size !== sortedExhibits.length) {
+                const duplicateIds = sortedExhibits.filter((id, idx) => sortedExhibits.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: Duplicate exhibit IDs in sortedExhibits:', {
+                  duplicates: [...new Set(duplicateIds)],
+                  sortedExhibits,
+                  count: sortedExhibits.length,
+                  unique: sortedExhibitsSet.size
+                });
+              }
+
+              // Create detailed diagnostic report
+              const diagnosticReport = {
+                timestamp: new Date().toISOString(),
+                selectedExhibits: selectedExhibits,
+                selectedExhibitsCount: selectedExhibits?.length || 0,
+                uniqueSelectedCount: uniqueSelectedExhibitsForMerge.length,
+                expandedCount: expandedUniqueSelectedExhibitsForMerge.length,
+                dedupCount: dedupedIds.length,
+                sortedCount: sortedExhibits.length,
+                sortedIds: sortedExhibits,
+                sortedNames: sortedExhibits.map((id) => {
+                  const ex = allExhibits.find((e: any) => e?._id?.toString?.() === id);
+                  return ex ? `${ex.name} (${ex.includeType || 'generic'})` : `Unknown ID: ${id}`;
+                }),
+                exhibitDetails: sortedExhibits.map((id) => {
+                  const ex = allExhibits.find((e: any) => e?._id?.toString?.() === id);
+                  return {
+                    id,
+                    name: ex?.name || 'NOT FOUND',
+                    category: ex?.category || 'unknown',
+                    includeType: ex?.includeType || 'generic',
+                    planType: ex?.planType || 'generic',
+                    combinations: ex?.combinations || []
+                  };
+                })
+              };
+
+              console.log('📋 DIAGNOSTIC REPORT - Sorted exhibits for merge:', diagnosticReport);
+              console.log('📋 Sorted exhibits for merge:', {
+                count: sortedExhibits.length,
+                ids: sortedExhibits,
+                dedupCount: dedupedIds.length,
+                expandedCount: expandedUniqueSelectedExhibitsForMerge.length,
+                uniqueSelectedCount: uniqueSelectedExhibitsForMerge.length
+              });
+
+              const fetchedExhibitIds = new Set<string>();
+              for (const exhibitId of sortedExhibits) {
+                if (fetchedExhibitIds.has(exhibitId)) {
+                  console.error(`❌ CRITICAL: Exhibit ${exhibitId} is being fetched twice! This will cause duplicates.`, {
+                    exhibitName: allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId)?.name
+                  });
+                  continue; // Skip the second occurrence
+                }
+                fetchedExhibitIds.add(exhibitId);
+
+                console.log(`📎 Fetching exhibit: ${exhibitId}`);
+                // Bypass HTTP cache so admin-side exhibit edits show up on the next email send.
+                const cacheBuster = `?t=${Date.now()}`;
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store' });
+
+                if (response.ok) {
+                  const blob = await response.blob();
+                  exhibitBlobs.push(blob);
+
+                  // Get exhibit metadata (includeType from upload selection; used by merger)
+                  const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
+                  if (exhibit) {
+                    exhibitMetadata.push({
+                      name: exhibit.name || '',
+                      category: exhibit.category || '',
+                      includeType: (exhibit.includeType === 'notincluded' || exhibit.includeType === 'included') ? exhibit.includeType : undefined
+                    });
+                    console.log(`   ✅ Exhibit meta: "${exhibit.name}" (${exhibit.includeType || 'undefined'})`);
+                  }
+
+                  console.log(`✅ Fetched exhibit ${exhibitId} (${blob.size} bytes)`);
+                } else {
+                  console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
+                }
+              }
+
+              console.log('📊 Final exhibitBlobs & metadata before merge:', {
+                blobsCount: exhibitBlobs.length,
+                metadataCount: exhibitMetadata.length,
+                metadata: exhibitMetadata.map(m => ({ name: m.name, includeType: m.includeType }))
+              });
+
+              if (exhibitBlobs.length > 0) {
+                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into email document...`);
+                const { mergeDocxFiles } = await import('../utils/docxMerger');
+
+                agreementBlob = await mergeDocxFiles(agreementBlob, exhibitBlobs, exhibitMetadata);
+
+                console.log('✅ Exhibits merged successfully for email!', {
+                  totalExhibits: exhibitBlobs.length,
+                  finalSize: agreementBlob.size
+                });
+              }
+            } catch (mergeError) {
+              console.error('❌ Error merging exhibits for email:', mergeError);
+              // Continue with main document without exhibits
+            }
+          }
+          
+          setProcessedAgreement(agreementBlob);
+        } else {
+          alert('Failed to generate the agreement. Please try again.');
+          setIsEmailingAgreement(false);
+          return;
+        }
+      }
+
+      if (!agreementBlob) {
+        alert('Agreement not generated yet. Click Preview Agreement first.');
+        setIsEmailingAgreement(false);
+        return;
+      }
+
+      // Send directly to CloudFuze sales operations
+      const to = 'anushreddydasari@gmail.com';
+
+      const emailCompanyName = clientInfo.company || dealData?.companyByContact || dealData?.company || 'Client';
+      const emailClientName = clientInfo.clientName || dealData?.contactName || 'Valued Client';
+      
+      const subject = `CloudFuze Service Agreement - ${emailCompanyName} - ${new Date().toLocaleDateString()}`;
+      
+      // Calculate all pricing components
+      const userCost = calculation?.userCost ?? safeCalculation.userCost;
+      const dataCost = calculation?.dataCost ?? safeCalculation.dataCost;
+      const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+      const instanceCost = calculation?.instanceCost ?? safeCalculation.instanceCost;
+      const subtotal = calculation?.totalCost ?? safeCalculation.totalCost;
+      const discountAmount = (clientInfo.discount ?? 0) > 0 ? (subtotal * ((clientInfo.discount ?? 0) / 100)) : 0;
+      const finalTotal = shouldApplyDiscount ? finalTotalAfterDiscount : subtotal;
+      const tierName = calculation?.tier?.name ?? safeCalculation.tier.name;
+      
+      const message = `Dear ${emailClientName},
+
+Thank you for choosing CloudFuze for your data migration needs. Please find your comprehensive service agreement attached for review.
+
+CONTACT INFORMATION:
+- Contact Name: ${emailClientName}
+- Email: ${clientInfo.clientEmail || dealData?.contactEmail || 'N/A'}
+- Legal Entity Name: ${emailCompanyName}
+- Discount Applied: ${clientInfo.discount || 0}%
+
+PROJECT CONFIGURATION:
+- Number of Users: ${configuration?.numberOfUsers || 'N/A'}
+- Instance Type: ${configuration?.instanceType || 'N/A'}
+- Number of Instances: ${configuration?.numberOfInstances || 'N/A'}
+- Duration: ${configuration?.duration || 'N/A'} months
+- Migration Type: ${configuration?.migrationType || 'N/A'}
+- Data Size: ${configuration?.dataSizeGB || 'N/A'} GB
+
+PRICING BREAKDOWN (${tierName} Plan):
+- User Costs: ${formatCurrency(userCost)}
+- Data Costs: ${formatCurrency(dataCost)}
+- Migration Services: ${formatCurrency(migrationCost)}
+- Instance Costs: ${formatCurrency(instanceCost)}
+- Subtotal: ${formatCurrency(subtotal)}
+${discountAmount > 0 ? `- Discount (${clientInfo.discount}%): -${formatCurrency(discountAmount)}` : ''}
+- Final Total: ${formatCurrency(finalTotal)}
+
+${dealData ? `DEAL INFORMATION:
+- Deal ID: ${dealData.dealId || 'N/A'}
+- Deal Name: ${dealData.dealName || 'N/A'}
+- Deal Amount: ${dealData.amount || 'N/A'}
+- Deal Stage: ${dealData.stage || 'N/A'}
+
+` : ''}NEXT STEPS:
+1. Review the attached service agreement carefully
+2. Contact us with any questions or concerns
+3. Sign and return the agreement to proceed
+4. Our team will begin migration setup upon receipt
+
+SUPPORT CONTACT:
+For questions about this agreement or your migration project, please contact:
+- Email: support@cloudfuze.com
+- Phone: +1 (555) 123-4567
+- Portal: https://portal.cloudfuze.com
+
+Thank you for trusting CloudFuze with your data migration needs. We look forward to delivering a successful migration experience!
+
+Best regards,
+CloudFuze Sales Team
+
+---
+This agreement was generated on ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST using CloudFuze Zenop.ai Pro.
+Agreement ID: AGR-${Date.now().toString().slice(-8)}
+Template: ${selectedTemplate?.name || 'Default Template'}`;
+
+      const formData = new FormData();
+      const filenameBase = (clientInfo.company || 'Company').replace(/[^a-zA-Z0-9]/g, '_');
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const attachmentName = `${filenameBase}_Agreement_${timestamp}.docx`;
+
+      // Add form data for server-side email with attachment
+      formData.append('to', to);
+      formData.append('subject', subject);
+      formData.append('message', message);
+      formData.append('attachment', agreementBlob, attachmentName);
+
+      console.log('📧 Sending email via server with attachment:', {
+        to,
+        subject,
+        attachmentName,
+        attachmentSize: agreementBlob.size
+      });
+
+      // Send email using server-side endpoint with attachment
+      const response = await fetch(`${BACKEND_URL}/api/email/send`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('📧 Email send response:', result);
+        console.log('📧 SendGrid Status Code:', result.statusCode);
+        console.log('📧 Message ID:', result.messageId);
+        
+        // Show more detailed success message
+        const messageId = result.messageId ? `\nMessage ID: ${result.messageId}` : '';
+        const statusCode = result.statusCode ? `\nStatus: ${result.statusCode}` : '';
+        alert(`✅ Agreement emailed successfully to anushreddydasari@gmail.com!${messageId}${statusCode}\n\nNote: The email has been sent to CloudFuze Sales Operations.`);
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (err: any) {
+      console.error('Error emailing agreement:', err);
+      
+      // Provide helpful error messages
+      const errorMessage = err.message || 'Unknown error';
+      if (errorMessage.includes('Network')) {
+        alert('❌ Network Error\n\nCould not connect to the server. Please check:\n• Is the backend server running?\n• Is the server URL correct?\n• Check your internet connection');
+      } else if (errorMessage.includes('credentials') || errorMessage.includes('authentication')) {
+        alert('❌ Email Authentication Failed\n\nEmail credentials are invalid. Please contact your administrator to:\n• Verify Gmail credentials in .env file\n• Check if App Password is correct\n• Restart the server after updating credentials');
+      } else {
+        alert(`❌ Failed to send agreement email\n\nError: ${errorMessage}\n\nPlease try again or download the agreement manually.`);
+      }
+    } finally {
+      setIsEmailingAgreement(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    console.log('🔍 handleSubmit - dealData:', dealData);
+
+    // Discount validation removed - discounts now apply at any amount
+
+    if (onGenerateQuote) {
+      // CRITICAL: For Multi combination, ensure top-level duration is set to the sum of messaging + content
+      const finalConfiguration = { ...configuration };
+      if (configuration?.migrationType === 'Multi combination') {
+        const msgDuration = Number(configuration.messagingConfig?.duration || 0);
+        const contentDuration = Number(configuration.contentConfig?.duration || 0);
+        finalConfiguration.duration = msgDuration + contentDuration;
+        console.log('✅ Multi combination: Setting top-level duration =', finalConfiguration.duration, '(messaging:', msgDuration, '+ content:', contentDuration, ')');
+        console.log('✅ Multi combination: finalConfiguration includes nested configs:', {
+          hasMessagingConfig: !!finalConfiguration.messagingConfig,
+          hasContentConfig: !!finalConfiguration.contentConfig,
+          messagingConfig: finalConfiguration.messagingConfig,
+          contentConfig: finalConfiguration.contentConfig
+        });
+      }
+      
+      // Create quote object with deal information including discount
+      const quoteData: Quote = {
+        id: `quote-001`,
+        clientName: clientInfo.clientName,
+        clientEmail: clientInfo.clientEmail,
+        company: clientInfo.company,
+        quoteExpiryDate: clientInfo.quoteExpiryDate,
+        configuration: finalConfiguration,
+        selectedTier: safeCalculation.tier,
+        calculation: safeCalculation,
+        status: 'draft' as const,
+        createdAt: new Date(),
+        templateUsed: selectedTemplate ? {
+          id: selectedTemplate.id,
+          name: selectedTemplate.name,
+          isDefault: false
+        } : { id: 'default', name: 'Default Template', isDefault: true },
+        dealData: dealData,
+        discount: clientInfo.discount // Add discount to quote data
+      };
+      
+      console.log('📝 Sending quote data:', quoteData);
+      onGenerateQuote(quoteData);
+      
+      // Track quote generation
+      trackQuoteOperation({
+        action: 'generated',
+        quoteId: quoteData.id,
+        clientName: quoteData.clientName,
+        clientEmail: quoteData.clientEmail,
+        totalCost: safeCalculation.totalCost,
+        tier: safeCalculation.tier?.name,
+        templateId: selectedTemplate?.id,
+        templateName: selectedTemplate?.name
+      });
+      
+      // Automatically open quote preview instead of showing success message
+      setShowPreview(true);
+    }
+  };
+
+  const handleContactSelect = (contact: any) => {
+    if (onSelectHubSpotContact) {
+      onSelectHubSpotContact(contact);
+    }
+    setShowContactSelector(false);
+  };
+
+  const generatePlaceholderPreview = () => {
+    if (!selectedTemplate) return;
+
+    // Create quote object for preview
+    const quote = {
+      id: `quote-001`,
+      clientName: clientInfo.clientName,
+      clientEmail: clientInfo.clientEmail,
+      company: clientInfo.company,
+      quoteExpiryDate: clientInfo.quoteExpiryDate,
+      configuration: configuration,
+      calculation: safeCalculation,
+      selectedTier: safeCalculation.tier,
+      status: 'draft' as const,
+      createdAt: new Date(),
+      templateUsed: {
+        id: selectedTemplate.id,
+        name: selectedTemplate.name,
+        isDefault: false
+      }
+    };
+
+    const quoteNumber = `CPQ-001`;
+
+    // Define placeholder mappings - match exact placeholders from template
+    const placeholderMappings = {
+      '{{Company Name}}': quote.company || 'Company Name',
+      '{{migration type}}': quote.configuration.migrationType,
+      // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+      '{{userscount}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
+      '{{users_count}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
+      '{{price_migration}}': formatCurrency(safeCalculation.migrationCost),
+      '{{price_data}}': formatCurrency((safeCalculation.userCost || 0) + (safeCalculation.dataCost || 0)),
+      // Use effective duration (handles Multi combination + nested configs)
+      '{{Duration of months}}': (getEffectiveDurationMonths(quote.configuration) || 1).toString(),
+      '{{instance_users}}': quote.configuration.numberOfInstances.toString(),
+      '{{instance_type}}': quote.configuration.instanceType || 'Standard',
+      // Instance type monthly cost (per server per month)
+      // Multi combination requirement: sum messaging + content base monthly rates.
+      '{{instance_type_cost}}': (() => {
+        if (quote.configuration?.migrationType === 'Multi combination') {
+          const msgType = quote.configuration.messagingConfig?.instanceType || quote.configuration.instanceType || 'Small';
+          const contentType = quote.configuration.contentConfig?.instanceType || quote.configuration.instanceType || 'Small';
+          return formatCurrency(getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType));
+        }
+        return formatCurrency(getInstanceTypeCost(quote.configuration.instanceType || 'Standard'));
+      })(),
+      '{{per_user_cost}}': (() => {
+        if (quote.configuration?.migrationType === 'Multi combination') {
+          const msgUsers = quote.configuration.messagingConfig?.numberOfUsers || 0;
+          const contentUsers = quote.configuration.contentConfig?.numberOfUsers || 0;
+          const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+          const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+          const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+          const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+          return formatCurrency(Math.max(msgPerUser, contentPerUser));
+        }
+        const perUserUsers = quote.configuration.servicePlan === 'Manage'
+          ? (quote.configuration.manageUsers || 1)
+          : (quote.configuration.numberOfUsers || 1);
+        return formatCurrency((safeCalculation.userCost || 0) / (perUserUsers || 1));
+      })(),
+      // Email agreements do not have a GB/data-size concept; keep it empty in templates.
+      '{{data_size}}': '',
+      '{{dataSizeGB}}': '',
+      '{{data_size_gb}}': '',
+      '{{per_data_cost}}': (() => {
+        // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
+        const isMulti = quote.configuration?.migrationType === 'Multi combination';
+        const safeDataSize = isMulti ? (quote.configuration?.contentConfig?.dataSizeGB ?? 0) : (quote.configuration.dataSizeGB ?? 0);
+        const safeDataCost = isMulti ? (safeCalculation.contentCalculation?.dataCost ?? 0) : (safeCalculation.dataCost ?? 0);
+        
+        // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
+        // use the tier's perGBCost directly
+        const tierPerGbRaw = isMulti
+          ? (safeCalculation.tier?.perGBCost ?? 0)
+          : (safeCalculation.tier?.perGBCost ?? 0);
+
+        const tierNameForFallback = (safeCalculation.tier?.name ?? '').toString().toLowerCase();
+
+        // Fallback defaults if tier.perGBCost is 0/undefined
+        const fallbackPerGb =
+          tierNameForFallback === 'basic' ? 1.0 :
+          tierNameForFallback === 'standard' ? 1.5 :
+          tierNameForFallback === 'advanced' ? 1.8 :
+          1.5; // Default to Standard rate if tier unknown
+
+        const tierPerGb = (tierPerGbRaw && tierPerGbRaw > 0) ? tierPerGbRaw : fallbackPerGb;
+
+        // Use tier's per-GB cost when dataSize is 0
+        const perDataCost = safeDataSize > 0 ? (safeDataCost / safeDataSize) : tierPerGb;
+        
+        console.log('🔍 PER_DATA_COST CALCULATION (generatePlaceholderPreview):', {
+          migType: quote.configuration?.migrationType,
+          dataSizeGB: safeDataSize,
+          dataCost: safeDataCost,
+          'safeCalculation.tier': safeCalculation.tier,
+          tierPerGbRaw,
+          tierNameForFallback,
+          fallbackPerGb,
+          tierPerGb,
+          perDataCost,
+          formatted: formatCurrency(perDataCost)
+        });
+        return formatCurrency(perDataCost);
+      })(),
+      '{{total price}}': formatCurrency(safeCalculation.totalCost),
+      // New tokens related to discount and final total - hide when discount is 0
+      '{{discount_amount}}': (shouldApplyDiscount && discountAmount > 0) ? `-${formatCurrency(discountAmount)}` : '',
+      '{{discount_text}}': (shouldApplyDiscount && discountPercent > 0) ? `Discount (${discountPercent}%)` : '',
+      '{{discount_line}}': (shouldApplyDiscount && discountAmount > 0) ? `Discount (${discountPercent}%) - ${formatCurrency(discountAmount)}` : '',
+          // Static label support for templates with a dedicated label cell
+          '{{discount_label}}': (shouldApplyDiscount && discountPercent > 0) ? 'Discount' : '',
+      '{{total_after_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
+      '{{total_price_discount}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
+      
+      // Additional mappings for compatibility
+      '{{company_name}}': quote.company || 'Company Name',
+      '{{users}}': (quote.configuration.servicePlan === 'Manage'
+        ? (quote.configuration.manageUsers || 0)
+        : (quote.configuration.numberOfUsers || 0)).toString(),
+      '{{migration_type}}': quote.configuration.migrationType,
+      '{{prices}}': formatCurrency(safeCalculation.userCost + safeCalculation.dataCost + safeCalculation.instanceCost),
+      '{{migration_price}}': formatCurrency(safeCalculation.migrationCost),
+      '{{total_price}}': formatCurrency(safeCalculation.totalCost),
+      '{{duration_months}}': (getEffectiveDurationMonths(quote.configuration) || 1).toString(),
+      '{{client_name}}': quote.clientName,
+      '{{client_email}}': quote.clientEmail,
+      '{{quote_number}}': quoteNumber,
+      '{{date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+        '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+        '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+        '{{instance_cost}}': formatCurrency(safeCalculation.instanceCost),
+        '{{discount}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
+        '{{discount_percent}}': (shouldApplyDiscount ? discountPercent : 0).toString(),
+        '{{final_total}}': formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost),
+
+        // Service term tokens (Manage Plan SaaS Agreement)
+        '{{service_start_date}}': quote.configuration?.startDate ? formatDateMMDDYYYY(quote.configuration.startDate) : 'N/A',
+        '{{service_end_date}}': (() => {
+          const start = quote.configuration?.startDate;
+          if (!start) return 'N/A';
+          const months = quote.configuration?.servicePlan === 'Manage'
+            ? 3
+            : (getEffectiveDurationMonths(quote.configuration) || 0);
+          if (!months) return 'N/A';
+          try {
+            const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+            if (isNaN(d.getTime())) return 'N/A';
+            d.setMonth(d.getMonth() + months);
+            return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+          } catch { return 'N/A'; }
+        })(),
+        '{{service_term_label}}': quote.configuration?.servicePlan === 'Manage'
+          ? '3-Month Free Trial'
+          : (() => {
+              const m = getEffectiveDurationMonths(quote.configuration) || 0;
+              return `${m}-Month${m === 1 ? '' : 's'}`;
+            })()
+    };
+
+    // Create sample template text with placeholders - matches CloudFuze template
+    const originalText = `CloudFuze Purchase Agreement for {{Company Name}}
+
+This agreement provides {{Company Name}} with pricing for use of CloudFuze Migrate:
+
+Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager
+
+Services and Pricing Table:
+┌─────────────────────────────────────┬─────────────────────────────────────┬─────────────────┬─────────────┐
+│ Job Requirement                     │ Description                         │ Migration Type  │ Price(USD)  │
+├─────────────────────────────────────┼─────────────────────────────────────┼─────────────────┼─────────────┤
+│ CloudFuze Migrate                    │ {{migration type}} to Teams         │ Managed         │ {{price_data}} │
+│                                     │ ─────────────────────────────────   │ Migration       │             │
+│                                     │ Up to {{userscount}} Users          │ One-Time        │             │
+│                                     │ All Channels and DMs                │                 │             │
+├─────────────────────────────────────┼─────────────────────────────────────┼─────────────────┼─────────────┤
+│ Managed Migration Service           │ Fully Managed Migration             │ Managed         │ {{price_migration}} │
+│                                     │ Assigned Project Manager            │ Migration       │             │
+│                                     │ Pre-Migration Analysis              │ One-Time        │             │
+│                                     │ During Migration Consulting         │                 │             │
+│                                     │ Post-Migration Support              │                 │             │
+│                                     │ Data Reconciliation Support         │                 │             │
+│                                     │ End-to End Migration Assistance     │                 │             │
+│                                     │ 24*7 Premium Support                │                 │             │
+│                                     │ ─────────────────────────────────   │                 │             │
+│                                     │ Valid for {{Duration of months}} Month │                 │             │
+└─────────────────────────────────────┴─────────────────────────────────────┴─────────────────┴─────────────┘
+
+Total Price: {{total price}}`;
+
+    // Replace placeholders
+    let replacedText = originalText;
+    const placeholders = [];
+
+    for (const [placeholder, value] of Object.entries(placeholderMappings)) {
+      if (replacedText.includes(placeholder)) {
+        placeholders.push({ placeholder, value });
+        replacedText = replacedText.replace(new RegExp(placeholder, 'gi'), value);
+      }
+    }
+
+    setPlaceholderPreviewData({
+      originalText,
+      replacedText,
+      placeholders
+    });
+
+    setShowPlaceholderPreview(true);
+  };
+
+  // True when a pending/in_progress approval workflow exists for the current document
+  const isDownloadBlocked = !!activeWorkflowDocumentId &&
+    workflows.some(
+      (w) => w.documentId === activeWorkflowDocumentId && ['pending', 'in_progress'].includes(w.status)
+    );
+
+  // True when no approved workflow exists for this document — blocks eSign until approval is complete
+  const isEsignBlocked = !activeWorkflowDocumentId ||
+    !workflows.some(
+      (w) => w.documentId === activeWorkflowDocumentId && w.status === 'approved'
+    );
+
+  // Handle Word download from the generated agreement
+  const handleDownloadAgreement = () => {
+    if (isDownloadBlocked) {
+      alert('Downloads are restricted while the approval workflow is pending. Please wait for the workflow to be fully approved.');
+      return;
+    }
+    // For Word downloads, prefer the original DOCX if available
+    const documentToDownload = originalDocxAgreement || processedAgreement;
+
+    if (!documentToDownload) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
+
+    try {
+      // Use original DOCX if available, otherwise use processed agreement
+      const isDOCX = originalDocxAgreement !== null;
+      const fileExtension = isDOCX ? 'docx' : (processedAgreement?.type === 'application/pdf' ? 'pdf' : 'docx');
+      const fileSize = documentToDownload.size;
+      
+      // Generate filename with correct extension
+      const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `agreement-${clientName}-${dateStr}.${fileExtension}`;
+      
+      console.log(`📥 Downloading Word document: ${filename} (${(fileSize / 1024).toFixed(2)} KB)`);
+      console.log(`📄 Document type: ${isDOCX ? 'DOCX (original)' : 'PDF (converted)'}`);
+      
+      // Create download link
+      const url = URL.createObjectURL(documentToDownload);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      // Track document download
+      trackDocumentOperation({
+        action: 'downloaded',
+        documentType: 'agreement',
+        documentName: filename,
+        format: fileExtension,
+        fileSize: fileSize / 1024 // Convert to KB
+      });
+      
+      console.log(`✅ Word document downloaded as ${filename} (${(fileSize / 1024).toFixed(2)} KB)`);
+    } catch (error) {
+      console.error('❌ Error downloading Word document:', error);
+      alert('Failed to download Word document. Please try again.');
+    }
+  };
+
+  // Handle PDF download from the generated agreement using document preview
+  const handleDownloadAgreementPDF = async () => {
+    if (isDownloadBlocked) {
+      alert('Downloads are restricted while the approval workflow is pending. Please wait for the workflow to be fully approved.');
+      return;
+    }
+    try {
+      if (!processedAgreement) {
+        alert('No agreement available. Please generate an agreement first.');
+        return;
+      }
+
+      // If we already have a PDF, reuse it. If DOCX, prefer cached background PDF to avoid reconverting.
+      let pdfBlob: Blob;
+      if (processedAgreement.type === 'application/pdf') {
+        console.log('📄 Using existing PDF blob for download (no extra conversion).');
+        pdfBlob = processedAgreement;
+      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
+        console.log('📄 Using cached PDF from background conversion (no extra conversion).');
+        pdfBlob = cachedPdfAgreement;
+      } else {
+        const { templateService } = await import('../utils/templateService');
+        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      }
+      
+      // NOTE: Downloading the PDF intentionally does NOT save it to the Documents page.
+      // Documents are persisted only via the "Save" button and "Send for Approval".
+
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      // Track document download
+      trackDocumentOperation({
+        action: 'downloaded',
+        documentType: 'agreement',
+        documentName: link.download,
+        format: 'pdf',
+        fileSize: pdfBlob.size / 1024 // Convert to KB
+      });
+    } catch (error) {
+      console.error('❌ Server conversion failed, falling back to in-modal PDF capture:', error);
+      try {
+        // Ensure the inline preview exists; if not, render it
+        if (!showInlinePreview) {
+          setShowAgreementPreview(true);
+          setShowInlinePreview(true);
+          await delayFrame();
+          await renderDocxPreview(processedAgreement as Blob);
+          await delayFrame();
+        }
+
+        // Find the agreement preview container
+        const container = previewContainerRef.current || document.querySelector('.document-preview-content');
+        if (!container) {
+          alert('Document preview not available. Please click "View Document" first, then try again.');
+        return;
+      }
+
+        // Attempt page-by-page capture to avoid mid-page breaks
+        const pageSelectors = ['.docx .page', '.docx .docx-page', '.docx-page', '.page'];
+        let pages: Element[] = [];
+        for (const sel of pageSelectors) {
+          const found = Array.from((container as HTMLElement).querySelectorAll(sel));
+          if (found.length) { pages = found; break; }
+        }
+
+        const pdf = new jsPDF('p', 'mm', 'a4');
+
+        if (pages.length > 0) {
+          for (let i = 0; i < pages.length; i++) {
+            // Create isolated temp for each page
+            const tempPage = document.createElement('div');
+            tempPage.style.position = 'absolute';
+            tempPage.style.left = '-9999px';
+            tempPage.style.top = '0';
+            tempPage.style.width = '1200px';
+            tempPage.style.backgroundColor = 'white';
+            document.body.appendChild(tempPage);
+            tempPage.appendChild((pages[i] as HTMLElement).cloneNode(true));
+
+            await new Promise(res => setTimeout(res, 200));
+
+            const canvas = await html2canvas(tempPage, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+              backgroundColor: '#ffffff'
+      });
+
+            document.body.removeChild(tempPage);
+
+      const imgData = canvas.toDataURL('image/png');
+            const imgWidth = 210; // A4 width
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            if (i > 0) pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
+          }
+        } else {
+          // Fallback to whole-container capture
+          const temp = document.createElement('div');
+          temp.style.position = 'absolute';
+          temp.style.left = '-9999px';
+          temp.style.top = '0';
+          temp.style.width = '1200px';
+          temp.style.backgroundColor = 'white';
+          temp.style.padding = '40px';
+          document.body.appendChild(temp);
+          temp.appendChild((container as HTMLElement).cloneNode(true));
+
+          await new Promise(res => setTimeout(res, 800));
+          const canvas = await html2canvas(temp, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            width: 1200,
+            height: (temp.firstElementChild as HTMLElement)?.scrollHeight || temp.scrollHeight
+          });
+          document.body.removeChild(temp);
+
+          const imgData = canvas.toDataURL('image/png');
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 295; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+          }
+        }
+
+        pdf.save(`agreement-${clientInfo.clientName || 'client'}-${new Date().toISOString().split('T')[0]}.pdf`);
+      } catch (fallbackErr) {
+        console.error('❌ Inline capture fallback failed:', fallbackErr);
+        alert('Unable to download PDF document. Please try again or contact support.');
+      }
+    }
+  };
+
+  // Handle starting approval workflow
+  const handleStartApprovalWorkflow = async () => {
+    if (!processedAgreement) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
+
+    // Validate email addresses
+    if (!approvalEmails.role1 || !approvalEmails.role2 || !approvalEmails.role4) {
+      alert('Please enter Technical, Legal, and Deal Desk email addresses.');
+      return;
+    }
+
+    setIsStartingWorkflow(true);
+    try {
+      // Apply $2,500 minimum to match what's shown in the agreement PDF (overage: use actual total)
+      const isOverageAgreementApproval =
+        (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+        (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+      // Approval amount now comes from finalTotalWithCustomItems (base after main discount,
+      // plus discounted custom line items) so the card, emails, and PDF all show the same total.
+
+      // First, save the PDF to MongoDB if not already saved
+      const { templateService } = await import('../utils/templateService');
+      let pdfBlob: Blob;
+      if (processedAgreement.type === 'application/pdf') {
+        pdfBlob = processedAgreement;
+      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
+        pdfBlob = cachedPdfAgreement;
+      } else {
+        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      }
+      
+      const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
+      const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
+      
+      const savedDoc: any = {
+        fileName: `${clientInfo.company?.replace(/[^a-z0-9]/gi, '_') || 'Agreement'}_${new Date().toISOString().split('T')[0]}.pdf`,
+        fileData: base64Data,
+        fileSize: pdfBlob.size,
+        clientName: clientInfo.clientName || 'Unknown',
+        clientEmail: clientInfo.clientEmail || '',
+          company: clientInfo.company || 'Unknown Company',
+          templateName: selectedTemplate?.name || 'Agreement',
+          generatedDate: new Date().toISOString(),
+          quoteId: quoteId,
+          metadata: {
+            // Store the effective approval amount (incl. discounted custom line items) so approvals/emails match the PDF total shown to the user
+            totalCost: Number(finalTotalWithCustomItems) || 0,
+            duration: configuration?.duration || 0,
+            migrationType: configuration?.migrationType || 'Messaging',
+            numberOfUsers: configuration?.numberOfUsers || 0
+          }
+        };
+        
+        // Also save DOCX if available (for Word downloads)
+        if (originalDocxAgreement) {
+          console.log('💾 Also saving DOCX to MongoDB for workflow...');
+          const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
+          const clientName = (clientInfo.clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+          const dateStr = new Date().toISOString().split('T')[0];
+          savedDoc.docxFileData = docxBase64;
+          savedDoc.docxFileName = `agreement-${clientName}-${dateStr}.docx`;
+        }
+
+        Object.assign(savedDoc, buildDateEditSnapshot());
+
+        const documentId = await documentServiceMongoDB.saveDocument(savedDoc);
+      console.log('✅ PDF saved to MongoDB for workflow:', documentId);
+
+      // User picks the team in the Send for Approval modal — use that selection
+      const autoSelectedTeam = manualTeamSelection;
+      const teamEmail = getTeamApprovalEmail(autoSelectedTeam);
+
+      if (!teamEmail) {
+        alert('Team Approval email not configured. Please configure team settings.');
+        setIsStartingWorkflow(false);
+        return;
+      }
+
+      // Get additional recipients for this team
+      const additionalRecipients = teamApprovalSettings.additionalRecipients[autoSelectedTeam] || [];
+
+      // Determine if this is an overage agreement workflow (special approval routing)
+      const isOverageWorkflow =
+        (configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+        (configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+      
+      // Create the approval workflow (Team Approval -> Technical -> Legal -> Deal Desk)
+      // For overage workflows, Technical Team approval will be auto-skipped in Team step.
+        const creatorEmail = (() => {
+          try {
+            const userRaw = localStorage.getItem('cpq_user');
+            if (userRaw) {
+              const user = JSON.parse(userRaw);
+              if (user?.email) return user.email;
+            }
+          } catch {}
+          return 'abhilasha.kandakatla@cloudfuze.com';
+        })();
+        const requestedByName = (() => {
+          try {
+            const u = getCurrentUser();
+            if (u?.name) return u.name;
+            const userRaw = localStorage.getItem('cpq_user');
+            if (userRaw) {
+              const user = JSON.parse(userRaw);
+              return user?.name || (user?.email ? user.email.split('@')[0] : null);
+            }
+          } catch {}
+          return creatorEmail ? creatorEmail.split('@')[0] : null;
+        })();
+        const workflowData = {
+        documentId: documentId,
+        documentType: 'PDF Agreement',
+        clientName: clientInfo.clientName || 'Unknown Client',
+        // IMPORTANT: Must match the PDF "Total Price" (post-discount, incl. custom line items)
+        amount: Number(finalTotalWithCustomItems) || 0,
+        creatorEmail,
+        creatorName: requestedByName || undefined,
+        isOverage: isOverageWorkflow,
+        // Persist so approval emails can show the High Discount / Custom Line Items alerts on every step
+        discountPercent: discountPercent || 0,
+        hasCustomLineItems: customLineItems.length > 0,
+        totalSteps: 4,
+        workflowSteps: [
+          { step: 1, role: 'Team Approval', email: teamEmail, status: 'pending' as const, group: autoSelectedTeam, comments: '', additionalRecipients: additionalRecipients },
+          { step: 2, role: 'Technical Team', email: approvalEmails.role1, status: 'pending' as const },
+          { step: 3, role: 'Legal Team', email: approvalEmails.role2, status: 'pending' as const },
+          { step: 4, role: 'Deal Desk', email: approvalEmails.role4, status: 'pending' as const }
+        ]
+      };
+
+      const newWorkflow = await createWorkflow(workflowData);
+      console.log('✅ Approval workflow created:', newWorkflow);
+      // Lock downloads for this document until the workflow is approved
+      setActiveWorkflowDocumentId(documentId);
+
+      // Analytics: workflow started
+      try {
+        trackApprovalEvent({
+          action: 'workflow_started',
+          quoteId: quoteId,
+          workflowId: newWorkflow?.id
+        });
+      } catch {}
+
+      // Send email to the selected Team Approval first (sequential approval)
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/send-team-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            teamEmail,
+            additionalRecipients: additionalRecipients,
+            workflowData: {
+              documentId: documentId,
+              documentType: 'PDF Agreement',
+              clientName: clientInfo.clientName || 'Unknown Client',
+              // IMPORTANT: Must match the PDF "Total Price" (post-discount, incl. custom line items)
+              amount: Number(finalTotalWithCustomItems) || 0,
+              workflowId: newWorkflow.id,
+              teamGroup: autoSelectedTeam,
+              creatorEmail: workflowData.creatorEmail,
+              requestedByName: workflowData.creatorName || workflowData.creatorEmail,
+              discountPercent: discountPercent || 0
+            }
+          })
+        });
+
+        // Be tolerant of non-JSON error responses (e.g., 404 HTML fallback)
+        let result: any = null;
+        const ct = response.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          result = await response.json();
+        } else {
+          const text = await response.text();
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+          } else {
+            result = { success: true };
+          }
+        }
+
+        if (result?.success) {
+          const creator = workflowData.creatorEmail || workflowCreatorEmail;
+          alert(`✅ Approval workflow started successfully!\n📧 Team Approval (${autoSelectedTeam || 'SMB'}) has been notified. The workflow will continue sequentially when each role approves.\nℹ️ If any approver denies, the creator will be notified at ${creator}.`);
+          setShowApprovalModal(false);
+          setApprovalEmails({ role1: defaultTechEmail, role2: defaultLegalEmail, role4: defaultDealDeskEmail });
+        } else {
+          alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
+        }
+      } catch (emailError) {
+        console.error('❌ Error sending Technical Team email:', emailError);
+        alert('✅ Workflow created but Technical Team email failed.\nPlease notify Technical Team manually.');
+      }
+
+      // Navigate to Approval page → Admin Dashboard tab so user can see the workflow status
+      navigate('/approval', {
+        state: { openDashboardTab: true, source: 'quote-approval', documentId: documentId }
+      });
+
+    } catch (error) {
+      console.error('❌ Error starting approval workflow:', error);
+      alert('Error starting approval workflow. Please try again.');
+    } finally {
+      setIsStartingWorkflow(false);
+    }
+  };
+
+  // Add e-sign fields first, then send for approval: save PDF, create e-sign doc, store config, go to place-fields
+  const handleAddEsignFields = async () => {
+    if (!processedAgreement) {
+      alert('No agreement available. Please generate an agreement first.');
+      return;
+    }
+
+    setIsAddingEsignFields(true);
+    setAddEsignFieldsProgress('Preparing…');
+    try {
+      setAddEsignFieldsProgress('Opening…');
+
+      // Reuse the already-approved document instead of saving a duplicate.
+      // "Add e-sign fields" is always reached AFTER Send-for-Approval, so the agreement
+      // already exists in the Documents collection (manual e-sign uploads are a separate
+      // flow). This keeps the Documents page limited to entries created by the "Save"
+      // button and "Send for Approval".
+      const documentId = activeWorkflowDocumentId;
+      if (!documentId) {
+        throw new Error('No approved document was found to send for e-signature. Please complete the approval step first.');
+      }
+
+      const creatorEmail = (() => {
+        try {
+          const userRaw = localStorage.getItem('cpq_user');
+          if (userRaw) {
+            const user = JSON.parse(userRaw);
+            if (user?.email) return user.email;
+          }
+        } catch {}
+        return 'abhilasha.kandakatla@cloudfuze.com';
+      })();
+      const requestedByName = (() => {
+        try {
+          const u = getCurrentUser();
+          if (u?.name) return u.name;
+          const userRaw = localStorage.getItem('cpq_user');
+          if (userRaw) {
+            const user = JSON.parse(userRaw);
+            return user?.name || (user?.email ? user.email.split('@')[0] : null);
+          }
+        } catch {}
+        return creatorEmail ? creatorEmail.split('@')[0] : null;
+      })();
+
+      // Find the approved workflow for this document so we can link the esign doc to it
+      const approvedWorkflow = workflows.find(
+        (w) => w.documentId === activeWorkflowDocumentId && w.status === 'approved'
+      );
+
+      const res = await fetch(`${BACKEND_URL}/api/esign/documents/from-approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId,
+          uploaded_by: creatorEmail,
+          requested_by_name: requestedByName || undefined,
+          requested_by_email: creatorEmail,
+          workflowId: approvedWorkflow?.id || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.document?.id) {
+        throw new Error(data.error || data.message || 'Failed to create e-sign document');
+      }
+
+      // Approval is already complete — do NOT store quotePendingApproval.
+      // The place-fields page will show "Send for Signature" directly.
+      sessionStorage.removeItem(QUOTE_PENDING_APPROVAL_KEY);
+
+      setShowApprovalModal(false);
+      navigate(`/esign/${data.document.id}/place-fields`);
+    } catch (error) {
+      console.error('Error adding e-sign fields flow:', error);
+      alert(error instanceof Error ? error.message : 'Failed to open e-sign place fields. Please try again.');
+    } finally {
+      setIsAddingEsignFields(false);
+      setAddEsignFieldsProgress('');
+    }
+  };
+
+  const handleViewInline = async () => {
+    if (processedAgreement) {
+      try {
+        // Prefer exact docx renderer
+        if (processedAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          setShowAgreementPreview(true);
+          await delayFrame();
+          try {
+            const pdfSource =
+              cachedPdfAgreement && cachedPdfAgreement.size > 0
+                ? cachedPdfAgreement
+                : await (await import('../utils/templateService')).templateService.convertDocxToPdf(processedAgreement);
+            if (pdfSource && pdfSource.size > 0) {
+              if (!cachedPdfAgreement || cachedPdfAgreement.size === 0) {
+                setCachedPdfAgreement(pdfSource);
+              }
+              setPreviewUrl((prev) => {
+                if (prev) URL.revokeObjectURL(prev);
+                return URL.createObjectURL(pdfSource);
+              });
+              setShowInlinePreview(true);
+              setAgreementPreviewIsPdf(true);
+              return;
+            }
+          } catch (e) {
+            console.warn('View Document: DOCX→PDF failed, falling back to in-browser preview.', e);
+          }
+          setAgreementPreviewIsPdf(false);
+          await renderDocxPreview(processedAgreement);
+          return;
+        }
+        console.log('✅ Converting DOCX to HTML for preview');
+        console.log('📄 Document type:', processedAgreement.type);
+        console.log('📄 Document size:', processedAgreement.size, 'bytes');
+        
+        // Convert DOCX to HTML using mammoth with exact formatting preservation
+        const mammoth = await import('mammoth');
+        
+        const arrayBuffer = await processedAgreement.arrayBuffer();
+        const result = await mammoth.convertToHtml({ 
+          arrayBuffer,
+          styleMap: [
+            // Preserve table formatting
+            "p[style-name='Table Heading'] => h3.table-heading",
+            "p[style-name='Table Text'] => p.table-text",
+            "r[style-name='Strong'] => strong",
+            "r[style-name='Emphasis'] => em",
+            // Preserve colors and formatting
+            "r[style-name='Highlight'] => span.highlight",
+            "r[style-name='Heading 1'] => h1.heading-1",
+            "r[style-name='Heading 2'] => h2.heading-2",
+            "r[style-name='Heading 3'] => h3.heading-3",
+            // Preserve table styles
+            "table => table.docx-table",
+            "tr => tr.docx-row",
+            "td => td.docx-cell",
+            "th => th.docx-header",
+            // Preserve headers and footers
+            "p[style-name='Header'] => div.docx-header",
+            "p[style-name='Footer'] => div.docx-footer",
+            // Preserve page breaks
+            "br[type='page'] => div.page-break"
+          ],
+          convertImage: mammoth.images.imgElement(function(image) {
+            return image.read("base64").then(function(imageBuffer) {
+              return {
+                src: "data:" + image.contentType + ";base64," + imageBuffer
+              };
+            });
+          })
+        } as any);
+        
+        console.log('✅ DOCX converted to HTML with exact formatting');
+        console.log('📄 HTML length:', result.value.length);
+        console.log('📄 Warnings:', result.messages);
+        
+        // Create HTML document with exact DOCX styling preserved
+        const htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Document Preview - Exact DOCX Formatting</title>
+            <meta charset="UTF-8">
+            <style>
+              /* Reset and base styles */
+              * {
+                box-sizing: border-box;
+              }
+              
+              body { 
+                font-family: 'Times New Roman', serif; 
+                margin: 0;
+                padding: 40px;
+                line-height: 1.6;
+                color: #000;
+                background: white;
+                font-size: 12pt;
+              }
+              
+              /* Preserve exact DOCX formatting */
+              .docx-table {
+                border-collapse: collapse;
+                width: 100%;
+                margin: 20px 0;
+                border: 1px solid #000;
+              }
+              
+              .docx-row {
+                border: 1px solid #000;
+              }
+              
+              .docx-cell, .docx-header {
+                border: 1px solid #000;
+                padding: 8px 12px;
+                vertical-align: top;
+                text-align: left;
+              }
+              
+              .docx-header {
+                background-color: #f2f2f2;
+                font-weight: bold;
+                text-align: center;
+              }
+              
+              /* Preserve heading styles */
+              h1, h2, h3, h4, h5, h6 {
+                color: #000;
+                margin-top: 20px;
+                margin-bottom: 10px;
+                font-weight: bold;
+              }
+              
+              h1 { font-size: 18pt; }
+              h2 { font-size: 16pt; }
+              h3 { font-size: 14pt; }
+              h4 { font-size: 12pt; }
+              
+              /* Preserve paragraph formatting */
+              p {
+                margin-bottom: 10px;
+                text-align: left;
+                font-size: 12pt;
+                line-height: 1.15;
+              }
+              
+              /* Preserve text formatting */
+              strong, b {
+                font-weight: bold;
+              }
+              
+              em, i {
+                font-style: italic;
+              }
+              
+              .highlight {
+                background-color: #ffff00;
+                padding: 1px 2px;
+              }
+              
+              /* Preserve list formatting */
+              ul, ol {
+                margin: 10px 0;
+                padding-left: 30px;
+              }
+              
+              li {
+                margin-bottom: 5px;
+              }
+              
+              /* Preserve table alignment */
+              .docx-table td[align="center"] {
+                text-align: center;
+              }
+              
+              .docx-table td[align="right"] {
+                text-align: right;
+              }
+              
+              .docx-table td[align="left"] {
+                text-align: left;
+              }
+              
+              /* Preserve colors and backgrounds */
+              .docx-table tr:nth-child(even) {
+                background-color: #f9f9f9;
+              }
+              
+              /* Gray background for bundled pricing column (4th column) */
+              .docx-table td:nth-child(4),
+              .docx-table th:nth-child(4) {
+                background-color: #e5e5e5;
+                background-color: #d3d3d3;
+              }
+              
+              /* Preserve spacing */
+              .docx-table td {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+              
+              /* Preserve page layout */
+              @media print {
+                body {
+                  margin: 0;
+                  padding: 20px;
+                }
+              }
+              
+              /* Preserve headers and footers */
+              .docx-header {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                background: white;
+                border-bottom: 1px solid #ccc;
+                padding: 10px;
+                font-size: 10pt;
+                z-index: 1000;
+              }
+              
+              .docx-footer {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: white;
+                border-top: 1px solid #ccc;
+                padding: 10px;
+                font-size: 10pt;
+                z-index: 1000;
+              }
+              
+              /* Preserve page breaks */
+              .page-break {
+                page-break-before: always;
+                break-before: page;
+                margin: 20px 0;
+                border-top: 1px dashed #ccc;
+                padding-top: 20px;
+              }
+              
+              /* Adjust body padding for headers/footers */
+              body {
+                padding-top: 60px;
+                padding-bottom: 60px;
+              }
+              
+              /* Ensure exact DOCX appearance */
+              .docx-content {
+                max-width: 100%;
+                margin: 0 auto;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="docx-content">
+              ${result.value}
+            </div>
+          </body>
+          </html>
+        `;
+        
+        // Create blob URL for the HTML content
+        const htmlBlobForPreview = new Blob([htmlContent], { type: 'text/html' });
+        const actualPreviewUrl = URL.createObjectURL(htmlBlobForPreview);
+        
+        setPreviewUrl(actualPreviewUrl);
+        setShowInlinePreview(true);
+        setAgreementPreviewIsPdf(false);
+        
+        console.log('✅ HTML preview URL created:', actualPreviewUrl);
+        
+        return; // Exit early to use HTML preview
+        
+        // Fallback HTML preview (kept for reference but not used)
+        const previewHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Agreement Preview</title>
+            <style>
+              body { 
+                font-family: 'Times New Roman', serif; 
+                margin: 40px; 
+                line-height: 1.6;
+                color: #000;
+                background: white;
+                max-width: 800px;
+                margin: 40px auto;
+              }
+              .document-header {
+                text-align: center;
+                margin-bottom: 40px;
+                border-bottom: 2px solid #333;
+                padding-bottom: 20px;
+              }
+              .document-title {
+                font-size: 24px;
+                font-weight: bold;
+                margin-bottom: 10px;
+                color: #333;
+              }
+              .document-subtitle {
+                font-size: 16px;
+                color: #666;
+                margin-bottom: 20px;
+              }
+              .content-section {
+                margin-bottom: 30px;
+                text-align: justify;
+              }
+              .section-title {
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 15px;
+                color: #333;
+                border-bottom: 1px solid #ccc;
+                padding-bottom: 5px;
+              }
+              .table-container {
+                margin: 20px 0;
+                border: 1px solid #333;
+              }
+              .table-header {
+                background: #f0f0f0;
+                font-weight: bold;
+                padding: 10px;
+                border-bottom: 1px solid #333;
+              }
+              .table-row {
+                display: flex;
+                border-bottom: 1px solid #ccc;
+              }
+              .table-cell {
+                padding: 10px;
+                border-right: 1px solid #ccc;
+              }
+              /* Column width distribution - make bundled pricing column narrower */
+              .table-cell:nth-child(1) {
+                flex: 1.5; /* Job Requirement - slightly wider */
+              }
+              .table-cell:nth-child(2) {
+                flex: 2.5; /* Description - widest column */
+              }
+              .table-cell:nth-child(3) {
+                flex: 1.2; /* Price (USD) - standard width */
+              }
+              .table-cell:nth-child(4) {
+                flex: 0.5; /* Bundled Pricing - much narrower to match Word doc */
+                min-width: 90px; /* Minimum width to prevent too narrow */
+                max-width: 130px; /* Maximum width to prevent too wide */
+                text-align: right; /* Right-align prices like the Price (USD) column */
+              }
+              /* Right-align price columns */
+              .table-cell:nth-child(3) {
+                text-align: right;
+              }
+              .table-cell:last-child {
+                border-right: none;
+              }
+              /* Gray background for bundled pricing column (4th column) */
+              .table-row .table-cell:nth-child(4),
+              .table-row .table-cell.bundled-pricing {
+                background-color: #e5e5e5;
+              }
+              /* Header row bundled pricing column */
+              .table-row:first-child .table-cell:nth-child(4) {
+                background-color: #e5e5e5;
+              }
+              .highlight-box {
+                background: #f9f9f9;
+                border: 1px solid #ddd;
+                padding: 15px;
+                margin: 15px 0;
+                border-radius: 4px;
+              }
+              .total-section {
+                background: #e8f5e8;
+                border: 2px solid #4caf50;
+                padding: 20px;
+                margin: 30px 0;
+                text-align: center;
+                border-radius: 8px;
+              }
+              .total-amount {
+                font-size: 24px;
+                font-weight: bold;
+                color: #2e7d32;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="document-header">
+              <div class="document-title">CloudFuze Purchase Agreement for ${clientInfo.company}</div>
+              <div class="document-subtitle">This agreement provides ${clientInfo.company} with pricing for use of CloudFuze Migrate</div>
+            </div>
+            
+            <div class="content-section">
+              <div class="highlight-box">
+                <strong>Cloud-Hosted SaaS Solution | Managed Migration | Assigned Migration Manager</strong>
+              </div>
+            </div>
+            
+            <div class="content-section">
+              <div class="section-title">Service Details</div>
+              
+              <div class="table-container">
+                <div class="table-header">Job Requirements and Pricing</div>
+                <div class="table-row">
+                  <div class="table-cell"><strong>Job Requirement</strong></div>
+                  <div class="table-cell"><strong>Description</strong></div>
+                  <div class="table-cell"><strong>Price (USD)</strong></div>
+                  <div class="table-cell bundled-pricing"><strong>10% Discount</strong></div>
+                </div>
+                <div class="table-row">
+                  <div class="table-cell">CloudFuze Migrate</div>
+                  <div class="table-cell">
+                    <p>slack to Teams</p>
+                    <p>Up to ${configuration?.numberOfUsers || 1} Users | All Channels and DMs</p>
+                  </div>
+                  <div class="table-cell">${formatCurrency(calculation?.userCost || 0)}</div>
+                  <div class="table-cell bundled-pricing"></div>
+                </div>
+                <div class="table-row">
+                  <div class="table-cell">Managed Migration Service</div>
+                  <div class="table-cell">
+                    <p>Fully Managed Migration | Assigned Project Manager | Pre-Migration Analysis | During Migration Consulting | Post-Migration Support and Data Reconciliation Support | End-to End Migration Assistance with 24*7 Premium Support</p>
+                    <p><strong>Valid for ${formatMonths(getEffectiveDurationMonths(configuration) || 1)}</strong></p>
+                  </div>
+                  <div class="table-cell">${formatCurrency(calculation?.migrationCost || 0)}</div>
+                  <div class="table-cell bundled-pricing"></div>
+                </div>
+                <!-- Total row: Total amount - sum of 10% discount column -->
+                <div class="table-row">
+                  <div class="table-cell"><strong>Total Price</strong></div>
+                  <div class="table-cell"></div>
+                  <div class="table-cell"></div>
+                  <div class="table-cell bundled-pricing"><strong>${formatCurrency(totalCost)}</strong></div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="content-section">
+              <div class="section-title">Contact Information</div>
+              <p><strong>Legal Entity Name:</strong> ${clientInfo.company}</p>
+              <p><strong>Contact Name:</strong> ${clientInfo.clientName}</p>
+              <p><strong>Email:</strong> ${clientInfo.clientEmail}</p>
+              <p><strong>Migration Type:</strong> ${configuration?.migrationType || 'Content'}</p>
+              <p><strong>Duration:</strong> ${(getEffectiveDurationMonths(configuration) || 1)} months</p>
+              <p><strong>Data Size:</strong> ${configuration?.dataSizeGB || 0} GB</p>
+            </div>
+            
+            <div class="content-section">
+              <p><em>Document generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</em></p>
+              <p><em>All tokens have been replaced with actual quote data from your configuration.</em></p>
+            </div>
+          </body>
+          </html>
+        `;
+        
+        // Create blob URL for the HTML preview
+        const htmlBlob = new Blob([previewHtml], { type: 'text/html' });
+        const htmlUrl = URL.createObjectURL(htmlBlob);
+        
+        // Store the HTML URL for the iframe
+        setPreviewUrl(htmlUrl);
+        setShowInlinePreview(true);
+        setAgreementPreviewIsPdf(false);
+        
+      } catch (error) {
+        console.error('Error creating inline preview:', error);
+        alert('Error creating document preview. Please try downloading the file instead.');
+      }
+    }
+  };
+
+  // Open the OnlyOffice editor: uploads the original DOCX to the backend (creates a session),
+  // then renders the OnlyOffice editor in a modal. Saving in OnlyOffice writes the edited DOCX
+  // back to our backend via the callback URL, which then converts it to PDF.
+  const handleOpenOnlyOffice = async () => {
+    const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const docxSource =
+      originalDocxAgreement && originalDocxAgreement.size > 0
+        ? originalDocxAgreement
+        : processedAgreement && processedAgreement.type === DOCX_TYPE
+          ? processedAgreement
+          : null;
+    if (!docxSource) {
+      alert('OnlyOffice editing requires the original Word document. Regenerate the agreement, then click Edit.');
+      return;
+    }
+    setIsStartingOnlyOffice(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', new File([docxSource], 'agreement.docx', { type: DOCX_TYPE }));
+      const resp = await fetch(`${BACKEND_URL || ''}${API_ENDPOINTS.ONLYOFFICE_START_SESSION}`, {
+        method: 'POST',
+        body: fd,
+      });
+      if (!resp.ok) throw new Error(`start-session failed: ${resp.status}`);
+      const data = await resp.json();
+      if (!data?.success) throw new Error(data?.error || 'start-session returned failure');
+      setOnlyOfficeSessionId(data.sessionId);
+      setOnlyOfficeEditorUrl(data.editorUrl);
+      setOnlyOfficeConfig(data.config);
+      setShowOnlyOfficeEditor(true);
+    } catch (e) {
+      console.error('❌ Failed to start OnlyOffice session:', e);
+      alert(
+        'Could not open the Word editor. Make sure OnlyOffice is running:\n\n  docker compose --profile onlyoffice up -d\n\nThen try again.',
+      );
+    } finally {
+      setIsStartingOnlyOffice(false);
+    }
+  };
+
+  // After the user clicks Save in OnlyOffice, poll the backend until the edited DOCX + PDF are ready.
+  const handleFinalizeOnlyOffice = async () => {
+    if (!onlyOfficeSessionId) return;
+    setIsFinalizingOnlyOffice(true);
+    try {
+      // 1. Trigger OnlyOffice to force-save the document so the callback fires immediately.
+      try {
+        await fetch(
+          `${BACKEND_URL || ''}${API_ENDPOINTS.ONLYOFFICE_FORCE_SAVE(onlyOfficeSessionId)}`,
+          { method: 'POST' },
+        );
+      } catch (fsErr) {
+        console.warn('⚠️ force-save request failed (will still poll for any auto-saved version):', fsErr);
+      }
+
+      const endpoint = `${BACKEND_URL || ''}${API_ENDPOINTS.ONLYOFFICE_RESULT(onlyOfficeSessionId)}`;
+      // Poll up to ~30s for OnlyOffice to flush + convert.
+      const start = Date.now();
+      let data: any = null;
+      while (Date.now() - start < 30000) {
+        const resp = await fetch(endpoint);
+        if (resp.ok) {
+          data = await resp.json();
+          if (data?.status === 'ready' && data.pdfBase64) break;
+          if (data?.status === 'no-changes') break;
+          if (data?.status === 'editor-error' || data?.status === 'pdf-failed') break;
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (data?.status === 'ready' && data.pdfBase64) {
+        const pdfBytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
+        const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const docxBytes = data.docxBase64
+          ? Uint8Array.from(atob(data.docxBase64), (c) => c.charCodeAt(0))
+          : null;
+        const docxBlob = docxBytes
+          ? new Blob([docxBytes], {
+              type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            })
+          : null;
+
+        setProcessedAgreement(pdfBlob);
+        setCachedPdfAgreement(pdfBlob);
+        if (docxBlob) setOriginalDocxAgreement(docxBlob);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        const url = URL.createObjectURL(pdfBlob);
+        setPreviewUrl(url);
+        setIframeKey(k => k + 1);
+        setAgreementPreviewIsPdf(true);
+        setShowInlinePreview(true);
+        setShowOnlyOfficeEditor(false);
+        setOnlyOfficeSessionId(null);
+        setOnlyOfficeConfig(null);
+        console.log('✅ OnlyOffice edits applied — preview updated.');
+      } else if (data?.status === 'no-changes') {
+        setShowOnlyOfficeEditor(false);
+        setOnlyOfficeSessionId(null);
+        setOnlyOfficeConfig(null);
+        console.log('ℹ️ OnlyOffice closed with no changes.');
+      } else {
+        alert(
+          'Saving the edited document timed out. Click Save in the editor first, then try Done again. If the issue persists, check the backend logs.',
+        );
+      }
+    } catch (e) {
+      console.error('❌ Failed to finalize OnlyOffice session:', e);
+      alert('Could not retrieve the edited document. Check backend logs.');
+    } finally {
+      setIsFinalizingOnlyOffice(false);
+    }
+  };
+
+  // Enter edit mode: convert the generated agreement to HTML and let the user tweak it before approval.
+  const handleStartEditAgreement = async () => {
+    if (!processedAgreement) {
+      alert('Generate the agreement first, then edit.');
+      return;
+    }
+    try {
+      // Highest priority: HTML the user already saved in a previous edit — keeps their changes across multiple Edit clicks.
+      if (lastEditedAgreementHtml && lastEditedAgreementHtml.trim().length > 0) {
+        setEditableAgreementHtml(lastEditedAgreementHtml);
+        setIsEditingAgreement(true);
+        setShowInlinePreview(false);
+        return;
+      }
+
+      // Prefer the original DOCX (richer formatting). Fall back to processedAgreement if it's a DOCX too.
+      const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const docxSource: Blob | null =
+        originalDocxAgreement && originalDocxAgreement.size > 0
+          ? originalDocxAgreement
+          : processedAgreement.type === DOCX_TYPE
+            ? processedAgreement
+            : null;
+
+      let html = '';
+
+      if (docxSource) {
+        // Render with docx-preview into an off-screen host to capture rich HTML + inline styles (tables, fonts, etc.)
+        try {
+          ensureDocxPreviewStylesInjected();
+          // @ts-ignore - resolved at runtime
+          const { renderAsync } = await import('docx-preview');
+          const arrayBuffer = await docxSource.arrayBuffer();
+
+          const host = document.createElement('div');
+          host.style.position = 'fixed';
+          host.style.left = '-10000px';
+          host.style.top = '0';
+          host.style.width = '794px';
+          host.style.background = '#ffffff';
+          document.body.appendChild(host);
+
+          await renderAsync(arrayBuffer, host as HTMLElement, undefined, {
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            className: 'docx',
+            debug: false,
+          } as any);
+
+          html = host.innerHTML;
+          document.body.removeChild(host);
+        } catch (renderErr) {
+          console.warn('docx-preview render for edit failed, falling back to mammoth.', renderErr);
+        }
+
+        // Fallback: mammoth with a generous styleMap (preserves tables, headings, bold, etc.)
+        if (!html) {
+          const mammoth = await import('mammoth');
+          const arrayBuffer = await docxSource.arrayBuffer();
+          const result = await mammoth.convertToHtml(
+            {
+              arrayBuffer,
+              styleMap: [
+                "table => table.docx-table",
+                "tr => tr.docx-row",
+                "td => td.docx-cell",
+                "th => th.docx-header",
+                "p[style-name='Heading 1'] => h1.heading-1",
+                "p[style-name='Heading 2'] => h2.heading-2",
+                "p[style-name='Heading 3'] => h3.heading-3",
+                "r[style-name='Strong'] => strong",
+                "r[style-name='Emphasis'] => em",
+              ],
+              convertImage: mammoth.images.imgElement(function (image: any) {
+                return image.read('base64').then(function (imageBuffer: string) {
+                  return { src: 'data:' + image.contentType + ';base64,' + imageBuffer };
+                });
+              }),
+            } as any,
+          );
+          html = result.value || '';
+        }
+      } else if (
+        previewContainerRef.current &&
+        previewContainerRef.current.innerHTML &&
+        previewContainerRef.current.innerHTML.trim().length > 0
+      ) {
+        // PDF source + no DOCX available — use whatever HTML the on-screen preview already rendered.
+        html = previewContainerRef.current.innerHTML;
+      } else {
+        // Last-resort: render the DOCX preview off-screen so the user still has something rich to edit.
+        try {
+          ensureDocxPreviewStylesInjected();
+          // @ts-ignore
+          const { renderAsync } = await import('docx-preview');
+          const blobToRender = processedAgreement;
+          const arrayBuffer = await blobToRender.arrayBuffer();
+          const host = document.createElement('div');
+          host.style.position = 'fixed';
+          host.style.left = '-10000px';
+          host.style.top = '0';
+          host.style.width = '794px';
+          host.style.background = '#ffffff';
+          document.body.appendChild(host);
+          await renderAsync(arrayBuffer, host as HTMLElement, undefined, {
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            className: 'docx',
+            debug: false,
+          } as any);
+          html = host.innerHTML;
+          document.body.removeChild(host);
+        } catch {
+          // ignore — handled below
+        }
+        if (!html) {
+          alert(
+            'Could not load this agreement for inline editing. Try regenerating the agreement and editing before sending for approval.',
+          );
+          return;
+        }
+      }
+
+      setEditableAgreementHtml(html);
+      setIsEditingAgreement(true);
+      setShowInlinePreview(false);
+
+      // Snapshot the paragraph-level text so on Save we can diff against the user's edits
+      // and patch only the changed lines into the original DOCX (preserving all formatting).
+      // Wait a tick for the editable container to render, then read it.
+      setTimeout(() => {
+        const node = editableAgreementRef.current;
+        if (!node) return;
+        const texts = extractParagraphTexts(node);
+        setOriginalParagraphTexts(texts);
+        console.log(`📝 Captured ${texts.length} original paragraph snapshots for diffing.`);
+      }, 50);
+    } catch (err) {
+      console.error('❌ Failed to enter edit mode:', err);
+      alert('Could not load the agreement for editing.');
+    }
+  };
+
+  // Read paragraph-level text from the rendered DOM in document order.
+  // We treat each <p>, <li>, table cell (<td>/<th>), and <div> with direct text as one logical paragraph.
+  // This pairs 1:1 with the DOCX's <w:p> elements for diffing.
+  const extractParagraphTexts = (root: HTMLElement): string[] => {
+    const blocks = root.querySelectorAll('p, li, td, th, h1, h2, h3, h4, h5, h6');
+    const out: string[] = [];
+    blocks.forEach((el) => {
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text) out.push(text);
+    });
+    return out;
+  };
+
+  // Capture edits, regenerate a PDF from the edited HTML, and feed it back into the existing preview / approval flow.
+  // Primary path: POST to /api/convert/html-to-pdf — puppeteer renders a true PDF with selectable text.
+  // Fallback: client-side html2canvas + jsPDF (rasterized) so the feature still works if the backend is unreachable.
+  const handleSaveAgreementEdits = async () => {
+    const node = editableAgreementRef.current;
+    if (!node) return;
+    setIsSavingAgreementEdits(true);
+    try {
+      const editedHtml = node.innerHTML;
+      setEditableAgreementHtml(editedHtml);
+
+      let pdfBlob: Blob | null = null;
+      let docxBlob: Blob | null = null;
+
+      // PRIMARY: patch the ORIGINAL DOCX with only the text changes the user made.
+      // Preserves 100% of Word formatting because we never reconstruct the DOCX.
+      // Requires: originalDocxAgreement (the as-generated DOCX) + a captured snapshot of original paragraph text.
+      if (originalDocxAgreement && originalDocxAgreement.size > 0 && originalParagraphTexts.length > 0) {
+        try {
+          const newTexts = extractParagraphTexts(node);
+
+          // Set-based diff: contentEditable shuffles paragraph counts (inserts <div>/<br>),
+          // so index-based pairing produces spurious "changes". Instead:
+          //   1. Anything present in BOTH snapshots = unchanged, ignore.
+          //   2. "removed" = originals not in new set.
+          //   3. "added"   = new not in original set.
+          //   4. Pair removed↔added by best-similarity (shared prefix length).
+          const origSet = new Set(originalParagraphTexts);
+          const newSet = new Set(newTexts);
+          const removed = originalParagraphTexts.filter((t) => !newSet.has(t));
+          const added = newTexts.filter((t) => !origSet.has(t));
+
+          const sharedPrefixLen = (a: string, b: string) => {
+            const n = Math.min(a.length, b.length);
+            let i = 0;
+            while (i < n && a[i] === b[i]) i++;
+            return i;
+          };
+
+          const replacements: Array<{ from: string; to: string }> = [];
+          const usedAdded = new Set<number>();
+          for (const fromText of removed) {
+            // Find the best-matching "added" paragraph for this removed one.
+            let bestIdx = -1;
+            let bestScore = -1;
+            for (let j = 0; j < added.length; j++) {
+              if (usedAdded.has(j)) continue;
+              const score = sharedPrefixLen(fromText, added[j]);
+              if (score > bestScore && score >= Math.min(8, Math.floor(fromText.length * 0.3))) {
+                bestScore = score;
+                bestIdx = j;
+              }
+            }
+            if (bestIdx >= 0) {
+              replacements.push({ from: fromText, to: added[bestIdx] });
+              usedAdded.add(bestIdx);
+            }
+          }
+          console.log(`📝 Diff: ${removed.length} removed, ${added.length} added → ${replacements.length} replacement(s) queued.`);
+
+          if (replacements.length === 0) {
+            // No textual change — reuse the existing PDF (no need to regenerate).
+            console.log('ℹ️ No textual changes detected; preserving original PDF.');
+            pdfBlob = (cachedPdfAgreement && cachedPdfAgreement.size > 0)
+              ? cachedPdfAgreement
+              : processedAgreement;
+            docxBlob = originalDocxAgreement;
+          } else {
+            const fd = new FormData();
+            fd.append(
+              'file',
+              new File([originalDocxAgreement], 'original.docx', {
+                type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              }),
+            );
+            fd.append('replacements', JSON.stringify(replacements));
+
+            const endpoint = `${BACKEND_URL || ''}${API_ENDPOINTS.AGREEMENT_PATCH_AND_PDF}`;
+            const resp = await fetch(endpoint, { method: 'POST', body: fd });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data?.success && data.pdfBase64) {
+                const pdfBytes = Uint8Array.from(atob(data.pdfBase64), (c) => c.charCodeAt(0));
+                pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+                if (data.docxBase64) {
+                  const docxBytes = Uint8Array.from(atob(data.docxBase64), (c) => c.charCodeAt(0));
+                  docxBlob = new Blob([docxBytes], {
+                    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  });
+                }
+                console.log(`✅ Saved via DOCX patch (${data.replacedCount}/${replacements.length} replacements applied).`);
+                if (data.replacedCount < replacements.length) {
+                  console.warn(
+                    `⚠️ ${replacements.length - data.replacedCount} replacement(s) could not be matched — text may have been split across styled runs.`,
+                  );
+                }
+              } else {
+                console.warn('⚠️ patch-and-pdf returned no PDF; will try puppeteer fallback.', data?.error);
+              }
+            } else {
+              console.warn('⚠️ patch-and-pdf endpoint failed:', resp.status, await resp.text().catch(() => ''));
+            }
+          }
+        } catch (patchErr) {
+          console.warn('⚠️ DOCX patch path errored; will try puppeteer fallback.', patchErr);
+        }
+      } else {
+        console.log('ℹ️ Skipping DOCX patch (no original DOCX or no paragraph snapshot).');
+      }
+
+      // If the DOCX patch path couldn't produce a PDF (e.g. no original DOCX, or all replacements
+      // failed to match), preserve the ORIGINAL agreement so the layout (logos, tables, anchors) stays intact.
+      // We intentionally do NOT fall back to puppeteer or html2canvas here — those rebuild the document
+      // from HTML and shift logo positioning.
+      if (!pdfBlob) {
+        console.warn('⚠️ DOCX patch path did not produce a PDF — keeping original agreement unchanged.');
+        alert(
+          'Your edits could not be applied while preserving the original Word formatting (the changed text may be styled or split across multiple runs in the source DOCX). The original agreement is preserved. Try editing simpler, contiguous plain text.',
+        );
+        setIsSavingAgreementEdits(false);
+        return;
+      }
+
+      // Replace the active agreement with the edited PDF so approval / email / download all pick it up.
+      setProcessedAgreement(pdfBlob);
+      setCachedPdfAgreement(pdfBlob);
+      // If the patch / html-to-docx-pdf path returned a DOCX, swap it in so "Download Word" reflects edits
+      // AND a subsequent Edit click re-diffs against the latest version.
+      if (docxBlob) {
+        setOriginalDocxAgreement(docxBlob);
+      }
+      setLastEditedAgreementHtml(editedHtml);
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      const url = URL.createObjectURL(pdfBlob);
+      setPreviewUrl(url);
+      setIframeKey(k => k + 1);
+      setAgreementPreviewIsPdf(true);
+      setShowInlinePreview(true);
+      setIsEditingAgreement(false);
+    } catch (err) {
+      console.error('❌ Failed to save agreement edits:', err);
+      alert('Could not save your changes. Please try again.');
+    } finally {
+      setIsSavingAgreementEdits(false);
+    }
+  };
+
+  const handleCancelAgreementEdits = () => {
+    setIsEditingAgreement(false);
+    setEditableAgreementHtml('');
+    // Restore the previous preview (PDF iframe stays in state, just re-show it)
+    if (processedAgreement) {
+      setShowInlinePreview(true);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      console.log('🔄 Starting PDF generation...');
+      
+      // Find the quote preview element
+      const quotePreviewElement = document.querySelector('[data-quote-preview]');
+      if (!quotePreviewElement) {
+        console.error('❌ Quote preview element not found');
+        alert('Quote preview not found. Please try again.');
+        return;
+      }
+
+      // Create a temporary container for PDF generation
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '0';
+      tempContainer.style.width = '1200px';
+      tempContainer.style.backgroundColor = 'white';
+      tempContainer.style.padding = '40px';
+      document.body.appendChild(tempContainer);
+
+      // Clone the quote preview content
+      const clonedContent = quotePreviewElement.cloneNode(true) as HTMLElement;
+      tempContainer.appendChild(clonedContent);
+
+      // Wait for any images or fonts to load
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Generate PDF using html2canvas and jsPDF
+      const canvas = await html2canvas(tempContainer, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 1200,
+        height: clonedContent.scrollHeight
+      });
+
+      // Clean up temporary container
+      document.body.removeChild(tempContainer);
+
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 295; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+
+      let position = 0;
+
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Add additional pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      // Generate filename
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const filename = `CPQ_Quote_${clientInfo.clientName.replace(/\s+/g, '_')}_${timestamp}.pdf`;
+
+      // Convert PDF to blob and save to database
+      const pdfBlob = pdf.output('blob');
+      
+      // Download and save to database
+      await downloadAndSavePDF(
+        pdfBlob,
+        filename,
+        clientInfo.clientName,
+        clientInfo.company,
+        undefined, // quoteId
+        calculation?.totalCost
+      );
+      
+      console.log('✅ PDF generated, downloaded, and saved to database successfully');
+      
+    } catch (error) {
+      console.error('❌ Error generating PDF:', error);
+      alert('Error generating PDF. Please try again.');
+    }
+  };
+
+  const customLineItemsTotal = customLineItems.reduce((sum, item) => sum + (item.price || 0), 0);
+
+  const handleAddCustomLineItem = () => {
+    const name = newCustomItem.name.trim();
+    const description = newCustomItem.description.trim();
+    const price = parseFloat(newCustomItem.price);
+
+    if (!name) {
+      alert('Please enter a name for the custom line item.');
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      alert('Please enter a valid (non-negative) price for the custom line item.');
+      return;
+    }
+
+    setCustomLineItems((prev) => [
+      ...prev,
+      { id: `cli-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, description, price },
+    ]);
+    setNewCustomItem({ name: '', description: '', price: '' });
+  };
+
+  const handleRemoveCustomLineItem = (id: string) => {
+    setCustomLineItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleGenerateAgreement = async () => {
+    if (!selectedTemplate) {
+      alert('Please select a template first in the Template session.');
+      return;
+    }
+
+    // Validate required quote dates are provided
+    const hasProjectStartDate = configuration?.startDate && configuration.startDate.trim() !== '';
+    const hasEffectiveDate = clientInfo.effectiveDate && clientInfo.effectiveDate.trim() !== '';
+    const hasQuoteExpiryDate = clientInfo.quoteExpiryDate && clientInfo.quoteExpiryDate.trim() !== '';
+    
+    if (!hasProjectStartDate || !hasEffectiveDate || !hasQuoteExpiryDate) {
+      // Set validation errors to show red borders
+      setDateValidationErrors({
+        projectStartDate: !hasProjectStartDate,
+        effectiveDate: !hasEffectiveDate,
+        quoteExpiryDate: !hasQuoteExpiryDate,
+        projectStartNotAfterEffective: false,
+      });
+
+      // Show alert with specific missing fields
+      const missingFields = [];
+      if (!hasProjectStartDate) missingFields.push('Project Start Date');
+      if (!hasEffectiveDate) missingFields.push('Effective Date');
+      if (!hasQuoteExpiryDate) missingFields.push('Quote Expiry Date');
+
+      alert(`Please fill in the following required fields:\n- ${missingFields.join('\n- ')}`);
+      return;
+    }
+
+    // Cross-field date validation
+    const projectStartNotAfterEffective =
+      configuration!.startDate! <= clientInfo.effectiveDate!;
+
+    if (projectStartNotAfterEffective) {
+      setDateValidationErrors(prev => ({
+        ...prev,
+        projectStartNotAfterEffective,
+      }));
+      alert('Date validation error:\n- Project Start Date must be after the Effective Date');
+      return;
+    }
+
+
+    setIsGeneratingAgreement(true);
+    setCachedPdfAgreement(null);
+    try {
+      console.log('🔄 Generating Agreement... [TIMESTAMP:', new Date().toISOString(), ']');
+      console.log('🔍 calculation prop:', calculation);
+      console.log('🔍 safeCalculation:', safeCalculation);
+      
+      // Use safe calculation with additional safety checks
+      const currentCalculation = calculation || safeCalculation;
+      console.log('🔍 currentCalculation:', currentCalculation);
+      console.log('🔍 currentCalculation.totalCost:', currentCalculation.totalCost);
+      
+      // Additional safety check
+      if (!currentCalculation || typeof currentCalculation.totalCost === 'undefined') {
+        console.error('❌ CRITICAL: currentCalculation is invalid:', currentCalculation);
+        alert('Error: Invalid calculation data. Please refresh the page and try again.');
+        return;
+      }
+
+      // Check if configuration is available
+      if (!configuration) {
+        console.error('❌ Configuration is undefined:', configuration);
+        alert('Error: No configuration available. Please go to the Configuration session and configure your project first.');
+        return;
+      }
+      
+      // Check if a template is selected
+      if (!selectedTemplate) {
+        console.log('❌ No template selected');
+        alert('Please select a template first in the Template session before generating an agreement.');
+        return;
+      }
+
+      console.log('🔍 Selected template details:', {
+        id: selectedTemplate.id,
+        name: selectedTemplate.name,
+        hasFile: !!selectedTemplate.file,
+        fileType: selectedTemplate.file?.type,
+        fileName: selectedTemplate.file?.name,
+        fileSize: selectedTemplate.file?.size,
+        lastModified: selectedTemplate.file?.lastModified
+      });
+
+      // Note: selectedTemplate.file may be null for backend-stored templates;
+      // the fetchLatestTemplateFile() call below will retrieve it from the server.
+      console.log('📄 Processing template:', selectedTemplate.name);
+      console.log('📊 Template file type:', selectedTemplate.file?.type ?? selectedTemplate.fileType ?? 'unknown (will fetch from backend)');
+      console.log('📊 Calculation object:', calculation);
+      console.log('📊 SafeCalculation object:', safeCalculation);
+      console.log('📊 Configuration object:', configuration);
+      console.log('📊 Configuration.dataSizeGB:', configuration?.dataSizeGB);
+      console.log('📊 Configuration.migrationType:', configuration?.migrationType);
+      console.log('👤 Client Info object:', clientInfo);
+      console.log('🏢 Company name from clientInfo:', clientInfo.company);
+      
+      // Debug: Check if calculation has actual values
+      if (calculation) {
+        console.log('✅ Using actual calculation object');
+        console.log('💰 Calculation values:', {
+          userCost: calculation.userCost,
+          dataCost: calculation.dataCost,
+          migrationCost: calculation.migrationCost,
+          instanceCost: calculation.instanceCost,
+          totalCost: calculation.totalCost
+        });
+      } else {
+        console.log('⚠️ Using fallback calculation object');
+        console.log('💰 Fallback values:', {
+          userCost: safeCalculation.userCost,
+          dataCost: safeCalculation.dataCost,
+          migrationCost: safeCalculation.migrationCost,
+          instanceCost: safeCalculation.instanceCost,
+          totalCost: safeCalculation.totalCost
+        });
+      }
+      
+      // CRITICAL: Ensure we have valid calculation data
+      const finalCalculation = calculation || safeCalculation;
+      console.log('🔍 FINAL CALCULATION BEING USED:', finalCalculation);
+      console.log('🔍 FINAL CALCULATION TYPE:', typeof finalCalculation);
+      console.log('🔍 FINAL CALCULATION KEYS:', Object.keys(finalCalculation));
+      
+      // CRITICAL: Ensure we have valid configuration data
+      const fallbackConfiguration = {
+        numberOfUsers: 1,
+        instanceType: 'Standard',
+        numberOfInstances: 1,
+        duration: 1,
+        migrationType: 'Content',
+        dataSizeGB: 0
+      };
+      // Clone to avoid mutating React state object
+      const finalConfiguration = { ...(configuration || fallbackConfiguration) } as any;
+      // Multi combination: ensure top-level duration reflects the effective duration from nested configs
+      // (new UI stores per-exhibit durations in messagingConfigs/contentConfigs arrays).
+      if (finalConfiguration?.migrationType === 'Multi combination') {
+        const effectiveDuration = getEffectiveDurationMonths(finalConfiguration);
+        if (effectiveDuration > 0) {
+          finalConfiguration.duration = effectiveDuration;
+        }
+      }
+      console.log('🔍 FINAL CONFIGURATION BEING USED:', finalConfiguration);
+      console.log('🔍 FINAL CONFIGURATION TYPE:', typeof finalConfiguration);
+      console.log('🔍 FINAL CONFIGURATION KEYS:', Object.keys(finalConfiguration));
+      console.log('🔍 FINAL CONFIGURATION startDate:', finalConfiguration.startDate);
+      console.log('🔍 FINAL CONFIGURATION endDate:', finalConfiguration.endDate);
+
+      // Create quote data for template processing
+      const quoteData = {
+        id: `quote-001`,
+        company: clientInfo.company || clientInfo.clientName || 'Demo Company Inc.',
+        clientName: clientInfo.clientName,
+        clientEmail: clientInfo.clientEmail,
+        quoteExpiryDate: clientInfo.quoteExpiryDate,
+        configuration: {
+          numberOfUsers: finalConfiguration.numberOfUsers,
+          instanceType: finalConfiguration.instanceType,
+          numberOfInstances: finalConfiguration.numberOfInstances,
+          duration: finalConfiguration.duration,
+          migrationType: finalConfiguration.migrationType,
+          dataSizeGB: finalConfiguration.dataSizeGB,
+          startDate: finalConfiguration.startDate,
+          endDate: finalConfiguration.endDate,
+          // Manage Standalone fields (E99 / E100) — required for {{users_count}} and {{per_user_cost}}
+          servicePlan: finalConfiguration.servicePlan,
+          manageUsers: finalConfiguration.manageUsers,
+          manageDataGB: finalConfiguration.manageDataGB,
+          combination: finalConfiguration.combination,
+          // IMPORTANT: preserve nested configs for Multi combination
+          messagingConfig: finalConfiguration.messagingConfig,
+          contentConfig: finalConfiguration.contentConfig,
+          // New UI shape: per-exhibit configs
+          messagingConfigs: finalConfiguration.messagingConfigs,
+          contentConfigs: finalConfiguration.contentConfigs,
+          emailConfigs: finalConfiguration.emailConfigs
+        },
+        calculation: {
+          userCost: finalCalculation.userCost,
+          dataCost: finalCalculation.dataCost,
+          migrationCost: finalCalculation.migrationCost,
+          instanceCost: finalCalculation.instanceCost,
+          totalCost: finalCalculation.totalCost,
+          tier: finalCalculation.tier
+        },
+        costs: {
+          userCost: finalCalculation.userCost,
+          dataCost: finalCalculation.dataCost,
+          migrationCost: finalCalculation.migrationCost,
+          instanceCost: finalCalculation.instanceCost,
+          totalCost: finalCalculation.totalCost
+        },
+        selectedPlan: {
+          name: finalCalculation.tier.name,
+          price: finalCalculation.totalCost,
+          features: finalCalculation.tier.features
+        },
+        quoteId: quoteId || generateUniqueQuoteId(),
+        generatedDate: new Date(),
+        status: 'draft'
+      };
+      
+      console.log('📋 Final quoteData for template processing:', {
+        company: quoteData.company,
+        clientName: quoteData.clientName,
+        clientEmail: quoteData.clientEmail,
+        'company type': typeof quoteData.company,
+        'company length': quoteData.company?.length
+      });
+
+      let processedDocument: Blob | null = null;
+
+      // Always try to fetch the latest template file from backend (cache-bust) so
+      // edits in Mongo/disk are reflected even if the template was previously loaded.
+      const fetchLatestTemplateFile = async (): Promise<File | null> => {
+        try {
+          if (!selectedTemplate?.id) return null;
+          // Combo-attached templates (id starts with 'combo-') live in /api/combinations, not /api/templates.
+          // Return the already-loaded file if present, otherwise fetch from the combinations endpoint.
+          if (selectedTemplate.id.startsWith('combo-')) {
+            if (selectedTemplate.file) return selectedTemplate.file;
+            const comboId = selectedTemplate.id.slice('combo-'.length); // e.g. 'combo-1234-abc'
+            const comboRes = await fetch(`${BACKEND_URL}/api/combinations/${comboId}/file?t=${Date.now()}`, { cache: 'no-store' });
+            if (!comboRes.ok) {
+              console.warn(`⚠️ Combination file fetch failed with status ${comboRes.status}`);
+              return null;
+            }
+            const comboBlob = await comboRes.blob();
+            return new File([comboBlob], selectedTemplate.fileName || 'agreement.docx', { type: comboBlob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+          }
+          // Retry once on transient 5xx (MongoDB Atlas can momentarily fail individual ops
+          // right after backend start or during brief network/replica blips).
+          let fr: Response | null = null;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            fr = await fetch(`${BACKEND_URL}/api/templates/${selectedTemplate.id}/file?t=${Date.now()}`, {
+              cache: 'no-store'
+            });
+            if (fr.ok || fr.status < 500) break;
+            console.warn(`⚠️ Template fetch attempt ${attempt + 1} returned ${fr.status}; retrying...`);
+            await new Promise(r => setTimeout(r, 600));
+          }
+          if (!fr || !fr.ok) {
+            console.warn(`⚠️ Template fetch failed with status ${fr?.status}: ${fr?.statusText}`);
+            return null;
+          }
+          
+          // Check if the response is actually a file (not JSON error)
+          const contentType = fr.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errorData = await fr.json();
+            console.warn('⚠️ Backend returned JSON instead of file:', errorData);
+            return null;
+          }
+          
+          const blob = await fr.blob();
+          
+          // Check for empty blob
+          if (blob.size === 0) {
+            console.warn('⚠️ Template file is empty, falling back to cached file');
+            return null;
+          }
+          
+          // Validate that the blob is actually a DOCX file (ZIP signature: PK)
+          const arrayBuffer = await blob.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          // Check for ZIP signature (0x50 0x4B = "PK")
+          if (uint8Array.length < 4 || uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
+            // Try to detect what we actually got
+            const textDecoder = new TextDecoder('utf-8');
+            const preview = textDecoder.decode(uint8Array.slice(0, Math.min(100, uint8Array.length)));
+            console.error('❌ Invalid file signature. File preview:', preview);
+            
+            if (preview.toLowerCase().includes('<html') || preview.toLowerCase().includes('<!doctype')) {
+              console.error('❌ Backend returned HTML instead of DOCX file');
+            } else if (preview.includes('{') && preview.includes('"error"')) {
+              console.error('❌ Backend returned JSON error:', preview);
+            }
+            
+            console.warn('⚠️ Fetched file is not a valid DOCX file, falling back to cached file');
+            return null;
+          }
+          
+          return new File(
+            [blob],
+            selectedTemplate.fileName || selectedTemplate.file?.name || 'template.docx',
+            {
+              type:
+                selectedTemplate.fileType ||
+                selectedTemplate.file?.type ||
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            }
+          );
+        } catch (e) {
+          console.warn('⚠️ Unable to fetch latest template file, falling back to cached file:', e);
+          return null;
+        }
+      };
+
+      // Use cached template file immediately when available to avoid blocking on network fetch.
+      // Only await fetch when we have no valid cached file (faster "Preview Agreement").
+      let templateFileForAgreement: File | null = null;
+      if (selectedTemplate.file && selectedTemplate.file.size > 0) {
+        templateFileForAgreement = selectedTemplate.file;
+        // Refresh template in background for next run (non-blocking)
+        fetchLatestTemplateFile().catch(() => {});
+      } else {
+        templateFileForAgreement = await fetchLatestTemplateFile();
+      }
+      templateFileForAgreement = templateFileForAgreement || selectedTemplate.file || null;
+
+      // Validate that we have a template file
+      if (!templateFileForAgreement) {
+        if (selectedTemplate?.id) {
+          throw new Error(
+            `Couldn't load template "${selectedTemplate.name || selectedTemplate.id}" from the server. ` +
+            `The backend may be momentarily unavailable — please try again in a few seconds.`
+          );
+        }
+        throw new Error('No template file available. Please select a template and try again.');
+      }
+
+      // Validate that the template file is not empty
+      if (templateFileForAgreement.size === 0) {
+        throw new Error('Template file is empty. Please re-select the template or contact support.');
+      }
+
+      console.log('📄 Using template file:', {
+        name: templateFileForAgreement.name,
+        size: templateFileForAgreement.size,
+        type: templateFileForAgreement.type,
+        source: templateFileForAgreement === selectedTemplate.file ? 'cached' : 'backend'
+      });
+
+      // Process based on template file type - DOCX is now the primary method
+      if (templateFileForAgreement.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        console.log('🔄 Processing DOCX template (Primary Method)...');
+        
+        // Import DOCX template processor
+        const { DocxTemplateProcessor } = await import('../utils/docxTemplateProcessor');
+        
+        // Debug: Log the quote data being passed
+        console.log('🔍 Quote data being passed to DOCX processor:', {
+          company: quoteData.company,
+          clientName: quoteData.clientName,
+          clientEmail: quoteData.clientEmail,
+          configuration: quoteData.configuration,
+          calculation: quoteData.calculation,
+          selectedPlan: quoteData.selectedPlan
+        });
+        
+        // CRITICAL: Deep dive into quote data structure
+        console.log('🔍 COMPLETE QUOTE DATA STRUCTURE:');
+        console.log('  Full quoteData object:', JSON.stringify(quoteData, null, 2));
+        console.log('  quoteData.company:', quoteData.company);
+        console.log('  quoteData.clientName:', quoteData.clientName);
+        console.log('  quoteData.clientEmail:', quoteData.clientEmail);
+        console.log('  quoteData.configuration:', JSON.stringify(quoteData.configuration, null, 2));
+        console.log('  quoteData.calculation:', JSON.stringify(quoteData.calculation, null, 2));
+        console.log('  quoteData.selectedPlan:', JSON.stringify(quoteData.selectedPlan, null, 2));
+        
+        // CRITICAL: Extract data directly from the quote with proper validation
+        console.log('🔍 EXTRACTING DATA FROM QUOTE:');
+        console.log('  quoteData object:', quoteData);
+        console.log('  quoteData.company:', quoteData.company);
+        console.log('  quoteData.configuration:', quoteData.configuration);
+        console.log('  quoteData.calculation:', quoteData.calculation);
+        console.log('  clientInfo object:', clientInfo);
+        
+        // Extract values with multiple fallback sources
+        console.log('🔍 DEBUGGING COMPANY NAME SOURCES:');
+        console.log('  quoteData.company:', quoteData.company);
+        console.log('  clientInfo.company:', clientInfo.company);
+        console.log('  dealData:', dealData);
+        console.log('  configureContactInfo:', configureContactInfo);
+        
+        const companyName = clientInfo.company || quoteData.company || configureContactInfo?.company || dealData?.companyByContact || dealData?.company || 'Demo Company Inc.';
+        console.log('  Final companyName:', companyName);
+        
+        // CRITICAL: Additional fallback if company name is still undefined or empty
+        let finalCompanyName = companyName;
+        if (!finalCompanyName || finalCompanyName === 'undefined' || finalCompanyName === '' || finalCompanyName === 'null') {
+          console.warn('⚠️ Company name is still undefined/empty, using fallback');
+          finalCompanyName = 'Demo Company Inc.';
+        }
+        console.log('  Final finalCompanyName:', finalCompanyName);
+        // Manage Standalone uses manageUsers (E99), not numberOfUsers.
+        const userCount = quoteData.configuration?.servicePlan === 'Manage'
+          ? (quoteData.configuration?.manageUsers || 1)
+          : (quoteData.configuration?.numberOfUsers || 1);
+        const userCost = (() => {
+          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+          if (cfg?.servicePlan === 'Manage') {
+            // If this agreement doesn't require users (e.g. Data Sprawl), userCost is always 0
+            if (cfg?.manageRequiresUsers === false) return 0;
+            const raw = manageUserCost(cfg?.manageUsers ?? 0);
+            return raw === 'CUSTOM' ? (quoteData.calculation?.userCost || 0) : (raw as number);
+          }
+          return quoteData.calculation?.userCost || 0;
+        })();
+        const migrationCost = quoteData.calculation?.migrationCost || 0;
+        const calculatedTotalCost = quoteData.calculation?.totalCost || 0;
+        const isOverageAgreementQuote =
+          (quoteData.configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+          (quoteData.configuration?.migrationType || '').toLowerCase() === 'overage agreement';
+        // For Manage plans, totalCost must be recomputed after dataCost is recalculated
+        // to avoid stale values from previous configurations bleeding into the agreement.
+        // dataCost is declared below — use a forward reference via a thunk resolved after dataCost.
+        const totalCost = calculatedTotalCost;
+        const duration = getEffectiveDurationMonths(quoteData.configuration) || 1;
+        const migrationType = quoteData.configuration?.migrationType || 'Content';
+        const clientName = quoteData.clientName || clientInfo.clientName || 'Demo Client';
+        const clientEmail = quoteData.clientEmail || clientInfo.clientEmail || 'demo@example.com';
+        
+        // CRITICAL DEBUG: Log duration calculation for Multi combination
+        console.log('🔍 AGREEMENT GENERATION - DURATION DEBUG:');
+        console.log('  quoteData.configuration.migrationType:', quoteData.configuration?.migrationType);
+        console.log('  quoteData.configuration.duration:', quoteData.configuration?.duration);
+        console.log('  quoteData.configuration.messagingConfig?.duration:', quoteData.configuration?.messagingConfig?.duration);
+        console.log('  quoteData.configuration.contentConfig?.duration:', quoteData.configuration?.contentConfig?.duration);
+        console.log('  getEffectiveDurationMonths result:', getEffectiveDurationMonths(quoteData.configuration));
+        console.log('  Final duration value being used:', duration);
+        
+        // CRITICAL: Debug extracted values
+        console.log('🔍 EXTRACTED VALUES DEBUG:');
+        console.log('  companyName:', companyName);
+        console.log('  userCount:', userCount);
+        console.log('  userCost:', userCost);
+        console.log('  migrationCost:', migrationCost);
+        console.log('  totalCost:', totalCost);
+        console.log('  duration:', duration);
+        console.log('  migrationType:', migrationType);
+        console.log('  clientName:', clientName);
+        console.log('  clientEmail:', clientEmail);
+        
+        // CRITICAL: Check if any values are undefined or null
+        const extractedValues = {
+          companyName, userCount, userCost, migrationCost, totalCost, duration, migrationType, clientName, clientEmail
+        };
+        
+        Object.entries(extractedValues).forEach(([key, value]) => {
+          if (value === undefined || value === null || value === '') {
+            console.error(`❌ CRITICAL: ${key} is undefined/null/empty:`, value);
+          } else {
+            console.log(`✅ ${key}:`, value);
+          }
+        });
+        
+        // CRITICAL: Test formatCurrency function
+        console.log('🔍 FORMAT CURRENCY TEST:');
+        console.log('  formatCurrency(0):', formatCurrency(0));
+        console.log('  formatCurrency(100):', formatCurrency(100));
+        console.log('  formatCurrency(15000):', formatCurrency(15000));
+        console.log('  formatCurrency(userCost):', formatCurrency(userCost));
+        console.log('  formatCurrency(migrationCost):', formatCurrency(migrationCost));
+        console.log('  formatCurrency(totalCost):', formatCurrency(totalCost));
+        
+        console.log('🔍 EXTRACTED VALUES:');
+        console.log('  companyName:', companyName, '(type:', typeof companyName, ')');
+        console.log('  userCount:', userCount, '(type:', typeof userCount, ')');
+        console.log('  userCost:', userCost, '(type:', typeof userCost, ')');
+        console.log('  migrationCost:', migrationCost, '(type:', typeof migrationCost, ')');
+        console.log('  totalCost:', totalCost, '(type:', typeof totalCost, ')');
+        console.log('  duration:', duration, '(type:', typeof duration, ')');
+        console.log('  migrationType:', migrationType, '(type:', typeof migrationType, ')');
+        console.log('  clientName:', clientName, '(type:', typeof clientName, ')');
+        console.log('  clientEmail:', clientEmail, '(type:', typeof clientEmail, ')');
+        
+        // CRITICAL: Validate that we have actual values, not undefined
+        if (!companyName || companyName === 'undefined') {
+          console.error('❌ CRITICAL: Company name is undefined!');
+          console.log('  quoteData.company:', quoteData.company);
+          console.log('  clientInfo.company:', clientInfo.company);
+        }
+        if (!userCount || userCount === 0) {
+          console.error('❌ CRITICAL: User count is undefined!');
+          console.log('  quoteData.configuration.numberOfUsers:', quoteData.configuration?.numberOfUsers);
+        }
+        if (totalCost === undefined || totalCost === null) {
+          console.error('❌ CRITICAL: Total cost is undefined!');
+          console.log('  quoteData.calculation.totalCost:', quoteData.calculation?.totalCost);
+        }
+        
+        // CRITICAL: Create comprehensive template data with ALL tokens for your template
+        // Calculate comprehensive pricing breakdown for consistency
+        const dataCost = (() => {
+          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+          // Manage Standalone: recalculate from manageDataGB × $0.13 to avoid stale calculation values
+          if (cfg?.servicePlan === 'Manage') {
+            return Number(cfg?.manageDataGB ?? 0) * 0.13;
+          }
+          return quoteData.calculation?.dataCost || 0;
+        })();
+        const instanceCost = quoteData.calculation?.instanceCost || 0;
+        const tierName = quoteData.calculation?.tier?.name || 'Advanced';
+        const instanceType = quoteData.configuration?.instanceType || 'Standard';
+        const numberOfInstances = quoteData.configuration?.numberOfInstances || 1;
+
+        // Data size (GB)
+        // - Email agreements do not have a GB/data-size concept -> 0 / blank tokens
+        // - Multi combination should use the CONTENT side's data size (messaging has no data size)
+        const isEmailAgreementForDataSize =
+          migrationType === 'Email' ||
+          (String(quoteData.configuration?.combination || '').toLowerCase().includes('gmail')) ||
+          (String(quoteData.configuration?.combination || '').toLowerCase().includes('outlook'));
+
+        const dataSizeGB = (() => {
+          const cfg = (finalConfiguration || quoteData.configuration || configuration) as any;
+          // Manage Standalone stores data size in manageDataGB, not dataSizeGB
+          if (cfg?.servicePlan === 'Manage') {
+            return Number(cfg?.manageDataGB ?? 0);
+          }
+          if (cfg?.migrationType === 'Multi combination') {
+            const fromContentConfig = Number(cfg?.contentConfig?.dataSizeGB ?? 0);
+            const fromContentConfigs = Number(cfg?.contentConfigs?.[0]?.dataSizeGB ?? 0);
+            return fromContentConfig > 0 ? fromContentConfig : fromContentConfigs;
+          }
+          return Number(cfg?.dataSizeGB ?? 0);
+        })();
+        
+        // CRITICAL: Recalculate discount based on the local totalCost value
+        // This ensures discount is calculated correctly for the template preview
+        // Discount now applies at ANY amount - no minimum threshold required
+        const localDiscountPercent = (clientInfo.discount ?? storedDiscountPercent ?? 0);
+        const localHasValidDiscount = localDiscountPercent > 0; // No cap
+        const localDiscountAmount = localHasValidDiscount ? totalCost * (localDiscountPercent / 100) : 0;
+        const localFinalTotalAfterDiscount = totalCost - localDiscountAmount;
+        const localShouldApplyDiscount = localHasValidDiscount;
+        
+        console.log('🧮 Discount calculation in handleGenerateAgreement:', {
+          totalCost,
+          localDiscountPercent,
+          localHasValidDiscount,
+          localDiscountAmount,
+          localFinalTotalAfterDiscount,
+          localShouldApplyDiscount
+        });
+        
+        // Debug: Log critical data extraction
+        console.log('🔍 DATA SIZE DEBUG:');
+        console.log('  quoteData.configuration?.dataSizeGB:', quoteData.configuration?.dataSizeGB);
+        console.log('  configuration?.dataSizeGB:', configuration?.dataSizeGB);
+        console.log('  finalConfiguration?.dataSizeGB:', finalConfiguration?.dataSizeGB);
+        console.log('  isEmailAgreementForDataSize:', isEmailAgreementForDataSize);
+        console.log('  Final dataSizeGB value:', dataSizeGB);
+        console.log('  typeof dataSizeGB:', typeof dataSizeGB);
+        console.log('  dataSizeGB === undefined:', dataSizeGB === undefined);
+        console.log('  dataSizeGB === null:', dataSizeGB === null);
+        console.log('  dataCost value:', dataCost);
+        console.log('  typeof dataCost:', typeof dataCost);
+        console.log('  Per data cost calculation:', (dataCost || 0) / (dataSizeGB || 1));
+        
+        // CRITICAL: Check all configuration sources
+        console.log('🔍 CONFIGURATION SOURCES:');
+        console.log('  configuration prop:', configuration);
+        console.log('  finalConfiguration:', finalConfiguration);
+        console.log('  quoteData.configuration:', quoteData.configuration);
+        
+        // Debug: Log the date values being used
+        console.log('🔍 Template Data Debug:');
+        console.log('  configuration?.startDate:', configuration?.startDate);
+        console.log('  configuration?.endDate:', configuration?.endDate);
+        console.log('  clientInfo.effectiveDate:', clientInfo.effectiveDate);
+        console.log('  clientInfo.paymentTerms:', clientInfo.paymentTerms);
+        console.log('  configuration?.duration:', configuration?.duration);
+        console.log('  Full configuration object:', configuration);
+        console.log('  Full clientInfo object:', clientInfo);
+        
+        const templateData: Record<string, string> = {
+          // Core company and client information
+          '{{Company Name}}': finalCompanyName || 'Your Company',
+          '{{ Company Name }}': finalCompanyName || 'Your Company',
+          '{{Company_Name}}': finalCompanyName || 'Your Company',
+          '{{ Company_Name }}': finalCompanyName || 'Your Company',
+          '{{company name}}': finalCompanyName || 'Your Company',
+          '{{clientName}}': clientName || 'Contact Name',
+          '{{client_name}}': clientName || 'Contact Name',
+          '{{email}}': clientEmail || 'contact@email.com',
+          '{{client_email}}': clientEmail || 'contact@email.com',
+          
+          // Project configuration
+          '{{users_count}}': (userCount || 1).toString(),
+          '{{userscount}}': (userCount || 1).toString(),
+          '{{users}}': (userCount || 1).toString(),
+          '{{number_of_users}}': (userCount || 1).toString(),
+          // User label: "Mailboxes" for email migrations, "Users" for others
+          '{{user_label}}': isEmailAgreementForDataSize ? 'Mailboxes' : 'Users',
+          '{{instance_type}}': instanceType,
+          '{{instanceType}}': instanceType,
+          '{{instance type}}': instanceType, // Space version
+          // Instance type monthly cost (per server per month)
+          // Multi combination requirement: sum messaging + content base monthly rates.
+          '{{instance_type_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              // Newer UI stores Multi-combo values in messagingConfigs/contentConfigs/emailConfigs arrays.
+              // Keep backward compatibility with older shape (messagingConfig/contentConfig/emailConfig).
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const cfg: any = configuration as any;
+              const msgType = (cfg.messagingConfig?.instanceType ?? cfg.messagingConfigs?.[0]?.instanceType) || 'Small';
+              const contentType = (cfg.contentConfig?.instanceType ?? cfg.contentConfigs?.[0]?.instanceType) || 'Small';
+              const emailType = (cfg.emailConfig?.instanceType ?? cfg.emailConfigs?.[0]?.instanceType) || '';
+
+              const base = getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType);
+              const email = emailType ? getInstanceTypeCost(emailType) : 0;
+              return formatCurrency(base + email);
+            }
+            return formatCurrency(getInstanceTypeCost(instanceType));
+          })(),
+          '{{instance_type cost}}': (() => {
+            // Space version - keep consistent with {{instance_type_cost}}
+            if (configuration?.migrationType === 'Multi combination') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const cfg: any = configuration as any;
+              const msgType = (cfg.messagingConfig?.instanceType ?? cfg.messagingConfigs?.[0]?.instanceType) || 'Small';
+              const contentType = (cfg.contentConfig?.instanceType ?? cfg.contentConfigs?.[0]?.instanceType) || 'Small';
+              const emailType = (cfg.emailConfig?.instanceType ?? cfg.emailConfigs?.[0]?.instanceType) || '';
+
+              const base = getInstanceTypeCost(msgType) + getInstanceTypeCost(contentType);
+              const email = emailType ? getInstanceTypeCost(emailType) : 0;
+              return formatCurrency(base + email);
+            }
+            return formatCurrency(getInstanceTypeCost(instanceType));
+          })(), // Space version
+          '{{instance..cost}}': formatCurrency(instanceCost), // Handle double-dot typo
+          '{{instance_cost}}': formatCurrency(instanceCost),
+          '{{instanceCost}}': formatCurrency(instanceCost),
+          '{{instance cost}}': formatCurrency(instanceCost), // Space version
+          '{{instance_users}}': numberOfInstances.toString(),
+          '{{number_of_instances}}': numberOfInstances.toString(),
+          '{{number of instances}}': numberOfInstances.toString(), // Space version
+          '{{numberOfInstances}}': numberOfInstances.toString(),
+          '{{instances}}': numberOfInstances.toString(),
+          '{{Duration of months}}': (duration || 1).toString(),
+          '{{Duration_of_months}}': (duration || 1).toString(),
+          '{{Suration_of_months}}': (duration || 1).toString(), // Handle typo version
+          '{{duration_months}}': (duration || 1).toString(),
+          '{{duration}}': (duration || 1).toString(),
+          // Complete validity text placeholders (for templates with hardcoded "Month" after placeholder)
+          '{{duration_validity_text}}': `Valid for ${duration || 1} Month${(duration || 1) === 1 ? '' : 's'}`,
+          '{{instance_validity_text}}': '',
+          '{{migration type}}': migrationType || 'Content',
+          '{{migration_type}}': migrationType || 'Content',
+          '{{migrationType}}': migrationType || 'Content',
+          // Data size tokens - use actual value (email agreements can now have data size)
+          '{{data_size}}': dataSizeGB.toString(),
+          '{{dataSizeGB}}': dataSizeGB.toString(),
+          '{{data_size_gb}}': dataSizeGB.toString(),
+          
+          // Pricing: price_data + price_migration + instance_cost must equal total (user+data+migration+instance).
+          '{{users_cost}}': formatCurrency((userCost || 0) + (dataCost || 0)),
+          '{{user_cost}}': formatCurrency(userCost || 0),
+          '{{userCost}}': formatCurrency(userCost || 0),
+          '{{price_data}}': formatCurrency((userCost || 0) + (dataCost || 0)),
+          '{{data_cost}}': formatCurrency(dataCost || 0),
+          '{{dataCost}}': formatCurrency(dataCost || 0),
+          '{{manag_data_size}}': (configuration?.manageDataGB ?? 0).toString(),
+          '{{manag_data_cost}}': formatCurrency(dataCost || 0),
+          '{{price_migration}}': formatCurrency(migrationCost || 0),
+          '{{migration_price}}': formatCurrency(migrationCost || 0),
+          
+          // Project dates - formatted as mm/dd/yyyy
+          // Use configuration.startDate (Project Start Date) for Start_date
+          '{{Start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            console.log('🔍 Start_date calculation:');
+            console.log('  configuration?.startDate (Project Start Date):', configuration?.startDate);
+            console.log('  clientInfo.effectiveDate (Effective Date):', clientInfo.effectiveDate);
+            console.log('  selected startDate:', startDate);
+            
+            if (!startDate) {
+              console.log('  No start date found, returning N/A');
+              return 'N/A';
+            }
+            
+            const formatted = formatDateMMDDYYYY(startDate);
+            console.log('  formatted result:', formatted);
+            return formatted;
+          })(),
+          '{{start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{startdate}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{project_start_date}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          '{{project_start}}': (() => {
+            const startDate = configuration?.startDate;
+            return startDate ? formatDateMMDDYYYY(startDate) : 'N/A';
+          })(),
+          
+          // End date - calculate from Project Start Date + duration
+          '{{End_date}}': (() => {
+            // First check if endDate is explicitly provided
+            if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
+              console.log('🔍 End_date using provided endDate:', configuration.endDate);
+              const formatted = formatDateMMDDYYYY(configuration.endDate);
+              console.log('  Formatted endDate:', formatted);
+              return formatted;
+            }
+            
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
+            
+            console.log('🔍 End_date calculation (no explicit endDate provided):');
+            console.log('  Project Start Date:', startDate);
+            console.log('  Duration (months):', duration);
+            console.log('  Configuration object:', configuration);
+            
+            if (!startDate || startDate === 'N/A' || startDate.trim() === '') {
+              console.warn('  ⚠️ No start date found, returning N/A');
+              return 'N/A';
+            }
+            
+            if (!duration || duration <= 0) {
+              console.warn('  ⚠️ No valid duration found, returning N/A');
+              return 'N/A';
+            }
+            
+            try {
+              // Handle different date formats
+              let startDateObj: Date;
+              if (startDate.includes('/')) {
+                // MM/DD/YYYY format
+                const [month, day, year] = startDate.split('/');
+                startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+              } else if (startDate.includes('-')) {
+                // YYYY-MM-DD format
+                startDateObj = new Date(startDate + 'T00:00:00');
+              } else {
+                startDateObj = new Date(startDate);
+              }
+              
+              if (isNaN(startDateObj.getTime())) {
+                console.error('  ❌ Invalid start date format:', startDate);
+                return 'N/A';
+              }
+              
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + duration);
+              
+              const endDateISO = endDate.toISOString().split('T')[0];
+              console.log('  ✅ Calculated End Date (ISO):', endDateISO);
+              const formatted = formatDateMMDDYYYY(endDateISO);
+              console.log('  ✅ Formatted End Date:', formatted);
+              return formatted;
+            } catch (error) {
+              console.error('  ❌ Error calculating end date:', error);
+              return 'N/A';
+            }
+          })(),
+          '{{end_date}}': (() => {
+            // Use the same logic as End_date
+            if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
+            if (startDate && duration && duration > 0) {
+              try {
+                let startDateObj: Date;
+                if (startDate.includes('/')) {
+                  const [month, day, year] = startDate.split('/');
+                  startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                } else if (startDate.includes('-')) {
+                  startDateObj = new Date(startDate + 'T00:00:00');
+                } else {
+                  startDateObj = new Date(startDate);
+                }
+                if (!isNaN(startDateObj.getTime())) {
+                  const endDate = new Date(startDateObj);
+                  endDate.setMonth(endDate.getMonth() + duration);
+                  return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+                }
+              } catch (error) {
+                console.error('Error calculating end_date:', error);
+              }
+            }
+            return 'N/A';
+          })(),
+          '{{enddate}}': (() => {
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
+            if (startDate && duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end_date}}': (() => {
+            if (configuration?.endDate) {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
+            if (startDate && duration > 0) {
+              const startDateObj = new Date(startDate);
+              const endDate = new Date(startDateObj);
+              endDate.setMonth(endDate.getMonth() + duration);
+              return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+            }
+            return 'N/A';
+          })(),
+          '{{project_end}}': (() => {
+            // Use the same logic as End_date
+            if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
+              return formatDateMMDDYYYY(configuration.endDate);
+            }
+            // Calculate end date from Project Start Date + duration
+            const startDate = configuration?.startDate;
+            const duration = getEffectiveDurationMonths(configuration) || 0;
+            if (startDate && duration && duration > 0) {
+              try {
+                let startDateObj: Date;
+                if (startDate.includes('/')) {
+                  const [month, day, year] = startDate.split('/');
+                  startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                } else if (startDate.includes('-')) {
+                  startDateObj = new Date(startDate + 'T00:00:00');
+                } else {
+                  startDateObj = new Date(startDate);
+                }
+                if (!isNaN(startDateObj.getTime())) {
+                  const endDate = new Date(startDateObj);
+                  endDate.setMonth(endDate.getMonth() + duration);
+                  return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+                }
+              } catch (error) {
+                console.error('Error calculating project_end:', error);
+              }
+            }
+            return 'N/A';
+          })(),
+          
+          // Per-user cost calculations
+          // Multi combination requirement: pick the HIGHEST per-user cost between messaging and content.
+          '{{per_user_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+            }
+            // For single migrations, calculate from userCost if available
+            if (userCost && userCost > 0 && userCount > 0) {
+              return formatCurrency(userCost / userCount);
+            }
+            // For single migrations, the cost is typically in the exhibit price (which equals totalCost)
+            // Calculate per-user cost from totalCost excluding migration and instance costs
+            const dataCost = safeCalculation.dataCost || 0;
+            const migrationCost = safeCalculation.migrationCost || 0;
+            const instanceCost = safeCalculation.instanceCost || 0;
+            
+            // Try userCost + dataCost first (this is the exhibit price for single migrations)
+            const combinedUserDataCost = (userCost || 0) + (dataCost || 0);
+            if (combinedUserDataCost > 0 && userCount > 0) {
+              return formatCurrency(combinedUserDataCost / userCount);
+            }
+            
+            // Fallback: calculate from totalCost excluding migration and instance
+            // This gives us the exhibit price (userCost + dataCost) for single migrations
+            const totalCost = getEffectiveTotalCost(configuration, safeCalculation);
+            if (totalCost && totalCost > 0 && userCount > 0) {
+              const userDataOnlyCost = totalCost - (migrationCost || 0) - (instanceCost || 0);
+              if (userDataOnlyCost > 0) {
+                return formatCurrency(userDataOnlyCost / userCount);
+              }
+            }
+            
+            // If all else fails, return 0
+            return formatCurrency(0);
+          })(),
+          '{{per_user_monthly_cost}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
+          '{{user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              return formatCurrency(Math.max(msgPerUser, contentPerUser));
+            }
+            return formatCurrency((userCost || 0) / (userCount || 1));
+          })(),
+          '{{monthly_user_rate}}': (() => {
+            if (configuration?.migrationType === 'Multi combination') {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgMonths = configuration.messagingConfig?.duration || 0;
+              const contentMonths = configuration.contentConfig?.duration || 0;
+              const msgUserCost = (safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUserMonthly = (msgUsers > 0 && msgMonths > 0) ? (msgUserCost / (msgUsers * msgMonths)) : 0;
+              const contentPerUserMonthly = (contentUsers > 0 && contentMonths > 0) ? (contentUserCost / (contentUsers * contentMonths)) : 0;
+              return formatCurrency(Math.max(msgPerUserMonthly, contentPerUserMonthly));
+            }
+            return formatCurrency((userCost || 0) / ((userCount || 1) * (duration || 1)));
+          })(),
+          
+          // Per-data cost calculations - cost per GB
+          '{{per_data_cost}}': (() => {
+            // Multi combination: per-GB should come from CONTENT side (messaging has no data size)
+            const isMulti = configuration?.migrationType === 'Multi combination';
+            const safeDataSize = isMulti ? (configuration?.contentConfig?.dataSizeGB ?? 0) : (dataSizeGB ?? 0);
+            const safeDataCost = isMulti ? (safeCalculation.contentCalculation?.dataCost ?? 0) : (dataCost ?? 0);
+            
+            // CRITICAL: For Email/Overage flows where dataSizeGB=0 and dataCost=0,
+            // use the tier's perGBCost directly
+            const tierPerGbRaw = isMulti
+              ? (safeCalculation.tier?.perGBCost ?? 0)
+              : (safeCalculation.tier?.perGBCost ?? 0);
+
+            const tierNameForFallback = (
+              safeCalculation.tier?.name ?? ''
+            ).toString().toLowerCase();
+
+            // Fallback defaults if tier.perGBCost is 0/undefined
+            const fallbackPerGb =
+              tierNameForFallback === 'basic' ? 1.0 :
+              tierNameForFallback === 'standard' ? 1.5 :
+              tierNameForFallback === 'advanced' ? 1.8 :
+              1.5; // Default to Standard rate if tier unknown
+
+            const tierPerGb = (tierPerGbRaw && tierPerGbRaw > 0) ? tierPerGbRaw : fallbackPerGb;
+
+            // Use tier's per-GB cost when dataSize is 0
+            const perDataCost = safeDataSize > 0 ? (safeDataCost / safeDataSize) : tierPerGb;
+            
+            console.log('🔍 PER_DATA_COST CALCULATION (handleGenerateAgreement):', {
+              migType: configuration?.migrationType,
+              dataSizeGB: safeDataSize,
+              dataCost: safeDataCost,
+              'safeCalculation.tier': safeCalculation.tier,
+              tierPerGbRaw,
+              tierNameForFallback,
+              fallbackPerGb,
+              tierPerGb,
+              perDataCost,
+              formatted: formatCurrency(perDataCost)
+            });
+            return formatCurrency(perDataCost);
+          })(),
+          
+          // Total pricing — for Manage plans recalculate from fresh userCost + dataCost
+          // to avoid stale totalCost from a previous configuration.
+          ...((() => {
+            const effectiveTotal = (finalConfiguration || quoteData.configuration)?.servicePlan === 'Manage'
+              ? (userCost || 0) + (dataCost || 0)
+              : (totalCost || 0);
+            return {
+              '{{total price}}': formatCurrency(effectiveTotal),
+              '{{total_price}}': formatCurrency(effectiveTotal),
+              '{{totalPrice}}': formatCurrency(effectiveTotal),
+              '{{prices}}': formatCurrency(effectiveTotal),
+              '{{subtotal}}': formatCurrency(effectiveTotal),
+              '{{sub_total}}': formatCurrency(effectiveTotal),
+            };
+          })()),
+
+          // Discount information - hide discount tokens when discount is 0
+        // CRITICAL: Use local discount variables calculated from local totalCost
+        '{{discount}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount percent}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '', // Space version
+          '{{discount_percentage}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? localDiscountPercent.toString() : '',
+          '{{discount_amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount amount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '', // Space version
+          '{{discountAmount}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `-${formatCurrency(localDiscountAmount)}` : '',
+          '{{discount_text}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `Discount (${localDiscountPercent}%)` : '',
+          '{{discount_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          
+          // Enhanced discount tokens for better template control
+          '{{discount_label}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? 'Discount' : '',
+          '{{discount_percent_only}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `${localDiscountPercent}%` : '',
+          '{{discount_percent_with_parentheses}}': (localShouldApplyDiscount && localDiscountPercent > 0) ? `(${localDiscountPercent}%)` : '',
+          '{{discount_display}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%)` : '',
+          '{{discount_full_line}}': (localShouldApplyDiscount && localDiscountAmount > 0) ? `Discount (${localDiscountPercent}%) - ${formatCurrency(localDiscountAmount)}` : '',
+          // Quote validity line tokens (long ordinal format: "20th of May, 2026")
+          '{{quote_expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDateLong}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{expiry_date_long}}': clientInfo.quoteExpiryDate ? formatDateLongOrdinal(clientInfo.quoteExpiryDate) : formatDateLongOrdinal(getDefaultQuoteExpiryDate()),
+          '{{quote_validity_line}}': clientInfo.quoteExpiryDate ? `This quote is valid till ${formatDateLongOrdinal(clientInfo.quoteExpiryDate)}` : `This quote is valid till ${formatDateLongOrdinal(getDefaultQuoteExpiryDate())}`,
+        '{{total_after_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{total_price_discount}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{final_total}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          '{{finalTotal}}': formatCurrency(localShouldApplyDiscount ? localFinalTotalAfterDiscount : totalCost),
+          
+          // Plan and tier information
+          '{{tier_name}}': tierName,
+          '{{tierName}}': tierName,
+          '{{plan_name}}': tierName,
+          '{{planName}}': tierName,
+          '{{plan}}': tierName,
+          
+          // Date information
+          '{{date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{current_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{currentDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{generation_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effective_date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{effectiveDate}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{Effective Date}}': clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]),
+          '{{quote_expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{quoteExpiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiry_date}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+          '{{expiryDate}}': clientInfo.quoteExpiryDate ? formatDateMMDDYYYY(clientInfo.quoteExpiryDate) : formatDateMMDDYYYY(getDefaultQuoteExpiryDate()),
+
+          // Service term tokens (Manage Plan SaaS Agreement)
+          // Manage Standalone has a fixed 3-month free trial; other plans use the configured duration.
+          '{{service_start_date}}': configuration?.startDate ? formatDateMMDDYYYY(configuration.startDate) : 'N/A',
+          '{{service_end_date}}': (() => {
+            const start = configuration?.startDate;
+            if (!start) return 'N/A';
+            const months = configuration?.servicePlan === 'Manage' ? 3 : (duration || 0);
+            if (!months) return 'N/A';
+            try {
+              const d = start.includes('-') ? new Date(start + 'T00:00:00') : new Date(start);
+              if (isNaN(d.getTime())) return 'N/A';
+              d.setMonth(d.getMonth() + months);
+              return formatDateMMDDYYYY(d.toISOString().split('T')[0]);
+            } catch { return 'N/A'; }
+          })(),
+          '{{service_term_label}}': configuration?.servicePlan === 'Manage'
+            ? '3-Month Free Trial'
+            : `${duration || 0}-Month${(duration || 0) === 1 ? '' : 's'}`,
+
+          // Payment terms information (overage agreements)
+          '{{payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{Payment_Terms}}': clientInfo.paymentTerms || '100% Upfront',
+          '{{paymentTerms}}': clientInfo.paymentTerms || '100% Upfront',
+          
+          // Deal information (if available)
+          '{{deal_id}}': dealData?.dealId || 'N/A',
+          '{{dealId}}': dealData?.dealId || 'N/A',
+          '{{deal_name}}': dealData?.dealName || 'N/A',
+          '{{dealName}}': dealData?.dealName || 'N/A',
+          '{{deal_amount}}': dealData?.amount || 'N/A',
+          '{{dealAmount}}': dealData?.amount || 'N/A',
+          '{{deal_stage}}': dealData?.stage || 'N/A',
+          '{{dealStage}}': dealData?.stage || 'N/A',
+          
+          // Messages from configuration
+          '{{messages}}': (configuration?.messages || 0).toString(),
+          '{{message}}': (configuration?.messages || 0).toString(),
+          '{{message_count}}': (configuration?.messages || 0).toString(),
+          '{{notes}}': (configuration?.messages || 0).toString(),
+          '{{additional_notes}}': (configuration?.messages || 0).toString(),
+          '{{additionalNotes}}': (configuration?.messages || 0).toString(),
+          '{{custom_message}}': (configuration?.messages || 0).toString(),
+          '{{customMessage}}': (configuration?.messages || 0).toString(),
+          '{{number_of_messages}}': (configuration?.messages || 0).toString(),
+          '{{numberOfMessages}}': (configuration?.messages || 0).toString(),
+          '{{messages_count}}': (configuration?.messages || 0).toString(),
+          
+          // Additional metadata
+          '{{template_name}}': selectedTemplate?.name || 'Default Template',
+          '{{templateName}}': selectedTemplate?.name || 'Default Template',
+          '{{agreement_id}}': `AGR-${Date.now().toString().slice(-8)}`,
+          '{{agreementId}}': `AGR-${Date.now().toString().slice(-8)}`,
+          '{{quote_id}}': `QTE-${Date.now().toString().slice(-8)}`,
+          '{{quoteId}}': `QTE-${Date.now().toString().slice(-8)}`
+        };
+        
+        // Calculate end date value once for reuse in space versions
+        const calculatedEndDate = (() => {
+          if (configuration?.endDate && configuration.endDate !== 'N/A' && configuration.endDate.trim() !== '') {
+            return formatDateMMDDYYYY(configuration.endDate);
+          }
+          const startDate = configuration?.startDate;
+          const duration = getEffectiveDurationMonths(configuration) || 0;
+          if (startDate && duration && duration > 0) {
+            try {
+              let startDateObj: Date;
+              if (startDate.includes('/')) {
+                const [month, day, year] = startDate.split('/');
+                startDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+              } else if (startDate.includes('-')) {
+                startDateObj = new Date(startDate + 'T00:00:00');
+              } else {
+                startDateObj = new Date(startDate);
+              }
+              if (!isNaN(startDateObj.getTime())) {
+                const endDate = new Date(startDateObj);
+                endDate.setMonth(endDate.getMonth() + duration);
+                return formatDateMMDDYYYY(endDate.toISOString().split('T')[0]);
+              }
+            } catch (error) {
+              console.error('Error calculating end date for space versions:', error);
+            }
+          }
+          return 'N/A';
+        })();
+        
+        // Add space versions for compatibility
+        templateData['{{End date}}'] = calculatedEndDate;
+        templateData['{{end date}}'] = calculatedEndDate;
+        
+        // For Multi combination: Determine migration names from selected exhibits
+        if (configuration?.migrationType === 'Multi combination' && selectedExhibits && selectedExhibits.length > 0) {
+          try {
+            console.log('🔍 Fetching exhibit details to determine migration names...');
+            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            if (exhibitResponse.ok) {
+              const exhibitData = await exhibitResponse.json();
+              if (exhibitData.success && exhibitData.exhibits) {
+                const exhibits = exhibitData.exhibits;
+                
+                // Helper function to get combination label
+                const getCombinationLabel = (combinationValue: string): string => {
+                  const labels: Record<string, string> = {
+                    'slack-to-teams': 'SLACK TO TEAMS',
+                    'slack-to-google-chat': 'SLACK TO GOOGLE CHAT',
+                    'google-chat-to-teams': 'GOOGLE CHAT TO TEAMS',
+                    'sharefile-to-google-sharedrive': 'SHAREFILE TO GOOGLE SHARED DRIVE',
+                    'sharefile-to-google-mydrive': 'SHAREFILE TO GOOGLE MYDRIVE',
+                    'sharefile-to-onedrive': 'SHAREFILE TO ONEDRIVE',
+                    'sharefile-to-sharepoint': 'SHAREFILE TO SHAREPOINT',
+                    'sharefile-to-sharefile': 'SHAREFILE TO SHAREFILE',
+                    'google-mydrive-to-google-mydrive': 'GOOGLE MYDRIVE TO GOOGLE MYDRIVE',
+                    'google-mydrive-to-google-sharedrive': 'GOOGLE MYDRIVE TO GOOGLE SHARED DRIVE',
+                    'google-sharedrive-to-onedrive': 'GOOGLE SHARED DRIVE TO ONEDRIVE',
+                    'google-sharedrive-to-sharepoint': 'GOOGLE SHARED DRIVE TO SHAREPOINT',
+                    'google-sharedrive-to-google-sharedrive': 'GOOGLE SHARED DRIVE TO GOOGLE SHARED DRIVE',
+                    'box-to-google-mydrive': 'BOX TO GOOGLE MYDRIVE & SHARED DRIVE',
+                    'box-to-google-sharedrive': 'BOX TO GOOGLE SHARED DRIVE',
+                    'box-to-onedrive': 'BOX TO ONEDRIVE',
+                    'box-to-sharepoint': 'BOX TO SHAREPOINT',
+                    'dropbox-to-google-mydrive': 'DROPBOX TO GOOGLE MYDRIVE',
+                    'dropbox-to-google-sharedrive': 'DROPBOX TO GOOGLE SHARED DRIVE',
+                    'dropbox-to-onedrive': 'DROPBOX TO ONEDRIVE',
+                    'dropbox-to-sharepoint': 'DROPBOX TO SHAREPOINT',
+                    'onedrive-to-onedrive': 'ONEDRIVE TO ONEDRIVE',
+                    'onedrive-to-google-mydrive': 'ONEDRIVE TO GOOGLE MYDRIVE',
+                    'sharepoint-online-to-egnyte': 'SHAREPOINT ONLINE TO EGNYTE',
+                    'sharepoint-online-to-google-sharedrive': 'SHAREPOINT ONLINE TO GOOGLE SHARED DRIVE',
+                    'egnyte-to-google': 'EGNYTE TO GOOGLE',
+                    'egnyte-to-google-sharedrive': 'EGNYTE TO GOOGLE SHARED DRIVE',
+                    'egnyte-to-microsoft': 'EGNYTE TO MICROSOFT',
+                    'nfs-to-google': 'NFS TO GOOGLE',
+                    'nfs-to-microsoft': 'NFS TO MICROSOFT',
+                    'overage-agreement': 'OVERAGE AGREEMENT',
+                    'google-to-google': 'GOOGLE MYDRIVE/SHAREDDRIVE - GOOGLE MYDRIVE/SHAREDDRIVE',
+                  };
+                  return labels[combinationValue.toLowerCase()] || combinationValue.toUpperCase();
+                };
+                
+                let messagingMigrationName = '';
+                let contentMigrationName = '';
+                
+                // Check each selected exhibit
+                for (const exhibitId of selectedExhibits) {
+                  const exhibit = exhibits.find((ex: any) => ex._id === exhibitId);
+                  if (exhibit) {
+                    const category = (exhibit.category || 'content').toLowerCase();
+                    const combinations = exhibit.combinations || [];
+                    
+                    // Find the LONGEST non-'all' combination so the most specific
+                    // variant wins (e.g. "dropbox-to-google-sharedrive" beats
+                    // "dropbox-to-google"), preventing truncated migration names
+                    // like "Dropbox To Google" instead of "Dropbox To Google Shared Drive".
+                    const nonAllCombinations = combinations.filter((c: string) => c !== 'all');
+                    const combination = nonAllCombinations.length > 0
+                      ? nonAllCombinations.reduce((longest: string, c: string) =>
+                          (String(c).length > String(longest).length ? String(c) : String(longest)), String(nonAllCombinations[0]))
+                      : undefined;
+                    
+                    if (combination) {
+                      const label = getCombinationLabel(combination);
+                      
+                      if ((category === 'messaging' || category === 'message') && !messagingMigrationName) {
+                        messagingMigrationName = label;
+                      } else if (category === 'content' && !contentMigrationName) {
+                        contentMigrationName = label;
+                      }
+                    }
+                  }
+                }
+                
+                // Add migration name tokens to templateData
+                templateData['{{messaging_migration_name}}'] = messagingMigrationName || '';
+                templateData['{{content_migration_name}}'] = contentMigrationName || '';
+                templateData['{{messagingMigrationName}}'] = messagingMigrationName || '';
+                templateData['{{contentMigrationName}}'] = contentMigrationName || '';
+                
+                console.log('✅ Migration names determined:', {
+                  messaging: messagingMigrationName,
+                  content: contentMigrationName
+                });
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error determining migration names from exhibits:', error);
+            // Set empty values as fallback
+            templateData['{{messaging_migration_name}}'] = '';
+            templateData['{{content_migration_name}}'] = '';
+            templateData['{{messagingMigrationName}}'] = '';
+            templateData['{{contentMigrationName}}'] = '';
+          }
+        } else {
+          // For non-multi-combination, set empty values
+          templateData['{{messaging_migration_name}}'] = '';
+          templateData['{{content_migration_name}}'] = '';
+          templateData['{{messagingMigrationName}}'] = '';
+          templateData['{{contentMigrationName}}'] = '';
+        }
+        
+        // Add Multi combination specific tokens (content_* and messaging_*)
+        if (configuration?.migrationType === 'Multi combination') {
+          // Extract messaging config and calculation
+          // NOTE: newer UI stores Multi-combo values in messagingConfigs/contentConfigs arrays.
+          // Keep backward compatibility with older shape (messagingConfig/contentConfig).
+          const messagingConfig =
+            configuration.messagingConfig ??
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ((configuration as any).messagingConfigs?.[0] ?? undefined);
+          const messagingCalc = (calculation || safeCalculation)?.messagingCalculation;
+          
+          // Extract content config and calculation
+          const contentConfig =
+            configuration.contentConfig ??
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ((configuration as any).contentConfigs?.[0] ?? undefined);
+          const contentCalc = (calculation || safeCalculation)?.contentCalculation;
+          
+          // Debug: Log the calculation structure
+          console.log('🔍 Multi combination calculation structure:', {
+            calculation: calculation,
+            safeCalculation: safeCalculation,
+            messagingCalc: messagingCalc,
+            contentCalc: contentCalc,
+            messagingConfig: messagingConfig,
+            contentConfig: contentConfig,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            messagingConfigsCount: ((configuration as any).messagingConfigs || []).length,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            contentConfigsCount: ((configuration as any).contentConfigs || []).length
+          });
+          
+          // Messaging tokens
+          if (messagingConfig) {
+            templateData['{{messaging_users_count}}'] = (messagingConfig.numberOfUsers || 0).toString();
+            templateData['{{messagingUsersCount}}'] = (messagingConfig.numberOfUsers || 0).toString();
+            templateData['{{messaging_number_of_users}}'] = (messagingConfig.numberOfUsers || 0).toString();
+            templateData['{{messaging number of users}}'] = (messagingConfig.numberOfUsers || 0).toString(); // Space version
+            templateData['{{messaging_number_of_instances}}'] = (messagingConfig.numberOfInstances || 0).toString();
+            templateData['{{messaging number of instances}}'] = (messagingConfig.numberOfInstances || 0).toString(); // Space version
+            templateData['{{messagingNumberOfInstances}}'] = (messagingConfig.numberOfInstances || 0).toString();
+            templateData['{{messaging_instance_type}}'] = messagingConfig.instanceType || 'Standard';
+            templateData['{{messaging instance type}}'] = messagingConfig.instanceType || 'Standard'; // Space version
+            templateData['{{messagingInstanceType}}'] = messagingConfig.instanceType || 'Standard';
+            templateData['{{messaging_duration}}'] = (messagingConfig.duration || 0).toString();
+            templateData['{{messagingDuration}}'] = (messagingConfig.duration || 0).toString();
+            templateData['{{messaging_messages}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{messagingMessages}}'] = (messagingConfig.messages || 0).toString();
+            // Also map general message_count to messaging_messages for Multi combination
+            templateData['{{message_count}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{messages}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{number_of_messages}}'] = (messagingConfig.messages || 0).toString();
+            templateData['{{messages_count}}'] = (messagingConfig.messages || 0).toString();
+          } else {
+            templateData['{{messaging_users_count}}'] = '0';
+            templateData['{{messagingUsersCount}}'] = '0';
+            templateData['{{messaging_number_of_users}}'] = '0';
+            templateData['{{messaging_number_of_instances}}'] = '0';
+            templateData['{{messagingNumberOfInstances}}'] = '0';
+            templateData['{{messaging_instance_type}}'] = '';
+            templateData['{{messagingInstanceType}}'] = '';
+            templateData['{{messaging_duration}}'] = '0';
+            templateData['{{messagingDuration}}'] = '0';
+            templateData['{{messaging_messages}}'] = '0';
+            templateData['{{messagingMessages}}'] = '0';
+            templateData['{{message_count}}'] = '0';
+            templateData['{{messages}}'] = '0';
+            templateData['{{number_of_messages}}'] = '0';
+            templateData['{{messages_count}}'] = '0';
+          }
+          
+          if (messagingCalc) {
+            console.log('✅ Messaging calculation found:', messagingCalc);
+            templateData['{{messaging_migration_cost}}'] = formatCurrency(messagingCalc.migrationCost || 0);
+            templateData['{{messagingMigrationCost}}'] = formatCurrency(messagingCalc.migrationCost || 0);
+            templateData['{{messaging_user_cost}}'] = formatCurrency(messagingCalc.userCost || 0);
+            templateData['{{messagingUserCost}}'] = formatCurrency(messagingCalc.userCost || 0);
+            templateData['{{messaging_data_cost}}'] = formatCurrency(messagingCalc.dataCost || 0);
+            templateData['{{messagingDataCost}}'] = formatCurrency(messagingCalc.dataCost || 0);
+            templateData['{{messaging_instance_cost}}'] = formatCurrency(messagingCalc.instanceCost || 0);
+            templateData['{{messagingInstanceCost}}'] = formatCurrency(messagingCalc.instanceCost || 0);
+            templateData['{{messaging_total_cost}}'] = formatCurrency(messagingCalc.totalCost || 0);
+            templateData['{{messagingTotalCost}}'] = formatCurrency(messagingCalc.totalCost || 0);
+          } else {
+            console.warn('⚠️ Messaging calculation not found, setting to $0.00');
+            templateData['{{messaging_migration_cost}}'] = formatCurrency(0);
+            templateData['{{messagingMigrationCost}}'] = formatCurrency(0);
+            templateData['{{messaging_user_cost}}'] = formatCurrency(0);
+            templateData['{{messagingUserCost}}'] = formatCurrency(0);
+            templateData['{{messaging_data_cost}}'] = formatCurrency(0);
+            templateData['{{messagingDataCost}}'] = formatCurrency(0);
+            templateData['{{messaging_instance_cost}}'] = formatCurrency(0);
+            templateData['{{messagingInstanceCost}}'] = formatCurrency(0);
+            templateData['{{messaging_total_cost}}'] = formatCurrency(0);
+            templateData['{{messagingTotalCost}}'] = formatCurrency(0);
+          }
+          
+          // Content tokens
+          if (contentConfig) {
+            templateData['{{content_users_count}}'] = (contentConfig.numberOfUsers || 0).toString();
+            templateData['{{contentUsersCount}}'] = (contentConfig.numberOfUsers || 0).toString();
+            templateData['{{content_number_of_users}}'] = (contentConfig.numberOfUsers || 0).toString();
+            templateData['{{content number of users}}'] = (contentConfig.numberOfUsers || 0).toString(); // Space version
+            templateData['{{content_number_of_instances}}'] = (contentConfig.numberOfInstances || 0).toString();
+            templateData['{{content number of instances}}'] = (contentConfig.numberOfInstances || 0).toString(); // Space version
+            templateData['{{contentNumberOfInstances}}'] = (contentConfig.numberOfInstances || 0).toString();
+            templateData['{{content_instance_type}}'] = contentConfig.instanceType || 'Standard';
+            templateData['{{content instance type}}'] = contentConfig.instanceType || 'Standard'; // Space version
+            templateData['{{contentInstanceType}}'] = contentConfig.instanceType || 'Standard';
+            templateData['{{content_duration}}'] = (contentConfig.duration || 0).toString();
+            templateData['{{contentDuration}}'] = (contentConfig.duration || 0).toString();
+            templateData['{{content_data_size}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{contentDataSize}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{content_data_size_gb}}'] = (contentConfig.dataSizeGB || 0).toString();
+            // Also map general data_size to content_data_size for Multi combination
+            templateData['{{data_size}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{dataSizeGB}}'] = (contentConfig.dataSizeGB || 0).toString();
+            templateData['{{data_size_gb}}'] = (contentConfig.dataSizeGB || 0).toString();
+          } else {
+            templateData['{{content_users_count}}'] = '0';
+            templateData['{{contentUsersCount}}'] = '0';
+            templateData['{{content_number_of_users}}'] = '0';
+            templateData['{{content_number_of_instances}}'] = '0';
+            templateData['{{contentNumberOfInstances}}'] = '0';
+            templateData['{{content_instance_type}}'] = '';
+            templateData['{{contentInstanceType}}'] = '';
+            templateData['{{content_duration}}'] = '0';
+            templateData['{{contentDuration}}'] = '0';
+            templateData['{{content_data_size}}'] = '0';
+            templateData['{{contentDataSize}}'] = '0';
+            templateData['{{content_data_size_gb}}'] = '0';
+            templateData['{{data_size}}'] = '0';
+            templateData['{{dataSizeGB}}'] = '0';
+            templateData['{{data_size_gb}}'] = '0';
+          }
+          
+          if (contentCalc) {
+            console.log('✅ Content calculation found:', contentCalc);
+            templateData['{{content_migration_cost}}'] = formatCurrency(contentCalc.migrationCost || 0);
+            templateData['{{contentMigrationCost}}'] = formatCurrency(contentCalc.migrationCost || 0);
+            templateData['{{content_user_cost}}'] = formatCurrency(contentCalc.userCost || 0);
+            templateData['{{contentUserCost}}'] = formatCurrency(contentCalc.userCost || 0);
+            templateData['{{content_data_cost}}'] = formatCurrency(contentCalc.dataCost || 0);
+            templateData['{{contentDataCost}}'] = formatCurrency(contentCalc.dataCost || 0);
+            templateData['{{content_instance_cost}}'] = formatCurrency(contentCalc.instanceCost || 0);
+            templateData['{{contentInstanceCost}}'] = formatCurrency(contentCalc.instanceCost || 0);
+            templateData['{{content_total_cost}}'] = formatCurrency(contentCalc.totalCost || 0);
+            templateData['{{contentTotalCost}}'] = formatCurrency(contentCalc.totalCost || 0);
+          } else {
+            console.warn('⚠️ Content calculation not found, setting to $0.00');
+            templateData['{{content_migration_cost}}'] = formatCurrency(0);
+            templateData['{{contentMigrationCost}}'] = formatCurrency(0);
+            templateData['{{content_user_cost}}'] = formatCurrency(0);
+            templateData['{{contentUserCost}}'] = formatCurrency(0);
+            templateData['{{content_data_cost}}'] = formatCurrency(0);
+            templateData['{{contentDataCost}}'] = formatCurrency(0);
+            templateData['{{content_instance_cost}}'] = formatCurrency(0);
+            templateData['{{contentInstanceCost}}'] = formatCurrency(0);
+            templateData['{{content_total_cost}}'] = formatCurrency(0);
+            templateData['{{contentTotalCost}}'] = formatCurrency(0);
+          }
+          
+          console.log('✅ Added Multi combination tokens:', {
+            messaging: {
+              users: templateData['{{messaging_users_count}}'],
+              instances: templateData['{{messaging_number_of_instances}}'],
+              instanceType: templateData['{{messaging_instance_type}}'],
+              migrationCost: templateData['{{messaging_migration_cost}}']
+            },
+            content: {
+              users: templateData['{{content_users_count}}'],
+              instances: templateData['{{content_number_of_instances}}'],
+              instanceType: templateData['{{content_instance_type}}'],
+              migrationCost: templateData['{{content_migration_cost}}']
+            }
+          });
+        } else {
+          // For non-Multi combination, set empty values for these tokens
+          templateData['{{messaging_users_count}}'] = '';
+          templateData['{{messagingUsersCount}}'] = '';
+          templateData['{{messaging_number_of_users}}'] = '';
+          templateData['{{messaging_number_of_instances}}'] = '';
+          templateData['{{messagingNumberOfInstances}}'] = '';
+          templateData['{{messaging_instance_type}}'] = '';
+          templateData['{{messagingInstanceType}}'] = '';
+          templateData['{{messaging_duration}}'] = '';
+          templateData['{{messagingDuration}}'] = '';
+          templateData['{{messaging_messages}}'] = '';
+          templateData['{{messagingMessages}}'] = '';
+          templateData['{{messaging_migration_cost}}'] = '';
+          templateData['{{messagingMigrationCost}}'] = '';
+          templateData['{{messaging_user_cost}}'] = '';
+          templateData['{{messagingUserCost}}'] = '';
+          templateData['{{messaging_data_cost}}'] = '';
+          templateData['{{messagingDataCost}}'] = '';
+          templateData['{{messaging_instance_cost}}'] = '';
+          templateData['{{messagingInstanceCost}}'] = '';
+          templateData['{{messaging_total_cost}}'] = '';
+          templateData['{{messagingTotalCost}}'] = '';
+          templateData['{{content_users_count}}'] = '';
+          templateData['{{contentUsersCount}}'] = '';
+          templateData['{{content_number_of_users}}'] = '';
+          templateData['{{content_number_of_instances}}'] = '';
+          templateData['{{contentNumberOfInstances}}'] = '';
+          templateData['{{content_instance_type}}'] = '';
+          templateData['{{contentInstanceType}}'] = '';
+          templateData['{{content_duration}}'] = '';
+          templateData['{{contentDuration}}'] = '';
+          templateData['{{content_data_size}}'] = '';
+          templateData['{{contentDataSize}}'] = '';
+          templateData['{{content_data_size_gb}}'] = '';
+          templateData['{{content_migration_cost}}'] = '';
+          templateData['{{contentMigrationCost}}'] = '';
+          templateData['{{content_user_cost}}'] = '';
+          templateData['{{contentUserCost}}'] = '';
+          templateData['{{content_data_cost}}'] = '';
+          templateData['{{contentDataCost}}'] = '';
+          templateData['{{content_instance_cost}}'] = '';
+          templateData['{{contentInstanceCost}}'] = '';
+          templateData['{{content_total_cost}}'] = '';
+          templateData['{{contentTotalCost}}'] = '';
+        }
+
+        // Multi combination: many templates still use the "generic" instance tokens in the Shared Server/Instance row.
+        // The base `quoteData.calculation.instanceCost` can be wrong/partial for multi-combo, so aggregate here.
+        // This restores expected instance pricing/labels in the agreement.
+        if (configuration?.migrationType === 'Multi combination') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cfg: any = configuration as any;
+          const calcAny: any = (calculation || safeCalculation) as any;
+
+          const msgCfg = cfg.messagingConfig ?? cfg.messagingConfigs?.[0];
+          const contentCfg = cfg.contentConfig ?? cfg.contentConfigs?.[0];
+          const emailCfg = cfg.emailConfig ?? cfg.emailConfigs?.[0];
+
+          const msgInstances = msgCfg?.numberOfInstances ?? 0;
+          const contentInstances = contentCfg?.numberOfInstances ?? 0;
+          const emailInstances = emailCfg?.numberOfInstances ?? 0;
+          const combinedInstances = (msgInstances || 0) + (contentInstances || 0) + (emailInstances || 0);
+
+          const msgType = (msgCfg?.instanceType || '').trim();
+          const contentType = (contentCfg?.instanceType || '').trim();
+          const emailType = (emailCfg?.instanceType || '').trim();
+          const allTypes = [contentType, msgType, emailType].filter(Boolean);
+          const uniqueTypes = Array.from(new Set(allTypes));
+          const combinedType = uniqueTypes.length === 1 ? uniqueTypes[0] : (uniqueTypes.length > 1 ? 'Mixed' : (instanceType || 'Standard'));
+
+          const combinedInstanceCost =
+            (calcAny?.messagingCalculation?.instanceCost ?? 0) +
+            (calcAny?.contentCalculation?.instanceCost ?? 0) +
+            (calcAny?.emailCalculation?.instanceCost ?? 0);
+
+          // Override generic instance tokens so templates that don't use content_/messaging_ still render correctly.
+          if (combinedInstances > 0) {
+            templateData['{{instance_users}}'] = combinedInstances.toString();
+            templateData['{{number_of_instances}}'] = combinedInstances.toString();
+            templateData['{{number of instances}}'] = combinedInstances.toString();
+            templateData['{{numberOfInstances}}'] = combinedInstances.toString();
+            templateData['{{instances}}'] = combinedInstances.toString();
+          }
+
+          if (combinedType) {
+            templateData['{{instance_type}}'] = combinedType;
+            templateData['{{instanceType}}'] = combinedType;
+            templateData['{{instance type}}'] = combinedType;
+            templateData['{{messaging_instance_type}}'] = templateData['{{messaging_instance_type}}'] || msgType || combinedType;
+            templateData['{{content_instance_type}}'] = templateData['{{content_instance_type}}'] || contentType || combinedType;
+          }
+
+          if (combinedInstanceCost > 0) {
+            templateData['{{instance..cost}}'] = formatCurrency(combinedInstanceCost);
+            templateData['{{instance_cost}}'] = formatCurrency(combinedInstanceCost);
+            templateData['{{instanceCost}}'] = formatCurrency(combinedInstanceCost);
+            templateData['{{instance cost}}'] = formatCurrency(combinedInstanceCost);
+          }
+        }
+        
+        // Store expanded exhibit IDs for use in document merging (includes both Include and Not Include variants)
+        let expandedExhibitIdsForMerge: string[] = [];
+        
+        // Initialize totalUserCountFromExhibits outside try block so it's accessible everywhere
+        let totalUserCountFromExhibits = userCount || 1; // Default to single migration userCount
+        
+        // Build exhibit rows for the template.
+        // Plan-based rule: when a plan (Basic/Standard/Advanced) is selected, include BOTH "Include" and "Not Include"
+        // exhibit variants for that plan for each selected combination (e.g. Basic Include + Basic Not Include).
+        try {
+          // In Multi combination, the per-exhibit configs (messagingConfigs/contentConfigs/emailConfigs)
+          // are the most reliable source of which combinations are selected.
+          // Use finalConfiguration which has the correct dataSizeGB value
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cfgAny: any = finalConfiguration as any;
+          const isMultiCombination = cfgAny.migrationType === 'Multi combination';
+          const idsFromConfigs = [
+            ...(cfgAny.messagingConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
+            ...(cfgAny.contentConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
+            ...(cfgAny.emailConfigs || []).map((c: any) => (c?.exhibitId ?? '').toString()),
+          ].filter(Boolean);
+
+          // Merge manual selection (from ExhibitSelector) with config-derived ids.
+          // Both are valid seeds for the expansion logic below — config ids cover the
+          // per-combination auto-resolved exhibits, while idsFromSelection captures any
+          // additional folders the user explicitly checked (e.g. "Dropbox To Microsoft").
+          const idsFromSelection = (selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean);
+
+          let exhibitIds = Array.from(new Set([...idsFromSelection, ...idsFromConfigs]));
+
+          const exhibitsData: Array<{
+            exhibitType: string;
+            exhibitDesc: string;
+            exhibitPlan: string;
+            exhibitPrice: string;
+          }> = [];
+
+          if (exhibitIds.length > 0) {
+            const exhibitResponse = await fetch(`${BACKEND_URL}/api/exhibits`);
+            if (exhibitResponse.ok) {
+              const exhibitDataResponse = await exhibitResponse.json();
+              const allExhibits = exhibitDataResponse?.exhibits || [];
+
+              // Helper: extract base combination from exhibit (e.g. "slack-to-teams" from "slack-to-teams-include-basic")
+              const getBaseCombination = (ex: any): string => {
+                // Some exhibits carry both a short combination key (e.g. "dropbox-to-google")
+                // and a more specific one (e.g. "dropbox-to-google-sharedrive") in the same
+                // combinations array. Picking combinations[0] would yield the short form,
+                // which renders as a truncated display name ("Dropbox To Google" instead of
+                // "Dropbox To Google Shared Drive"). Pick the LONGEST non-"all" entry so
+                // the most specific combination wins.
+                const candidates = (ex?.combinations || []).filter((c: any) => c && c !== 'all');
+                if (candidates.length === 0) return '';
+                const primary = candidates.reduce((longest: string, c: string) =>
+                  (String(c).length > longest.length ? String(c) : longest), String(candidates[0]));
+                let base = primary.toLowerCase();
+                // Remove plan type suffixes (including "std" as abbreviation for "standard")
+                base = base.replace(/-(basic|standard|advanced|premium|enterprise|std)$/, '');
+                base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+                base = base.replace(/-+$/, '').trim();
+                // Mirror ExhibitSelector.extractBaseCombination alias rules: merge
+                // "dropbox-to-mydrive" into "dropbox-to-google-mydrive" and collapse the
+                // box-to-google sharedrive variants. Without this, exhibits the UI groups
+                // into one folder end up with different base keys here, which produces
+                // duplicate rows / embedded exhibits in the generated agreement.
+                if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                  base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  base === 'box-to-google-mydrive-shareddrive' ||
+                  base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  base === 'box-to-google-sharedrive' ||
+                  base.startsWith('box-to-google-sharedrive-') ||
+                  base === 'box-to-google-mydrive-sharedrive' ||
+                  base.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  base = 'box-to-google-mydrive';
+                }
+                return base;
+              };
+              // Helper: get plan from exhibit (Basic/Standard/Advanced)
+              const getPlanFromExhibit = (ex: any): string => {
+                const pt = (ex?.planType || '').toLowerCase();
+                if (pt === 'basic' || pt === 'standard' || pt === 'advanced') {
+                  return pt.charAt(0).toUpperCase() + pt.slice(1);
+                }
+                const name = (ex?.name || '').toLowerCase();
+                // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
+                const hasStd = name.includes('-std') || name.includes('_std') || name.endsWith('std');
+                const hasStandard = name.includes('standard') || hasStd;
+                if (name.includes('basic') && !hasStandard && !name.includes('advanced')) return 'Basic';
+                if (hasStandard && !name.includes('advanced')) return 'Standard';
+                if (name.includes('advanced')) return 'Advanced';
+                return '';
+              };
+
+              const selectedPlanName = (calculation || safeCalculation)?.tier?.name ?? '';
+              const selectedPlanLower = selectedPlanName.toLowerCase();
+
+              // Per-combination plan overrides. Each combination can use a DIFFERENT plan
+              // (e.g. OneDrive→OneDrive = Standard, Outlook→Gmail = Basic). The choice is keyed
+              // by combination/exhibit name and saved in sessionStorage. Build a
+              // (category|baseCombination) -> plan map so the exhibit filter below honors the
+              // plan chosen for EACH combination. A single plan still covers BOTH in-scope and
+              // out-scope variants because scope (includeType) is a separate dimension.
+              const perCombinationPlanByKey = new Map<string, string>();
+              try {
+                const rawPerCombo = typeof sessionStorage !== 'undefined'
+                  ? sessionStorage.getItem('cpq_selected_tiers_per_combination')
+                  : null;
+                if (rawPerCombo && isMultiCombination) {
+                  const perCombo = JSON.parse(rawPerCombo) as Record<string, string>;
+                  const allCfgs = [
+                    ...((cfgAny.messagingConfigs as any[]) || []),
+                    ...((cfgAny.contentConfigs as any[]) || []),
+                    ...((cfgAny.emailConfigs as any[]) || []),
+                  ];
+                  for (const cfg of allCfgs) {
+                    const chosen = perCombo[cfg?.exhibitName];
+                    if (!chosen) continue;
+                    const cfgExhibit = allExhibits.find(
+                      (e: any) => (e?._id?.toString?.() ?? '') === (cfg?.exhibitId?.toString?.() ?? '')
+                    );
+                    if (!cfgExhibit) continue;
+                    const cat = (cfgExhibit.category || 'content').toString().toLowerCase();
+                    const base = getBaseCombination(cfgExhibit);
+                    if (!base) continue;
+                    perCombinationPlanByKey.set(`${cat}|${base}`, chosen.toString().toLowerCase());
+                  }
+                  console.log('🔧 Per-combination plan overrides:', Object.fromEntries(perCombinationPlanByKey));
+                }
+              } catch (e) {
+                console.warn('Could not parse per-combination tier selections:', e);
+              }
+
+              console.log('🔍 Exhibit expansion debug:', {
+                selectedPlanName,
+                selectedPlanLower,
+                initialExhibitIds: exhibitIds.length,
+                totalExhibits: allExhibits.length
+              });
+
+              // Build set of selected (category, baseCombination) from ALL configured combinations
+              // Use messagingConfigs, contentConfigs, emailConfigs to get ALL selected combinations
+              // This ensures all combinations appear in the agreement, not just the ones in initial exhibitIds
+              const selectedCombinationKeys = new Set<string>();
+              
+              // First, add combinations from configured exhibits (most reliable source)
+              const allConfiguredExhibitIds = [
+                ...(cfgAny.messagingConfigs || []).map((c: any) => c?.exhibitId),
+                ...(cfgAny.contentConfigs || []).map((c: any) => c?.exhibitId),
+                ...(cfgAny.emailConfigs || []).map((c: any) => c?.exhibitId),
+              ].filter(Boolean);
+              
+              // Also include from selectedExhibits to catch any manually selected exhibits
+              const allSelectedIds = Array.from(new Set([...exhibitIds, ...allConfiguredExhibitIds]));
+              
+              for (const exhibitId of allSelectedIds) {
+                const ex = allExhibits.find((e: any) => e?._id?.toString() === exhibitId?.toString());
+                if (!ex) continue;
+                const category = (ex.category || 'content').toLowerCase();
+                const baseCombo = getBaseCombination(ex);
+                if (baseCombo) {
+                  const key = `${category}|${baseCombo}`;
+                  selectedCombinationKeys.add(key);
+                }
+              }
+              
+              // Also extract combination names directly from config exhibitName fields
+              // This is the PRIMARY source - configs represent the actual selected combinations
+              const configCombinationNames = new Set<string>();
+              
+              // Helper to normalize combination name (same logic as ConfigurationForm extractCombinationName)
+              const normalizeCombinationName = (name: string): string => {
+                let normalized = String(name).trim();
+
+                // Remove common suffixes like:
+                // - " Standard Plan - Included Features"
+                // - " Advanced Plan - Included Features"
+                // - " Basic Plan - Not Included Features"
+                const patterns = [
+                  /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i,
+                  /\s+Plan\s*-\s*.*$/i,
+                  /\s+-\s*Included\s+Features$/i,
+                  /\s+-\s*Not\s+Included\s+Features$/i,
+                  /\s+-\s*.*$/i,
+                ];
+
+                let cleaned = normalized;
+                for (const pattern of patterns) {
+                  cleaned = cleaned.replace(pattern, '');
+                }
+
+                // Also handle dash-separated format (e.g., "slack-to-teams")
+                cleaned = cleaned.toLowerCase()
+                  .replace(/-(basic|standard|advanced|premium|enterprise)$/, '')
+                  .replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '')
+                  .replace(/-+$/, '')
+                  .trim();
+
+                return cleaned || normalized.toLowerCase();
+              };
+
+              // Helper: keys in expansion loop use getBaseCombination format (dashes, e.g. "slack-to-teams")
+              // Apply the same alias rewrites as getBaseCombination so config-derived keys match
+              // the exhibit-derived keys (otherwise a config named "Dropbox To Mydrive" would build
+              // key 'dropbox-to-mydrive' but the corresponding exhibit's getBaseCombination returns
+              // 'dropbox-to-google-mydrive', and the expansion check would miss it).
+              const applyDashedAliases = (key: string): string => {
+                let k = key;
+                if (k === 'dropbox-to-mydrive' || k.startsWith('dropbox-to-mydrive-')) {
+                  k = k.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                }
+                if (
+                  k === 'box-to-google-mydrive-shareddrive' ||
+                  k.startsWith('box-to-google-mydrive-shareddrive-') ||
+                  k === 'box-to-google-sharedrive' ||
+                  k.startsWith('box-to-google-sharedrive-') ||
+                  k === 'box-to-google-mydrive-sharedrive' ||
+                  k.startsWith('box-to-google-mydrive-sharedrive-')
+                ) {
+                  k = 'box-to-google-mydrive';
+                }
+                return k;
+              };
+              const toDashedKey = (category: string, normalized: string) =>
+                `${category}|${applyDashedAliases(normalized.replace(/\s+/g, '-').toLowerCase())}`;
+              
+              // Extract from messagingConfigs - add key in SAME format as getBaseCombination (dashes) so expansion matches
+              (cfgAny.messagingConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    const key = toDashedKey('messaging', normalized);
+                    selectedCombinationKeys.add(key);
+                    configCombinationNames.add(`messaging|${normalized}`);
+                    console.log('📋 Added messaging combination from config:', c.exhibitName, '→', key);
+                  }
+                }
+              });
+              
+              // Extract from contentConfigs
+              (cfgAny.contentConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    const key = toDashedKey('content', normalized);
+                    selectedCombinationKeys.add(key);
+                    configCombinationNames.add(`content|${normalized}`);
+                    console.log('📋 Added content combination from config:', c.exhibitName, '→', key);
+                  }
+                }
+              });
+              
+              // Extract from emailConfigs
+              (cfgAny.emailConfigs || []).forEach((c: any) => {
+                if (c?.exhibitName) {
+                  const normalized = normalizeCombinationName(c.exhibitName);
+                  if (normalized) {
+                    const key = toDashedKey('email', normalized);
+                    selectedCombinationKeys.add(key);
+                    configCombinationNames.add(`email|${normalized}`);
+                    console.log('📋 Added email combination from config:', c.exhibitName, '→', key);
+                  }
+                }
+              });
+
+              console.log('🔍 Selected combination keys (from all sources):', {
+                fromExhibitIds: Array.from(selectedCombinationKeys).filter(k => !configCombinationNames.has(k)),
+                fromConfigs: Array.from(configCombinationNames),
+                total: Array.from(selectedCombinationKeys),
+                count: selectedCombinationKeys.size,
+                messagingConfigs: (cfgAny.messagingConfigs || []).length,
+                contentConfigs: (cfgAny.contentConfigs || []).length,
+                emailConfigs: (cfgAny.emailConfigs || []).length
+              });
+
+              // Normalize hyphen variations so "shared-drive" matches "sharedrive" (and
+              // "my-drive" matches "mydrive"). The config-built key uses dashes between
+              // every word; the DB-stored combinations field often glues them together.
+              // Apply to BOTH sides of every compatibility check.
+              const normalizeHyphens = (k: string): string => {
+                if (!k) return k;
+                return k
+                  .replace(/-shared-drive(\b|-|$)/g, '-sharedrive$1')
+                  .replace(/-shared-drives(\b|-|$)/g, '-sharedrives$1')
+                  .replace(/-my-drive(\b|-|$)/g, '-mydrive$1')
+                  .replace(/-share-point(\b|-|$)/g, '-sharepoint$1')
+                  .replace(/-one-drive(\b|-|$)/g, '-onedrive$1');
+              };
+              // Helper: two combination keys are "compatible" when they are equal or
+              // when one is a hierarchical extension of the other (e.g. "dropbox-to-google"
+              // is a PARENT of "dropbox-to-google-sharedrive"). This matters when an exhibit
+              // lists both a generic combination tag and a more-specific child. Strict
+              // equality on the LONGEST key would otherwise skip an exhibit whose only
+              // selected overlap is the parent key.
+              const combosCompatible = (rawA: string, rawB: string): boolean => {
+                const a = normalizeHyphens(rawA || '');
+                const b = normalizeHyphens(rawB || '');
+                if (!a || !b) return false;
+                if (a === b) return true;
+                return a.startsWith(b + '-') || b.startsWith(a + '-');
+              };
+              // Build "canonical user intent" combinations from BOTH selectedCombinationKeys
+              // (the specific keys from selectedExhibits, e.g. "dropbox-to-google-sharedrive"
+              // from a combined exhibit's longest combination) AND configCombinationNames
+              // (the user's dropdown text, which can be truncated to just "dropbox-to-google"
+              // in stale sessions). After collecting all candidates, drop any key that is a
+              // PARENT of another candidate in the same category — only the most specific
+              // (longest) keys survive. Without this, a stale "dropbox-to-google" config
+              // name would let MyDrive exhibits pass the canonical check because they're
+              // technically "children" of that parent.
+              const allCanonicalCandidates = new Set<string>();
+              for (const k of selectedCombinationKeys) {
+                const parts = k.split('|');
+                if (parts.length === 2) {
+                  const norm = normalizeHyphens(applyDashedAliases(parts[1]));
+                  allCanonicalCandidates.add(`${parts[0]}|${norm}`);
+                }
+              }
+              for (const k of configCombinationNames) {
+                const parts = k.split('|');
+                if (parts.length === 2) {
+                  const norm = normalizeHyphens(applyDashedAliases(parts[1].replace(/\s+/g, '-').toLowerCase()));
+                  allCanonicalCandidates.add(`${parts[0]}|${norm}`);
+                }
+              }
+              const canonicalIntentKeys = new Set<string>();
+              for (const k of allCanonicalCandidates) {
+                const parts = k.split('|');
+                if (parts.length !== 2) continue;
+                const cat = parts[0];
+                const val = parts[1];
+                let isExtendedByAnother = false;
+                for (const other of allCanonicalCandidates) {
+                  if (other === k) continue;
+                  const op = other.split('|');
+                  if (op.length !== 2 || op[0] !== cat) continue;
+                  if (op[1].startsWith(val + '-')) {
+                    isExtendedByAnother = true;
+                    break;
+                  }
+                }
+                if (!isExtendedByAnother) {
+                  canonicalIntentKeys.add(k);
+                }
+              }
+              console.log('🎯 Canonical intent keys (most specific per category):', Array.from(canonicalIntentKeys));
+              // True when there is a canonical sibling of `c` selected — i.e. the user
+              // explicitly chose a different specific child under the same parent.
+              // E.g. canonical has 'dropbox-to-google-sharedrive', c='dropbox-to-google-mydrive':
+              // they share parent 'dropbox-to-google' but neither is a prefix of the
+              // other → distinct sibling → reject.
+              const hasCanonicalDistinctSibling = (cRaw: string, category: string): boolean => {
+                const c = normalizeHyphens(cRaw);
+                const canonicalForCat: string[] = [];
+                for (const k of canonicalIntentKeys) {
+                  const prefix = `${category}|`;
+                  if (k.startsWith(prefix)) canonicalForCat.push(k.slice(prefix.length));
+                }
+                if (canonicalForCat.length === 0) return false; // no intent → can't be distinct sibling
+                return canonicalForCat.some((canon) => {
+                  if (combosCompatible(c, canon)) return false; // same / parent / child — fine
+                  // Distinct sibling check: share a non-trivial prefix ending at '-'
+                  // boundary, but neither is a prefix of the other.
+                  let i = 0;
+                  while (i < c.length && i < canon.length && c[i] === canon[i]) i++;
+                  const commonPrefix = c.slice(0, i);
+                  if (!commonPrefix.endsWith('-')) return false;
+                  return commonPrefix.length > 0;
+                });
+              };
+              const exhibitMatchesSelectedKeys = (ex: any, category: string): boolean => {
+                const exCombos = ((ex?.combinations || []) as string[])
+                  .map((c) => String(c).toLowerCase())
+                  .filter((c) => c && c !== 'all')
+                  .map((c) => applyDashedAliases(c));
+                const selectedForCategory: string[] = [];
+                for (const sk of selectedCombinationKeys) {
+                  const prefix = `${category}|`;
+                  if (sk.startsWith(prefix)) selectedForCategory.push(sk.slice(prefix.length));
+                }
+                // Step 1: must have at least one compatible (equal/parent/child) match in selectedCombinationKeys
+                const hasAnyCompatibleMatch = exCombos.some((c) => selectedForCategory.some((sk) => combosCompatible(c, sk)));
+                if (!hasAnyCompatibleMatch) return false;
+                // Step 2: the user's CANONICAL intent (from configs) must not be violated.
+                // If the user chose "Shared Drive" specifically, reject exhibits whose
+                // only matches are sibling drives (MyDrive). Each ex combo that matched
+                // via parent-only must also be compatible with the canonical intent.
+                const isOkVsCanonical = exCombos.every((c) => !hasCanonicalDistinctSibling(c, category));
+                return isOkVsCanonical;
+              };
+
+              // Expand: for each selected (category, combination), add ALL exhibits that match that combination
+              // AND the selected plan (Basic/Standard/Advanced), including BOTH Include and Not Include variants.
+              // IMPORTANT: Build fresh set with only exhibits matching selected plan (don't keep exhibits from other plans).
+              if (selectedPlanName && selectedCombinationKeys.size > 0) {
+                const expandedIds = new Set<string>();
+                const matchedExhibits: Array<{ id: string; name: string; plan: string; combo: string }> = [];
+                const skippedExhibits: Array<{ name: string; reason: string }> = [];
+                
+                for (const ex of allExhibits) {
+                  const category = (ex.category || 'content').toLowerCase();
+                  const baseCombo = getBaseCombination(ex);
+                  if (!baseCombo) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: 'no base combination' });
+                    continue;
+                  }
+                  // Accept the exhibit if ANY of its non-'all' combinations is compatible
+                  // (equal OR parent/child) with any combination the user selected. This is
+                  // looser than strict equality on the LONGEST key, which previously skipped
+                  // exhibits whose only overlap with the selection was a parent (e.g. exhibit
+                  // tagged with both "dropbox-to-google" and "dropbox-to-google-sharedrive"
+                  // when only the parent "dropbox-to-google" is in selectedCombinationKeys).
+                  if (!exhibitMatchesSelectedKeys(ex, category)) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `no compatible combination in selection: ${(ex.combinations || []).join(', ')}` });
+                    continue;
+                  }
+
+                  const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
+
+                  // Reject "combined" exhibits whose combinations include a DISTINCT sibling
+                  // that the user did not select. Parent/child overlaps with the selection
+                  // are fine (e.g. exhibit tagged with both 'dropbox-to-google' parent and
+                  // 'dropbox-to-google-sharedrive' child is OK when the user selected either
+                  // one). The MyDrive vs Shared Drive case is a distinct sibling and still drops.
+                  const nonGenericCombos = exCombinations.filter((c: string) => c && c !== 'all');
+                  const selectedForCategory: string[] = [];
+                  for (const sk of selectedCombinationKeys) {
+                    const prefix = `${category}|`;
+                    if (sk.startsWith(prefix)) selectedForCategory.push(sk.slice(prefix.length));
+                  }
+                  const hasUnselectedSibling = nonGenericCombos.some((c: string) => {
+                    const aliased = applyDashedAliases(c);
+                    return !selectedForCategory.some((sk) => combosCompatible(aliased, sk));
+                  });
+                  if (hasUnselectedSibling) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `combined exhibit has unselected sibling combinations: [${nonGenericCombos.join(', ')}]` });
+                    continue;
+                  }
+
+                  const exhibitPlan = getPlanFromExhibit(ex);
+                  // IMPORTANT: Allow exhibits without plan types (generic exhibits) to be included
+                  // These are combination-specific but not plan-specific (e.g., "Google Chat to Google Chat")
+                  const isGenericExhibit = !exhibitPlan || exhibitPlan === '';
+                  // Honor a per-combination plan override for this exhibit's combination;
+                  // otherwise fall back to the single global plan.
+                  const effectivePlanLower = perCombinationPlanByKey.get(`${category}|${baseCombo}`) || selectedPlanLower;
+                  if (!isGenericExhibit && exhibitPlan.toLowerCase() !== effectivePlanLower) {
+                    skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${effectivePlanLower}` });
+                    continue; // Skip if plan doesn't match (only for plan-specific exhibits)
+                  }
+                  expandedIds.add(ex._id?.toString?.() ?? '');
+                  matchedExhibits.push({ id: ex._id?.toString?.() ?? '', name: ex.name || '', plan: exhibitPlan || 'Generic', combo: baseCombo });
+                }
+                
+                console.log('✅ Exhibit expansion results:', {
+                  matchedCount: matchedExhibits.length,
+                  matchedExhibits: matchedExhibits.map(e => `${e.name} (${e.plan})`),
+                  skippedCount: skippedExhibits.length,
+                  skippedSample: skippedExhibits.slice(0, 5)
+                });
+                
+                exhibitIds = Array.from(expandedIds);
+                // Store expanded IDs for document merging (includes both Include and Not Include)
+                expandedExhibitIdsForMerge = Array.from(expandedIds);
+              } else {
+                console.warn('⚠️ Exhibit expansion skipped:', {
+                  hasPlan: !!selectedPlanName,
+                  hasCombinations: selectedCombinationKeys.size > 0,
+                  selectedPlanName,
+                  combinationKeysCount: selectedCombinationKeys.size
+                });
+                // If expansion didn't run, use original exhibitIds for merging
+                expandedExhibitIdsForMerge = exhibitIds;
+              }
+
+              // CRITICAL: When we have configs, ensure merge list includes ALL combinations from configs.
+              // Build merge IDs directly from each config so we never miss a combination (e.g. 5 configs -> 5+ exhibit docs).
+              const configCount = (cfgAny.messagingConfigs?.length || 0) + (cfgAny.contentConfigs?.length || 0) + (cfgAny.emailConfigs?.length || 0);
+              if (configCount > 0 && allExhibits.length > 0) {
+                const mergeIdsFromConfigs = new Set<string>();
+                const configDetails: Array<{ configName: string; exhibitId: string; found: boolean; matched: number }> = [];
+                
+                const addForConfig = (list: any[] | undefined) => {
+                  if (!Array.isArray(list)) return;
+                  for (const cfg of list) {
+                    const configName = (cfg?.exhibitName ?? cfg?.combinationName ?? 'unknown').toString();
+                    const primaryId = (cfg?.exhibitId ?? '').toString();
+                    if (!primaryId) {
+                      console.warn(`⚠️ Config has no exhibitId: ${configName}`);
+                      continue;
+                    }
+                    const primaryEx = allExhibits.find((e: any) => (e?._id ?? '').toString() === primaryId);
+                    if (!primaryEx) {
+                      console.warn(`⚠️ Config exhibit not found in allExhibits: ${configName} (ID: ${primaryId})`, {
+                        totalExhibits: allExhibits.length,
+                        sampleIds: allExhibits.slice(0, 5).map((e: any) => ({
+                          id: e?._id?.toString(),
+                          name: e?.name,
+                          category: e?.category
+                        }))
+                      });
+                      // Still add the ID - it might exist but not be in this fetch
+                      mergeIdsFromConfigs.add(primaryId);
+                      configDetails.push({ configName, exhibitId: primaryId, found: false, matched: 1 });
+                      continue;
+                    }
+                    const category = (primaryEx.category || 'content').toLowerCase();
+                    const baseCombo = getBaseCombination(primaryEx);
+                    if (!baseCombo) {
+                      console.warn(`⚠️ Config exhibit has no base combo: ${configName} (ID: ${primaryId}, name: ${primaryEx.name})`);
+                      mergeIdsFromConfigs.add(primaryId);
+                      configDetails.push({ configName, exhibitId: primaryId, found: true, matched: 1 });
+                      continue;
+                    }
+                    const planLower = (selectedPlanName || getPlanFromExhibit(primaryEx) || '').toLowerCase();
+                    const matchedIds: string[] = [];
+                    let matchedCount = 0;
+                    
+                    // First try: match by category, exact combination match, and plan
+                    // CRITICAL: Check if exhibit's combinations array contains the exact baseCombo
+                    // This prevents exhibits with multiple combinations (e.g., both mydrive-to-mydrive and mydrive-to-sharedrive)
+                    // from being incorrectly matched
+                    for (const ex of allExhibits) {
+                      const exCat = (ex.category || 'content').toLowerCase();
+                      if (exCat !== category) continue;
+
+                      // Check if exhibit's combinations array contains the config's baseCombo
+                      // OR a parent/child of it. Strict equality skipped Standard-Plan
+                      // exhibits whose specific child key didn't match the config's parent key.
+                      const exCombinations = (ex.combinations || []).map((c: string) => c.toLowerCase());
+                      const hasCompatibleMatch = exCombinations.includes('all') ||
+                        exCombinations.some((c: string) => combosCompatible(c, baseCombo));
+                      if (!hasCompatibleMatch) continue;
+
+                      // Same compatibility check for the exhibit's own baseCombo.
+                      const exBase = getBaseCombination(ex);
+                      if (!combosCompatible(exBase, baseCombo)) continue;
+
+                      // Reject "combined" exhibits that list sibling combinations not compatible
+                      // with anything the user selected (e.g. a MyDrive-and-SharedDrive file when
+                      // only Shared Drive is selected). Parent/child overlaps are kept.
+                      const nonGenericCombos = exCombinations.filter((c: string) => c && c !== 'all');
+                      const selectedForCategory: string[] = [];
+                      for (const sk of selectedCombinationKeys) {
+                        const prefix = `${exCat}|`;
+                        if (sk.startsWith(prefix)) selectedForCategory.push(sk.slice(prefix.length));
+                      }
+                      const hasUnselectedSibling = nonGenericCombos.some((c: string) => {
+                        const aliased = applyDashedAliases(c);
+                        return !selectedForCategory.some((sk) => combosCompatible(aliased, sk));
+                      });
+                      if (hasUnselectedSibling) continue;
+
+                      // Canonical-intent enforcement: reject MyDrive exhibits when the user's
+                      // dropdown chose Shared Drive (and vice versa). Even though both might
+                      // pass the parent-compatibility check above, the user's specific intent
+                      // from configCombinationNames must win.
+                      const exAliasedCombos = nonGenericCombos.map((c: string) => applyDashedAliases(c));
+                      const violatesCanonical = exAliasedCombos.some((c: string) => hasCanonicalDistinctSibling(c, exCat));
+                      if (violatesCanonical) {
+                        console.log('⚠️ addForConfig: rejecting exhibit due to canonical-intent mismatch', { name: ex?.name, exAliasedCombos });
+                        continue;
+                      }
+                      
+                      if (planLower) {
+                        const exPlan = getPlanFromExhibit(ex).toLowerCase();
+                        // IMPORTANT: Allow generic exhibits (without plan types) to be included
+                        // These are combination-specific but not plan-specific
+                        const isGenericExhibit = !exPlan || exPlan === '';
+                        if (isGenericExhibit || exPlan === planLower) {
+                          const exId = (ex._id ?? '').toString();
+                          mergeIdsFromConfigs.add(exId);
+                          matchedIds.push(exId);
+                          matchedCount++;
+                        }
+                      } else {
+                        const exId = (ex._id ?? '').toString();
+                        mergeIdsFromConfigs.add(exId);
+                        matchedIds.push(exId);
+                        matchedCount++;
+                      }
+                    }
+                    
+                    // FALLBACK: If no matches found, DO NOT broaden to all plans.
+                    // Keep merge strict by using only the selected config's primary exhibit.
+                    if (matchedCount === 0) {
+                      console.warn(`⚠️ Config merge FAILED: ${configName} → found 0 strict matches, using primary exhibit only`, {
+                        category,
+                        baseCombo,
+                        plan: planLower || 'any',
+                        primaryExName: primaryEx.name,
+                        primaryExId: primaryId
+                      });
+
+                      mergeIdsFromConfigs.add(primaryId);
+                      matchedIds.push(primaryId);
+                      matchedCount = 1;
+                      console.log(`✅ Fallback selected primary exhibit only for ${configName}: ${primaryId}`);
+                    } else {
+                      console.log(`📎 Config merge: ${configName} → found ${matchedCount} exhibits`, {
+                        category,
+                        baseCombo,
+                        plan: planLower || 'any',
+                        matchedIds: matchedIds.slice(0, 5)
+                      });
+                    }
+                    
+                    configDetails.push({ configName, exhibitId: primaryId, found: true, matched: matchedCount });
+                  }
+                };
+                addForConfig(cfgAny.messagingConfigs);
+                addForConfig(cfgAny.contentConfigs);
+                addForConfig(cfgAny.emailConfigs);
+                if (mergeIdsFromConfigs.size > 0) {
+                  const prevMergeCount = expandedExhibitIdsForMerge.length;
+                  
+                  // CRITICAL: Deduplicate exhibits by combination name, plan, and includeType
+                  // This prevents the same exhibit from appearing multiple times in the merged document
+                  const deduplicatedMergeIds = new Set<string>();
+                  const seenExhibitKeys = new Map<string, string>(); // key -> exhibitId
+                  
+                  // First, process existing expanded IDs and build seen keys.
+                  // IMPORTANT: also dedup WITHIN this initial list — after combination
+                  // aliasing (e.g. dropbox-to-mydrive → dropbox-to-google-mydrive), two
+                  // distinct exhibits (e.g. "Dropbox to Google MyDrive Basic Plan - Basic Include"
+                  // and the legacy "Dropbox to MyDrive Basic Plan - Basic Include") collapse
+                  // to the same uniqueKey, and both would otherwise be embedded in the
+                  // generated agreement.
+                  for (const id of expandedExhibitIdsForMerge) {
+                    const exhibit = allExhibits.find((e: any) => (e?._id ?? '').toString() === id);
+                    if (exhibit) {
+                      const baseCombo = getBaseCombination(exhibit);
+                      const plan = getPlanFromExhibit(exhibit).toLowerCase();
+                      const includeType = (exhibit.includeType || (exhibit.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toLowerCase();
+                      const category = (exhibit.category || 'content').toLowerCase();
+                      const uniqueKey = `${category}|${baseCombo}|${plan}|${includeType}`;
+                      if (seenExhibitKeys.has(uniqueKey)) {
+                        console.warn('⚠️ Skipping duplicate exhibit in expanded merge list:', {
+                          duplicateId: id,
+                          keptId: seenExhibitKeys.get(uniqueKey),
+                          name: exhibit.name,
+                          key: uniqueKey
+                        });
+                        continue;
+                      }
+                      seenExhibitKeys.set(uniqueKey, id);
+                      deduplicatedMergeIds.add(id);
+                    } else {
+                      // If exhibit not found, add it anyway (might be from a different fetch)
+                      deduplicatedMergeIds.add(id);
+                    }
+                  }
+                  
+                  // Then, add new IDs from configs, but only if they're not duplicates
+                  for (const id of mergeIdsFromConfigs) {
+                    const exhibit = allExhibits.find((e: any) => (e?._id ?? '').toString() === id);
+                    if (!exhibit) {
+                      // If exhibit not found, add it anyway (might be from a different fetch)
+                      deduplicatedMergeIds.add(id);
+                      continue;
+                    }
+                    
+                    // Create a unique key: combination + plan + includeType
+                    const baseCombo = getBaseCombination(exhibit);
+                    const plan = getPlanFromExhibit(exhibit).toLowerCase();
+                    const includeType = (exhibit.includeType || (exhibit.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toLowerCase();
+                    const category = (exhibit.category || 'content').toLowerCase();
+                    const uniqueKey = `${category}|${baseCombo}|${plan}|${includeType}`;
+                    
+                    // Check if we already have an exhibit with this key
+                    if (seenExhibitKeys.has(uniqueKey)) {
+                      const existingId = seenExhibitKeys.get(uniqueKey);
+                      console.warn('⚠️ Skipping duplicate exhibit for merge:', {
+                        duplicateId: id,
+                        existingId,
+                        name: exhibit.name,
+                        key: uniqueKey
+                      });
+                      continue;
+                    }
+                    
+                    seenExhibitKeys.set(uniqueKey, id);
+                    deduplicatedMergeIds.add(id);
+                  }
+                  
+                  expandedExhibitIdsForMerge = Array.from(deduplicatedMergeIds);
+                  console.log('📎 Merge list from configs (ensure all combinations, deduplicated):', {
+                    previousCount: prevMergeCount,
+                    addedFromConfigs: mergeIdsFromConfigs.size,
+                    afterDedup: deduplicatedMergeIds.size,
+                    totalMergeIds: expandedExhibitIdsForMerge.length,
+                    configCount,
+                    configDetails: configDetails.map(c => `${c.configName}: ${c.matched} exhibits`),
+                    allMergeIds: Array.from(mergeIdsFromConfigs).slice(0, 10)
+                  });
+                } else {
+                  console.warn('⚠️ No merge IDs found from configs!', {
+                    configCount,
+                    allExhibitsCount: allExhibits.length,
+                    configDetails
+                  });
+                }
+              }
+
+              // One row per COMBINATION (like third image: "Slack to Teams", "Outlook to Gmail", "OneDrive to OneDrive")
+              // Not one row per exhibit variant (no separate "Included Features" / "Not Included Features" rows)
+              const categoryOrder = (cat: string) => {
+                const c = (cat || '').toLowerCase();
+                if (c === 'messaging' || c === 'message') return 1;
+                if (c === 'content') return 2;
+                if (c === 'email') return 3;
+                return 4;
+              };
+              type ConfigRow = { category: string; displayName: string; exhibitConfig: any; exhibit?: any };
+              const configRows: ConfigRow[] = [];
+
+              // Normalized key used to collapse duplicate rows that describe the SAME migration
+              // under different name spellings. Crucially, a name whose two halves are identical
+              // (e.g. "OneDrive / SharePoint - OneDrive / SharePoint" or the space-separated
+              // "Onedrive / Sharepoint Onedrive / Sharepoint") collapses to a single half, so both
+              // spellings map to the same key and produce one row.
+              const combinationDedupeKey = (name: string): string => {
+                const norm = (name || '')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                const words = norm.split(' ').filter(Boolean);
+                if (words.length >= 2 && words.length % 2 === 0) {
+                  const half = words.length / 2;
+                  if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
+                    return words.slice(0, half).join(' ');
+                  }
+                }
+                return norm;
+              };
+              const comboKeyToRow = new Map<string, ConfigRow>();
+
+              const addRowsFromConfigs = (list: any[] | undefined, category: string) => {
+                if (!Array.isArray(list)) return;
+                for (const cfg of list) {
+                  const displayName = (cfg?.exhibitName ?? cfg?.combinationName ?? '').toString().trim();
+                  if (!displayName) continue;
+                  const exhibitId = cfg?.exhibitId;
+                  const exhibit = exhibitId ? allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId?.toString()) : undefined;
+                  // Dedupe on the exhibit's BASE COMBINATION when available. The same migration
+                  // can arrive under different name spellings (e.g. the short "Dropbox To Microsoft"
+                  // and the full "Dropbox to Microsoft (OneDrive & SharePoint Online)"), which the
+                  // name-only key fails to collapse — producing two near-identical rows for one
+                  // selected combination. The base combination key collapses them to one row.
+                  // Fall back to the name-normalized key only when no exhibit/base combo is found.
+                  const baseCombo = exhibit ? getBaseCombination(exhibit) : '';
+                  const comboKey = baseCombo || combinationDedupeKey(displayName);
+                  const dedupeKey = `${category}|${comboKey}`;
+                  const existing = comboKeyToRow.get(dedupeKey);
+                  if (existing) {
+                    // Collapse to a single row; keep the more descriptive (longer) display name.
+                    if (displayName.length > existing.displayName.length) existing.displayName = displayName;
+                    console.log('⏭️ Collapsing duplicate agreement row:', { category, displayName, dedupeKey });
+                    continue;
+                  }
+                  const row: ConfigRow = { category, displayName, exhibitConfig: cfg, exhibit: exhibit || undefined };
+                  comboKeyToRow.set(dedupeKey, row);
+                  configRows.push(row);
+                }
+              };
+
+              // Use finalConfiguration which has the correct dataSizeGB value
+              const configToUse = finalConfiguration || configuration;
+              
+              addRowsFromConfigs((configToUse as any).messagingConfigs, 'messaging');
+              addRowsFromConfigs((configToUse as any).contentConfigs, 'content');
+              addRowsFromConfigs((configToUse as any).emailConfigs, 'email');
+
+              // If no configs (e.g. single migration type), fall back to one row per exhibit but group by base combination
+              if (configRows.length === 0 && exhibitIds.length > 0) {
+                // Strip plan/include suffix from an exhibit name to get a human-readable
+                // display name. Used as the preferred source for the row's display name —
+                // it's properly spaced and authored (vs the kebab-case combination key,
+                // which would render "Dropbox To Google Sharedrive" as one word).
+                const stripPlanSuffix = (n: string): string => {
+                  if (!n) return '';
+                  let s = n;
+                  s = s.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Standard|Advanced|Basic|Premium|Enterprise)\s+(Include|Not\s+Include|Included|Not\s+Included)(\s+Features?)?$/i, '');
+                  s = s.replace(/\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*(Included|Not\s+Included)\s+Features?$/i, '');
+                  s = s.replace(/\s+-\s*(Included|Not\s+Included|Include|Not\s+Include)(\s+Features?)?$/i, '');
+                  return s.replace(/\s+/g, ' ').trim();
+                };
+                const byComboKey = new Map<string, { category: string; displayName: string; exhibit: any }>();
+                for (const exhibitId of exhibitIds) {
+                  const exhibit = allExhibits.find((ex: any) => ex?._id?.toString() === exhibitId);
+                  if (!exhibit) continue;
+                  const category = (exhibit.category || 'content').toLowerCase();
+                  const baseCombo = getBaseCombination(exhibit);
+                  // Prefer the suffix-stripped exhibit name (human-authored, properly spaced).
+                  // Fall back to title-casing the baseCombo key only if no usable name exists.
+                  const nameStripped = stripPlanSuffix(exhibit.name || '');
+                  const displayName = nameStripped
+                    || (baseCombo
+                          ? baseCombo.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+                          : (exhibit.name || '').trim());
+                  if (!displayName) continue;
+                  const key = `${category}|${(baseCombo || displayName).toLowerCase()}`;
+                  if (!byComboKey.has(key)) byComboKey.set(key, { category, displayName, exhibit });
+                }
+                // For single migrations, use finalConfiguration which has the correct dataSizeGB
+                byComboKey.forEach((v) => {
+                  // Use finalConfiguration to ensure dataSizeGB is preserved
+                  const singleConfig = {
+                    ...configToUse,
+                    dataSizeGB: configToUse?.dataSizeGB || 0
+                  };
+                  console.log('🔍 Single migration config row:', {
+                    category: v.category,
+                    dataSizeGB: singleConfig.dataSizeGB,
+                    configToUseDataSizeGB: configToUse?.dataSizeGB,
+                    finalConfigurationDataSizeGB: finalConfiguration?.dataSizeGB,
+                    configurationDataSizeGB: configuration?.dataSizeGB
+                  });
+                  configRows.push({ category: v.category, displayName: v.displayName, exhibitConfig: singleConfig, exhibit: v.exhibit });
+                });
+              }
+
+              const sortedRows = [...configRows].sort((a, b) => {
+                const cd = categoryOrder(a.category) - categoryOrder(b.category);
+                if (cd !== 0) return cd;
+                return a.displayName.localeCompare(b.displayName);
+              });
+
+              for (let rowIndex = 0; rowIndex < sortedRows.length; rowIndex++) {
+                const row = sortedRows[rowIndex];
+                const category = row.category;
+                const combinationName = row.displayName;
+                const exhibitConfig = row.exhibitConfig;
+                const exhibit = row.exhibit;
+
+                // Debug logging for dataSizeGB issue
+                if (category === 'content') {
+                  console.log('🔍 Agreement Generation - Content row:', {
+                    combinationName,
+                    exhibitConfigDataSizeGB: exhibitConfig?.dataSizeGB,
+                    configurationDataSizeGB: configuration?.dataSizeGB,
+                    migrationType: configuration?.migrationType,
+                    hasContentConfigs: Array.isArray(configuration?.contentConfigs) && configuration.contentConfigs.length > 0
+                  });
+                }
+
+                let price = 0;
+                let breakdown: any = null;
+                
+                if (configuration?.migrationType === 'Multi combination') {
+                  const breakdownName = exhibitConfig?.exhibitName || combinationName;
+                  if (category === 'messaging' || category === 'message') {
+                    breakdown = (calculation || safeCalculation)?.messagingCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
+                    // For multi-combination, exhibit price should be userCost + dataCost only (not including migrationCost or instanceCost)
+                    // MigrationCost and instanceCost are shown separately in the agreement table
+                    price = (breakdown?.userCost ?? 0) + (breakdown?.dataCost ?? 0);
+                  } else if (category === 'content') {
+                    breakdown = (calculation || safeCalculation)?.contentCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
+                    // For multi-combination, exhibit price should be userCost + dataCost only (not including migrationCost or instanceCost)
+                    price = (breakdown?.userCost ?? 0) + (breakdown?.dataCost ?? 0);
+                  } else if (category === 'email') {
+                    breakdown = (calculation || safeCalculation)?.emailCombinationBreakdowns?.find((b: any) => b.combinationName === breakdownName);
+                    // For multi-combination, exhibit price should be userCost + dataCost only (not including migrationCost or instanceCost)
+                    price = (breakdown?.userCost ?? 0) + (breakdown?.dataCost ?? 0);
+                  }
+                }
+
+                if ((!price || price <= 0) && exhibit) {
+                  price = calculateExhibitPrice(exhibit, configuration, calculation || safeCalculation, exhibitConfig);
+                }
+
+                const baseDesc = exhibit
+                  ? formatExhibitDescription(exhibit, configuration, exhibitConfig)
+                  : `${combinationName}\n---------------------------------\nConfigured migration`;
+                // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+                const formattedCombinationName = formatCombinationNameForDisplay(combinationName);
+                const descFirstLine = formattedCombinationName;
+                const descRest = baseDesc.split('\n').slice(1).join('\n');
+                const exhibitDesc = descRest ? `${descFirstLine}\n${descRest}` : descFirstLine;
+
+                // Calculate overage charges for multicombination agreements
+                let overageCharges: {
+                  perUserCost: string;
+                  perServerPerMonthCost: string;
+                  perGBCost: string;
+                  combinationName: string;
+                } | undefined = undefined;
+
+                // Store per-user cost temporarily (will be added to exhibitData after it's created)
+                let exhibitPerUserCost: string | undefined = undefined;
+
+                if (finalConfiguration?.migrationType === 'Multi combination' && exhibitConfig) {
+                  const tier = (calculation || safeCalculation)?.tier;
+                  const userCount = Number(exhibitConfig.numberOfUsers || 0);
+                  const instanceType = String(exhibitConfig.instanceType || 'Standard');
+                  const dataSizeGB = Number(exhibitConfig.dataSizeGB || 0);
+                  
+                  // Calculate per-user cost
+                  let perUserCost = 0;
+                  if (breakdown && userCount > 0) {
+                    perUserCost = breakdown.userCost / userCount;
+                  } else if (breakdown && breakdown.numberOfUsers && breakdown.numberOfUsers > 0) {
+                    // Use breakdown's numberOfUsers if exhibitConfig doesn't have it
+                    perUserCost = breakdown.userCost / breakdown.numberOfUsers;
+                  } else if (tier && userCount > 0) {
+                    // Fallback to tier's per-user cost
+                    perUserCost = tier.perUserCost || 0;
+                  }
+                  
+                  // Store per-user cost for later use in per_user_cost calculation
+                  if (perUserCost > 0) {
+                    exhibitPerUserCost = formatCurrency(perUserCost);
+                  }
+
+                  // Calculate per-server per month cost (instance type cost)
+                  const perServerPerMonthCost = getInstanceTypeCost(instanceType);
+
+                  // Calculate per-GB cost (only for content migrations)
+                  let perGBCost = 0;
+                  if (category === 'content' && breakdown && dataSizeGB > 0) {
+                    perGBCost = breakdown.dataCost / dataSizeGB;
+                  } else if (category === 'content' && tier) {
+                    // Fallback to tier's per-GB cost
+                    perGBCost = tier.perGBCost || 0;
+                  }
+
+                  overageCharges = {
+                    perUserCost: formatCurrency(perUserCost),
+                    perServerPerMonthCost: formatCurrency(perServerPerMonthCost),
+                    // Only set perGBCost for content migrations, leave empty for messaging/email
+                    perGBCost: category === 'content' ? formatCurrency(perGBCost) : '',
+                    combinationName: combinationName
+                  };
+                }
+
+                // All combinations (content, messaging, email, multi) use "CloudFuze Migrate"
+                const exhibitType = 'CloudFuze Migrate';
+
+                const exhibitData: any = {
+                  exhibitType: exhibitType,
+                  exhibitDesc,
+                  exhibitPlan: (calculation || safeCalculation)?.tier?.name || 'Standard',
+                  exhibitPrice: formatCurrency(price),
+                };
+
+                // Add per-user cost if calculated
+                if (exhibitPerUserCost) {
+                  exhibitData.exhibitPerUserCost = exhibitPerUserCost;
+                }
+
+                // No Bundle discount - use full price
+                exhibitData.exhibitBundledPrice = formatCurrency(price);
+                exhibitData.exhibitBundledPrice90 = formatCurrency(price);
+                exhibitData.exhibitBundledDiscount = '';
+
+                // Add overage charges fields for multicombination agreements
+                if (overageCharges) {
+                  exhibitData.exhibitOveragePerUser = overageCharges.perUserCost;
+                  exhibitData.exhibitOveragePerServer = overageCharges.perServerPerMonthCost;
+                  exhibitData.exhibitOveragePerGB = overageCharges.perGBCost;
+                  
+                  // Format combination name for display (handle special cases like "Onedrive To Sharepoint")
+                  exhibitData.exhibitCombinationName = formatCombinationNameForDisplay(overageCharges.combinationName);
+                  // Also add formatted overage charges string for easy template usage
+                  exhibitData.exhibitOverageCharges = `Overage Charges: ${overageCharges.perUserCost} per User | ${overageCharges.perServerPerMonthCost} per server per month${category === 'content' ? ` | ${overageCharges.perGBCost} per GB` : ''}`;
+                }
+
+                // Skip exhibits that would render as an empty bullet in the overage list (avoids single dot)
+                // For Multi combination, only include exhibits with valid overage charge data
+                if (finalConfiguration?.migrationType === 'Multi combination') {
+                  // Must have combination name and at least per-user or per-server cost
+                  if (!exhibitData.exhibitCombinationName || 
+                      (!exhibitData.exhibitOveragePerUser && !exhibitData.exhibitOveragePerServer)) {
+                    continue;
+                  }
+                  // Also skip if per-user cost is empty, undefined, or $0.00
+                  if (!exhibitData.exhibitOveragePerUser || 
+                      exhibitData.exhibitOveragePerUser.trim() === '' || 
+                      exhibitData.exhibitOveragePerUser === '$0.00' ||
+                      exhibitData.exhibitOveragePerUser === 'undefined') {
+                    continue;
+                  }
+                }
+                exhibitsData.push(exhibitData);
+              }
+            }
+          }
+
+          (templateData as any).exhibits = exhibitsData;
+          
+          // For backward compatibility: also set top-level tokens for first exhibit (in case template uses static rows)
+          if (exhibitsData.length > 0) {
+            const firstExhibit = exhibitsData[0];
+            // Set top-level exhibit bundled price token for static rows
+            if (firstExhibit.exhibitBundledPrice) {
+              templateData['{{exhibitBundledPrice}}'] = firstExhibit.exhibitBundledPrice;
+            }
+            // Also set other first exhibit fields as top-level tokens
+            if (firstExhibit.exhibitPrice) {
+              templateData['{{exhibitPrice}}'] = firstExhibit.exhibitPrice;
+            }
+            if (firstExhibit.exhibitDesc) {
+              templateData['{{exhibitDesc}}'] = firstExhibit.exhibitDesc;
+            }
+          }
+          
+          // Recalculate per_user_cost for multicombination from breakdowns after exhibits are populated
+          if (configuration?.migrationType === 'Multi combination') {
+            let maxPerUser = 0;
+            
+            // Method 1: Use per-user cost already calculated in exhibit data (most accurate)
+            for (const exhibit of exhibitsData) {
+              if (exhibit.exhibitPerUserCost) {
+                const perUserStr = exhibit.exhibitPerUserCost.replace(/[$,]/g, '');
+                const perUser = parseFloat(perUserStr) || 0;
+                if (perUser > 0) {
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+            }
+            
+            // Method 2: Calculate from all combination breakdowns directly
+            if (maxPerUser === 0) {
+              const messagingBreakdowns = calculation?.messagingCombinationBreakdowns ?? safeCalculation.messagingCombinationBreakdowns ?? [];
+              const contentBreakdowns = calculation?.contentCombinationBreakdowns ?? safeCalculation.contentCombinationBreakdowns ?? [];
+              const emailBreakdowns = calculation?.emailCombinationBreakdowns ?? safeCalculation.emailCombinationBreakdowns ?? [];
+              
+              // Check all breakdowns
+              for (const breakdown of [...messagingBreakdowns, ...contentBreakdowns, ...emailBreakdowns]) {
+                const users = breakdown.numberOfUsers || 0;
+                const userCost = breakdown.userCost || 0;
+                if (users > 0 && userCost > 0) {
+                  const perUser = userCost / users;
+                  maxPerUser = Math.max(maxPerUser, perUser);
+                }
+              }
+            }
+            
+            // Method 3: Match breakdowns with exhibits using exhibitConfig
+            if (maxPerUser === 0) {
+              const messagingBreakdowns = calculation?.messagingCombinationBreakdowns ?? safeCalculation.messagingCombinationBreakdowns ?? [];
+              const contentBreakdowns = calculation?.contentCombinationBreakdowns ?? safeCalculation.contentCombinationBreakdowns ?? [];
+              const emailBreakdowns = calculation?.emailCombinationBreakdowns ?? safeCalculation.emailCombinationBreakdowns ?? [];
+              
+              for (const exhibit of exhibitsData) {
+                if (exhibit.exhibitConfig) {
+                  const combinationName = exhibit.exhibitConfig.exhibitName || exhibit.exhibitConfig.combinationName || exhibit.exhibitConfig.name;
+                  const category = exhibit.exhibit?.category || exhibit.exhibitConfig?.category || 'content';
+                  const exhibitUsers = Number(exhibit.exhibitConfig.numberOfUsers || 0);
+                  
+                  let breakdown: any = null;
+                  if (category === 'messaging' || category === 'message') {
+                    breakdown = messagingBreakdowns.find((b: any) => 
+                      (b.combinationName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase() ||
+                      (b.displayName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase()
+                    );
+                  } else if (category === 'content') {
+                    breakdown = contentBreakdowns.find((b: any) => 
+                      (b.combinationName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase() ||
+                      (b.displayName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase()
+                    );
+                  } else if (category === 'email') {
+                    breakdown = emailBreakdowns.find((b: any) => 
+                      (b.combinationName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase() ||
+                      (b.displayName || '').toString().toLowerCase() === (combinationName || '').toString().toLowerCase()
+                    );
+                  }
+                  
+                  if (breakdown && breakdown.userCost) {
+                    const users = exhibitUsers > 0 ? exhibitUsers : (breakdown.numberOfUsers || 0);
+                    if (users > 0) {
+                      const perUser = breakdown.userCost / users;
+                      maxPerUser = Math.max(maxPerUser, perUser);
+                    }
+                  }
+                }
+              }
+            }
+            
+            // Method 4: Calculate from messaging/content calculation totals
+            if (maxPerUser === 0) {
+              const msgUsers = configuration.messagingConfig?.numberOfUsers || 0;
+              const contentUsers = configuration.contentConfig?.numberOfUsers || 0;
+              const msgUserCost = (calculation?.messagingCalculation?.userCost ?? safeCalculation.messagingCalculation?.userCost ?? 0);
+              const contentUserCost = (calculation?.contentCalculation?.userCost ?? safeCalculation.contentCalculation?.userCost ?? 0);
+              const msgPerUser = msgUsers > 0 ? msgUserCost / msgUsers : 0;
+              const contentPerUser = contentUsers > 0 ? contentUserCost / contentUsers : 0;
+              maxPerUser = Math.max(msgPerUser, contentPerUser);
+            }
+            
+            // Update per_user_cost if we found a value
+            if (maxPerUser > 0) {
+              templateData['{{per_user_cost}}'] = formatCurrency(maxPerUser);
+              console.log('✅ Recalculated {{per_user_cost}} for multicombination:', formatCurrency(maxPerUser), {
+                method: 'from exhibits and breakdowns',
+                exhibitsCount: exhibitsData.length
+              });
+            } else {
+              console.warn('⚠️ Could not calculate {{per_user_cost}} for multicombination - all methods returned 0', {
+                messagingBreakdowns: calculation?.messagingCombinationBreakdowns?.length || 0,
+                contentBreakdowns: calculation?.contentCombinationBreakdowns?.length || 0,
+                exhibitsCount: exhibitsData.length
+              });
+            }
+          }
+          
+          // Generate formatted overage charges string for multicombination (single line format, no gaps)
+          if (configuration?.migrationType === 'Multi combination' && exhibitsData.length > 0) {
+            const overageChargesLines = exhibitsData
+              .filter((e: any) => e.exhibitCombinationName && e.exhibitOveragePerUser)
+              .map((e: any) => {
+                const perGB = e.exhibitOveragePerGB && e.exhibitOveragePerGB !== '$0.00' 
+                  ? ` | ${e.exhibitOveragePerGB} per GB` 
+                  : '';
+                // Use the already formatted combination name (should already be formatted above)
+                return `Overage Charges for ${e.exhibitCombinationName}: ${e.exhibitOveragePerUser} per User | ${e.exhibitOveragePerServer} per server per month${perGB}`;
+              });
+            
+            if (overageChargesLines.length > 0) {
+              // Single formatted string with line breaks (no paragraph spacing)
+              templateData['{{overage_charges_formatted}}'] = overageChargesLines.join('\n');
+              // Also provide as array for loop usage
+              templateData['{{overage_charges_array}}'] = overageChargesLines;
+            }
+          }
+          
+          // First-page exhibits list/summary so the front page can show what exhibits are included
+          const exhibitsListText = exhibitsData.length > 0
+            ? exhibitsData.map((e: { exhibitType?: string; exhibitDesc?: string; exhibitPlan?: string }, i: number) => {
+                const title = (e.exhibitDesc || '').split('\n')[0].trim() || e.exhibitType || `Exhibit ${i + 1}`;
+                return `EXHIBIT ${i + 1}: ${title}`;
+              }).join('; ')
+            : 'None';
+          const exhibitsSummaryText = exhibitsData.length > 0
+            ? exhibitsData.map((e: { exhibitDesc?: string }, i: number) => (e.exhibitDesc || '').split('\n')[0].trim() || `Exhibit ${i + 1}`).join(', ')
+            : 'None';
+          templateData['{{exhibits_list}}'] = exhibitsListText;
+          templateData['{{exhibits_summary}}'] = exhibitsSummaryText;
+          templateData['{{exhibits_list_text}}'] = exhibitsListText;
+          templateData['{{exhibits_count}}'] = exhibitsData.length.toString();
+          
+          // Calculate total user count from all exhibits for CloudFuze Manage calculation
+          // (totalUserCountFromExhibits was initialized before the try block)
+          if (configuration?.migrationType === 'Multi combination') {
+            // Sum users from all exhibit configs
+            totalUserCountFromExhibits = 0;
+            const configToUse = finalConfiguration || configuration;
+            
+            // Sum from messaging configs
+            if (Array.isArray((configToUse as any).messagingConfigs)) {
+              for (const cfg of (configToUse as any).messagingConfigs) {
+                totalUserCountFromExhibits += Number(cfg.numberOfUsers || 0);
+              }
+            }
+            
+            // Sum from content configs
+            if (Array.isArray((configToUse as any).contentConfigs)) {
+              for (const cfg of (configToUse as any).contentConfigs) {
+                totalUserCountFromExhibits += Number(cfg.numberOfUsers || 0);
+              }
+            }
+            
+            // Sum from email configs
+            if (Array.isArray((configToUse as any).emailConfigs)) {
+              for (const cfg of (configToUse as any).emailConfigs) {
+                totalUserCountFromExhibits += Number(cfg.numberOfUsers || 0);
+              }
+            }
+            
+            // Fallback: if no configs found, try to sum from exhibitsData
+            if (totalUserCountFromExhibits === 0 && exhibitsData.length > 0) {
+              for (const exhibit of exhibitsData) {
+                if (exhibit.exhibitConfig && exhibit.exhibitConfig.numberOfUsers) {
+                  totalUserCountFromExhibits += Number(exhibit.exhibitConfig.numberOfUsers || 0);
+                }
+              }
+            }
+            
+            // Ensure at least 1 user
+            if (totalUserCountFromExhibits === 0) {
+              totalUserCountFromExhibits = 1;
+            }
+            
+            console.log('🔍 Total user count from exhibits for CloudFuze Manage:', {
+              totalUserCountFromExhibits,
+              messagingConfigs: (configToUse as any).messagingConfigs?.length || 0,
+              contentConfigs: (configToUse as any).contentConfigs?.length || 0,
+              emailConfigs: (configToUse as any).emailConfigs?.length || 0,
+              exhibitsCount: exhibitsData.length
+            });
+          }
+          
+          // If expansion didn't happen (no plan selected), use original exhibitIds for merging
+          if (expandedExhibitIdsForMerge.length === 0) {
+            expandedExhibitIdsForMerge = exhibitIds;
+          }
+        } catch (e) {
+          console.warn('⚠️ Unable to build exhibit rows for template, continuing without exhibit rows:', e);
+          (templateData as any).exhibits = [];
+          templateData['{{exhibits_list}}'] = 'None';
+          templateData['{{exhibits_summary}}'] = 'None';
+          templateData['{{exhibits_list_text}}'] = 'None';
+          templateData['{{exhibits_count}}'] = '0';
+          // Fallback: use deduplicated expandedExhibitIdsForMerge if available, otherwise use selectedExhibits
+          // CRITICAL: Do NOT reset to original selectedExhibits which may contain duplicates!
+          // Only use undeduplicated list to prevent same exhibit from appearing twice
+          if (expandedExhibitIdsForMerge.length === 0) {
+            // Deduplicate selectedExhibits before fallback
+            expandedExhibitIdsForMerge = Array.from(new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean)));
+          }
+          // Ensure totalUserCountFromExhibits has a fallback value in case of error
+          if (totalUserCountFromExhibits === undefined || totalUserCountFromExhibits === 0) {
+            totalUserCountFromExhibits = userCount || 1;
+          }
+        }
+        
+        console.log('🔍 TEMPLATE DATA CREATED:');
+        console.log('  Template data keys:', Object.keys(templateData));
+        console.log('  Template data values:', Object.values(templateData));
+        
+        // DEBUG: Check configuration object structure
+        console.log('🔍 CONFIGURATION DEBUG:');
+        console.log('  configuration object:', configuration);
+        console.log('  configuration.startDate:', configuration?.startDate);
+        console.log('  configuration.endDate:', configuration?.endDate);
+        console.log('  configuration keys:', configuration ? Object.keys(configuration) : 'configuration is null/undefined');
+        
+        // CRITICAL: Debug each template data entry
+        console.log('🔍 TEMPLATE DATA DETAILED DEBUG:');
+        Object.entries(templateData).forEach(([key, value]) => {
+          if (value === undefined || value === null || value === '') {
+            // Empty tokens for unused features (content/messaging migration mix, no discount, etc.)
+            // are auto-filled below — log at debug level only so they don't appear as errors.
+            console.debug(`Template data ${key} is empty:`, value);
+          } else {
+            console.log(`✅ Template data ${key}:`, value);
+          }
+        });
+        
+        // Specific debugging for date tokens
+        console.log('🔍 DATE TOKENS DEBUG:');
+        console.log('  {{Start_date}}:', templateData['{{Start_date}}']);
+        console.log('  {{End_date}}:', templateData['{{End_date}}']);
+        console.log('  {{start_date}}:', templateData['{{start_date}}']);
+        console.log('  {{end_date}}:', templateData['{{end_date}}']);
+        console.log('  {{startdate}}:', templateData['{{startdate}}']);
+        console.log('  {{enddate}}:', templateData['{{enddate}}']);
+        
+        // Specific debugging for payment terms tokens
+        console.log('🔍 PAYMENT TERMS TOKENS DEBUG:');
+        console.log('  clientInfo.paymentTerms value:', clientInfo.paymentTerms);
+        console.log('  {{payment_terms}}:', templateData['{{payment_terms}}']);
+        console.log('  {{Payment_terms}}:', templateData['{{Payment_terms}}']);
+        console.log('  {{Payment Terms}}:', templateData['{{Payment Terms}}']);
+        console.log('  {{Payment_Terms}}:', templateData['{{Payment_Terms}}']);
+        console.log('  {{paymentTerms}}:', templateData['{{paymentTerms}}']);
+        
+        // CRITICAL: Final pass to ensure NO undefined values in templateData
+        Object.keys(templateData).forEach(key => {
+          const value = templateData[key];
+          if (value === undefined || value === null || String(value).toLowerCase() === 'undefined') {
+            console.warn(`⚠️ Found undefined/null value for token ${key}, setting fallback`);
+            const lower = key.toLowerCase();
+            if (lower.includes('cost') || lower.includes('price')) {
+              templateData[key] = '$0.00';
+            } else if (lower.includes('count') || lower.includes('number') || lower.includes('size') || lower.includes('users') || lower.includes('messages')) {
+              templateData[key] = '0';
+            } else if (lower.includes('duration') || lower.includes('month')) {
+              templateData[key] = '1';
+            } else if (lower.includes('migration') && !lower.includes('cost') && !lower.includes('price')) {
+              templateData[key] = migrationType || 'Content';
+            } else if (lower.includes('company')) {
+              templateData[key] = finalCompanyName || 'Your Company';
+            } else if (lower.includes('client') || (lower.includes('name') && !lower.includes('company'))) {
+              templateData[key] = clientName || 'Contact Name';
+            } else if (lower.includes('email')) {
+              templateData[key] = clientEmail || 'contact@email.com';
+            } else if (lower.includes('date')) {
+              templateData[key] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
+            } else if (lower.includes('discount')) {
+              templateData[key] = ''; // Keep discount empty if not applicable
+            } else {
+              templateData[key] = '';
+            }
+          }
+        });
+        
+        // Add migration description tokens for better template support
+        const migrationDescription = (() => {
+          if (configuration?.migrationType === 'Multi combination') {
+            const messagingName = templateData['{{messaging_migration_name}}'] || '';
+            const contentName = templateData['{{content_migration_name}}'] || '';
+            if (messagingName && contentName) {
+              return `${contentName} | ${messagingName}`;
+            } else if (messagingName) {
+              return messagingName;
+            } else if (contentName) {
+              return contentName;
+            }
+          }
+          return migrationType || 'Content';
+        })();
+        
+        templateData['{{migration_description}}'] = migrationDescription;
+        templateData['{{migrationDescription}}'] = migrationDescription;
+        templateData['{{migration_description_text}}'] = migrationDescription;
+        
+        // Add user description tokens
+        // For email agreements, use "Mailboxes" instead of "Users"
+        const isEmailAgreement = migrationType === 'Email' || 
+          (configuration?.combination || '').toLowerCase().includes('gmail') ||
+          (configuration?.combination || '').toLowerCase().includes('outlook');
+        const userDescription = isEmailAgreement 
+          ? `Up to ${userCount || 1} Mailboxes`
+          : `Up to ${userCount || 1} Users`;
+        templateData['{{user_description}}'] = userDescription;
+        templateData['{{userDescription}}'] = userDescription;
+        templateData['{{users_description}}'] = userDescription;
+        
+        // Add data size description tokens
+        // For email agreements, include GBs if dataSizeGB > 0
+        const dataDescription = dataSizeGB > 0 ? `${dataSizeGB} GBs` : '';
+        templateData['{{data_description}}'] = dataDescription;
+        templateData['{{dataDescription}}'] = dataDescription;
+        
+        // Add combined description token for templates that use "{{user_description}} | {{data_description}}"
+        // For email agreements, show "Up to X Mailboxes | Y GBs" format
+        const combinedDescription = dataDescription 
+          ? `${userDescription} | ${dataDescription}`
+          : userDescription;
+        templateData['{{user_data_description}}'] = combinedDescription;
+        templateData['{{userDataDescription}}'] = combinedDescription;
+        templateData['{{description}}'] = combinedDescription;
+
+        // Add server/instance description token used by some templates
+        // (TemplateDiagnostic requires an exact match for "server_descriptions")
+        const serverDescriptions = (() => {
+          if (configuration?.migrationType === 'Multi combination') {
+            // Build EXACT-style lines based on per-exhibit configs (one config per selected exhibit)
+            // so the Shared Server/Instance description matches prior output.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfg: any = configuration as any;
+
+            // Option A (final): SEPARATE lines per exhibit/config.
+            // No SUM, no MAX:
+            // - Every email/content/messaging config becomes its own server line
+            // - Each line uses that config's own duration
+            type ServerLine = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName?: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+            const linesData: ServerLine[] = [];
+
+            const addLinesFromList = (list: any[] | undefined, kind: ServerLine['kind']) => {
+              if (!Array.isArray(list)) return;
+              for (const item of list) {
+                const instances = Number(item?.numberOfInstances ?? 0);
+                const instanceType = String(item?.instanceType ?? '').trim();
+                const months = Number(item?.duration ?? 0);
+                if (!instanceType) continue;
+                linesData.push({
+                  kind,
+                  exhibitName: (item?.exhibitName ?? item?.combinationName ?? item?.name ?? '').toString().trim() || undefined,
+                  instances: instances > 0 ? instances : 1,
+                  instanceType,
+                  months: Number.isFinite(months) && months > 0 ? months : 1
+                });
+              }
+            };
+
+            // Newer shape (arrays)
+            addLinesFromList(cfg.emailConfigs ?? [], 'email');
+            addLinesFromList(cfg.contentConfigs ?? [], 'content');
+            addLinesFromList(cfg.messagingConfigs ?? [], 'messaging');
+
+            // Legacy single-config fallback (only if arrays aren't present)
+            if (linesData.length === 0) {
+              if (cfg.emailConfig?.instanceType) {
+                linesData.push({
+                  kind: 'email',
+                  exhibitName: (cfg.emailConfig?.exhibitName ?? cfg.emailConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.emailConfig?.numberOfInstances ?? 1) || 1,
+                  instanceType: String(cfg.emailConfig?.instanceType),
+                  months: Number(cfg.emailConfig?.duration ?? 0) || 1
+                });
+              }
+              if (cfg.contentConfig?.instanceType) {
+                linesData.push({
+                  kind: 'content',
+                  exhibitName: (cfg.contentConfig?.exhibitName ?? cfg.contentConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.contentConfig?.numberOfInstances ?? 1) || 1,
+                  instanceType: String(cfg.contentConfig?.instanceType),
+                  months: Number(cfg.contentConfig?.duration ?? 0) || 1
+                });
+              }
+              if (cfg.messagingConfig?.instanceType) {
+                linesData.push({
+                  kind: 'messaging',
+                  exhibitName: (cfg.messagingConfig?.exhibitName ?? cfg.messagingConfig?.combinationName ?? '').toString().trim() || undefined,
+                  instances: Number(cfg.messagingConfig?.numberOfInstances ?? 1) || 1,
+                  instanceType: String(cfg.messagingConfig?.instanceType),
+                  months: Number(cfg.messagingConfig?.duration ?? 0) || 1
+                });
+              }
+            }
+
+            // Render server descriptions WITHOUT "Instance Valid for X Months"
+            // (the template may still have a separate "Instance Valid for {{Duration_of_months}}" line,
+            // which is cleaned up in docxTemplateProcessor after rendering).
+            // Format: "X X Type server for Y migration" on line 1, then combination name in bold on line 2
+            const separator = '----------------------------------------';
+            const lines: string[] = [];
+            linesData.forEach((p, idx) => {
+              if (idx > 0) lines.push(separator);
+              
+              // Line 1: server description
+              lines.push(
+                `${p.instances} X ${p.instanceType} server for ${
+                  p.kind === 'email'
+                    ? 'email migration'
+                    : p.kind === 'messaging'
+                      ? 'messaging migration'
+                      : 'data migration'
+                }`
+              );
+              
+              // Line 2: combination name in bold (if available)
+              // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+              const formattedExhibitName = p.exhibitName ? formatCombinationNameForDisplay(p.exhibitName) : null;
+              if (formattedExhibitName) {
+                lines.push(`**${formattedExhibitName}**`);
+              }
+            });
+
+            return lines.join('\n');
+          }
+
+          const n = numberOfInstances || 1;
+          const type = instanceType || 'Standard';
+          return `Server: ${type} (${n} instance${n === 1 ? '' : 's'})`;
+        })();
+
+        templateData['{{server_descriptions}}'] = serverDescriptions;
+        templateData['{{serverDescriptions}}'] = serverDescriptions; // optional camelCase variant
+        templateData['{{server descriptions}}'] = serverDescriptions; // optional space variant
+
+        // Build servers array for template loop (Multi combination)
+        // This creates a loopable array so the template can generate one row per server/combination
+        try {
+          if (configuration?.migrationType === 'Multi combination') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const calcAny: any = (calculation || safeCalculation) as any;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cfgAny: any = configuration as any;
+
+            const getInstanceCostFor = (
+              kind: 'email' | 'content' | 'messaging',
+              comboName: string
+            ): number => {
+              const list =
+                kind === 'email'
+                  ? (calcAny.emailCombinationBreakdowns || [])
+                  : kind === 'content'
+                    ? (calcAny.contentCombinationBreakdowns || [])
+                    : (calcAny.messagingCombinationBreakdowns || []);
+
+              const target = (comboName || '').toString().trim().toLowerCase();
+              const hit = list.find((b: any) => (b?.combinationName || '').toString().trim().toLowerCase() === target);
+              return Number(hit?.instanceCost ?? 0) || 0;
+            };
+
+            // Robust fallback: compute instance cost directly from config when breakdown name matching isn't available.
+            // This prevents blank pricing when configs don't carry `exhibitName` but do carry `name/combinationName`.
+            const computeInstanceCost = (instanceType: string, durationMonths: number, instances: number): number => {
+              const type = (instanceType || 'Standard').toString().trim();
+              const months = Number(durationMonths || 0) > 0 ? Number(durationMonths) : 1;
+              const count = Number(instances || 0) > 0 ? Number(instances) : 1;
+              return getInstanceTypeCost(type) * months * count;
+            };
+
+            type ServerItem = {
+              kind: 'email' | 'content' | 'messaging';
+              exhibitName: string;
+              exhibitId?: string;
+              instances: number;
+              instanceType: string;
+              months: number;
+            };
+
+            const items: ServerItem[] = [
+              ...(cfgAny.emailConfigs || []).map((c: any) => ({
+                kind: 'email' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                exhibitId: c?.exhibitId ? c.exhibitId.toString() : undefined,
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.contentConfigs || []).map((c: any) => ({
+                kind: 'content' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                exhibitId: c?.exhibitId ? c.exhibitId.toString() : undefined,
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+              ...(cfgAny.messagingConfigs || []).map((c: any) => ({
+                kind: 'messaging' as const,
+                exhibitName: (c.exhibitName ?? c.combinationName ?? c.name ?? c.combination ?? '').toString().trim(),
+                exhibitId: c?.exhibitId ? c.exhibitId.toString() : undefined,
+                instances: Number(c.numberOfInstances || 0),
+                instanceType: String(c.instanceType || 'Standard'),
+                months: Number(c.duration || 0)
+              })),
+            ].filter((x) => x.instanceType.trim() !== '');
+
+            // Fallback to single-config legacy shape
+            if (items.length === 0) {
+              if (cfgAny.emailConfig?.instanceType) {
+                items.push({
+                  kind: 'email',
+                  exhibitName: (cfgAny.emailConfig.exhibitName ?? cfgAny.emailConfig.combinationName ?? cfgAny.emailConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.emailConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.emailConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.emailConfig.duration || 0)
+                });
+              }
+              if (cfgAny.contentConfig?.instanceType) {
+                items.push({
+                  kind: 'content',
+                  exhibitName: (cfgAny.contentConfig.exhibitName ?? cfgAny.contentConfig.combinationName ?? cfgAny.contentConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.contentConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.contentConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.contentConfig.duration || 0)
+                });
+              }
+              if (cfgAny.messagingConfig?.instanceType) {
+                items.push({
+                  kind: 'messaging',
+                  exhibitName: (cfgAny.messagingConfig.exhibitName ?? cfgAny.messagingConfig.combinationName ?? cfgAny.messagingConfig.name ?? '').toString().trim(),
+                  instances: Number(cfgAny.messagingConfig.numberOfInstances || 0),
+                  instanceType: String(cfgAny.messagingConfig.instanceType || 'Standard'),
+                  months: Number(cfgAny.messagingConfig.duration || 0)
+                });
+              }
+            }
+
+            // Collapse duplicate combinations (the SAME migration under different name
+            // spellings, e.g. "OneDrive / SharePoint - OneDrive / SharePoint" vs the
+            // space-separated "Onedrive / Sharepoint Onedrive / Sharepoint") so only one
+            // instance row is emitted and the price isn't double-counted. A name whose two
+            // halves are identical collapses to a single half → both spellings share a key.
+            const serverDedupeKey = (name: string): string => {
+              const norm = (name || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+              const words = norm.split(' ').filter(Boolean);
+              if (words.length >= 2 && words.length % 2 === 0) {
+                const half = words.length / 2;
+                if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
+                  return words.slice(0, half).join(' ');
+                }
+              }
+              return norm;
+            };
+            // Collapse duplicate combinations (same migration under different name spellings)
+            // by normalized name. The real fix for one-combination-becoming-two now lives in
+            // ConfigurationForm (it groups exhibits by a stable base-combination key, so only
+            // one config per combination reaches here). This name-based pass remains as a
+            // lightweight safety net. NOTE: do NOT use getBaseCombination/allExhibits here —
+            // they are not in scope in this "servers" block; referencing them throws and the
+            // catch below silently blanks the entire instance/server section.
+            const keyToDedupedIndex = new Map<string, number>();
+            const dedupedItems: ServerItem[] = [];
+            for (const it of items) {
+              const key = `${it.kind}|${serverDedupeKey(it.exhibitName)}`;
+              const existingIdx = keyToDedupedIndex.get(key);
+              if (existingIdx !== undefined) {
+                // Collapse to one row; keep the more descriptive (longer) display name.
+                if ((it.exhibitName || '').length > (dedupedItems[existingIdx].exhibitName || '').length) {
+                  dedupedItems[existingIdx] = { ...dedupedItems[existingIdx], exhibitName: it.exhibitName };
+                }
+                console.log('⏭️ Collapsing duplicate instance/server row:', { kind: it.kind, exhibitName: it.exhibitName, key });
+                continue;
+              }
+              keyToDedupedIndex.set(key, dedupedItems.length);
+              dedupedItems.push(it);
+            }
+
+            // Build servers array for docxtemplater loop
+            const serversArray = dedupedItems.map((it, idx) => {
+              const name = (it.exhibitName || '').trim();
+              // Keep normal spaces. If you see large gaps in Word/PDF, fix the DOCX cell alignment
+              // (use Center/Left, not Justify/Distributed) rather than forcing non-breaking spaces,
+              // which can cause ugly mid-word wrapping in narrow cells.
+              let displayName = name.replace(/\s+/g, ' ').trim();
+              // Format combination name for display (e.g., "Onedrive To Sharepoint" -> "OneDrive / SharePoint - OneDrive / SharePoint")
+              displayName = formatCombinationNameForDisplay(displayName);
+              const costFromBreakdown = name ? getInstanceCostFor(it.kind, name) : 0;
+              const cost = costFromBreakdown > 0 ? costFromBreakdown : computeInstanceCost(it.instanceType, it.months, it.instances);
+              const months = Number(it.months || 0) > 0 ? Number(it.months) : 1;
+              const migrationType =
+                it.kind === 'email'
+                  ? 'email migration'
+                  : it.kind === 'messaging'
+                    ? 'messaging migration'
+                    : 'data migration';
+              const displayServerDescription = `${it.instances} X ${it.instanceType} server for ${migrationType}`;
+
+              return {
+                serverDescription: displayServerDescription,
+                combinationName: displayName || '(unknown)',
+                serverPrice: formatCurrency(cost),
+                serverPriceBundled: formatCurrency(cost),
+                serverBundledPrice: formatCurrency(cost),
+                serverPrice90: formatCurrency(cost),
+                serverPriceDiscount: '',
+                // Per-server duration (use this in template instead of {{Duration_of_months}} if you want each row's own months)
+                serverMonths: months,
+                // Template helpers
+                isLast: idx === dedupedItems.length - 1
+              };
+            });
+
+            console.log('✅ Servers array for template:', serversArray);
+            (templateData as any).servers = serversArray;
+
+            // Also keep the old format for backward compatibility
+            const lines: string[] = [];
+            let total = 0;
+            
+            // Calculate total by summing the actual serverPrice values from serversArray
+            // This ensures the total matches exactly what's displayed in the template
+            for (const server of serversArray) {
+              // Extract numeric value from formatted currency string (e.g., "$500.00" -> 500)
+              const priceStr = server.serverPrice.replace(/[$,]/g, '');
+              const priceValue = parseFloat(priceStr) || 0;
+              total += priceValue;
+              lines.push(server.serverPrice);
+            }
+            
+            // Append total as last line (no label), if we have at least one server line
+            if (lines.length > 0) {
+              lines.push(formatCurrency(total));
+            }
+
+            // Calculate CloudFuze Manage total as sum of:
+            // 1. All server prices (instance costs)
+            // 2. Migration cost
+            // 3. All exhibit prices (userCost + dataCost only, NOT including instanceCost or migrationCost)
+            // NOTE: For multi-combination, exhibit prices are userCost + dataCost only.
+            // MigrationCost and instanceCost are shown separately in the agreement table.
+            let cloudfuzeManageTotal = total; // Start with server prices total (instance costs)
+            
+            // Add migration cost
+            const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+            cloudfuzeManageTotal += (migrationCost || 0);
+            
+            // Sum all exhibit prices (these should only contain userCost + dataCost for multi-combination)
+            const exhibitsData = (templateData as any).exhibits || [];
+            for (const exhibit of exhibitsData) {
+              if (exhibit.exhibitPrice) {
+                const exhibitPriceStr = exhibit.exhibitPrice.replace(/[$,]/g, '');
+                cloudfuzeManageTotal += parseFloat(exhibitPriceStr) || 0;
+              }
+            }
+            console.log('🔍 Multi-combination Total Price Calculation:', {
+              serverPricesTotal: formatCurrency(total),
+              migrationCost: formatCurrency(migrationCost || 0),
+              exhibitPrices: exhibitsData.map((e: any) => e.exhibitPrice),
+              exhibitPricesSum: formatCurrency(exhibitsData.reduce((sum: number, e: any) => {
+                if (e.exhibitPrice) {
+                  const priceStr = e.exhibitPrice.replace(/[$,]/g, '');
+                  return sum + (parseFloat(priceStr) || 0);
+                }
+                return sum;
+              }, 0)),
+              cloudfuzeManageTotal: formatCurrency(cloudfuzeManageTotal)
+            });
+            
+            // Set CloudFuze Manage total (includes servers + migration + exhibits)
+            templateData['{{cloudfuze_manage_total}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManageTotal}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
+            
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 12 * perUserPrice)
+            // For multi-combination, this should be the sum of all users from all exhibits
+            // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+            // Check multiple possible locations for combination name
+            const combinationName1 = (finalConfiguration?.combination || '').toLowerCase();
+            const combinationName2 = (configuration?.combination || '').toLowerCase();
+            const templateName = (selectedTemplate?.name || '').toLowerCase();
+            const allCombinationSources = [combinationName1, combinationName2, templateName].filter(Boolean);
+            const combinedName = allCombinationSources.join(' ');
+            
+            // More flexible matching - check for "bundled pricing 2.99" in any form
+            // Also check for variations like "bundled pricing 2.99", "bundled pricing 2.99$", "bundled pricing $2.99", etc.
+            const isBundledPricing299 = 
+              combinationName1.includes('bundled pricing 2.99') || 
+              combinationName1.includes('bundled pricing 2.99$') ||
+              combinationName1.includes('bundled pricing $2.99') ||
+              combinationName1.includes('bundledpricing2.99') ||
+              combinationName2.includes('bundled pricing 2.99') || 
+              combinationName2.includes('bundled pricing 2.99$') ||
+              combinationName2.includes('bundled pricing $2.99') ||
+              combinationName2.includes('bundledpricing2.99') ||
+              templateName.includes('bundled pricing 2.99') ||
+              templateName.includes('bundled pricing 2.99$') ||
+              templateName.includes('bundled pricing $2.99') ||
+              templateName.includes('bundledpricing2.99') ||
+              combinedName.includes('bundled pricing 2.99') ||
+              combinedName.includes('bundledpricing2.99');
+            
+            const perUserPrice = isBundledPricing299 ? 2.99 : 3.99;
+            
+            console.log('🔍 CloudFuze Manage Price Check:', {
+              finalConfigurationCombination: finalConfiguration?.combination,
+              configurationCombination: configuration?.combination,
+              templateName: selectedTemplate?.name,
+              isBundledPricing299,
+              perUserPrice,
+              totalUserCountFromExhibits,
+              calculatedTotal: totalUserCountFromExhibits * 12 * perUserPrice
+            });
+            
+            const cfmUserTotal = totalUserCountFromExhibits * 12 * perUserPrice;
+            templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+            templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
+            
+            templateData['{{cfm_user_total_b}}'] = '';
+            templateData['{{cloudfuze_manage_user_total_bundled}}'] = '';
+            templateData['{{cfm_user_bundled}}'] = '';
+            
+            // Update total_price_discount to use the sum of all displayed prices (cloudfuzeManageTotal)
+            // This ensures the Total Price matches the sum of all items in the table
+            // NOTE: cfm_user_total ($2.99) is excluded from the total price calculation
+            // Total should now be at least $2,500 (deficit already added to first exhibit)
+            const displayedTotalPrice = cloudfuzeManageTotal;
+            
+            if (localShouldApplyDiscount) {
+              const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
+              const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
+              // Update discount_amount to match the discount calculated on displayedTotalPrice (excluding cfm_user_total)
+              templateData['{{discount_amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discount amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discountAmount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{total_price_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{total_after_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{Total After Discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{final_total}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{finalTotal}}'] = formatCurrency(finalDisplayedTotal);
+            } else {
+              templateData['{{total_price_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{total_after_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{Total After Discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{final_total}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{finalTotal}}'] = formatCurrency(displayedTotalPrice);
+            }
+            // Also update total_price and total price to match
+            templateData['{{total price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{total_price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{totalPrice}}'] = formatCurrency(displayedTotalPrice);
+
+            // No Bundle discount
+            const migrationPrice90 = migrationCost || 0;
+            const migrationBundled = 0;
+            templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationPrice90); // Final price
+            // Also keep 90% value for _90 suffix tokens (same value)
+            templateData['{{price_migration_90}}'] = formatCurrency(migrationPrice90);
+            
+            templateData['{{cfm_user_total_b}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cfm_user_bundled}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cfm_user_total_90}}'] = formatCurrency(cfmUserTotal);
+
+            // No Bundle discount
+            const sumOf10PercentDiscounts = 0;
+            templateData['{{instant_saving}}'] = '';
+            templateData['{{total_savings}}'] = '';
+            templateData['{{instance_cost_90}}'] = '';
+            // Multi combination bundled total (matches template expectation):
+            // cfm_total_final = cfm_user_total_90 + sum(serverPrice90) + price_migration_90 + sum(exhibitBundledPrice90)
+            // Since each *_90 token is 90% of the original, this equals:
+            // (cloudfuzeManageTotal + cfmUserTotal) - sumOf10PercentDiscounts
+            // Note: cloudfuzeManageTotal excludes cfmUserTotal by design, so we add it here for the final bundled total.
+            const baseTotalForBundle = cloudfuzeManageTotal + cfmUserTotal;
+            const totalAfterBundle = baseTotalForBundle - sumOf10PercentDiscounts;
+            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(totalAfterBundle);
+            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(totalAfterBundle);
+            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(totalAfterBundle);
+            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(totalAfterBundle);
+            templateData['{{cfm_total_b}}'] = formatCurrency(totalAfterBundle);
+            // Final total after bundle (for _90 suffix tokens)
+            templateData['{{cfm_total_final}}'] = formatCurrency(totalAfterBundle);
+            
+            console.log('🔍 CloudFuze Manage Total Calculation:', {
+              serversCount: serversArray.length,
+              serverPrices: serversArray.map(s => s.serverPrice),
+              serverTotal: formatCurrency(total),
+              migrationCost: formatCurrency(migrationCost || 0),
+              exhibitsCount: exhibitsData.length,
+              cloudfuzeManageTotal: formatCurrency(cloudfuzeManageTotal),
+              sumOf10pctDiscounts: formatCurrency(sumOf10PercentDiscounts),
+              totalAfterBundle: formatCurrency(totalAfterBundle)
+            });
+
+            // Add extra spacing between amounts for better visual alignment in the DOCX/PDF preview.
+            // Two blank lines between each amount => three newline characters between entries.
+            templateData['{{server_instance_cost_breakdown}}'] = lines.join('\n\n\n');
+          } else {
+            templateData['{{server_instance_cost_breakdown}}'] = '';
+            // For single migrations, create a servers array with one entry so bundled pricing works
+            const singleInstanceCost = (calculation || safeCalculation)?.instanceCost ?? 0;
+            const instanceType = configuration?.instanceType || 'Small';
+            const numberOfInstances = configuration?.numberOfInstances || 1;
+            const durationMonths = getEffectiveDurationMonths(configuration) || 1;
+            
+            // Create a single server entry for the template loop
+            (templateData as any).servers = [{
+              serverDescription: `${numberOfInstances} X ${instanceType} server for data migration`,
+              combinationName: '',
+              serverPrice: formatCurrency(singleInstanceCost),
+              serverPriceBundled: formatCurrency(singleInstanceCost),
+              serverBundledPrice: formatCurrency(singleInstanceCost),
+              serverPrice90: formatCurrency(singleInstanceCost),
+              serverPriceDiscount: '',
+              serverMonths: durationMonths,
+              isLast: true
+            }];
+            
+            // NOTE: For single migrations, CloudFuze Manage should only include instance costs
+            // The exhibit prices already contain all costs (userCost + dataCost + migrationCost + instanceCost)
+            // So we should NOT add exhibit prices to cloudfuzeManageTotal for single migrations
+            // singleInstanceCost already defined above
+            const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
+            // For single migrations, CloudFuze Manage is just the instance cost
+            // (Migration cost and user/data costs are shown separately in the agreement table)
+            let cloudfuzeManageTotal = singleInstanceCost;
+            
+            // Do NOT add exhibit prices for single migrations - they already contain all costs
+            // and would cause double-counting
+            const exhibitsData = (templateData as any).exhibits || [];
+            // Note: exhibits are NOT added to cloudfuzeManageTotal for single migrations
+            
+            // Set CloudFuze Manage total (includes instance + migration + exhibits)
+            templateData['{{cloudfuze_manage_total}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManageTotal}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuze_manage_price}}'] = formatCurrency(cloudfuzeManageTotal);
+            templateData['{{cloudfuzeManagePrice}}'] = formatCurrency(cloudfuzeManageTotal);
+            
+            // Set CloudFuze Manage user total (totalUserCountFromExhibits * 12 * perUserPrice)
+            // For single migrations, this uses the single userCount, but for multi-combination it uses the sum
+            // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+            // Check multiple possible locations for combination name
+            const combinationName1 = (finalConfiguration?.combination || '').toLowerCase();
+            const combinationName2 = (configuration?.combination || '').toLowerCase();
+            const templateName = (selectedTemplate?.name || '').toLowerCase();
+            const allCombinationSources = [combinationName1, combinationName2, templateName].filter(Boolean);
+            const combinedName = allCombinationSources.join(' ');
+            
+            // More flexible matching - check for "bundled pricing 2.99" in any form
+            const isBundledPricing299 = 
+              combinationName1.includes('bundled pricing 2.99') || 
+              combinationName1.includes('bundled pricing 2.99$') ||
+              combinationName2.includes('bundled pricing 2.99') || 
+              combinationName2.includes('bundled pricing 2.99$') ||
+              templateName.includes('bundled pricing 2.99') ||
+              templateName.includes('bundled pricing 2.99$') ||
+              combinedName.includes('bundled pricing 2.99');
+            
+            const perUserPrice = isBundledPricing299 ? 2.99 : 3.99;
+            
+            console.log('🔍 CloudFuze Manage Price Check (Single Migration):', {
+              finalConfigurationCombination: finalConfiguration?.combination,
+              configurationCombination: configuration?.combination,
+              templateName: selectedTemplate?.name,
+              isBundledPricing299,
+              perUserPrice,
+              totalUserCountFromExhibits,
+              calculatedTotal: totalUserCountFromExhibits * 12 * perUserPrice
+            });
+            
+            const cfmUserTotal = totalUserCountFromExhibits * 12 * perUserPrice;
+            templateData['{{cfm_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+            templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
+            
+            // No Bundle discount
+            const cfmUserTotalBundled = 0;
+            templateData['{{cfm_user_total_b}}'] = '';
+            templateData['{{cloudfuze_manage_user_total_bundled}}'] = '';
+            templateData['{{cfm_user_bundled}}'] = '';
+            // 90% of original price (for _90 suffix tokens) — only for Bundle plans
+            templateData['{{cfm_user_total_90}}'] = formatCurrency(cfmUserTotal);
+            templateData['{{instance_cost_bundled}}'] = formatCurrency(singleInstanceCost);
+            templateData['{{instanceCostBundled}}'] = formatCurrency(singleInstanceCost);
+            templateData['{{instance_cost_bundled_price}}'] = formatCurrency(singleInstanceCost);
+            templateData['{{serverPriceBundled}}'] = formatCurrency(singleInstanceCost);
+            templateData['{{serverBundledPrice}}'] = formatCurrency(singleInstanceCost);
+            templateData['{{instance_cost_90}}'] = formatCurrency(singleInstanceCost);
+
+            // No Bundle discount
+            const migrationPrice90 = migrationCost || 0;
+            const migrationBundled = 0;
+            templateData['{{migrationBundled}}'] = formatCurrency(migrationBundled);
+            templateData['{{price_migration_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_cost_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migration_price_bundled}}'] = formatCurrency(migrationPrice90); // Final price
+            templateData['{{migrationCostBundled}}'] = formatCurrency(migrationPrice90); // Final price
+            // Also keep 90% value for _90 suffix tokens (same value)
+            templateData['{{price_migration_90}}'] = formatCurrency(migrationPrice90);
+            
+            // For single migrations, the total price should be the sum of:
+            // users_cost (userCost + dataCost) + migrationCost + instanceCost
+            // This equals totalCost from the calculation, NOT cloudfuzeManageTotal
+            // because cloudfuzeManageTotal incorrectly includes exhibit prices which already contain all costs
+            // NOTE: The agreement table shows 3 rows: users_cost, migrationCost, instanceCost
+            // So the total should be: users_cost + migrationCost + instanceCost = totalCost
+            const userCost = (calculation || safeCalculation)?.userCost ?? 0;
+            const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
+            const usersCost = userCost + dataCost;
+            let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
+
+            const finalUsersCost = usersCost;
+
+            // Set users_cost to the final value
+            templateData['{{users_cost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{user_cost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{userCost}}'] = formatCurrency(finalUsersCost);
+            templateData['{{price_data}}'] = formatCurrency(finalUsersCost);
+            
+            templateData['{{exhibitBundledPrice}}'] = formatCurrency(finalUsersCost);
+
+            if (exhibitsData.length > 0) {
+              const firstExhibit = exhibitsData[0];
+              if (firstExhibit) {
+                firstExhibit.exhibitBundledPrice = formatCurrency(finalUsersCost);
+                firstExhibit.exhibitBundledPrice90 = formatCurrency(finalUsersCost);
+                firstExhibit.exhibitBundledDiscount = '';
+              }
+            }
+            
+            // Calculate total savings (sum of all 10% discounts) for "Instant saving" row
+            const sumOf10Percent = usersCostBundled + migrationBundled + instanceBundled + cfmUserTotalBundled;
+            // Add instant saving token (sum of all 10% discounts)
+            templateData['{{instant_saving}}'] = formatCurrency(sumOf10Percent);
+            templateData['{{total_savings}}'] = formatCurrency(sumOf10Percent);
+            
+            // Total row = total amount - sum of 10% discount column
+            const finalBundledTotal = calculatedDisplayedTotal - sumOf10Percent;
+            
+            // Set bundled total tokens (this is what shows in the gray box)
+            templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuze_manage_price_bundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cloudfuzeManagePriceBundled}}'] = formatCurrency(finalBundledTotal);
+            templateData['{{cfm_total_b}}'] = formatCurrency(finalBundledTotal);
+            // Final total after bundle (for _90 suffix tokens)
+            templateData['{{cfm_total_final}}'] = formatCurrency(finalBundledTotal);
+            
+            console.log('💰 Single migration bundled total calculation:', {
+              exhibit10pct: formatCurrency(usersCostBundled),
+              migration10pct: formatCurrency(migrationBundled),
+              instance10pct: formatCurrency(instanceBundled),
+              cfm10pct: formatCurrency(cfmUserTotalBundled),
+              totalAfterBundle: formatCurrency(finalBundledTotal),
+              sumOf10pct: formatCurrency(sumOf10Percent)
+            });
+            
+            const displayedTotalPrice = calculatedDisplayedTotal;
+            
+            console.log('🔍 Single Migration Total Price Calculation:', {
+              userCost,
+              dataCost,
+              usersCost,
+              migrationCost,
+              singleInstanceCost,
+              displayedTotalPrice,
+              totalCostFromCalculation: (calculation || safeCalculation)?.totalCost,
+              'Should match': usersCost + (migrationCost || 0) + singleInstanceCost
+            });
+            
+            if (localShouldApplyDiscount) {
+              const discountOnDisplayed = displayedTotalPrice * (localDiscountPercent / 100);
+              const finalDisplayedTotal = displayedTotalPrice - discountOnDisplayed;
+              // Update discount_amount to match the discount calculated on displayedTotalPrice (excluding cfm_user_total)
+              templateData['{{discount_amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discount amount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{discountAmount}}'] = `-${formatCurrency(discountOnDisplayed)}`;
+              templateData['{{total_price_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{total_after_discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{Total After Discount}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{final_total}}'] = formatCurrency(finalDisplayedTotal);
+              templateData['{{finalTotal}}'] = formatCurrency(finalDisplayedTotal);
+            } else {
+              templateData['{{total_price_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{total_after_discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{Total After Discount}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{final_total}}'] = formatCurrency(displayedTotalPrice);
+              templateData['{{finalTotal}}'] = formatCurrency(displayedTotalPrice);
+            }
+            // Also update total_price and total price to match displayed total
+            templateData['{{total price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{total_price}}'] = formatCurrency(displayedTotalPrice);
+            templateData['{{totalPrice}}'] = formatCurrency(displayedTotalPrice);
+          }
+        } catch (e) {
+          console.warn('⚠️ Unable to build servers array:', e);
+          templateData['{{server_instance_cost_breakdown}}'] = '';
+          (templateData as any).servers = [];
+          
+          // Ensure CloudFuze Manage tokens are set even if there's an error
+          // Use fallback values to prevent template diagnostic errors
+          // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+          // Check multiple possible locations for combination name
+          const combinationNameFallback1 = (finalConfiguration?.combination || '').toLowerCase();
+          const combinationNameFallback2 = (configuration?.combination || '').toLowerCase();
+          const templateNameFallback = (selectedTemplate?.name || '').toLowerCase();
+          const allCombinationSourcesFallback = [combinationNameFallback1, combinationNameFallback2, templateNameFallback].filter(Boolean);
+          const combinedNameFallback = allCombinationSourcesFallback.join(' ');
+          
+          // More flexible matching - check for "bundled pricing 2.99" in any form
+          const isBundledPricing299Fallback = 
+            combinationNameFallback1.includes('bundled pricing 2.99') || 
+            combinationNameFallback1.includes('bundled pricing 2.99$') ||
+            combinationNameFallback1.includes('bundled pricing $2.99') ||
+            combinationNameFallback1.includes('bundledpricing2.99') ||
+            combinationNameFallback2.includes('bundled pricing 2.99') || 
+            combinationNameFallback2.includes('bundled pricing 2.99$') ||
+            combinationNameFallback2.includes('bundled pricing $2.99') ||
+            combinationNameFallback2.includes('bundledpricing2.99') ||
+            templateNameFallback.includes('bundled pricing 2.99') ||
+            templateNameFallback.includes('bundled pricing 2.99$') ||
+            templateNameFallback.includes('bundled pricing $2.99') ||
+            templateNameFallback.includes('bundledpricing2.99') ||
+            combinedNameFallback.includes('bundled pricing 2.99') ||
+            combinedNameFallback.includes('bundledpricing2.99');
+          const perUserPriceFallback = isBundledPricing299Fallback ? 2.99 : 3.99;
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 12 * perUserPriceFallback;
+          templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+          templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
+          
+          templateData['{{cfm_user_total_b}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cfm_user_bundled}}'] = formatCurrency(fallbackCfmUserTotal);
+
+          // Set cfm_total_b with a fallback value
+          templateData['{{cfm_total_b}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuze_manage_total_bundled}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuzeManageTotalBundled}}'] = formatCurrency(fallbackCfmUserTotal);
+        }
+        
+        console.log('📋 Template data for DOCX processing:', templateData);
+        
+        // Debug: Check each token value individually
+        console.log('🔍 Individual token values:');
+        console.log('  Company Name:', templateData['{{Company Name}}']);
+        console.log('  users_count:', templateData['{{users_count}}']);
+        console.log('  users.cost:', templateData['{{users.cost}}']); // FIXED: Check dot notation
+        console.log('  users_cost:', templateData['{{users_cost}}']); // Check underscore version
+        console.log('  Duration of months:', templateData['{{Duration of months}}']);
+        console.log('  total price:', templateData['{{total price}}']);
+        console.log('  price_migration:', templateData['{{price_migration}}']);
+        
+        // ⭐ SPECIFIC DEBUG FOR USER'S TEMPLATE TOKENS
+        console.log('🎯 USER TEMPLATE SPECIFIC TOKENS:');
+        console.log('  {{users_cost}}:', templateData['{{users_cost}}']);
+        console.log('  {{instance_cost}}:', templateData['{{instance_cost}}']);
+        console.log('  {{Duration_of_months}}:', templateData['{{Duration_of_months}}']);
+        console.log('  {{per_user_cost}}:', templateData['{{per_user_cost}}']);
+        console.log('  Source values for debugging:');
+        console.log('    userCost value:', userCost);
+        console.log('    instanceCost value:', instanceCost);
+        console.log('    duration value:', duration);
+        console.log('    formatCurrency(userCost):', formatCurrency(userCost || 0));
+        console.log('    formatCurrency(instanceCost):', formatCurrency(instanceCost));
+        console.log('    duration.toString():', (duration || 1).toString());
+        
+        // ⭐ GLOBAL DEBUG: Store template data for console debugging
+        (window as any).lastTemplateData = templateData;
+        console.log('🌍 Template data stored in window.lastTemplateData for debugging');
+        
+        // Debug: Check the source data
+        console.log('🔍 Source data debugging:');
+        console.log('  quoteData.company:', quoteData.company);
+        console.log('  quoteData.configuration.numberOfUsers:', quoteData.configuration.numberOfUsers);
+        console.log('  quoteData.calculation.userCost:', quoteData.calculation.userCost);
+        console.log('  quoteData.calculation.migrationCost:', quoteData.calculation.migrationCost);
+        console.log('  quoteData.calculation.totalCost:', quoteData.calculation.totalCost);
+        console.log('  formatCurrency(0):', formatCurrency(0));
+        console.log('  formatCurrency(300):', formatCurrency(300));
+        
+        // CRITICAL: Final validation - ensure NO undefined values (including string "undefined")
+        const undefinedTokens = Object.entries(templateData).filter(([key, value]) => {
+          if (value === undefined || value === null) return true;
+          const strValue = String(value).trim();
+          if (strValue === '' || strValue.toLowerCase() === 'undefined' || strValue === 'null') {
+            // Skip discount-related tokens - they should remain empty if not applicable
+            const lower = key.toLowerCase();
+            if (lower.includes('discount') || lower.includes('show_discount') || lower.includes('hide_discount')) {
+              return false; // Don't flag discount tokens as undefined
+            }
+            return true;
+          }
+          return false;
+        });
+        
+        if (undefinedTokens.length > 0) {
+          console.debug('Empty tokens (will be auto-filled below):', undefinedTokens);
+          
+          // Fix any remaining undefined values
+          undefinedTokens.forEach(([key, value]) => {
+            console.log(`🔧 Fixing undefined token: ${key} = ${value}`);
+            const lower = key.toLowerCase();
+            if (lower.includes('company')) {
+              templateData[key] = finalCompanyName || 'Your Company';
+            } else if (lower.includes('user') && (lower.includes('count') || lower.includes('number'))) {
+              templateData[key] = (userCount || 1).toString();
+            } else if (lower.includes('cost') || lower.includes('price')) {
+              templateData[key] = '$0.00';
+            } else if (lower.includes('duration') || lower.includes('month')) {
+              templateData[key] = (duration || 1).toString();
+            } else if (lower.includes('migration') && !lower.includes('cost') && !lower.includes('price')) {
+              templateData[key] = migrationType || 'Content';
+            } else if (lower.includes('client') || (lower.includes('name') && !lower.includes('company'))) {
+              templateData[key] = clientName || 'Contact Name';
+            } else if (lower.includes('email')) {
+              templateData[key] = clientEmail || 'contact@email.com';
+            } else if (lower.includes('date')) {
+              templateData[key] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
+            } else if (lower.includes('data') && (lower.includes('size') || lower.includes('gb'))) {
+              templateData[key] = (dataSizeGB || 0).toString();
+            } else if (lower.includes('instance') && (lower.includes('count') || lower.includes('number'))) {
+              templateData[key] = (numberOfInstances || 1).toString();
+            } else {
+              templateData[key] = '';
+            }
+          });
+          
+          console.log('🔧 Fixed undefined tokens:', undefinedTokens.map(([key]) => key));
+        } else {
+          console.log('✅ All tokens have valid values');
+        }
+        
+        // CRITICAL: Final check - ensure key tokens are not undefined
+        const criticalTokens = ['{{Company Name}}', '{{ Company Name }}', '{{Company_Name}}', '{{ Company_Name }}', '{{users_count}}', '{{users_cost}}', '{{Duration of months}}', '{{Duration_of_months}}', '{{total price}}', '{{total_price}}', '{{price_migration}}', '{{company name}}', '{{Date}}'];
+        const criticalIssues = criticalTokens.filter(token => 
+          !templateData[token] || templateData[token] === 'undefined' || templateData[token] === ''
+        );
+        
+        if (criticalIssues.length > 0) {
+          console.error('❌ CRITICAL: Key tokens still have issues:', criticalIssues);
+          console.log('🔧 Current values:', criticalIssues.map(token => `${token}: ${templateData[token]}`));
+          
+          // CRITICAL: Force fix any remaining undefined values
+          criticalIssues.forEach(token => {
+            console.log(`🔧 FORCE FIXING: ${token}`);
+            if (token === '{{Company Name}}' || token === '{{ Company Name }}' || token === '{{Company_Name}}' || token === '{{ Company_Name }}') {
+              templateData[token] = finalCompanyName || 'Your Company';
+            } else if (token === '{{users_count}}') {
+              templateData[token] = (userCount || 1).toString();
+            } else if (token === '{{users_cost}}') {
+              // First row (CloudFuze Migrate) = userCost + dataCost so agreement table rows sum to total
+              templateData[token] = formatCurrency((userCost || 0) + (dataCost || 0));
+            } else if (token === '{{Duration of months}}' || token === '{{Duration_of_months}}') {
+              templateData[token] = (duration || 1).toString();
+            } else if (token === '{{total price}}' || token === '{{total_price}}') {
+              templateData[token] = formatCurrency(totalCost || 0);
+            } else if (token === '{{price_migration}}') {
+              templateData[token] = formatCurrency(migrationCost || 0);
+            } else if (token === '{{company name}}') {
+              templateData[token] = finalCompanyName || 'Your Company';
+            } else if (token === '{{Date}}') {
+              templateData[token] = clientInfo.effectiveDate ? formatDateMMDDYYYY(clientInfo.effectiveDate) : formatDateMMDDYYYY(new Date().toISOString().split('T')[0]);
+            }
+            console.log(`🔧 FIXED: ${token} = ${templateData[token]}`);
+          });
+        } else {
+          console.log('✅ All critical tokens have valid values');
+        }
+        
+        // CRITICAL: Show the exact values being sent for the key tokens
+        console.log('🎯 FINAL TOKEN VALUES BEING SENT:');
+        console.log('  Company Name:', templateData['{{Company Name}}']);
+        console.log('  Company Name (spaces):', templateData['{{ Company Name }}']);
+        console.log('  Company_Name:', templateData['{{Company_Name}}']);
+        console.log('  Company_Name (spaces):', templateData['{{ Company_Name }}']);
+        console.log('  users_count:', templateData['{{users_count}}']);
+        console.log('  users_cost:', templateData['{{users_cost}}']);
+        console.log('  Duration of months:', templateData['{{Duration of months}}']);
+        console.log('  Duration_of_months:', templateData['{{Duration_of_months}}']);
+        console.log('  total price:', templateData['{{total price}}']);
+        console.log('  total_price:', templateData['{{total_price}}']);
+        console.log('  price_migration:', templateData['{{price_migration}}']);
+        console.log('  company name:', templateData['{{company name}}']);
+        
+        // Debug: Show the exact data being sent to DOCX processor
+        console.log('🚀 SENDING TO DOCX PROCESSOR:');
+        console.log('  Template file:', templateFileForAgreement.name);
+        console.log('  Template file type:', templateFileForAgreement.type);
+        console.log('  Template data keys:', Object.keys(templateData));
+        console.log('  Template data values:', Object.values(templateData));
+        
+        // Debug: Check if the data looks correct
+        console.log('🔍 DATA VALIDATION:');
+        console.log('  Company name valid?', !!templateData['{{Company Name}}']);
+        console.log('  Users count valid?', !!templateData['{{users_count}}']);
+        console.log('  Users cost valid?', !!templateData['{{users_cost}}']);
+        console.log('  Duration valid?', !!templateData['{{Duration of months}}']);
+        console.log('  Total price valid?', !!templateData['{{total price}}']);
+        
+        // Ensure discount label token always exists (even when empty)
+        if (templateData['{{discount_label}}'] === undefined) {
+          templateData['{{discount_label}}'] = (localShouldApplyDiscount && localDiscountPercent > 0) ? 'Discount' : '';
+        }
+
+        // Ensure bundled pricing tokens always exist (10% discount amount per row; total = total - sum) — only for Bundle plans
+        if (templateData['{{migrationBundled}}'] === undefined) {
+          templateData['{{migrationBundled}}'] = '';
+        }
+        if (templateData['{{price_migration_bundled}}'] === undefined) {
+          templateData['{{price_migration_bundled}}'] = '';
+        }
+        if (templateData['{{migration_cost_bundled}}'] === undefined) {
+          templateData['{{migration_cost_bundled}}'] = '';
+        }
+        if (templateData['{{migration_price_bundled}}'] === undefined) {
+          templateData['{{migration_price_bundled}}'] = '';
+        }
+        if (templateData['{{migrationCostBundled}}'] === undefined) {
+          templateData['{{migrationCostBundled}}'] = '';
+        }
+        if (templateData['{{instance_cost_bundled}}'] === undefined) {
+          templateData['{{instance_cost_bundled}}'] = '';
+        }
+        if (templateData['{{instanceCostBundled}}'] === undefined) {
+          templateData['{{instanceCostBundled}}'] = '';
+        }
+
+        if (!templateData['{{cfm_user_total}}']) {
+          // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+          // Check multiple possible locations for combination name
+          const combinationNameFallback2a = (finalConfiguration?.combination || '').toLowerCase();
+          const combinationNameFallback2b = (configuration?.combination || '').toLowerCase();
+          const templateNameFallback2 = (selectedTemplate?.name || '').toLowerCase();
+          const allCombinationSourcesFallback2 = [combinationNameFallback2a, combinationNameFallback2b, templateNameFallback2].filter(Boolean);
+          const combinedNameFallback2 = allCombinationSourcesFallback2.join(' ');
+          
+          // More flexible matching - check for "bundled pricing 2.99" in any form
+          const isBundledPricing299Fallback2 = 
+            combinationNameFallback2a.includes('bundled pricing 2.99') || 
+            combinationNameFallback2a.includes('bundled pricing 2.99$') ||
+            combinationNameFallback2a.includes('bundled pricing $2.99') ||
+            combinationNameFallback2a.includes('bundledpricing2.99') ||
+            combinationNameFallback2b.includes('bundled pricing 2.99') || 
+            combinationNameFallback2b.includes('bundled pricing 2.99$') ||
+            combinationNameFallback2b.includes('bundled pricing $2.99') ||
+            combinationNameFallback2b.includes('bundledpricing2.99') ||
+            templateNameFallback2.includes('bundled pricing 2.99') ||
+            templateNameFallback2.includes('bundled pricing 2.99$') ||
+            templateNameFallback2.includes('bundled pricing $2.99') ||
+            templateNameFallback2.includes('bundledpricing2.99') ||
+            combinedNameFallback2.includes('bundled pricing 2.99') ||
+            combinedNameFallback2.includes('bundledpricing2.99');
+          const perUserPriceFallback2 = isBundledPricing299Fallback2 ? 2.99 : 3.99;
+          const fallbackCfmUserTotal = totalUserCountFromExhibits * 12 * perUserPriceFallback2;
+          templateData['{{cfm_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuze_manage_user_total}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuzeManageUserTotal}}'] = formatCurrency(fallbackCfmUserTotal);
+        }
+        if (!templateData['{{cfm_number_of_users}}']) {
+          templateData['{{cfm_number_of_users}}'] = String(totalUserCountFromExhibits);
+        }
+        if (!templateData['{{total_users_count}}']) {
+          templateData['{{total_users_count}}'] = String(totalUserCountFromExhibits);
+        }
+        if (!templateData['{{cfm_user_total_b}}']) {
+          // Check if this is "bundled pricing 2.99$" combination - use 2.99, otherwise use 3.99
+          // Check multiple possible locations for combination name
+          const combinationNameFallback3a = (finalConfiguration?.combination || '').toLowerCase();
+          const combinationNameFallback3b = (configuration?.combination || '').toLowerCase();
+          const templateNameFallback3 = (selectedTemplate?.name || '').toLowerCase();
+          const allCombinationSourcesFallback3 = [combinationNameFallback3a, combinationNameFallback3b, templateNameFallback3].filter(Boolean);
+          const combinedNameFallback3 = allCombinationSourcesFallback3.join(' ');
+          
+          // More flexible matching - check for "bundled pricing 2.99" in any form
+          const isBundledPricing299Fallback3 = 
+            combinationNameFallback3a.includes('bundled pricing 2.99') || 
+            combinationNameFallback3a.includes('bundled pricing 2.99$') ||
+            combinationNameFallback3a.includes('bundled pricing $2.99') ||
+            combinationNameFallback3a.includes('bundledpricing2.99') ||
+            combinationNameFallback3b.includes('bundled pricing 2.99') || 
+            combinationNameFallback3b.includes('bundled pricing 2.99$') ||
+            combinationNameFallback3b.includes('bundled pricing $2.99') ||
+            combinationNameFallback3b.includes('bundledpricing2.99') ||
+            templateNameFallback3.includes('bundled pricing 2.99') ||
+            templateNameFallback3.includes('bundled pricing 2.99$') ||
+            templateNameFallback3.includes('bundled pricing $2.99') ||
+            templateNameFallback3.includes('bundledpricing2.99') ||
+            combinedNameFallback3.includes('bundled pricing 2.99') ||
+            combinedNameFallback3.includes('bundledpricing2.99');
+          const perUserPriceFallback3 = isBundledPricing299Fallback3 ? 2.99 : 3.99;
+          const fallbackCfmUserTotal = parseFloat((templateData['{{cfm_user_total}}'] || '$0').replace(/[$,]/g, '')) || (totalUserCountFromExhibits * 12 * perUserPriceFallback3);
+          templateData['{{cfm_user_total_b}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cloudfuze_manage_user_total_bundled}}'] = formatCurrency(fallbackCfmUserTotal);
+          templateData['{{cfm_user_bundled}}'] = formatCurrency(fallbackCfmUserTotal);
+        }
+        if (!templateData['{{cfm_total_b}}']) {
+          const fallbackCfmTotalB = templateData['{{cloudfuze_manage_total_bundled}}'] ||
+                                   templateData['{{cloudfuzeManageTotalBundled}}'] ||
+                                   formatCurrency(totalCost ?? 0);
+          templateData['{{cfm_total_b}}'] = fallbackCfmTotalB;
+        }
+
+        // DIAGNOSTIC: Run comprehensive template analysis
+        console.log('🔍 Running comprehensive template diagnostic...');
+        const { TemplateDiagnostic } = await import('../utils/templateDiagnostic');
+        const diagnostic = await TemplateDiagnostic.diagnoseTemplate(
+          templateFileForAgreement,
+          templateData
+        );
+        
+        console.log('📊 DIAGNOSTIC RESULTS:');
+        console.log('  Template tokens found:', diagnostic.templateTokens);
+        console.log('  Data tokens provided:', diagnostic.dataTokens);
+        console.log('  Missing tokens:', diagnostic.missingTokens);
+        console.log('  Mismatched tokens:', diagnostic.mismatchedTokens);
+        console.log('  File info:', diagnostic.fileInfo);
+        console.log('  Document structure:', diagnostic.documentStructure);
+        console.log('  Recommendations:', diagnostic.recommendations);
+        
+        // Treat discount tokens and bundled pricing tokens as optional (we intentionally allow them to be empty/not present)
+        const optionalTokens = [
+          'discount_label', 
+          'discount_amount', 
+          'show_discount', 
+          'hide_discount', 
+          'if_discount',
+          'migrationBundled',
+          'price_migration_bundled',
+          'migration_cost_bundled',
+          'migration_price_bundled',
+          'migrationCostBundled',
+          'instance_cost_bundled',
+          'instanceCostBundled',
+          'serverPriceBundled',
+          'serverBundledPrice',
+          'exhibitBundledPrice',
+          'cloudfuze_manage_total_bundled',
+          'cloudfuzeManageTotalBundled',
+          'cloudfuze_manage_price_bundled',
+          'cloudfuzeManagePriceBundled',
+          // _90 suffix tokens (90% of original price)
+          'exhibitBundledPrice90',
+          'price_migration_90',
+          'serverPrice90',
+          'cfm_user_total_90',
+          'instance_cost_90',
+          'cfm_total_final',
+          // Instant saving tokens (sum of all 10% discounts)
+          'instant_saving',
+          'total_savings'
+        ];
+        const filteredMissing = diagnostic.missingTokens.filter(t => !optionalTokens.includes(t));
+        const filteredMismatched = diagnostic.mismatchedTokens.filter(t => !optionalTokens.includes(t));
+
+        // Pre-check and log whether discount will show
+        console.log('🧮 Discount pre-check before generate:', {
+          localDiscountPercent,
+          localShouldApplyDiscount,
+          localDiscountAmount,
+          localFinalTotalAfterDiscount,
+          discount_label: templateData['{{discount_label}}'],
+          discount_amount: templateData['{{discount_amount}}'],
+          total_after_discount: templateData['{{total_after_discount}}']
+        });
+
+        // Show diagnostic results to user (only for non-optional tokens)
+        if (filteredMissing.length > 0 || filteredMismatched.length > 0) {
+          const issueMessage = `
+🔍 TEMPLATE DIAGNOSTIC RESULTS:
+
+❌ ISSUES FOUND:
+${filteredMissing.length > 0 ? `• Missing data for tokens: ${filteredMissing.join(', ')}` : ''}
+${filteredMismatched.length > 0 ? `• Token format mismatches: ${filteredMismatched.join(', ')}` : ''}
+
+📋 TEMPLATE TOKENS FOUND:
+${diagnostic.templateTokens.map(token => `• {{${token}}}`).join('\n')}
+
+📊 DATA TOKENS PROVIDED:
+${diagnostic.dataTokens.map(token => `• ${token}`).join('\n')}
+
+💡 RECOMMENDATIONS:
+${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
+
+⚠️ Please check your template and ensure token names match exactly!
+          `.trim();
+          
+          console.error('❌ Template diagnostic found issues:', issueMessage);
+          alert(issueMessage);
+          
+          // Stop only when non-optional tokens have issues
+          throw new Error('Template diagnostic found issues. Please fix the token mismatches before proceeding.');
+        } else {
+          console.log('✅ Template diagnostic passed - all tokens match correctly!');
+        }
+
+        // Process DOCX template
+        console.log('🚀 FINAL TEMPLATE DATA BEING SENT TO DOCX PROCESSOR:');
+        console.log('  Template file:', templateFileForAgreement.name);
+        console.log('  Template data keys:', Object.keys(templateData));
+        console.log('  Template data values:', Object.values(templateData));
+        
+        // Critical tokens validation already performed earlier in the code
+
+        // Custom line items: add their total on top of whatever the total tokens currently hold.
+        // Apply discount to custom items if set, then add to final total.
+        let customLineItemsDiscountAmount = 0;
+        if (customLineItems.length > 0 && customLineItemsTotal > 0) {
+          const parseCurrencyToNumber = (s: string | undefined): number => {
+            if (!s) return 0;
+            const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
+            return Number.isFinite(n) ? n : 0;
+          };
+          // Apply discount to custom line items at any amount (no minimum required)
+          let discountedCustomTotal = customLineItemsTotal;
+          customLineItemsDiscountAmount = 0;
+          if (customLineItemsDiscount > 0) {
+            const discountAmount = customLineItemsTotal * (customLineItemsDiscount / 100);
+            discountedCustomTotal = customLineItemsTotal - discountAmount;
+            customLineItemsDiscountAmount = discountAmount;
+          }
+          const totalTokens = [
+            '{{total price}}', '{{total_price}}', '{{totalPrice}}', '{{prices}}',
+            '{{total_price_discount}}', '{{total_after_discount}}', '{{Total After Discount}}',
+            '{{final_total}}', '{{finalTotal}}',
+          ];
+          totalTokens.forEach((tok) => {
+            if (tok in templateData) {
+              templateData[tok] = formatCurrency(parseCurrencyToNumber(templateData[tok]) + discountedCustomTotal);
+            }
+          });
+
+          // Update discount amount to include BOTH main discount AND custom line items discount
+          if (customLineItemsDiscountAmount > 0) {
+            const existingDiscountStr = templateData['{{discount_amount}}'] || '0';
+            const existingDiscount = Math.abs(parseCurrencyToNumber(existingDiscountStr));
+            const totalDiscountAmount = existingDiscount + customLineItemsDiscountAmount;
+            templateData['{{discount_amount}}'] = `-${formatCurrency(totalDiscountAmount)}`;
+            templateData['{{discount amount}}'] = `-${formatCurrency(totalDiscountAmount)}`;
+            templateData['{{discountAmount}}'] = `-${formatCurrency(totalDiscountAmount)}`;
+          }
+
+          console.log('🧾 Added custom line items to total:', {
+            count: customLineItems.length,
+            customLineItemsTotal,
+            customLineItemsDiscount,
+            customLineItemsDiscountAmount,
+            newTotalPrice: templateData['{{total price}}'],
+            updatedDiscount: templateData['{{discount_amount}}'],
+          });
+        }
+
+        // CRITICAL: Log the exact templateData being sent to DOCX processor
+        console.log('🎯 SENDING TO DOCX PROCESSOR:');
+        console.log('  templateData keys:', Object.keys(templateData));
+        console.log('  templateData.{{Company Name}}:', templateData['{{Company Name}}']);
+        console.log('  templateData.{{ Company Name }}:', templateData['{{ Company Name }}']);
+        console.log('  templateData.{{Company_Name}}:', templateData['{{Company_Name}}']);
+        console.log('  templateData.{{ Company_Name }}:', templateData['{{ Company_Name }}']);
+        console.log('  templateData.{{company name}}:', templateData['{{company name}}']);
+        console.log('  templateData.{{company_name}}:', templateData['{{company_name}}']);
+        console.log('  templateData.{{users_count}}:', templateData['{{users_count}}']);
+        console.log('  templateData.{{users_cost}}:', templateData['{{users_cost}}']);
+        console.log('  templateData.{{Duration_of_months}}:', templateData['{{Duration_of_months}}']);
+        console.log('  templateData.{{instance_cost}}:', templateData['{{instance_cost}}']);
+        console.log('  templateData.{{per_user_cost}}:', templateData['{{per_user_cost}}']);
+
+        // Snapshot the full token map so we can re-render this agreement later with
+        // different dates (EditDatesModal uses this).
+        setLastTemplateDataSnapshot({ ...templateData });
+
+        const result = await DocxTemplateProcessor.processDocxTemplate(
+          templateFileForAgreement,
+          templateData,
+          {
+            customLineItems: customLineItems.map((it) => ({ name: it.name, description: it.description, price: formatCurrency(it.price) })),
+            customLineItemsDiscount: customLineItemsDiscount > 0 ? { percentage: customLineItemsDiscount, amount: customLineItemsDiscountAmount } : null
+          }
+        );
+
+        if (result.success && result.processedDocx) {
+          processedDocument = result.processedDocx;
+          
+            console.log('✅ DOCX template processed successfully');
+            console.log('📊 Processing time:', result.processingTime + 'ms');
+            console.log('📊 Tokens replaced:', result.tokensReplaced || 0);
+          console.log('📄 Processed DOCX size:', result.processedDocx.size, 'bytes');
+          console.log('📄 Processed DOCX type:', result.processedDocx.type);
+          
+          // Merge selected exhibits ONLY for Multi combination migration type
+          // Use expanded exhibit IDs (includes both Include and Not Include variants based on plan selection).
+          // Fall back to selectedExhibits so manually picked folders (e.g. Dropbox To Microsoft) are never lost.
+          const uniqueSelectedExhibitsForMerge = expandedExhibitIdsForMerge.length > 0
+            ? Array.from(new Set(expandedExhibitIdsForMerge.map((id) => (id ?? '').toString()).filter(Boolean)))
+            : Array.from(new Set((selectedExhibits || []).map((id) => (id ?? '').toString()).filter(Boolean)));
+          
+          console.log('📎 Using exhibit IDs for merge:', {
+            expandedCount: expandedExhibitIdsForMerge.length,
+            usingExpanded: expandedExhibitIdsForMerge.length > 0,
+            uniqueForMerge: uniqueSelectedExhibitsForMerge.length
+          });
+          
+          if (uniqueSelectedExhibitsForMerge.length > 0 && configuration.migrationType === 'Multi combination') {
+            console.log('📎 Fetching and merging selected exhibits for Multi combination...', {
+              raw: selectedExhibits,
+              expanded: expandedExhibitIdsForMerge,
+              unique: uniqueSelectedExhibitsForMerge
+            });
+            
+            // Declare outside try block so they're accessible in catch block
+            const exhibitBlobs: Blob[] = [];
+            const exhibitMetadata: Array<{ name: string; category?: string; includeType?: 'included' | 'notincluded' }> = [];
+            
+            // Define helper functions BEFORE try block so they're accessible throughout, including in catch blocks
+            const getPlanLowerFromExhibit = (ex: any): string => {
+              const pt = (ex?.planType || '').toString().toLowerCase();
+              if (pt) return pt;
+              const name = (ex?.name || '').toString().toLowerCase();
+              if (name.includes('basic') && !name.includes('standard') && !name.includes('advanced')) return 'basic';
+              if (name.includes('standard') && !name.includes('advanced')) return 'standard';
+              if (name.includes('advanced')) return 'advanced';
+              return '';
+            };
+
+            const getNormalizedBaseCombination = (ex: any): string => {
+              // Prefer the LONGEST non-"all" combination so exhibits tagged with both a
+              // short form (e.g. 'dropbox-to-mydrive') and a more specific one
+              // ('dropbox-to-google-mydrive') resolve to the specific key. Falling back
+              // to combinations[0] (the previous behaviour) caused two exhibits in the
+              // same UI folder to dedup under different keys and both got embedded.
+              const candidates = (ex?.combinations || []).filter((c: any) => c && c !== 'all');
+              if (candidates.length === 0) return '';
+              const primary = candidates.reduce((longest: string, c: string) =>
+                (String(c).length > longest.length ? String(c) : longest), String(candidates[0]));
+              let base = String(primary).toLowerCase();
+              base = base.replace(/-(basic|standard|advanced|premium|enterprise)$/, '');
+              base = base.replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '');
+              base = base.replace(/-+$/, '').trim();
+              base = base
+                .replace(/\//g, '-')
+                .replace(/[^a-z0-9-]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-+|-+$/g, '');
+              const parts = base.split('-').filter(Boolean);
+              if (parts.length > 0 && parts.length % 2 === 0) {
+                const half = parts.length / 2;
+                const first = parts.slice(0, half).join('-');
+                const second = parts.slice(half).join('-');
+                if (first === second) base = first;
+              }
+              // Mirror ExhibitSelector.extractBaseCombination alias rules so legacy
+              // "dropbox-to-mydrive" exhibits collapse onto "dropbox-to-google-mydrive"
+              // (same UI folder). Without this, the dedup key below would differ and
+              // both the legacy and the specific exhibit would be embedded.
+              if (base === 'dropbox-to-mydrive' || base.startsWith('dropbox-to-mydrive-')) {
+                base = base.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+              }
+              if (
+                base === 'box-to-google-mydrive-shareddrive' ||
+                base.startsWith('box-to-google-mydrive-shareddrive-') ||
+                base === 'box-to-google-sharedrive' ||
+                base.startsWith('box-to-google-sharedrive-') ||
+                base === 'box-to-google-mydrive-sharedrive' ||
+                base.startsWith('box-to-google-mydrive-sharedrive-')
+              ) {
+                base = 'box-to-google-mydrive';
+              }
+              return base;
+            };
+            
+            try {
+              // Fetch all exhibit files
+              const metaResp = await fetch(`${BACKEND_URL}/api/exhibits`);
+              let allExhibits: any[] = [];
+              if (metaResp.ok) {
+                const metaData = await metaResp.json();
+                if (metaData.success && metaData.exhibits) {
+                  allExhibits = metaData.exhibits;
+                }
+              }
+
+              const lookup = new Map<string, any>(
+                (allExhibits || []).map((ex: any) => [(ex?._id ?? '').toString(), ex])
+              );
+
+              // Expand merge list to include sibling Included/Not Included exhibits for the same base combo + plan.
+              // (This block is for AGREEMENT generation; do not rely on variables created in the email merge path.)
+              let expandedUniqueSelectedExhibitsForMerge: string[] = Array.from(uniqueSelectedExhibitsForMerge);
+
+              // Build canonical intent for THIS scope from contentConfigs[].exhibitName / etc.
+              // We use the user's explicit dropdown selection as the authoritative filter so
+              // sibling expansion below cannot smuggle in distinct-drive variants (MyDrive
+              // when SharedDrive is configured, or vice versa). This duplicates the canonical
+              // logic from the primary expansion site — that one lives in a different scope.
+              const canonicalIntentKeysHere = new Set<string>();
+              const normalizeHyphensHere = (k: string): string => {
+                if (!k) return k;
+                return k
+                  .replace(/-shared-drive(\b|-|$)/g, '-sharedrive$1')
+                  .replace(/-shared-drives(\b|-|$)/g, '-sharedrives$1')
+                  .replace(/-my-drive(\b|-|$)/g, '-mydrive$1')
+                  .replace(/-share-point(\b|-|$)/g, '-sharepoint$1')
+                  .replace(/-one-drive(\b|-|$)/g, '-onedrive$1');
+              };
+              const cfgAnyHere = configuration as any;
+              const normalizeConfigName = (raw: string) => {
+                let cleaned = String(raw || '').trim();
+                const patterns = [
+                  /\s+(Standard|Advanced|Basic|Premium|Enterprise)\s+Plan\s*-\s*.*$/i,
+                  /\s+Plan\s*-\s*.*$/i,
+                  /\s+-\s*Included\s+Features$/i,
+                  /\s+-\s*Not\s+Included\s+Features$/i,
+                  /\s+-\s*.*$/i,
+                ];
+                for (const p of patterns) cleaned = cleaned.replace(p, '');
+                return cleaned
+                  .toLowerCase()
+                  .replace(/\s+/g, '-')
+                  .replace(/-(basic|standard|advanced|premium|enterprise)$/, '')
+                  .replace(/-(included|include|notincluded|not-include|notinclude|excluded)$/, '')
+                  .replace(/-+$/, '');
+              };
+              // Collect all candidate canonical keys, then keep only the most specific
+              // (longest) ones per category. Without this prune, a stale config name like
+              // "Dropbox To Google" (parent) would coexist with the specific
+              // "dropbox-to-google-sharedrive" (child) and the distinct-sibling check
+              // would treat MyDrive as compatible with the parent.
+              const allCandidatesHere = new Set<string>();
+              const collectCanonical = (list: any[] | undefined, cat: string) => {
+                if (!Array.isArray(list)) return;
+                for (const c of list) {
+                  if (c?.exhibitName) {
+                    const norm = normalizeHyphensHere(normalizeConfigName(c.exhibitName));
+                    if (norm) allCandidatesHere.add(`${cat}|${norm}`);
+                  }
+                  // Also include the exhibitId's combinations if we can resolve them
+                  if (c?.exhibitId) {
+                    const ex = lookup.get(String(c.exhibitId));
+                    if (ex?.combinations && Array.isArray(ex.combinations)) {
+                      for (const combo of ex.combinations) {
+                        const lc = String(combo || '').toLowerCase();
+                        if (!lc || lc === 'all') continue;
+                        const norm = normalizeHyphensHere(lc);
+                        allCandidatesHere.add(`${cat}|${norm}`);
+                      }
+                    }
+                  }
+                }
+              };
+              collectCanonical(cfgAnyHere.messagingConfigs, 'messaging');
+              collectCanonical(cfgAnyHere.contentConfigs, 'content');
+              collectCanonical(cfgAnyHere.emailConfigs, 'email');
+              // Keep only maximal keys (those not extended by another candidate in the
+              // same category). This drops parent keys when a more specific child exists.
+              for (const k of allCandidatesHere) {
+                const parts = k.split('|');
+                if (parts.length !== 2) continue;
+                const cat = parts[0];
+                const val = parts[1];
+                let isExtended = false;
+                for (const other of allCandidatesHere) {
+                  if (other === k) continue;
+                  const op = other.split('|');
+                  if (op.length !== 2 || op[0] !== cat) continue;
+                  if (op[1].startsWith(val + '-')) { isExtended = true; break; }
+                }
+                if (!isExtended) canonicalIntentKeysHere.add(k);
+              }
+              console.log('🎯 Secondary expansion canonical intent keys:', Array.from(canonicalIntentKeysHere));
+              const hasCanonicalDistinctSiblingHere = (cRaw: string, cat: string): boolean => {
+                const c = normalizeHyphensHere(cRaw);
+                const canonicalForCat: string[] = [];
+                for (const k of canonicalIntentKeysHere) {
+                  const prefix = `${cat}|`;
+                  if (k.startsWith(prefix)) canonicalForCat.push(k.slice(prefix.length));
+                }
+                if (canonicalForCat.length === 0) return false;
+                return canonicalForCat.some((canon) => {
+                  // Compatible (equal / parent / child) is fine
+                  if (c === canon) return false;
+                  if (c.startsWith(canon + '-') || canon.startsWith(c + '-')) return false;
+                  // Distinct sibling: share prefix ending at '-' boundary
+                  let i = 0;
+                  while (i < c.length && i < canon.length && c[i] === canon[i]) i++;
+                  const commonPrefix = c.slice(0, i);
+                  if (!commonPrefix.endsWith('-')) return false;
+                  return commonPrefix.length > 0;
+                });
+              };
+
+              try {
+
+                const expandedForMerge = new Set<string>();
+                // Track seen exhibits by unique key to prevent duplicates
+                const seenExhibitKeys = new Set<string>();
+                
+                for (const id of uniqueSelectedExhibitsForMerge) {
+                  const ex = lookup.get(id);
+                  if (!ex) {
+                    expandedForMerge.add(id);
+                    continue;
+                  }
+                  const category = (ex?.category || 'content').toString().toLowerCase();
+                  const baseCombo = getNormalizedBaseCombination(ex);
+                  const planLower = getPlanLowerFromExhibit(ex);
+                  const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+
+                  // Canonical-intent gate: even if this exhibit was in selectedExhibits
+                  // (e.g. user selected a "combined" folder containing distinct sibling
+                  // variants), drop it if it's a distinct sibling of the user's actual
+                  // dropdown choice.
+                  if (baseCombo && hasCanonicalDistinctSiblingHere(baseCombo, category)) {
+                    console.log('⚠️ Secondary expansion: rejecting exhibit due to canonical-intent mismatch', { name: ex?.name, baseCombo });
+                    continue;
+                  }
+
+                  // Create unique key for this exhibit
+                  const uniqueKey = `${category}|${baseCombo}|${planLower}|${includeType}`;
+
+                  // Only add if we haven't seen this exact exhibit before
+                  if (!seenExhibitKeys.has(uniqueKey)) {
+                    seenExhibitKeys.add(uniqueKey);
+                    expandedForMerge.add(id);
+                  }
+                  
+                  if (!baseCombo || !planLower) continue;
+
+                  // Add sibling exhibits (both Included and Not Included) for same base combo + plan.
+                  // Use parent/child compatibility instead of strict equality so a dedicated
+                  // "Standard Not Include" exhibit (whose baseCombo may differ slightly from
+                  // the selected exhibit's baseCombo, e.g. via the longest-combination tie
+                  // break) is still picked up as a sibling.
+                  const combosCompatibleHere = (a: string, b: string): boolean => {
+                    if (!a || !b) return false;
+                    if (a === b) return true;
+                    return a.startsWith(b + '-') || b.startsWith(a + '-');
+                  };
+                  for (const other of allExhibits) {
+                    if (!other?._id) continue;
+                    const otherCat = (other?.category || 'content').toString().toLowerCase();
+                    if (otherCat !== category) continue;
+                    if (getPlanLowerFromExhibit(other) !== planLower) continue;
+                    const otherBase = getNormalizedBaseCombination(other);
+                    if (!combosCompatibleHere(otherBase, baseCombo)) continue;
+                    const otherIncludeType = (other?.includeType || (other?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                    if (otherIncludeType !== 'included' && otherIncludeType !== 'notincluded') continue;
+
+                    // Canonical-intent gate for sibling expansion. Without this, a sibling
+                    // search seeded by a SharedDrive exhibit could still pull in MyDrive
+                    // exhibits whose baseCombo is parent-compatible with the seed's parent.
+                    if (otherBase && hasCanonicalDistinctSiblingHere(otherBase, otherCat)) continue;
+
+                    // Use the OTHER exhibit's own baseCombo in the dedup key, otherwise two
+                    // exhibits with different baseCombos but compatible via parent/child
+                    // would collide under the same key.
+                    const otherUniqueKey = `${otherCat}|${otherBase}|${planLower}|${otherIncludeType}`;
+
+                    // Only add if we haven't seen this exact exhibit before
+                    if (!seenExhibitKeys.has(otherUniqueKey)) {
+                      seenExhibitKeys.add(otherUniqueKey);
+                      expandedForMerge.add(other._id.toString());
+                    }
+                  }
+                }
+
+                expandedUniqueSelectedExhibitsForMerge = Array.from(expandedForMerge).filter(Boolean);
+                if (expandedUniqueSelectedExhibitsForMerge.length !== uniqueSelectedExhibitsForMerge.length) {
+                  console.log('📎 Expanded exhibit merge list (agreement):', {
+                    before: uniqueSelectedExhibitsForMerge.length,
+                    after: expandedUniqueSelectedExhibitsForMerge.length
+                  });
+                }
+              } catch (e) {
+                // Never fail agreement generation because of merge-list expansion
+                console.warn('⚠️ Could not expand exhibit merge list; using original selection.', e);
+                expandedUniqueSelectedExhibitsForMerge = Array.from(uniqueSelectedExhibitsForMerge);
+              }
+
+              // AUTHORITATIVE OVERRIDE — rebuild the merge list from `allExhibits` directly,
+              // keeping ONLY exhibits whose NAME or combinations match the user's intent.
+              //
+              // Two layers (in order):
+              //   A. NAME-BASED — derive canonical name patterns from the names of the
+              //      user's selectedExhibits (e.g. "Egnyte to Google MyDrive" from a name
+              //      like "Egnyte to Google MyDrive Standard Plan - Standard Include").
+              //      Reject any exhibit whose name base doesn't match. This is the most
+              //      reliable signal because the user explicitly checked those files.
+              //   B. COMBINATIONS-BASED (fallback if name-based finds nothing) — strict
+              //      combination check (no distinct siblings).
+              try {
+                // Extract a normalized name base (strip plan/include suffix, collapse drive
+                // variants so "MyDrive" / "My Drive" / "Mydrive" compare equal).
+                const extractNameBase = (rawName: string): string => {
+                  const s = String(rawName || '').trim();
+                  if (!s) return '';
+                  const dashIdx = s.indexOf(' - ');
+                  let base = dashIdx > 0 ? s.substring(0, dashIdx) : s;
+                  base = base.replace(/\s+(Basic|Standard|Advanced|Premium|Enterprise)\s+Plan\s*$/i, '').trim();
+                  return base
+                    .toLowerCase()
+                    .replace(/\s+/g, ' ')
+                    .replace(/\bmy\s*drive\b/g, 'mydrive')
+                    .replace(/\bshared?\s*drive\b/g, 'sharedrive')
+                    .replace(/\bone\s*drive\b/g, 'onedrive')
+                    .replace(/\bshare\s*point\b/g, 'sharepoint')
+                    .trim();
+                };
+                const canonicalNames = new Set<string>();
+                for (const id of (selectedExhibits || [])) {
+                  const ex = lookup.get(String(id || ''));
+                  if (ex?.name) {
+                    const base = extractNameBase(ex.name);
+                    if (base) canonicalNames.add(base);
+                  }
+                }
+                const selectedPlanLowerForFilter = ((calculation || safeCalculation)?.tier?.name ?? '').toString().toLowerCase();
+                let nameFilterApplied = false;
+                if (canonicalNames.size > 0 && allExhibits.length > 0) {
+                  console.log('🎯 Canonical name bases (from selectedExhibits):', Array.from(canonicalNames));
+                  // Collect every exhibit that matches by name + plan, then group by
+                  // (name base, plan, includeType) so we can pick the freshest of duplicates.
+                  type Candidate = { id: string; ex: any; ts: number; includeType: string; plan: string };
+                  const candidates: Candidate[] = [];
+                  const tsOf = (e: any): number => {
+                    const updated = e?.updatedAt ? new Date(e.updatedAt).getTime() : NaN;
+                    if (!isNaN(updated)) return updated;
+                    const created = e?.createdAt ? new Date(e.createdAt).getTime() : NaN;
+                    if (!isNaN(created)) return created;
+                    // Version number is monotonic upward when present.
+                    const v = Number(e?.version || 0);
+                    return v;
+                  };
+                  for (const ex of allExhibits) {
+                    const exBase = extractNameBase(ex?.name || '');
+                    if (!exBase || !canonicalNames.has(exBase)) continue;
+                    // Use getPlanLowerFromExhibit (falls back to name detection) so exhibits
+                    // with undefined planType but "Standard"/"Basic" in their name are NOT
+                    // treated as generic and included for every plan.
+                    const exPlan = getPlanLowerFromExhibit(ex);
+                    if (selectedPlanLowerForFilter) {
+                      const isGenericPlan = !exPlan;
+                      if (!isGenericPlan && exPlan !== selectedPlanLowerForFilter) continue;
+                    }
+                    const inferredInclude = (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                    candidates.push({ id: (ex?._id ?? '').toString(), ex, ts: tsOf(ex), includeType: inferredInclude, plan: exPlan });
+                  }
+                  // Group by (name base, plan, includeType) — pick the candidate with the
+                  // most recent updatedAt/createdAt/version. This prefers the freshest
+                  // upload when legacy duplicates exist in the DB.
+                  const winners = new Map<string, Candidate>();
+                  for (const cand of candidates) {
+                    const exBase = extractNameBase(cand.ex?.name || '');
+                    const groupKey = `${exBase}|${cand.plan}|${cand.includeType}`;
+                    const existing = winners.get(groupKey);
+                    if (!existing || cand.ts > existing.ts) {
+                      winners.set(groupKey, cand);
+                    }
+                  }
+                  const droppedAsLegacy = candidates
+                    .filter((c) => {
+                      const exBase = extractNameBase(c.ex?.name || '');
+                      const k = `${exBase}|${c.plan}|${c.includeType}`;
+                      return winners.get(k)?.id !== c.id;
+                    })
+                    .map((c) => ({ id: c.id, name: c.ex?.name, ts: c.ts }));
+                  if (droppedAsLegacy.length > 0) {
+                    console.warn('⚠️ Dropped legacy/older duplicate exhibits in favor of newest:', droppedAsLegacy);
+                  }
+                  const nameMatchedIds = Array.from(winners.values()).map((c) => c.id);
+                  if (nameMatchedIds.length > 0) {
+                    console.log('🎯 Authoritative merge list (NAME-BASED strict match, newest-only):', {
+                      before: expandedUniqueSelectedExhibitsForMerge.length,
+                      after: nameMatchedIds.length,
+                      ids: nameMatchedIds,
+                      winners: Array.from(winners.values()).map((c) => ({ id: c.id, name: c.ex?.name, plan: c.plan, includeType: c.includeType, ts: c.ts })),
+                    });
+                    expandedUniqueSelectedExhibitsForMerge = nameMatchedIds;
+                    nameFilterApplied = true;
+                  } else {
+                    console.warn('⚠️ NAME-BASED filter matched 0 exhibits — trying combinations-based filter');
+                  }
+                }
+                if (nameFilterApplied) {
+                  // Skip the combinations-based filter — name-based already worked.
+                  throw new Error('__NAME_BASED_FILTER_APPLIED__');
+                }
+                // Fallback: combinations-based strict filter.
+                const canonicalKeysFlat: { cat: string; key: string }[] = [];
+                for (const k of canonicalIntentKeysHere) {
+                  const parts = k.split('|');
+                  if (parts.length === 2) canonicalKeysFlat.push({ cat: parts[0], key: parts[1] });
+                }
+                if (canonicalKeysFlat.length > 0 && allExhibits.length > 0) {
+                  const aliasFix = (raw: string) => {
+                    let k = (raw || '').toLowerCase();
+                    if (k === 'dropbox-to-mydrive' || k.startsWith('dropbox-to-mydrive-')) {
+                      k = k.replace(/^dropbox-to-mydrive/, 'dropbox-to-google-mydrive');
+                    }
+                    return normalizeHyphensHere(k);
+                  };
+                  const isExactMatch = (ex: any): boolean => {
+                    const exCat = (ex?.category || 'content').toString().toLowerCase();
+                    const exCombos = ((ex?.combinations || []) as string[])
+                      .map((c) => String(c).toLowerCase())
+                      .filter((c) => c && c !== 'all')
+                      .map((c) => aliasFix(c));
+                    if (exCombos.length === 0) return false;
+                    const canonForCat = canonicalKeysFlat.filter((ck) => ck.cat === exCat).map((ck) => ck.key);
+                    if (canonForCat.length === 0) return false;
+                    // Rule 1: at least one of the exhibit's combinations must match a
+                    // canonical key (exact or canonical is a parent of it).
+                    const hasCanon = exCombos.some((c) =>
+                      canonForCat.some((ck) => c === ck || c.startsWith(ck + '-')),
+                    );
+                    if (!hasCanon) return false;
+                    // Rule 2: every exhibit combination must be compatible (equal / parent /
+                    // child) with at least one canonical key. A distinct sibling fails this.
+                    const allCompatible = exCombos.every((c) =>
+                      canonForCat.some((ck) =>
+                        c === ck || c.startsWith(ck + '-') || ck.startsWith(c + '-'),
+                      ),
+                    );
+                    return allCompatible;
+                  };
+                  const selectedPlanLowerForFilter = ((calculation || safeCalculation)?.tier?.name ?? '').toString().toLowerCase();
+                  const strictIds: string[] = [];
+                  for (const ex of allExhibits) {
+                    if (!isExactMatch(ex)) continue;
+                    // Match plan too (skip generic-plan exhibits only if a plan is selected)
+                    if (selectedPlanLowerForFilter) {
+                      const exPlan = (ex?.planType || '').toString().toLowerCase();
+                      const isGenericPlan = !exPlan;
+                      if (!isGenericPlan && exPlan !== selectedPlanLowerForFilter) continue;
+                    }
+                    strictIds.push((ex?._id ?? '').toString());
+                  }
+                  if (strictIds.length > 0) {
+                    console.log('🎯 Authoritative merge list (strict canonical match):', {
+                      before: expandedUniqueSelectedExhibitsForMerge.length,
+                      after: strictIds.length,
+                      strictIds,
+                      canonical: canonicalKeysFlat,
+                    });
+                    expandedUniqueSelectedExhibitsForMerge = strictIds;
+                  } else {
+                    console.warn('⚠️ Strict canonical filter found 0 exhibits — falling back to existing merge list to avoid empty Exhibit section.');
+                  }
+                }
+              } catch (overrideErr) {
+                if (overrideErr instanceof Error && overrideErr.message === '__NAME_BASED_FILTER_APPLIED__') {
+                  // Sentinel — name-based filter already produced a clean list, skipping
+                  // the combinations-based fallback is intentional, not an error.
+                } else {
+                  console.warn('⚠️ Authoritative override skipped due to error:', overrideErr);
+                }
+              }
+
+              const isNotIncludedExhibit = (ex: any): boolean => {
+                if (ex?.includeType === 'notincluded') return true;
+                if (ex?.includeType === 'included') return false;
+                const text = `${ex?.name || ''} ${ex?.description || ''}`.toLowerCase();
+                return text.includes('not included') ||
+                  text.includes('not include') ||
+                  text.includes('notincluded') ||
+                  text.includes('notinclude') ||
+                  text.includes('not-include') ||
+                  text.includes('not-included');
+              };
+
+              const normalizeExhibitBaseName = (rawName: string): string => {
+                const s = (rawName || '')
+                  .toString()
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                return s
+                  .replace(/not\s*-\s*included/gi, '')
+                  .replace(/not\s*-\s*include(?!d)/gi, '')
+                  .replace(/not\s+included/gi, '')
+                  .replace(/not\s+include(?!d)/gi, '')
+                  .replace(/notincluded/gi, '')
+                  .replace(/notinclude(?!d)/gi, '')
+                  .replace(/\s+online\b/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+
+              // De-dupe exhibits by stable "migration key" before fetching/merging blobs
+              // Use the same key format as the expansion above to ensure consistency
+
+              // FIRST: Check if expandedUniqueSelectedExhibitsForMerge itself has duplicates
+              const expandedSet = new Set(expandedUniqueSelectedExhibitsForMerge);
+              if (expandedSet.size !== expandedUniqueSelectedExhibitsForMerge.length) {
+                const expandedDuplicates = expandedUniqueSelectedExhibitsForMerge.filter((id, idx) => expandedUniqueSelectedExhibitsForMerge.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: expandedUniqueSelectedExhibitsForMerge has duplicates:', {
+                  duplicateIds: [...new Set(expandedDuplicates)],
+                  total: expandedUniqueSelectedExhibitsForMerge.length,
+                  unique: expandedSet.size
+                });
+              }
+
+              const seenKeys = new Set<string>();
+              const dedupedIds: string[] = [];
+              for (const id of expandedUniqueSelectedExhibitsForMerge) {
+                const ex = lookup.get(id);
+                if (!ex) {
+                  // Keep unknown IDs (but they may be skipped later if metadata is required)
+                  dedupedIds.push(id);
+                  continue;
+                }
+                const category = (ex?.category || 'content').toString().toLowerCase();
+                const baseCombo = getNormalizedBaseCombination(ex);
+                const planLower = getPlanLowerFromExhibit(ex);
+                const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+
+                // Use the same unique key format as the expansion above
+                const uniqueKey = `${category}|${baseCombo}|${planLower}|${includeType}`;
+
+                if (seenKeys.has(uniqueKey)) {
+                  console.warn('⚠️ Skipping duplicate exhibit for merge (same unique key)', {
+                    id,
+                    name: ex?.name,
+                    category,
+                    baseCombo,
+                    plan: planLower,
+                    includeType,
+                    key: uniqueKey
+                  });
+                  continue;
+                }
+                seenKeys.add(uniqueKey);
+                dedupedIds.push(id);
+              }
+
+              // SECOND: Check if dedupedIds has duplicates (shouldn't but let's verify)
+              const dedupedSet = new Set(dedupedIds);
+              if (dedupedSet.size !== dedupedIds.length) {
+                const dedupedDuplicates = dedupedIds.filter((id, idx) => dedupedIds.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: dedupedIds has duplicates after dedup loop:', {
+                  duplicateIds: [...new Set(dedupedDuplicates)],
+                  total: dedupedIds.length,
+                  unique: dedupedSet.size
+                });
+              }
+
+              // FINAL FILTER: drop "combined" exhibits whose body covers combinations the
+              // user did not select. A combined exhibit's name lists multiple combinations
+              // (e.g. "Dropbox to Google (MyDrive & Shared Drive)") and its body contains
+              // tables for both — embedding it leaks the un-selected combination's tables
+              // into the agreement. The exhibit metadata's `combinations` array is sometimes
+              // incomplete, so we detect "combined-ness" from the name itself.
+              //
+              // We treat MyDrive vs Shared Drive as the canonical "drive variants" pair. If
+              // the name mentions both AND the user did not select both, drop the exhibit.
+              // We also drop combined exhibits when a dedicated alternative is present in
+              // the same plan/includeType group (belt-and-suspenders).
+              const isCombinedExhibitName = (name: string): boolean => {
+                const n = (name || '').toLowerCase();
+                if (/\([^)]*&[^)]*\)/.test(n)) return true; // "(X & Y)" pattern
+                const hasMyDrive = /mydrive|my\s*drive/.test(n);
+                const hasSharedDrive = /shared\s*drive|shareddrive|shared\s*-\s*drive/.test(n);
+                return hasMyDrive && hasSharedDrive;
+              };
+              // Which "drive variants" appear in a combined name. Used to check whether the
+              // user actually selected all of them.
+              const driveVariantsInName = (name: string): string[] => {
+                const n = (name || '').toLowerCase();
+                const variants: string[] = [];
+                if (/mydrive|my\s*drive/.test(n)) variants.push('mydrive');
+                if (/shared\s*drive|shareddrive|shared\s*-\s*drive/.test(n)) variants.push('shareddrive');
+                return variants;
+              };
+              // Does selectedCombinationKeys include a key for the given drive variant in the
+              // exhibit's category? We don't have direct access to selectedCombinationKeys
+              // here, so derive what the user selected from the OTHER dedicated exhibits in
+              // dedupedIds (those that are not combined). If a dedicated MyDrive exhibit is
+              // in the list, the user selected MyDrive; same for Shared Drive.
+              const dedicatedVariantsSelected = new Set<string>();
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                if (isCombinedExhibitName(ex.name || '')) continue;
+                const variants = driveVariantsInName(ex.name || '');
+                variants.forEach((v) => dedicatedVariantsSelected.add(v));
+              }
+
+              type Group = { combined: string[]; dedicated: string[] };
+              const groupByKey: Record<string, Group> = {};
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                const category = (ex?.category || 'content').toString().toLowerCase();
+                const planLower = getPlanLowerFromExhibit(ex);
+                const includeType = (ex?.includeType || (ex?.name?.toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                const groupKey = `${category}|${planLower}|${includeType}`;
+                if (!groupByKey[groupKey]) groupByKey[groupKey] = { combined: [], dedicated: [] };
+                if (isCombinedExhibitName(ex.name || '')) {
+                  groupByKey[groupKey].combined.push(id);
+                } else {
+                  groupByKey[groupKey].dedicated.push(id);
+                }
+              }
+              const dropCombinedIds = new Set<string>();
+              for (const groupKey of Object.keys(groupByKey)) {
+                const g = groupByKey[groupKey];
+                for (const id of g.combined) {
+                  const ex = lookup.get(id);
+                  if (!ex) continue;
+                  const variantsInThisCombined = driveVariantsInName(ex.name || '');
+                  // Rule A: dedicated alternative present in same plan/includeType group → drop combined.
+                  // This is the safe case — we have a better option, drop the combined to avoid duplicates.
+                  if (g.dedicated.length > 0) {
+                    dropCombinedIds.add(id);
+                    console.warn('⚠️ Dropping combined exhibit (dedicated alternative present)', { id, name: ex?.name, groupKey, keptDedicated: g.dedicated });
+                    continue;
+                  }
+                  // Rule B: combined exhibit covers a drive variant the user did not select.
+                  // ONLY drop if dropping still leaves at least one OTHER combined exhibit in
+                  // this group — otherwise the entire Exhibit section (e.g. "Exhibit 2 - Not
+                  // Included") would be empty, which is worse than including a slightly-too-
+                  // broad combined exhibit. The merger renders "Exhibit 2" header even with
+                  // imperfect content; an empty section just confuses the reader.
+                  if (variantsInThisCombined.length >= 2) {
+                    const userSelectedAll = variantsInThisCombined.every((v) => dedicatedVariantsSelected.has(v));
+                    if (!userSelectedAll) {
+                      const remainingCombined = g.combined.filter((cid) => cid !== id && !dropCombinedIds.has(cid));
+                      if (remainingCombined.length > 0) {
+                        dropCombinedIds.add(id);
+                        console.warn('⚠️ Dropping combined exhibit (covers unselected drive variant)', {
+                          id, name: ex?.name, groupKey, variantsInThisCombined, dedicatedVariantsSelected: Array.from(dedicatedVariantsSelected),
+                        });
+                      } else {
+                        console.log('ℹ️ Keeping combined exhibit despite unselected drive variant — it is the only option for this group', {
+                          id, name: ex?.name, groupKey, variantsInThisCombined,
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+              const filteredDedupedIds = dedupedIds.filter((id) => !dropCombinedIds.has(id));
+              if (filteredDedupedIds.length !== dedupedIds.length) {
+                console.log('📎 Final combined-exhibit filter:', {
+                  before: dedupedIds.length,
+                  after: filteredDedupedIds.length,
+                  dropped: dropCombinedIds.size,
+                });
+              }
+              dedupedIds.length = 0;
+              dedupedIds.push(...filteredDedupedIds);
+
+              // Sort exhibits: Included first, then Not Included; within each group: category + displayOrder
+              const categoryOrder = (cat: string) => {
+                const normalized = (cat || 'content').toLowerCase();
+                if (normalized === 'messaging' || normalized === 'message') return 1;
+                if (normalized === 'content') return 2;
+                return 3; // email or others
+              };
+
+              const sorter = (a: any, b: any) => {
+                const catDiff = categoryOrder(a.exhibit.category) - categoryOrder(b.exhibit.category);
+                if (catDiff !== 0) return catDiff;
+                return (a.exhibit.displayOrder || 0) - (b.exhibit.displayOrder || 0);
+              };
+
+              const included: Array<{ id: string; exhibit: any }> = [];
+              const notIncluded: Array<{ id: string; exhibit: any }> = [];
+              for (const id of dedupedIds) {
+                const ex = lookup.get(id);
+                if (!ex) continue;
+                (isNotIncludedExhibit(ex) ? notIncluded : included).push({ id, exhibit: ex });
+              }
+              included.sort(sorter);
+              notIncluded.sort(sorter);
+              const sortedExhibits = [...included.map(x => x.id), ...notIncluded.map(x => x.id)];
+
+              // Detect if the same ID appears multiple times
+              const sortedExhibitsSet = new Set(sortedExhibits);
+              if (sortedExhibitsSet.size !== sortedExhibits.length) {
+                const duplicateIds = sortedExhibits.filter((id, idx) => sortedExhibits.indexOf(id) !== idx);
+                console.error('❌ CRITICAL: Duplicate exhibit IDs in sorted exhibits for merge:', {
+                  duplicates: [...new Set(duplicateIds)],
+                  totalCount: sortedExhibits.length,
+                  uniqueCount: sortedExhibitsSet.size
+                });
+              }
+
+              const fetchedExhibitIds = new Set<string>();
+              for (const exhibitId of sortedExhibits) {
+                if (fetchedExhibitIds.has(exhibitId)) {
+                  console.error(`❌ CRITICAL: Exhibit ${exhibitId} is being fetched twice for merge! This will cause duplicates.`);
+                  continue; // Skip the second occurrence
+                }
+                fetchedExhibitIds.add(exhibitId);
+
+                console.log(`📎 Fetching exhibit: ${exhibitId}`);
+
+                // Get exhibit metadata FIRST (before fetching file)
+                const exhibit = allExhibits.find((ex: any) => ex?._id?.toString?.() === exhibitId);
+                if (!exhibit) {
+                  console.warn(`⚠️ Exhibit ${exhibitId} not found in metadata, skipping`);
+                  continue;
+                }
+
+                // Bypass any HTTP cache so admin-side edits to the exhibit show up here
+                // on the next agreement generation. We use BOTH a no-store fetch option AND a
+                // timestamp query param — the option handles browsers that honor it, the query
+                // param defeats Vite's dev proxy and any intermediate proxy that ignores
+                // Cache-Control headers (which is why a backend-only fix wasn't enough).
+                const cacheBuster = `?t=${Date.now()}`;
+                const response = await fetch(`${BACKEND_URL}/api/exhibits/${exhibitId}/file${cacheBuster}`, { cache: 'no-store' });
+                
+                if (response.ok) {
+                  const blob = await response.blob();
+                  
+                  // Add both blob and metadata together to ensure they match
+                  exhibitBlobs.push(blob);
+                  exhibitMetadata.push({
+                    name: exhibit.name || '',
+                    category: exhibit.category || '',
+                    includeType: (exhibit.includeType === 'notincluded' || exhibit.includeType === 'included') ? exhibit.includeType : undefined
+                  });
+                  console.log(`✅ Fetched exhibit ${exhibitId}: "${exhibit.name}" (${blob.size} bytes)`);
+                } else {
+                  console.warn(`⚠️ Failed to fetch exhibit ${exhibitId}:`, response.status);
+                }
+              }
+              
+              // Verify metadata matches blobs
+              if (exhibitBlobs.length !== exhibitMetadata.length) {
+                console.error(`❌ Mismatch: ${exhibitBlobs.length} blobs but ${exhibitMetadata.length} metadata entries!`);
+              } else {
+                console.log(`✅ Verified: ${exhibitBlobs.length} exhibits with matching metadata`);
+                console.log('📋 Exhibit order:', exhibitMetadata.map((m, i) => `${i + 1}. ${m.name}`));
+              }
+              
+              if (exhibitBlobs.length > 0) {
+                // Verify processedDocument is valid before merging
+                if (!processedDocument) {
+                  throw new Error('Cannot merge exhibits: main document was not processed successfully');
+                }
+                
+                if (!(processedDocument instanceof Blob)) {
+                  throw new Error(`Cannot merge exhibits: processedDocument is not a valid Blob (type: ${typeof processedDocument})`);
+                }
+                
+                console.log(`📎 Merging ${exhibitBlobs.length} exhibits into document...`, {
+                  mainDocSize: processedDocument.size,
+                  exhibitCount: exhibitBlobs.length
+                });
+                
+                const { mergeDocxFiles } = await import('../utils/docxMerger');
+                
+                processedDocument = await mergeDocxFiles(processedDocument, exhibitBlobs, exhibitMetadata);
+
+                console.log('✅ Exhibits merged successfully!', {
+                  totalExhibits: exhibitBlobs.length,
+                  finalSize: processedDocument.size
+                });
+
+                // Post-merge fix: some exhibit DOCX files have a hardcoded plan label
+                // ("Basic Plan Features" / "Standard Plan Features" / "Advanced Plan Features")
+                // in their table-header row that doesn't match the user's actually-selected plan
+                // (a data issue in the source exhibits, not the filter). Normalize the label
+                // here so the rendered agreement matches the selected tier.
+                try {
+                  const selectedTierName = (calculation || safeCalculation)?.tier?.name;
+                  if (selectedTierName && processedDocument instanceof Blob) {
+                    const PizZipMod = (await import('pizzip')).default;
+                    const buf = await processedDocument.arrayBuffer();
+                    const zip = new PizZipMod(buf);
+                    const docXmlFile = zip.file('word/document.xml');
+                    if (docXmlFile) {
+                      const xml = docXmlFile.asText();
+                      const planLabelRegex = /(Basic|Standard|Advanced)\s+Plan\s+Features/gi;
+                      const fixedXml = xml.replace(planLabelRegex, `${selectedTierName} Plan Features`);
+                      if (fixedXml !== xml) {
+                        zip.file('word/document.xml', fixedXml);
+                        const outBuf = zip.generate({ type: 'arraybuffer' });
+                        processedDocument = new Blob([outBuf], { type: processedDocument.type });
+                        console.log(`✅ Normalized exhibit plan label to "${selectedTierName} Plan Features"`);
+                      }
+                    }
+                  }
+                } catch (planLabelError) {
+                  console.warn('⚠️ Failed to normalize exhibit plan label (non-fatal):', planLabelError);
+                }
+              }
+            } catch (mergeError) {
+              console.error('❌ Error merging exhibits:', mergeError);
+              console.error('Error details:', {
+                error: mergeError,
+                message: mergeError instanceof Error ? mergeError.message : String(mergeError),
+                stack: mergeError instanceof Error ? mergeError.stack : undefined,
+                processedDocumentValid: !!processedDocument,
+                processedDocumentType: typeof processedDocument,
+                exhibitBlobsCount: exhibitBlobs?.length ?? 0,
+                exhibitMetadataCount: exhibitMetadata?.length ?? 0
+              });
+              // Don't fail the whole generation, just warn the user
+              const errorMessage = mergeError instanceof Error ? mergeError.message : 'Unknown error';
+              alert(`⚠️ Warning: Some exhibits could not be attached to the document.\n\nError: ${errorMessage}\n\nThe main document was generated successfully.`);
+            }
+          }
+        } else {
+          console.error('❌ DOCX processing failed:', result.error);
+          throw new Error(result.error || 'Failed to process DOCX template');
+        }
+
+      } else if (templateFileForAgreement.type === 'application/pdf') {
+        console.log('🔄 Processing PDF template (Fallback Method)...');
+        console.log('⚠️ Note: PDF processing is less reliable. Consider using DOCX templates for better results.');
+
+        // Import PDF orchestrator
+        const { pdfOrchestrator } = await import('../utils/pdfOrchestratorIntegration');
+
+        // Debug: Log the quote data being passed
+        console.log('🔍 Quote data being passed to PDF orchestrator:', {
+          company: quoteData.company,
+          clientName: quoteData.clientName,
+          clientEmail: quoteData.clientEmail,
+          configuration: quoteData.configuration,
+          calculation: quoteData.calculation,
+          selectedPlan: quoteData.selectedPlan
+        });
+
+        // Process PDF template with quote data
+        const result = await pdfOrchestrator.buildMergedPDFFromFile(
+          templateFileForAgreement,
+          quoteData
+        );
+
+        if (result.success && result.mergedPDF) {
+          processedDocument = result.mergedPDF;
+          
+            console.log('✅ PDF template processed successfully');
+            console.log('📊 Processing completed');
+          console.log('📄 Merged PDF size:', result.mergedPDF.size, 'bytes');
+          console.log('📄 Merged PDF type:', result.mergedPDF.type);
+        } else {
+          console.error('❌ PDF processing failed:', result.error);
+          throw new Error(result.error || 'Failed to process PDF template');
+        }
+
+      } else {
+        throw new Error('Unsupported template file type. Please use PDF or DOCX files.');
+      }
+
+      // Show preview of the processed agreement
+      if (processedDocument) {
+        console.log('✅ Agreement processed successfully');
+        console.log('📄 Processed document size:', processedDocument.size, 'bytes');
+        console.log('📄 Processed document type:', processedDocument.type);
+
+        // For DOCX: show preview immediately (no wait for PDF conversion) so agreement appears fast.
+        // PDF conversion runs in background or on Download PDF click.
+        let isPdfConversionSuccessful = false;
+        if (processedDocument.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          // Store original DOCX for Word downloads
+          setOriginalDocxAgreement(processedDocument);
+          console.log('💾 Stored original DOCX for Word downloads');
+          // Show DOCX preview first; optionally convert to PDF in background (see below)
+        } else {
+          // For PDF templates, clear the original DOCX since we don't have one
+          setOriginalDocxAgreement(null);
+          isPdfConversionSuccessful = true; // PDF templates don't need conversion
+        }
+
+        if (!processedDocument) {
+          console.error('❌ No processed document available to preview/download');
+          return;
+        }
+        const processedDocumentBlob = processedDocument;
+
+        // Store the document for preview and downloads
+        setProcessedAgreement(processedDocumentBlob);
+
+        // If we already have a PDF (e.g. PDF template), show it in iframe
+        if (processedDocumentBlob.type === 'application/pdf') {
+          const previewUrl = URL.createObjectURL(processedDocumentBlob);
+          setPreviewUrl(previewUrl);
+          setShowInlinePreview(true);
+          setShowAgreementPreview(true);
+          setAgreementPreviewIsPdf(true);
+          console.log('🔗 Preview URL created for PDF:', previewUrl);
+          return;
+        }
+
+        // For DOCX: convert to PDF first (no modal yet) so we never flash "Document Ready for Preview".
+        // Fallback (docx-preview) needs the modal mounted first for previewContainerRef.
+        if (processedDocumentBlob.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          let usedPdfIframePreview = false;
+          try {
+            const { templateService } = await import('../utils/templateService');
+            const pdfBlob = await templateService.convertDocxToPdf(processedDocumentBlob);
+            if (pdfBlob && pdfBlob.size > 0) {
+              setCachedPdfAgreement(pdfBlob);
+              setPreviewUrl((prev) => {
+                if (prev) URL.revokeObjectURL(prev);
+                return URL.createObjectURL(pdfBlob);
+              });
+              setShowInlinePreview(true);
+              setAgreementPreviewIsPdf(true);
+              usedPdfIframePreview = true;
+            }
+          } catch (_e) {
+            console.warn('DOCX→PDF preview conversion failed; using in-browser preview.', _e);
+          }
+          if (!usedPdfIframePreview) {
+            setAgreementPreviewIsPdf(false);
+            setShowAgreementPreview(true);
+            await delayFrame();
+            try {
+              await renderDocxPreview(processedDocumentBlob);
+            } catch (err) {
+              console.warn('docx-preview render failed in initial flow, trying mammoth HTML fallback.', err);
+              try {
+            console.log('🔄 Converting DOCX to HTML for preview with exact formatting...');
+            const mammoth = await import('mammoth');
+            
+            const arrayBuffer = await processedDocumentBlob.arrayBuffer();
+            const result = await mammoth.convertToHtml({ 
+              arrayBuffer,
+              styleMap: [
+                // Preserve table formatting
+                "p[style-name='Table Heading'] => h3.table-heading",
+                "p[style-name='Table Text'] => p.table-text",
+                "r[style-name='Strong'] => strong",
+                "r[style-name='Emphasis'] => em",
+                // Preserve colors and formatting
+                "r[style-name='Highlight'] => span.highlight",
+                "r[style-name='Heading 1'] => h1.heading-1",
+                "r[style-name='Heading 2'] => h2.heading-2",
+                "r[style-name='Heading 3'] => h3.heading-3",
+                // Preserve table styles
+                "table => table.docx-table",
+                "tr => tr.docx-row",
+                "td => td.docx-cell",
+                "th => th.docx-header",
+                // Preserve headers and footers
+                "p[style-name='Header'] => div.docx-header",
+                "p[style-name='Footer'] => div.docx-footer",
+                // Preserve page breaks
+                "br[type='page'] => div.page-break"
+              ],
+              convertImage: mammoth.images.imgElement(function(image) {
+                return image.read("base64").then(function(imageBuffer) {
+                  return {
+                    src: "data:" + image.contentType + ";base64," + imageBuffer
+                  };
+                });
+              })
+            } as any);
+            
+            console.log('✅ DOCX converted to HTML with exact formatting');
+            console.log('📄 HTML length:', result.value.length);
+            console.log('📄 Warnings:', result.messages);
+            
+            // Create HTML document with exact DOCX styling preserved
+            const htmlContent = `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <title>Document Preview - Exact DOCX Formatting</title>
+                <meta charset="UTF-8">
+                <style>
+                  /* Reset and base styles */
+                  * {
+                    box-sizing: border-box;
+                  }
+                  
+                  body { 
+                    font-family: 'Times New Roman', serif; 
+                    margin: 0;
+                    padding: 40px;
+                    line-height: 1.6;
+                    color: #000;
+                    background: white;
+                    font-size: 12pt;
+                  }
+                  
+                  /* Preserve exact DOCX formatting */
+                  .docx-table {
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin: 20px 0;
+                    border: 1px solid #000;
+                    table-layout: fixed; /* Preserve column widths from Word template */
+                  }
+                  
+                  /* Column width distribution - match Word document */
+                  .docx-table td:nth-child(1),
+                  .docx-table th:nth-child(1) {
+                    width: 22%; /* Job Requirement */
+                  }
+                  
+                  .docx-table td:nth-child(2),
+                  .docx-table th:nth-child(2) {
+                    width: 38%; /* Description - widest */
+                  }
+                  
+                  .docx-table td:nth-child(3),
+                  .docx-table th:nth-child(3) {
+                    width: 20%; /* Price (USD) */
+                  }
+                  
+                  .docx-table td:nth-child(4),
+                  .docx-table th:nth-child(4) {
+                    width: 20%; /* Bundled Pricing - narrower */
+                    max-width: 130px; /* Cap maximum width */
+                    min-width: 90px; /* Ensure minimum readable width */
+                  }
+                  
+                  .docx-row {
+                    border: 1px solid #000;
+                  }
+                  
+                  .docx-cell, .docx-header {
+                    border: 1px solid #000;
+                    padding: 8px 12px;
+                    vertical-align: top;
+                    text-align: left;
+                  }
+                  
+                  .docx-header {
+                    background-color: #f2f2f2;
+                    font-weight: bold;
+                    text-align: center;
+                  }
+                  
+                  /* Preserve heading styles */
+                  h1, h2, h3, h4, h5, h6 {
+                    color: #000;
+                    margin-top: 20px;
+                    margin-bottom: 10px;
+                    font-weight: bold;
+                  }
+                  
+                  h1 { font-size: 18pt; }
+                  h2 { font-size: 16pt; }
+                  h3 { font-size: 14pt; }
+                  h4 { font-size: 12pt; }
+                  
+                  /* Preserve paragraph formatting */
+                  p {
+                    margin-bottom: 10px;
+                    text-align: left;
+                    font-size: 12pt;
+                    line-height: 1.15;
+                  }
+                  
+                  /* Preserve text formatting */
+                  strong, b {
+                    font-weight: bold;
+                  }
+                  
+                  em, i {
+                    font-style: italic;
+                  }
+                  
+                  .highlight {
+                    background-color: #ffff00;
+                    padding: 1px 2px;
+                  }
+                  
+                  /* Preserve list formatting */
+                  ul, ol {
+                    margin: 10px 0;
+                    padding-left: 30px;
+                  }
+                  
+                  li {
+                    margin-bottom: 5px;
+                  }
+                  
+                  /* Preserve table alignment */
+                  .docx-table td[align="center"] {
+                    text-align: center;
+                  }
+                  
+                  .docx-table td[align="right"] {
+                    text-align: right;
+                  }
+                  
+                  .docx-table td[align="left"] {
+                    text-align: left;
+                  }
+                  
+                  /* Preserve colors and backgrounds */
+                  .docx-table tr:nth-child(even) {
+                    background-color: #f9f9f9;
+                  }
+                  
+                  /* Preserve spacing */
+                  .docx-table td {
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                  }
+                  
+                  /* Preserve page layout */
+                  @media print {
+                    body {
+                      margin: 0;
+                      padding: 20px;
+                    }
+                  }
+                  
+                  /* Preserve headers and footers */
+                  .docx-header {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    background: white;
+                    border-bottom: 1px solid #ccc;
+                    padding: 10px;
+                    font-size: 10pt;
+                    z-index: 1000;
+                  }
+                  
+                  .docx-footer {
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    background: white;
+                    border-top: 1px solid #ccc;
+                    padding: 10px;
+                    font-size: 10pt;
+                    z-index: 1000;
+                  }
+                  
+                  /* Preserve page breaks */
+                  .page-break {
+                    page-break-before: always;
+                    break-before: page;
+                    margin: 20px 0;
+                    border-top: 1px dashed #ccc;
+                    padding-top: 20px;
+                  }
+                  
+                  /* Adjust body padding for headers/footers */
+                  body {
+                    padding-top: 60px;
+                    padding-bottom: 60px;
+                  }
+                  
+                  /* Ensure exact DOCX appearance */
+                  .docx-content {
+                    max-width: 100%;
+                    margin: 0 auto;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="docx-content">
+                  ${result.value}
+                </div>
+              </body>
+              </html>
+            `;
+            
+            // Create blob URL for the HTML content
+            const htmlBlobForInitial = new Blob([htmlContent], { type: 'text/html' });
+            const previewUrl = URL.createObjectURL(htmlBlobForInitial);
+            
+            setPreviewUrl(previewUrl);
+            setShowInlinePreview(true); // Show the HTML preview by default
+            setAgreementPreviewIsPdf(false);
+            console.log('🔗 HTML preview URL created:', previewUrl);
+            
+              } catch (error) {
+            console.error('❌ Error converting DOCX to HTML:', error);
+            // Fallback to direct document URL
+            const previewUrl = URL.createObjectURL(processedDocumentBlob);
+            setPreviewUrl(previewUrl);
+            setShowInlinePreview(true);
+            setAgreementPreviewIsPdf(false);
+          }
+            }
+          }
+          setShowAgreementPreview(true);
+        } else {
+          // For PDF files, use direct URL
+          const previewUrl = URL.createObjectURL(processedDocumentBlob);
+          setPreviewUrl(previewUrl);
+          setShowInlinePreview(true);
+          setAgreementPreviewIsPdf(true);
+        }
+        
+        setShowAgreementPreview(true);
+        // Force inline preview to be shown when agreement is generated
+        setShowInlinePreview(true);
+        
+        // Document preview will show directly without alert interruption
+      }
+
+    } catch (error) {
+      console.error('❌ Error generating agreement:', error);
+      alert(`Error generating agreement: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`);
+    } finally {
+      setIsGeneratingAgreement(false);
+    }
+  };
+
+  const handleSaveAgreementToMongoDB = async () => {
+    if (!processedAgreement || processedAgreement.size === 0) {
+      alert('No agreement to save. Generate an agreement first.');
+      return;
+    }
+    if (!selectedTemplate?.name) {
+      alert('Template information is missing. Generate the agreement again, then save.');
+      return;
+    }
+    setIsSavingAgreementToMongo(true);
+    try {
+      const { documentServiceMongoDB } = await import('../services/documentServiceMongoDB');
+      // Resolve a real PDF before saving (same logic as the approval path) so we never store
+      // raw DOCX bytes under a .pdf name — that produces "We can't open this file / 0 of 0".
+      const { templateService } = await import('../utils/templateService');
+      let pdfBlob: Blob;
+      if (processedAgreement.type === 'application/pdf') {
+        pdfBlob = processedAgreement;
+      } else if (cachedPdfAgreement && cachedPdfAgreement.size > 0) {
+        pdfBlob = cachedPdfAgreement;
+      } else {
+        pdfBlob = await templateService.convertDocxToPdf(processedAgreement);
+      }
+      const base64Data = await documentServiceMongoDB.blobToBase64(pdfBlob);
+      const finalCompanyName = clientInfo.company || 'Unknown Company';
+      const clientName = clientInfo.clientName || 'Unknown';
+      const clientEmail = clientInfo.clientEmail || '';
+      const calc = calculation || safeCalculation;
+      const savedDoc: Record<string, unknown> = {
+        fileName: `${finalCompanyName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        fileData: base64Data,
+        fileSize: pdfBlob.size,
+        clientName,
+        clientEmail,
+        company: finalCompanyName,
+        templateName: selectedTemplate.name,
+        generatedDate: new Date().toISOString(),
+        quoteId,
+        metadata: {
+          // Store the same total the PDF shows (effective total minus discount, plus discounted
+          // custom line items) so the card/email amount always matches the agreement PDF.
+          totalCost: Number(finalTotalWithCustomItems) || 0,
+          duration: getEffectiveDurationMonths(configuration) || configuration?.duration,
+          migrationType: configuration?.migrationType,
+          numberOfUsers: configuration?.numberOfUsers,
+        },
+      };
+      if (originalDocxAgreement && originalDocxAgreement.size > 0) {
+        const docxBase64 = await documentServiceMongoDB.blobToBase64(originalDocxAgreement);
+        const sanitizedClientName = (clientName || 'client').replace(/[^a-zA-Z0-9]/g, '_');
+        const dateStr = new Date().toISOString().split('T')[0];
+        savedDoc.docxFileData = docxBase64;
+        savedDoc.docxFileName = `agreement-${sanitizedClientName}-${dateStr}.docx`;
+      }
+      Object.assign(savedDoc, buildDateEditSnapshot());
+      await documentServiceMongoDB.saveDocument(
+        savedDoc as Omit<import('../services/documentServiceMongoDB').SavedDocument, 'id'>,
+      );
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+      notification.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <span>Agreement saved to document</span>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 3000);
+    } catch (error) {
+      console.error('❌ Error saving agreement to MongoDB:', error);
+      alert(
+        error instanceof Error
+          ? `Could not save agreement: ${error.message}`
+          : 'Could not save agreement. Please try again.',
+      );
+    } finally {
+      setIsSavingAgreementToMongo(false);
+    }
+  };
+
+  const handleSendQuote = async () => {
+    try {
+      // Create quote object
+      const quote = {
+        id: `quote-001`,
+        clientName: clientInfo.clientName,
+        clientEmail: clientInfo.clientEmail,
+        company: clientInfo.company,
+        quoteExpiryDate: clientInfo.quoteExpiryDate,
+        configuration: configuration,
+        calculation: safeCalculation,
+        selectedTier: safeCalculation.tier,
+        status: 'draft' as const,
+        createdAt: new Date(),
+        templateUsed: selectedTemplate ? {
+          id: selectedTemplate.id,
+          name: selectedTemplate.name,
+          isDefault: false
+        } : { id: 'default', name: 'Default Template', isDefault: true }
+      };
+
+      // If a custom template is selected, use it for PDF generation
+      if (selectedTemplate && selectedTemplate.file) {
+        console.log('Using custom template:', selectedTemplate.name);
+        
+        try {
+        // Generate quote number
+        const quoteNumber = `CPQ-001`;
+        
+          // Check if this is an SOW template with placeholders
+          const { detectPlaceholders } = await import('../utils/pdfMerger');
+          const isSowTemplate = await detectPlaceholders(selectedTemplate.file);
+          
+          let mergedPdfBlob;
+          
+          if (isSowTemplate) {
+            // Use placeholder replacement for SOW templates
+            console.log('📄 Detected SOW template, using placeholder replacement...');
+            const { mergeQuoteWithPlaceholders } = await import('../utils/pdfMerger');
+            const { quoteBlob, newTemplateBlob } = await mergeQuoteWithPlaceholders(selectedTemplate.file, quote, quoteNumber);
+            
+            // Download the quote PDF
+            const quoteFileName = `Quote-${clientInfo.clientName.replace(/\s+/g, '-')}-${selectedTemplate.name}.pdf`;
+            const quoteUrl = URL.createObjectURL(quoteBlob);
+            const quoteLink = document.createElement('a');
+            quoteLink.href = quoteUrl;
+            quoteLink.download = quoteFileName;
+            document.body.appendChild(quoteLink);
+            quoteLink.click();
+            document.body.removeChild(quoteLink);
+            URL.revokeObjectURL(quoteUrl);
+            
+            // Download the new template
+            const templateFileName = `New-Template-${selectedTemplate.name}-${new Date().toISOString().split('T')[0]}.pdf`;
+            const templateUrl = URL.createObjectURL(newTemplateBlob);
+            const templateLink = document.createElement('a');
+            templateLink.href = templateUrl;
+            templateLink.download = templateFileName;
+            document.body.appendChild(templateLink);
+            templateLink.click();
+            document.body.removeChild(templateLink);
+            URL.revokeObjectURL(templateUrl);
+            
+            console.log('✅ Quote generated with SOW template and new template created successfully');
+            
+            // Show success message
+            alert(`✅ Quote generated successfully!\n\n📄 Quote PDF: ${quoteFileName}\n📄 New Template: ${templateFileName}\n\nBoth files have been downloaded. The new template contains your current data and can be used for future quotes.`);
+            
+          } else {
+            // Use regular template merge for other templates
+            console.log('📄 Using regular template merge...');
+            const { mergeQuoteIntoTemplate } = await import('../utils/pdfMerger');
+            mergedPdfBlob = await mergeQuoteIntoTemplate(selectedTemplate.file, quote, quoteNumber);
+            
+            // Download the merged PDF
+            const fileName = `Quote-${clientInfo.clientName.replace(/\s+/g, '-')}-${selectedTemplate.name}.pdf`;
+            const url = URL.createObjectURL(mergedPdfBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ Quote generated with custom template successfully');
+            
+            // Show success message
+            alert(`Quote PDF "${fileName}" has been generated using custom template "${selectedTemplate.name}" and downloaded successfully!`);
+          }
+          
+        } catch (error) {
+          console.error('Error merging with template:', error);
+          alert('Error generating quote with template. Using default template instead.');
+          
+          // Fallback to default template
+          if (onGenerateQuote) {
+            onGenerateQuote(quote);
+          }
+        }
+      } else {
+        // Use default template (existing logic)
+        console.log('Using default template');
+        
+        // Call the onGenerateQuote callback
+        if (onGenerateQuote) {
+          onGenerateQuote(quote);
+        }
+      }
+    } catch (error) {
+      console.error('Error generating quote:', error);
+      alert('Error generating quote. Please try again.');
+    }
+  };
+
+  // If HubSpot is not connected, show connection message
+  if (hubspotState && !hubspotState.isConnected) {
+    return (
+      <div className="max-w-4xl mx-auto p-8">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Users className="w-8 h-8 text-gray-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">HubSpot Not Connected</h2>
+          <p className="text-gray-600 mb-6">
+            Please connect to HubSpot in the HubSpot tab to automatically populate client information from your contacts.
+          </p>
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-6">
+            <h3 className="font-semibold text-gray-800 mb-4">Manual Contact Information</h3>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
+                  Contact Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clientInfo.clientName}
+                  onChange={(e) => updateClientInfo({ clientName: e.target.value })}
+                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                  placeholder="Enter contact name"
+                  maxLength={35}
+                />
+              </div>
+
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Mail className="w-4 h-4 text-white" />
+                  </div>
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={clientInfo.clientEmail}
+                  onChange={(e) => updateClientInfo({ clientEmail: e.target.value })}
+                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                  placeholder="Enter email address"
+                  maxLength={35}
+                />
+              </div>
+
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Building className="w-4 h-4 text-white" />
+                  </div>
+                  Legal Entity Name*
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clientInfo.company}
+                  onChange={(e) => updateClientInfo({ company: e.target.value })}
+                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-lg font-medium"
+                  placeholder="Enter legal entity name"
+                />
+                {clientInfo.company && hubspotState?.selectedContact && (
+                  <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4" />
+                    {hubspotState.selectedContact.properties.company 
+                      ? 'Legal entity name from HubSpot contact'
+                      : 'Legal entity name auto-extracted from email domain'
+                    }
+                  </p>
+                )}
+              </div>
+
+              {/* Project Start Date - MOVED to main Contact Information section */}
+
+
+              {/* Discount field moved to Configure session */}
+
+              <button
+                type="submit"
+                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                <span className="relative flex items-center justify-center gap-3">
+                  <FileText className="w-5 h-5" />
+                  Generate Quote
+                  <Sparkles className="w-5 h-5" />
+                </span>
+              </button>
+
+              {/* Preview Agreement Button */}
+              <button
+                type="button"
+                onClick={handleGenerateAgreement}
+                disabled={!selectedTemplate || isGeneratingAgreement}
+                className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group ${
+                  selectedTemplate && !isGeneratingAgreement
+                    ? 'bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 hover:scale-105 hover:shadow-2xl' 
+                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                }`}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                <span className="relative flex items-center justify-center gap-3">
+                  {isGeneratingAgreement ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-5 h-5" />
+                      Preview Agreement
+                      <Sparkles className="w-5 h-5" />
+                    </>
+                  )}
+                </span>
+              </button>
+
+              {/* Email Agreement Button */}
+              <button
+                type="button"
+                onClick={handleEmailAgreement}
+                disabled={isEmailingAgreement || !selectedTemplate}
+                className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group ${
+                  isEmailingAgreement
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white hover:from-emerald-700 hover:via-teal-700 hover:to-cyan-700 hover:scale-105 hover:shadow-2xl'
+                }`}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                <span className="relative flex items-center justify-center gap-3">
+                  {isEmailingAgreement ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-5 h-5" />
+                      Email Agreement
+                      <Send className="w-5 h-5" />
+                    </>
+                  )}
+                </span>
+              </button>
+
+              {/* Send to Deal Desk Button */}
+              <button
+                type="button"
+                onClick={handleSendToDealDesk}
+                disabled={isSendingToDealDesk}
+                className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group hidden ${
+                  isSendingToDealDesk
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white hover:from-purple-700 hover:via-indigo-700 hover:to-blue-700 hover:scale-105 hover:shadow-2xl'
+                }`}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                <span className="relative flex items-center justify-center gap-3">
+                  {isSendingToDealDesk ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Preparing Email...
+                    </>
+                  ) : (
+                    <>
+                      <Briefcase className="w-5 h-5" />
+                      Send to Deal Desk
+                      <Send className="w-5 h-5" />
+                    </>
+                  )}
+                </span>
+              </button>
+
+            {/* Placeholder Preview Button */}
+            {selectedTemplate && (
+              <button
+                type="button"
+                onClick={generatePlaceholderPreview}
+                className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                <span className="relative flex items-center justify-center gap-3">
+                  <Eye className="w-5 h-5" />
+                  Preview Placeholder Replacement
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </span>
+              </button>
+            )}
+
+            {/* Placeholder Replacement Button */}
+            {selectedTemplate && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    // Create quote object
+                    const quote = {
+                      id: `quote-001`,
+                      clientName: clientInfo.clientName,
+                      clientEmail: clientInfo.clientEmail,
+                      company: clientInfo.company,
+                      quoteExpiryDate: clientInfo.quoteExpiryDate,
+                      configuration: configuration,
+                      calculation: safeCalculation,
+                      selectedTier: safeCalculation.tier,
+                      status: 'draft' as const,
+                      createdAt: new Date(),
+                      templateUsed: {
+                        id: selectedTemplate.id,
+                        name: selectedTemplate.name,
+                        isDefault: false
+                      }
+                    };
+
+                    const quoteNumber = `CPQ-001`;
+                    
+                    console.log('🔄 Starting placeholder replacement for template:', selectedTemplate.name);
+                    
+                    // Check if template has placeholders
+                    const { detectPlaceholders } = await import('../utils/pdfMerger');
+                    const hasPlaceholders = await detectPlaceholders(selectedTemplate.file);
+                    
+                    if (!hasPlaceholders) {
+                      alert('⚠️ No placeholders detected in this template. Make sure your template contains placeholders like {{company_name}}, {{users}}, etc.');
+                      return;
+                    }
+                    
+                    // Use placeholder replacement
+                    const { mergeQuoteWithPlaceholders } = await import('../utils/pdfMerger');
+                    const { quoteBlob, newTemplateBlob } = await mergeQuoteWithPlaceholders(selectedTemplate.file, quote, quoteNumber);
+                    
+                    // Download the quote PDF
+                    const quoteFileName = `Quote-${clientInfo.clientName.replace(/\s+/g, '-')}-${selectedTemplate.name}-PLACEHOLDERS.pdf`;
+                    const quoteUrl = URL.createObjectURL(quoteBlob);
+                    const quoteLink = document.createElement('a');
+                    quoteLink.href = quoteUrl;
+                    quoteLink.download = quoteFileName;
+                    document.body.appendChild(quoteLink);
+                    quoteLink.click();
+                    document.body.removeChild(quoteLink);
+                    URL.revokeObjectURL(quoteUrl);
+                    
+                    // Download the new template
+                    const templateFileName = `New-Template-${selectedTemplate.name}-${new Date().toISOString().split('T')[0]}.pdf`;
+                    const templateUrl = URL.createObjectURL(newTemplateBlob);
+                    const templateLink = document.createElement('a');
+                    templateLink.href = templateUrl;
+                    templateLink.download = templateFileName;
+                    document.body.appendChild(templateLink);
+                    templateLink.click();
+                    document.body.removeChild(templateLink);
+                    URL.revokeObjectURL(templateUrl);
+                    
+                    console.log('✅ Placeholder replacement and new template creation completed successfully');
+                    alert(`✅ Process completed successfully!\n\n📄 Quote PDF: ${quoteFileName}\n📄 New Template: ${templateFileName}\n\nBoth files have been downloaded. The new template contains your current data and can be used for future quotes.`);
+                    
+                  } catch (error) {
+                    console.error('❌ Placeholder replacement failed:', error);
+                    alert(`❌ Placeholder replacement failed:\n\n${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease check that your template contains valid placeholders and try again.`);
+                  }
+                }}
+                className="w-full mt-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                <span className="relative flex items-center justify-center gap-3">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Replace Placeholders
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </span>
+              </button>
+            )}
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const QuotePreview = ({ dealData }: { dealData?: any }) => {
+    // Debug the discount values in QuotePreview
+    console.log('🔍 QuotePreview render with discount values:', {
+      clientInfoDiscount: clientInfo.discount,
+      discountPercent,
+      shouldApplyDiscount,
+      discountAmount,
+      finalTotalAfterDiscount,
+      totalCost
+    });
+    
+    return (
+    <div data-quote-preview className="bg-gradient-to-br from-white via-slate-50/30 to-blue-50/20 p-10 border-2 border-blue-100 rounded-2xl shadow-2xl max-w-5xl mx-auto backdrop-blur-sm">
+      {/* Header */}
+      <div className="flex justify-between items-start mb-10 pb-6 border-b-2 border-gradient-to-r from-blue-200 to-indigo-200">
+        <div>
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent mb-3">
+            PROFESSIONAL QUOTE
+          </h1>
+          <p className="text-gray-700 font-semibold text-lg">Quote #{quoteId || generateUniqueQuoteId()}</p>
+          <p className="text-gray-600 font-medium">{new Date().toLocaleDateString()}</p>
+        </div>
+        <div className="text-right">
+          <div className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white p-6 rounded-2xl shadow-lg">
+            <h2 className="text-2xl font-bold mb-2">{companyInfo?.name || 'Zenop.ai Pro Solutions'}</h2>
+            <p className="opacity-90">{companyInfo?.address || '123 Business St.'}</p>
+            <p className="opacity-90">{companyInfo?.city || 'City, State 12345'}</p>
+            <p className="opacity-90">{companyInfo?.email || 'contact@zenopsolutions.com'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Client Info */}
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-8 rounded-2xl mb-10 border border-blue-200">
+        <h3 className="font-bold text-gray-900 mb-6 text-xl flex items-center gap-2">
+          <User className="w-6 h-6 text-blue-600" />
+          Bill To:
+        </h3>
+        <div className="space-y-2">
+          <p className="font-bold text-lg text-gray-900">{clientInfo.clientName}</p>
+          <p className="text-gray-700 font-semibold">{clientInfo.company}</p>
+          <p className="text-gray-600 font-medium">{clientInfo.clientEmail}</p>
+        </div>
+      </div>
+
+      {/* Deal Information */}
+      {(dealData && (dealData.dealId || dealData.dealName)) && (
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-8 rounded-2xl mb-10 border border-purple-200">
+          <h3 className="font-bold text-gray-900 mb-6 text-xl flex items-center gap-2">
+            <Building className="w-6 h-6 text-purple-600" />
+            Deal Information:
+          </h3>
+          <div className="grid grid-cols-2 gap-6">
+            {dealData.dealId && (
+              <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+                <span className="text-gray-700 font-semibold">Deal ID:</span>
+                <span className="font-bold text-gray-900">{dealData.dealId}</span>
+              </div>
+            )}
+            {dealData.dealName && (
+              <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+                <span className="text-gray-700 font-semibold">Deal Name:</span>
+                <span className="font-bold text-gray-900">{dealData.dealName}</span>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Project Details */}
+      <div className="mb-10">
+        <h3 className="font-bold text-gray-900 mb-6 text-xl flex items-center gap-2">
+          <FileText className="w-6 h-6 text-blue-600" />
+          Project Configuration:
+        </h3>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Number of Users:</span>
+            <span className="font-bold text-gray-900">{configuration.numberOfUsers}</span>
+          </div>
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Instance Type:</span>
+            <span className="font-bold text-gray-900">{configuration.instanceType}</span>
+          </div>
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Number of Instances:</span>
+            <span className="font-bold text-gray-900">{configuration.numberOfInstances}</span>
+          </div>
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Duration:</span>
+            <span className="font-bold text-gray-900">{configuration.duration} months</span>
+          </div>
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Migration Type:</span>
+            <span className="font-bold text-gray-900">{configuration.migrationType}</span>
+          </div>
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Data Size:</span>
+            <span className="font-bold text-gray-900">{configuration.dataSizeGB} GB</span>
+          </div>
+          <div className="flex justify-between items-center bg-white/60 p-4 rounded-xl">
+            <span className="text-gray-700 font-semibold">Messages:</span>
+            <span className="font-bold text-gray-900">{configuration.messages || 0}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Pricing Breakdown */}
+      <div className="mb-10">
+        <h3 className="font-bold text-gray-900 mb-6 text-xl flex items-center gap-2">
+          <Sparkles className="w-6 h-6 text-blue-600" />
+          Pricing Breakdown - {safeCalculation.tier.name} Plan:
+        </h3>
+        <div className="bg-white/80 rounded-2xl p-6 shadow-lg">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b-2 border-blue-200">
+              <th className="text-left py-4 text-gray-800 font-bold text-lg">Description</th>
+              <th className="text-right py-4 text-gray-800 font-bold text-lg">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-gray-200">
+              <td className="py-4 text-gray-700 font-medium">
+                User costs ({configuration.numberOfUsers} users × {configuration.duration} months)
+                <br />
+                <span className="text-sm text-gray-500 font-normal">
+                  @ {formatCurrency(safeCalculation.userCost / (configuration.numberOfUsers * configuration.duration))}/user/month
+                </span>
+              </td>
+              <td className="text-right py-4 font-bold text-gray-900">{formatCurrency(safeCalculation.userCost)}</td>
+            </tr>
+            <tr className="border-b border-gray-200">
+              <td className="py-4 text-gray-700 font-medium">Data costs ({configuration.dataSizeGB} GB)</td>
+              <td className="text-right py-4 font-bold text-gray-900">{formatCurrency(safeCalculation.dataCost)}</td>
+            </tr>
+            <tr className="border-b border-gray-200">
+              <td className="py-4 text-gray-700 font-medium">Migration services</td>
+              <td className="text-right py-4 font-bold text-gray-900">{formatCurrency(safeCalculation.migrationCost)}</td>
+            </tr>
+            <tr className="border-b border-gray-200">
+              <td className="py-4 text-gray-700 font-medium">Instance costs ({configuration.numberOfInstances} instances)</td>
+              <td className="text-right py-4 font-bold text-gray-900">{formatCurrency(safeCalculation.instanceCost)}</td>
+            </tr>
+            <tr className="border-t-2 border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <td className="py-6 font-bold text-xl text-gray-900">Subtotal (Total Project Cost)</td>
+              <td className="text-right py-6 font-bold text-2xl text-blue-600">{formatCurrency(totalCost)}</td>
+            </tr>
+{shouldApplyDiscount && (
+          <tr className="border-b border-gray-200">
+            <td className="py-4 text-gray-700 font-medium">Discount ({discountPercent.toString()}%)</td>
+            <td className="text-right py-4 font-bold text-red-600">- {formatCurrency(discountAmount)}</td>
+          </tr>
+        )}
+        {/* Debug: Always show discount debug info - see console */}
+        <tr className="border-t-2 border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50">
+          <td className="py-6 font-bold text-xl text-gray-900">Total After Discount</td>
+          <td className="text-right py-6 font-bold text-2xl text-emerald-700">
+            {formatCurrency(shouldApplyDiscount ? finalTotalAfterDiscount : totalCost)}
+          </td>
+        </tr>
+        {!shouldApplyDiscount && (clientInfo.discount ?? storedDiscountPercent ?? 0) > 0 && (
+          <tr>
+            <td colSpan={2} className="py-3 text-center text-sm text-amber-600">
+              Discount entered in Configure session did not apply because the project total is below $2,500 or exceeds the 10% cap.
+            </td>
+          </tr>
+        )}
+        {isDiscountAllowed && hasValidDiscount && !isDiscountValid && (
+          <tr className="border-b border-red-200 bg-red-50">
+            <td colSpan={2} className="py-3 text-center">
+              <p className="text-sm text-red-600 font-medium">
+                ⚠️ Discount not applied: Final total would be below $2,500 minimum
+              </p>
+            </td>
+          </tr>
+        )}
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+    </div>
+    );
+  };
+
+  if (showPreview) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center bg-gradient-to-r from-white to-blue-50 p-6 rounded-2xl shadow-lg">
+          <div>
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-blue-900 bg-clip-text text-transparent">
+              Quote Preview
+            </h2>
+            <p className="text-gray-600 mt-1">Review your professional quote before sending</p>
+          </div>
+          <div className="flex space-x-4">
+            <button
+              onClick={() => setShowPreview(false)}
+              className="px-6 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-300 font-semibold flex items-center gap-2"
+            >
+              <Eye className="w-4 h-4" />
+              Back
+            </button>
+            <button 
+              onClick={handleDownloadPDF}
+              className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-semibold flex items-center gap-2 shadow-lg"
+            >
+              <Download className="w-4 h-4" />
+              Download PDF
+            </button>
+            <button 
+              onClick={handleGenerateAgreement}
+              disabled={!selectedTemplate || isGeneratingAgreement}
+              className={`px-6 py-3 rounded-xl transition-all duration-300 font-semibold flex items-center gap-2 shadow-lg ${
+                !selectedTemplate || isGeneratingAgreement
+                  ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700'
+              }`}
+            >
+              {isGeneratingAgreement ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <FileText className="w-4 h-4" />
+                  Preview Agreement
+                </>
+              )}
+            </button>
+            {/* Generate PDF Quote button removed as requested */}
+          </div>
+        </div>
+        <QuotePreview dealData={dealData} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-8">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">Generate Professional Quote</h1>
+        <p className="text-gray-600">Create a detailed quote for your client</p>
+      </div>
+
+      <div className="flex justify-center">
+        {/* Client Information Form */}
+        <div className="w-full max-w-2xl">
+          <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-200">
+
+            {/* Template Selection Indicator */}
+            {selectedTemplate ? (
+              <div className="flex items-center justify-between mb-6 p-4 bg-green-50 rounded-xl border border-green-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Check className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Template Selected</h3>
+                    <p className="text-sm text-gray-600">
+                      Using template: <span className="font-bold text-green-700">{getSelectedTemplateDisplayName()}</span>
+                    </p>
+                    <p className="text-xs text-green-600 mt-1 flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5 text-green-600" />
+                      Ready to generate agreement with this template
+                    </p>
+                  </div>
+                </div>
+                <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-medium flex-shrink-0">
+                  Template Active
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border border-yellow-200">
+                <div className="w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center">
+                  <FileText className="w-3 h-3 text-white" />
+                  </div>
+                  <div>
+                  <h3 className="font-semibold text-gray-800">No Template Selected</h3>
+                    <p className="text-sm text-gray-600">
+                    Go to the <span className="font-medium text-blue-600">Template</span> session to select a template for agreement generation.
+                  </p>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    ⚠️ Preview Agreement button will be disabled until a template is selected
+                    </p>
+                  </div>
+              </div>
+            )}
+
+
+            <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+              <User className="w-5 h-5 text-gray-500" />
+              Contact Information
+            </h3>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Contact Name and Legal Entity Name in one row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="group">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                  <div className="w-7 h-7 bg-purple-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <User className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  Contact Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clientInfo.clientName}
+                  onChange={(e) => {
+                    const sanitized = sanitizeNameInput(e.target.value);
+                    const processed = limitConsecutiveSpaces(sanitized);
+                    setClientInfo({ ...clientInfo, clientName: processed });
+                  }}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-base font-medium"
+                  placeholder="Enter contact name"
+                  maxLength={35}
+                />
+              </div>
+              <div className="group">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                  <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Building className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  Legal Entity Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={clientInfo.company}
+                  onChange={(e) => {
+                    const sanitized = sanitizeCompanyInput(e.target.value);
+                    setClientInfo({ ...clientInfo, company: sanitized });
+                  }}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-base font-medium"
+                  placeholder="Enter legal entity name"
+                />
+                {clientInfo.company && hubspotState?.selectedContact && (
+                  <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4" />
+                    {hubspotState.selectedContact.properties.company 
+                      ? 'Legal entity name from HubSpot contact'
+                      : 'Legal entity name auto-extracted from email domain'
+                    }
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="group">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-red-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Mail className="w-3.5 h-3.5 text-white" />
+                </div>
+                Email Address
+              </label>
+              <input
+                type="email"
+                required
+                value={clientInfo.clientEmail}
+                onChange={(e) => {
+                  const sanitized = sanitizeEmailInput(e.target.value);
+                  setClientInfo({ ...clientInfo, clientEmail: sanitized });
+                }}
+                className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-blue-300 text-base font-medium"
+                placeholder="Enter email address"
+                maxLength={35}
+              />
+            </div>
+
+            {/* Date Selection - side by side */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Project Start Date - MOVED from Project Configuration */}
+            <div className="group">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-3.5 h-3.5 text-white" />
+                </div>
+                Project Start Date <span className="text-red-500">*</span>
+              </label>
+              <CustomDatePicker
+                required
+                value={configuration?.startDate || ''}
+                onChange={(newStartDate) => {
+                  console.log('📅 Project Start Date changed:', newStartDate);
+                  const notAfterEffective = clientInfo.effectiveDate ? newStartDate <= clientInfo.effectiveDate : false;
+                  setDateValidationErrors(prev => ({ ...prev, projectStartDate: false, projectStartNotAfterEffective: notAfterEffective }));
+
+                  if (onConfigurationChange) {
+                    const updatedConfig = { ...configuration, startDate: newStartDate };
+                    onConfigurationChange(updatedConfig);
+                    console.log('✅ Configuration updated with new start date:', newStartDate);
+                  } else {
+                    console.warn('⚠️ No onConfigurationChange callback provided');
+                  }
+
+                }}
+                onBlur={() => {
+                  if (!configuration?.startDate) {
+                    setDateValidationErrors(prev => ({ ...prev, projectStartDate: true }));
+                  } else if (clientInfo.effectiveDate) {
+                    setDateValidationErrors(prev => ({
+                      ...prev,
+                      projectStartNotAfterEffective: configuration!.startDate! <= clientInfo.effectiveDate!,
+                    }));
+                  }
+                }}
+                className={
+                  (dateValidationErrors.projectStartDate || dateValidationErrors.projectStartNotAfterEffective)
+                    ? 'border-red-500 hover:border-red-500'
+                    : 'border-gray-200 hover:border-blue-300'
+                }
+              />
+              {dateValidationErrors.projectStartDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Project Start Date is required
+                </p>
+              )}
+              {dateValidationErrors.projectStartNotAfterEffective && !dateValidationErrors.projectStartDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Must be after the Effective Date
+                </p>
+              )}
+              {!dateValidationErrors.projectStartDate && !dateValidationErrors.projectStartNotAfterEffective && (
+                <p className="text-xs text-gray-500 mt-2">Select the project start date</p>
+              )}
+            </div>
+
+            {/* Effective Date */}
+            <div className="group">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-3.5 h-3.5 text-white" />
+                </div>
+                Effective Date <span className="text-red-500">*</span>
+              </label>
+              <CustomDatePicker
+                required
+                value={clientInfo.effectiveDate || ''}
+                onChange={(selectedDate) => {
+                  const projectStartErr = configuration?.startDate ? configuration.startDate <= selectedDate : false;
+                  setDateValidationErrors(prev => ({
+                    ...prev,
+                    effectiveDate: false,
+                    projectStartNotAfterEffective: projectStartErr,
+                  }));
+                  updateClientInfo({ effectiveDate: selectedDate });
+                }}
+                onBlur={() => {
+                  if (!clientInfo.effectiveDate) {
+                    setDateValidationErrors(prev => ({ ...prev, effectiveDate: true }));
+                  } else {
+                    const projectStartErr = configuration?.startDate ? configuration.startDate <= clientInfo.effectiveDate : false;
+                    setDateValidationErrors(prev => ({
+                      ...prev,
+                      projectStartNotAfterEffective: projectStartErr,
+                    }));
+                  }
+                }}
+                className={
+                  dateValidationErrors.effectiveDate
+                    ? 'border-red-500 hover:border-red-500'
+                    : 'border-gray-200 hover:border-blue-300'
+                }
+              />
+              {dateValidationErrors.effectiveDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Effective Date is required
+                </p>
+              )}
+              {!dateValidationErrors.effectiveDate && (
+                <p className="text-xs text-gray-500 mt-2">Select the effective date</p>
+              )}
+            </div>
+
+            {/* Quote Expiry Date */}
+            <div className="group">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  <Calendar className="w-3.5 h-3.5 text-white" />
+                </div>
+                Quote Expiry Date <span className="text-red-500">*</span>
+              </label>
+              <CustomDatePicker
+                required
+                value={clientInfo.quoteExpiryDate || ''}
+                onChange={(selectedDate) => {
+                  setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: false }));
+                  updateClientInfo({ quoteExpiryDate: selectedDate });
+                }}
+                onBlur={() => {
+                  if (!clientInfo.quoteExpiryDate) {
+                    setDateValidationErrors(prev => ({ ...prev, quoteExpiryDate: true }));
+                  }
+                }}
+                className={
+                  dateValidationErrors.quoteExpiryDate
+                    ? 'border-red-500 hover:border-red-500'
+                    : 'border-gray-200 hover:border-blue-300'
+                }
+              />
+              {dateValidationErrors.quoteExpiryDate && (
+                <p className="text-xs text-red-600 mt-2 font-semibold flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  Quote Expiry Date is required
+                </p>
+              )}
+              {!dateValidationErrors.quoteExpiryDate && (
+                <p className="text-xs text-gray-500 mt-2">Select the quote expiry date</p>
+              )}
+            </div>
+            </div>
+
+            {/* Payment Terms - Only for Overage Agreement */}
+            {((configuration?.combination || '').toLowerCase() === 'overage-agreement' ||
+              (configuration?.migrationType || '').toLowerCase() === 'overage agreement') && (
+              <div className="group">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <Briefcase className="w-4 h-4 text-white" />
+                  </div>
+                  Payment Terms
+                  <span className="text-xs text-gray-500 font-normal">(optional)</span>
+                </label>
+                <div className="flex gap-3 items-center">
+                  <button
+                    type="button"
+                    onClick={() => updateClientInfo({ paymentTerms: '100% Upfront' })}
+                    className={`px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all duration-200 ${
+                      clientInfo.paymentTerms === '100% Upfront'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-emerald-300 hover:bg-emerald-50'
+                    }`}
+                  >
+                    100% Upfront (Default)
+                  </button>
+                  <input
+                    type="text"
+                    placeholder="Or enter custom payment terms"
+                    className="flex-1 px-6 py-5 border-2 rounded-xl focus:ring-4 transition-all duration-300 bg-white/80 backdrop-blur-sm text-xl font-medium border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 hover:border-emerald-300"
+                    style={{ 
+                      fontSize: '18px',
+                      height: '60px',
+                      paddingTop: '18px',
+                      paddingBottom: '18px'
+                    }}
+                    value={clientInfo.paymentTerms ?? '100% Upfront'}
+                    onChange={(e) => updateClientInfo({ paymentTerms: e.target.value })}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  This value will appear under &quot;Important Payment Notes&quot; in the generated agreement.
+                </p>
+              </div>
+            )}
+
+            {/* Custom Line Items - Collapsible Section */}
+            <div className="group">
+              <button
+                type="button"
+                onClick={() => setIsCustomLineItemsExpanded(!isCustomLineItemsExpanded)}
+                className="flex items-center gap-3 text-sm font-semibold text-gray-800 mb-3 w-full p-3 rounded-xl hover:bg-indigo-50 transition-colors duration-200"
+              >
+                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                  {isCustomLineItemsExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-white" />
+                  ) : (
+                    <Plus className="w-4 h-4 text-white" />
+                  )}
+                </div>
+                {isCustomLineItemsExpanded ? '−' : '+'} Custom Line Items
+                <span className="text-xs text-gray-500 font-normal">(optional)</span>
+              </button>
+
+              {/* Content - Show only when expanded */}
+              {isCustomLineItemsExpanded && (
+                <div className="border-2 border-indigo-200 rounded-xl p-4 bg-indigo-50/30">
+
+              {/* Existing items list */}
+              {customLineItems.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {customLineItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 p-3 rounded-xl border-2 border-gray-200 bg-gray-50"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-800 truncate">{item.name}</div>
+                        {item.description && (
+                          <div className="text-xs text-gray-500 truncate">{item.description}</div>
+                        )}
+                      </div>
+                      <div className="text-sm font-bold text-gray-800 whitespace-nowrap">
+                        {formatCurrency(item.price)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCustomLineItem(item.id)}
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                        title="Remove line item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-end gap-2 pr-12 text-sm">
+                    <span className="text-gray-500">Custom items subtotal:</span>
+                    <span className="font-bold text-gray-800">{formatCurrency(customLineItemsTotal)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Add new item form */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+                <input
+                  type="text"
+                  placeholder="Name (e.g. Onboarding)"
+                  className="md:col-span-4 px-4 py-3 border-2 rounded-xl focus:ring-4 transition-all duration-200 bg-white text-sm border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/20 hover:border-indigo-300"
+                  value={newCustomItem.name}
+                  onChange={(e) => setNewCustomItem((p) => ({ ...p, name: e.target.value }))}
+                />
+                <input
+                  type="text"
+                  placeholder="Description (optional)"
+                  className="md:col-span-5 px-4 py-3 border-2 rounded-xl focus:ring-4 transition-all duration-200 bg-white text-sm border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/20 hover:border-indigo-300"
+                  value={newCustomItem.description}
+                  onChange={(e) => setNewCustomItem((p) => ({ ...p, description: e.target.value }))}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Price"
+                  className="md:col-span-2 px-4 py-3 border-2 rounded-xl focus:ring-4 transition-all duration-200 bg-white text-sm border-gray-200 focus:border-indigo-500 focus:ring-indigo-500/20 hover:border-indigo-300"
+                  value={newCustomItem.price}
+                  onChange={(e) => setNewCustomItem((p) => ({ ...p, price: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomLineItem();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomLineItem}
+                  className="md:col-span-1 flex items-center justify-center gap-1 px-3 py-3 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 transition-colors"
+                  title="Add line item"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Added rows appear in the agreement pricing table above &quot;Total Price&quot; and are
+                added to the total (after any discount).
+              </p>
+
+              {/* Discount for Custom Line Items - Always show input */}
+              <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">
+                    Custom Items Discount (%)
+                    <span className="text-xs text-gray-500 font-normal ml-2">(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    placeholder="Enter discount percentage"
+                    disabled={customLineItems.length === 0}
+                    className="w-full px-4 py-2 border-2 border-indigo-200 rounded-lg focus:ring-4 focus:border-indigo-500 focus:ring-indigo-500/20 transition-all duration-200 bg-white text-sm disabled:border-amber-300 disabled:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                    value={customLineItemsDiscount || ''}
+                    onChange={(e) => {
+                      const val = e.target.value ? parseFloat(e.target.value) : 0;
+                      setCustomLineItemsDiscount(val);
+                    }}
+                  />
+
+                  {customLineItemsDiscount > 0 ? (
+                    <p className="text-xs text-gray-600 mt-2">
+                      <span className="font-medium">✅ Discount Rules:</span>
+                      <br />• Discount available at any amount (no minimum)
+                      <br />• No maximum limit (discounts above 15% require additional approval)
+                      <br />• Discount applied to custom items subtotal: {formatCurrency(customLineItemsTotal * (customLineItemsDiscount || 0) / 100)}
+                    </p>
+                  ) : customLineItems.length === 0 ? (
+                    <p className="text-xs text-blue-700 mt-2">
+                      <span className="font-medium">ℹ️ Add custom items to apply discount</span>
+                      <br />Add custom line items above, then you can set a discount here
+                    </p>
+                  ) : null}
+                </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 transition-all duration-500 transform hover:scale-105 hover:shadow-2xl shadow-xl relative overflow-hidden group hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              <span className="relative flex items-center justify-center gap-3">
+                <FileText className="w-5 h-5" />
+                Generate Quote
+                <Sparkles className="w-5 h-5" />
+              </span>
+            </button>
+
+            {/* Preview Agreement - primary CTA */}
+            <button
+              type="button"
+              onClick={handleGenerateAgreement}
+              disabled={!selectedTemplate || isGeneratingAgreement}
+              className={`w-full mt-6 py-4 px-8 rounded-xl font-bold text-lg transition-all duration-200 shadow-lg ${
+                selectedTemplate && !isGeneratingAgreement
+                  ? 'bg-green-600 text-white hover:bg-green-700 hover:shadow-xl' 
+                  : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+              }`}
+            >
+              <span className="flex items-center justify-center gap-3">
+                {isGeneratingAgreement ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-5 h-5" />
+                    Generate Agreement
+                    <Sparkles className="w-5 h-5" />
+                  </>
+                )}
+              </span>
+            </button>
+
+            {/* Send to Deal Desk Button (same behavior as preview) */}
+            <button
+              type="button"
+              onClick={handleEmailAgreement}
+              disabled={isEmailingAgreement}
+              className={`w-full mt-4 py-4 px-8 rounded-2xl font-bold text-lg transition-all duration-500 transform shadow-xl relative overflow-hidden group hidden ${
+                isEmailingAgreement
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white hover:from-purple-700 hover:via-indigo-700 hover:to-blue-700 hover:scale-105 hover:shadow-2xl'
+              }`}
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              <span className="relative flex items-center justify-center gap-3">
+                {isEmailingAgreement ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-5 h-5" />
+                    Send to Deal Desk
+                    <Send className="w-5 h-5" />
+                  </>
+                )}
+              </span>
+            </button>
+          </form>
+
+              </div>
+            </div>
+
+      </div>
+
+      {/* Contact Selector Modal */}
+      {showContactSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Select HubSpot Contact</h3>
+              <button
+                onClick={() => setShowContactSelector(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {hubspotState?.hubspotContacts.map(contact => (
+                <div
+                  key={contact.id}
+                  className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
+                  onClick={() => handleContactSelect(contact)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                      {contact.properties.firstname?.[0]}{contact.properties.lastname?.[0]}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800">
+                        {contact.properties.firstname} {contact.properties.lastname}
+                      </h4>
+                      <p className="text-sm text-gray-600">{contact.properties.email}</p>
+                      {contact.properties.company && (
+                        <p className="text-sm text-gray-500">{contact.properties.company}</p>
+                      )}
+                    </div>
+                    <CheckCircle className="w-5 h-5 text-blue-600" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {(!hubspotState?.hubspotContacts || hubspotState.hubspotContacts.length === 0) && (
+              <div className="text-center py-8">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">No contacts found in HubSpot</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+
+
+        {/* Placeholder Preview Modal */}
+        {showPlaceholderPreview && placeholderPreviewData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl p-8 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800">Placeholder Replacement Preview</h2>
+                  <p className="text-gray-600">See exactly how your data will replace placeholders in the template</p>
+                </div>
+                <button
+                  onClick={() => setShowPlaceholderPreview(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Placeholder Mapping Table */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Placeholder Mappings</h3>
+                <div className="bg-gray-50 rounded-xl p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {placeholderPreviewData.placeholders.map((item, index) => (
+                      <div key={index} className="bg-white rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-600">Placeholder</p>
+                            <p className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                              {item.placeholder}
+                            </p>
+                          </div>
+                          <div className="mx-4 text-gray-400">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-600">Will Become</p>
+                            <p className="text-sm font-semibold text-green-700 bg-green-50 px-2 py-1 rounded">
+                              {item.value}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Before/After Comparison */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Before */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                    <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center">
+                      <span className="text-red-600 font-bold text-sm">1</span>
+                    </div>
+                    Template with Placeholders
+                  </h3>
+                  <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6">
+                    <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">
+                      {placeholderPreviewData.originalText}
+                    </pre>
+                  </div>
+                </div>
+
+                {/* After */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                      <span className="text-green-600 font-bold text-sm">2</span>
+                    </div>
+                    Template with Your Data
+                  </h3>
+                  <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
+                    <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">
+                      {placeholderPreviewData.replacedText}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200">
+                <button
+                  onClick={() => setShowPlaceholderPreview(false)}
+                  className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold"
+                >
+                  Close Preview
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPlaceholderPreview(false);
+                    // Trigger the actual quote generation
+                    const form = document.querySelector('form');
+                    if (form) {
+                      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                    }
+                  }}
+                  className="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold"
+                >
+                  Proceed with Generation
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Agreement Preview Modal - Enhanced Large Size */}
+        {showAgreementPreview && processedAgreement && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-1">
+            <div className={`bg-white shadow-2xl w-full h-full overflow-hidden flex flex-col ${
+              isFullscreen 
+                ? 'max-w-none max-h-none rounded-none' 
+                : 'max-w-[98vw] max-h-[99vh] rounded-3xl'
+            }`}>
+              {/* Header - Ultra Compact */}
+              <div className="bg-gradient-to-r from-green-600 via-green-700 to-emerald-600 text-white p-2 flex items-center justify-center flex-shrink-0 relative">
+                <div className="absolute left-2 flex items-center space-x-2 flex-shrink-0">
+                  <div className="w-6 h-6 bg-white bg-opacity-20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-bold leading-tight">🎉 Agreement Generated!</h2>
+                    <p className="text-green-100 text-xs leading-tight">
+                      {getSelectedTemplateDisplayName()} | {clientInfo.clientName}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Essential action buttons centered in header */}
+                  {showAgreementPreview && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleSaveAgreementToMongoDB}
+                        disabled={!processedAgreement || isSavingAgreementToMongo}
+                        className={`text-white bg-white/25 border-2 border-white/60 rounded-lg px-3 py-1.5 text-xs font-bold shadow-md hover:bg-white/35 hover:border-white/80 hover:shadow-lg transition-all duration-200 flex items-center gap-1.5 ring-2 ring-white/40 whitespace-nowrap ${
+                          !processedAgreement || isSavingAgreementToMongo ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title="Save agreement to documents page"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {isSavingAgreementToMongo ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={handleOpenOnlyOffice}
+                        disabled={!processedAgreement || isDownloadBlocked || isStartingOnlyOffice}
+                        className={`text-white bg-white/25 border-2 border-white/60 rounded-lg px-3 py-1.5 text-xs font-bold shadow-md hover:bg-white/35 hover:border-white/80 hover:shadow-lg transition-all duration-200 flex items-center gap-1.5 ring-2 ring-white/40 whitespace-nowrap ${
+                          !processedAgreement || isDownloadBlocked || isStartingOnlyOffice ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Open in Word-style editor'}
+                      >
+                        {isStartingOnlyOffice ? '⏳ Opening…' : '✏️ Edit for RedLine'}
+                      </button>
+                      <button
+                        onClick={() => setShowApprovalModal(true)}
+                        disabled={isStartingWorkflow}
+                        className="text-white bg-white/30 border-2 border-white/70 rounded-lg px-3 py-1.5 text-xs font-bold shadow-md shadow-green-900/50 ring-2 ring-green-200/60 hover:bg-white/40 hover:border-white/90 hover:ring-green-100/80 hover:shadow-green-400/60 transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap"
+                        title="Send for Approval"
+                      >
+                        <Workflow className="w-3.5 h-3.5" />
+                        {isStartingWorkflow ? 'Sending for Approval…' : 'Send for Approval'}
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="absolute top-2 right-2 flex items-center gap-2">
+                  <button
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="text-white hover:text-green-200 transition-colors p-2 hover:bg-white hover:bg-opacity-10 rounded-full"
+                    title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                  >
+                    {isFullscreen ? (
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15h4.5M15 15v4.5m0-4.5l5.5 5.5" />
+                      </svg>
+                    ) : (
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAgreementPreview(false);
+                      setProcessedAgreement(null);
+                      setCachedPdfAgreement(null);
+                      setIsFullscreen(false);
+                      // Reset inline preview when closing agreement modal
+                      setShowInlinePreview(false);
+                      setAgreementPreviewIsPdf(false);
+                      setIsEditingAgreement(false);
+                      setEditableAgreementHtml('');
+                      setLastEditedAgreementHtml('');
+                      setOriginalParagraphTexts([]);
+                      if (previewUrl) {
+                        URL.revokeObjectURL(previewUrl);
+                        setPreviewUrl(null);
+                      }
+                    }}
+                    className="text-white hover:text-green-200 transition-colors p-2 hover:bg-white hover:bg-opacity-10 rounded-full"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Content - Maximized for Preview */}
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                {/* Preview Area - Maximized (no bottom margin — avoids white strip under viewer) */}
+                <div className={`flex-1 bg-gray-50 border border-gray-300 overflow-hidden flex flex-col min-h-0 ${
+                  isFullscreen 
+                    ? 'mx-0 mb-0 rounded-none' 
+                    : 'mx-2 mb-0 rounded-xl'
+                }`}>
+                  <div className="bg-white px-3 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                    <h3 className="text-sm font-bold text-gray-800">📄 Document Preview</h3>
+                    <div className="flex items-center gap-2">
+                      {showInlinePreview && (
+                        <div className="text-xs text-gray-600 bg-green-50 px-2 py-1 rounded">
+                          {agreementPreviewIsPdf ? '📄 PDF preview' : '📄 Document preview'}
+                        </div>
+                      )}
+                      {!showInlinePreview && !showAgreementPreview && (
+                        <button
+                          onClick={handleViewInline}
+                          className="text-xs bg-gradient-to-r from-blue-600 to-blue-700 text-white px-3 py-1 rounded hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold"
+                        >
+                          👁️ View Document
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div
+                    className={`flex-1 min-h-0 overflow-hidden flex flex-col overscroll-contain ${
+                      previewUrl && !isEditingAgreement ? 'bg-[#525659]' : 'bg-white overflow-y-auto overflow-x-hidden'
+                    }`}
+                  >
+                    {isEditingAgreement ? (
+                      <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-gray-100">
+                        <div className="max-w-[900px] mx-auto">
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 mb-4 text-sm text-amber-800">
+                            ✏️ Editing mode — make your changes below, then click <strong>Save Changes</strong> to update the preview.
+                          </div>
+                          <div
+                            ref={editableAgreementRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            dangerouslySetInnerHTML={{ __html: editableAgreementHtml }}
+                            className="docx-preview-content bg-white border border-gray-300 rounded-lg p-2 min-h-[600px] focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                        </div>
+                      </div>
+                    ) : showInlinePreview ? (
+                      previewUrl ? (
+                        <div className="flex-1 min-h-0 w-full relative min-w-0">
+                          <iframe
+                            key={iframeKey}
+                            src={`${previewUrl}#page=1`}
+                            className="absolute inset-0 w-full h-full border-0 bg-[#525659]"
+                            title="Agreement Document Preview"
+                          />
+                         
+                          {/* Fullscreen floating action buttons */}
+                          {isFullscreen && (
+                            <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+                              <button
+                                onClick={handleDownloadAgreement}
+                                disabled={!processedAgreement || isDownloadBlocked}
+                                className={`text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform ${
+                                  !processedAgreement || isDownloadBlocked
+                                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                                    : 'bg-green-600 hover:bg-green-700 hover:scale-105'
+                                }`}
+                                title={isDownloadBlocked ? "Awaiting approval — downloads locked" : processedAgreement ? "Download Word Document" : "No agreement available"}
+                              >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={handleDownloadAgreementPDF}
+                                disabled={isDownloadBlocked}
+                                className={`text-white p-3 rounded-full shadow-2xl transition-all duration-200 transform ${
+                                  isDownloadBlocked
+                                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                                    : 'bg-blue-600 hover:bg-blue-700 hover:scale-105'
+                                }`}
+                                title={isDownloadBlocked ? "Awaiting approval — downloads locked" : "Download PDF"}
+                              >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          ref={previewContainerRef}
+                          className="document-preview-content w-full h-full min-h-0 overflow-y-auto overflow-x-hidden p-6 bg-white touch-pan-y overscroll-y-contain"
+                          style={{ minHeight: 'min(700px, 85vh)' }}
+                        />
+                      )
+                    ) : (
+                      <div className="h-full flex items-center justify-center min-h-[400px]">
+                        <div className="text-center p-8">
+                          <div className="w-24 h-24 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <h4 className="text-2xl font-bold text-gray-800 mb-3">Document Ready for Preview</h4>
+                          <p className="text-gray-600 text-lg mb-6 max-w-xl mx-auto">
+                            Your agreement has been processed successfully with all tokens replaced with actual quote data.
+                          </p>
+                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-6 mb-6 max-w-2xl mx-auto">
+                            <p className="text-blue-800 text-base">
+                              <strong>Click "View Document" above</strong> to see the complete agreement with all your data, 
+                              or click "Download Agreement" to save the file.
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 text-sm text-gray-600 max-w-xl mx-auto">
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                              <p><strong>📋 Template:</strong> {selectedTemplate?.name}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                              <p><strong>👤 Client:</strong> {clientInfo.clientName}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                              <p><strong>🏢 Company:</strong> {clientInfo.company}</p>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-lg">
+                              <p><strong>💰 Total Cost:</strong> {formatCurrency(calculation?.totalCost || 0)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Buttons - Ultra Compact (hidden in fullscreen and agreement preview) */}
+                {!isFullscreen && !showAgreementPreview && (
+                  <div className="bg-white border-t border-gray-200 p-2 flex-shrink-0">
+                  <div className="flex gap-2 justify-center flex-wrap">
+                    {isEditingAgreement ? (
+                      <>
+                        <button
+                          onClick={handleSaveAgreementEdits}
+                          disabled={isSavingAgreementEdits}
+                          className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                            isSavingAgreementEdits
+                              ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
+                          }`}
+                        >
+                          {isSavingAgreementEdits ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Saving...
+                            </>
+                          ) : (
+                            <>💾 Save Changes</>
+                          )}
+                        </button>
+                        <button
+                          onClick={handleCancelAgreementEdits}
+                          disabled={isSavingAgreementEdits}
+                          className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-lg hover:from-gray-600 hover:to-gray-700 transition-all duration-200 font-semibold text-xs shadow-lg"
+                        >
+                          ↩️ Cancel
+                        </button>
+                      </>
+                    ) : (
+                    <>
+                    <button
+                      onClick={handleStartEditAgreement}
+                      disabled={!processedAgreement || isDownloadBlocked}
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                        !processedAgreement || isDownloadBlocked
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700'
+                      }`}
+                      title={isDownloadBlocked ? 'Awaiting approval — editing locked' : 'Edit the agreement before sending for approval'}
+                    >
+                      ✏️ Edit Agreement
+                    </button>
+                    {/* Download Word button */}
+                    <button
+                      onClick={handleDownloadAgreement}
+                      disabled={!processedAgreement || isDownloadBlocked}
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                        !processedAgreement || isDownloadBlocked
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
+                      }`}
+                      title={isDownloadBlocked ? "Awaiting approval — downloads locked" : processedAgreement ? "Download Word Document" : "Generate agreement first"}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      📥 Download Word
+                    </button>
+                    {/* Download PDF button with functionality */}
+                    <button
+                      onClick={handleDownloadAgreementPDF}
+                      disabled={isDownloadBlocked}
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                        isDownloadBlocked
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800'
+                      }`}
+                      title={isDownloadBlocked ? "Awaiting approval — downloads locked" : "Download PDF"}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      📄 Download PDF
+                    </button>
+                    <button
+                      onClick={handleEmailAgreement}
+                      disabled={isEmailingAgreement}
+                      className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-xs shadow-lg ${
+                        isEmailingAgreement
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:from-purple-700 hover:to-purple-800'
+                      }`}
+                    >
+                      {isEmailingAgreement ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Mail className="w-3 h-3" />
+                          📧 Send to Deal Desk
+                        </>
+                      )}
+                    </button>
+                    {/* After agreement generation, always show preview - no hide option */}
+                    {showInlinePreview && showAgreementPreview ? (
+                      <div className="flex items-center gap-1 px-4 py-2 bg-green-50 text-green-700 rounded-lg border border-green-200">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-xs font-semibold">📄 Document Loaded</span>
+                      </div>
+                    ) : showInlinePreview ? (
+                      <button
+                        onClick={() => {
+                          setShowInlinePreview(false);
+                          setAgreementPreviewIsPdf(false);
+                          if (previewUrl) {
+                            URL.revokeObjectURL(previewUrl);
+                            setPreviewUrl(null);
+                          }
+                        }}
+                        className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all duration-200 font-semibold text-xs shadow-lg"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                        </svg>
+                        🙈 Hide Document
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleViewInline}
+                        className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold text-xs shadow-lg"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        👁️ View Document
+                      </button>
+                    )}
+                    </>
+                    )}
+                    <button
+                      onClick={() => {
+                        setShowAgreementPreview(false);
+                        setProcessedAgreement(null);
+                        setCachedPdfAgreement(null);
+                        setShowInlinePreview(false);
+                        setAgreementPreviewIsPdf(false);
+                        setIsFullscreen(false);
+                        setIsEditingAgreement(false);
+                        setEditableAgreementHtml('');
+                        setLastEditedAgreementHtml('');
+                        if (previewUrl) {
+                          URL.revokeObjectURL(previewUrl);
+                          setPreviewUrl(null);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-200 font-semibold text-xs shadow-lg"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      ❌ Close Preview
+                    </button>
+                  </div>
+                </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Approval Workflow Modal */}
+        {/* OnlyOffice Word-style editor modal */}
+        {showOnlyOfficeEditor && onlyOfficeConfig && (
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[60]" role="dialog" aria-modal="true">
+            <div className="bg-white rounded-lg w-[96vw] h-[94vh] shadow-2xl flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-blue-700 to-indigo-700 text-white">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">✏️ Editing agreement (Word editor)</span>
+                  <span className="text-xs text-blue-200">Click <strong>File → Save</strong> in the editor, then click <strong>Done</strong> on the right.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleFinalizeOnlyOffice}
+                    disabled={isFinalizingOnlyOffice}
+                    className={`px-4 py-1.5 rounded-md text-xs font-semibold border ${
+                      isFinalizingOnlyOffice
+                        ? 'bg-white/20 border-white/30 text-white/70 cursor-not-allowed'
+                        : 'bg-white text-blue-700 border-white hover:bg-blue-50'
+                    }`}
+                    title="Apply your edits and close the editor"
+                  >
+                    {isFinalizingOnlyOffice ? '⏳ Saving…' : '✅ Done'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!isFinalizingOnlyOffice) {
+                        setShowOnlyOfficeEditor(false);
+                        setOnlyOfficeSessionId(null);
+                        setOnlyOfficeConfig(null);
+                      }
+                    }}
+                    disabled={isFinalizingOnlyOffice}
+                    className="px-3 py-1.5 rounded-md text-xs font-semibold bg-white/10 border border-white/30 hover:bg-white/20"
+                    title="Close editor without applying"
+                  >
+                    ✖ Close
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0">
+                <OnlyOfficeEditor
+                  editorUrl={onlyOfficeEditorUrl}
+                  config={onlyOfficeConfig}
+                  onError={(msg) => {
+                    console.error('OnlyOffice error:', msg);
+                    alert('Editor error: ' + msg);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showApprovalModal && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => setShowApprovalModal(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="approval-workflow-title"
+          >
+            <div
+              className="bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 id="approval-workflow-title" className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Workflow className="w-5 h-5 text-blue-600" />
+                  Send for Approval
+                </h3>
+                <button
+                  onClick={() => setShowApprovalModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-2">
+                Team lead is automatically selected. Technical Team, Legal Team, and Deal Desk recipients will use the default emails.
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                If any approver denies, the workflow creator will be notified at <span className="font-medium">{workflowCreatorEmail}</span>.
+              </p>
+              
+              <div className="space-y-4">
+                {/* Team Approval - Automatic Selection with Edit Option */}
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Team Approval Group
+                    </label>
+                    {userIsAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setShowTeamSettingsModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        Edit Settings
+                      </button>
+                    )}
+                  </div>
+                  <div className="bg-white rounded-lg p-3 border border-purple-200 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-2">
+                        Select Team Lead to send this approval to
+                      </label>
+                      <select
+                        value={manualTeamSelection}
+                        onChange={(e) => setManualTeamSelection(e.target.value)}
+                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                      >
+                        {teamIds.map((team) => (
+                          <option key={team} value={team}>{team} ({teamApprovalSettings.teamLeads[team] || 'Not configured'})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Selected Team: <span className="text-purple-600 font-semibold">{displayTeamForModal}</span>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Team Lead: {getTeamApprovalEmail(displayTeamForModal) || 'Not configured'}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="text-xs text-gray-500">
+                  Defaults:&nbsp;
+                  <span className="font-medium">Technical</span> {approvalEmails.role1}&nbsp;•&nbsp;
+                  <span className="font-medium">Legal</span> {approvalEmails.role2}&nbsp;•&nbsp;
+                  <span className="font-medium">Deal Desk</span> {approvalEmails.role4}
+                </div>
+                
+              </div>
+              
+              <div className="flex flex-wrap gap-3 mt-6">
+                <button
+                  onClick={() => setShowApprovalModal(false)}
+                  className="flex-1 min-w-[100px] px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartApprovalWorkflow}
+                  disabled={isStartingWorkflow || isAddingEsignFields}
+                  className="flex-1 min-w-[120px] px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 text-white rounded-lg transition-all duration-300 flex items-center justify-center gap-2 font-semibold shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 ring-2 ring-green-400/50 hover:ring-green-300/60"
+                >
+                  {isStartingWorkflow ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Workflow className="w-4 h-4" />
+                      Send for Approval
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Team Approval Settings Modal */}
+        {showTeamSettingsModal && (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden max-h-[90vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
+                <div className="flex items-center gap-3">
+                  <Settings className="w-6 h-6 text-purple-600" />
+                  <h2 className="text-xl font-extrabold text-gray-900">Team Approval Settings</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowApprovalAdminsModal(true)}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    Approval Admins
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTeamSettingsModal(false)}
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                    aria-label="Close"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Content */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="space-y-6">
+                  {/* Team Selection Tabs */}
+                  <div className="flex flex-wrap items-center gap-2 border-b border-gray-200">
+                    {teamIds.map((team) => (
+                      <button
+                        key={team}
+                        type="button"
+                        onClick={() => setEditingTeam(team)}
+                        className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                          editingTeam === team
+                            ? 'border-purple-600 text-purple-600'
+                            : 'border-transparent text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {team}
+                      </button>
+                    ))}
+                    {showAddTeamInput ? (
+                      <div className="flex items-center gap-2 pb-2">
+                        <input
+                          type="text"
+                          value={newTeamCode}
+                          onChange={(e) => setNewTeamCode(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTeam())}
+                          placeholder="e.g. DEV3"
+                          className="px-2 py-1 text-sm border border-gray-300 rounded w-24"
+                          autoFocus
+                        />
+                        <button type="button" onClick={handleAddTeam} className="px-2 py-1 text-sm font-semibold text-white bg-purple-600 rounded hover:bg-purple-700">
+                          Add
+                        </button>
+                        <button type="button" onClick={() => { setShowAddTeamInput(false); setNewTeamCode(''); }} className="px-2 py-1 text-sm text-gray-600 hover:text-gray-800">
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddTeamInput(true)}
+                        className="px-3 py-2 text-sm font-semibold text-purple-600 border border-purple-300 rounded hover:bg-purple-50 transition-colors"
+                      >
+                        + Add team
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Current Team Settings */}
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Team Lead Email ({editingTeam})
+                        </label>
+                        <input
+                          type="email"
+                          value={teamApprovalSettings.teamLeads[editingTeam] || ''}
+                          onChange={(e) => {
+                            setTeamApprovalSettings(prev => ({
+                              ...prev,
+                              teamLeads: {
+                                ...prev.teamLeads,
+                                [editingTeam]: e.target.value
+                              }
+                            }));
+                          }}
+                          className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white"
+                          placeholder="team.lead@cloudfuze.com"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          This email will receive approval requests for {editingTeam} team workflows.
+                        </p>
+                      </div>
+                      {teamIds.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveTeam}
+                          className="mt-6 px-3 py-1.5 text-xs font-semibold text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors whitespace-nowrap"
+                          aria-label={`Remove team ${editingTeam}`}
+                        >
+                          Remove team
+                        </button>
+                      )}
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowTeamSettingsModal(false)}
+                  className="px-5 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTeamSettingsModal(false);
+                    alert('✅ Team approval settings saved successfully!');
+                  }}
+                  className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
+                >
+                  Save Settings
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Approval Admins Modal */}
+        {showApprovalAdminsModal && userIsAdmin && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4"
+            onClick={() => setShowApprovalAdminsModal(false)}
+          >
+            <div
+              className="bg-white rounded-xl border border-gray-200 shadow-lg max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-blue-600" />
+                    Approval Admins
+                  </h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Users with these emails can edit Team Approval Settings and manage this list. You can also set APPROVAL_ADMIN_EMAILS in .env.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowApprovalAdminsModal(false)}
+                  className="p-1 text-gray-400 hover:text-gray-600"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4 overflow-y-auto">
+                <form onSubmit={handleAddApprovalAdmin} className="flex gap-2">
+                  <input
+                    type="email"
+                    value={newApprovalAdminEmail}
+                    onChange={(e) => setNewApprovalAdminEmail(e.target.value)}
+                    placeholder="email@example.com"
+                    className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    disabled={addingApprovalAdmin}
+                  />
+                  <button
+                    type="submit"
+                    disabled={addingApprovalAdmin || !newApprovalAdminEmail.trim()}
+                    className="inline-flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    {addingApprovalAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    Add
+                  </button>
+                </form>
+                {approvalAdminError && (
+                  <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
+                    {approvalAdminError}
+                  </div>
+                )}
+                {approvalAdminLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  </div>
+                ) : approvalAdminEmails.length === 0 ? (
+                  <p className="text-gray-500 text-xs">No approval admins in the list yet. Add an email above or use .env / DEFAULT_APPROVAL_ADMINS.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                    {approvalAdminEmails.map((email) => (
+                      <li key={email} className="py-2 flex items-center justify-between gap-2">
+                        <span className="text-gray-900 text-sm truncate">{email}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveApprovalAdmin(email)}
+                          disabled={removingApprovalAdmin === email}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50 text-sm"
+                          title="Remove"
+                        >
+                          {removingApprovalAdmin === email ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+    </div>
+  );
+};
+
+export default QuoteGenerator;
