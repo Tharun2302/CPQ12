@@ -13,7 +13,7 @@ RUN npm ci
 COPY CPQ12 .
 
 # Build frontend
-RUN npm run build:frontend 2>/dev/null || echo "Frontend build skipped"
+RUN npm run build 2>/dev/null || echo "Frontend build skipped"
 
 # Runtime stage
 FROM node:18
@@ -21,7 +21,7 @@ FROM node:18
 WORKDIR /app
 
 # Copy from builder
-COPY --from=builder /app/dist ./frontend/dist 2>/dev/null || true
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY CPQ12/package.json ./
 COPY CPQ12/package-lock.json ./
