@@ -3,14 +3,14 @@ FROM node:18 AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy CPQ12 files
+COPY CPQ12/package*.json ./
 
 # Install dependencies
 RUN npm ci
 
 # Copy source
-COPY . .
+COPY CPQ12 .
 
 # Build frontend
 RUN npm run build:frontend 2>/dev/null || echo "Frontend build skipped"
