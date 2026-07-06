@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # CPQ12 Development Deployment Script
-# Deploys to development server with password-based SSH authentication
-# Usage: DEPLOY_PASSWORD="password" bash scripts/deploy-dev.sh
-# Or set environment variables: DEV_SERVER, DEV_USER, DEV_PASSWORD
+# Deploys to development server with SSH key authentication
+# Usage: DEPLOY_SSH_KEY="$(cat ~/.ssh/deploy_key)" bash scripts/deploy-dev.sh
+# Or set environment variables: DEV_SERVER, DEV_USER, DEPLOY_SSH_KEY
 
 set -e
 
@@ -17,29 +17,34 @@ NC='\033[0m' # No Color
 # Configuration
 DEV_SERVER=${DEV_SERVER:-159.89.175.168}
 DEV_USER=${DEV_USER:-root}
-DEV_PASSWORD=${DEPLOY_PASSWORD:-}
 DEV_PORT=${DEV_PORT:-22}
 APP_DIR="${APP_DIR:-~/CPQ12}"
 BRANCH=${GIT_BRANCH:-feature/gstack-implementation}
 BACKUP_DIR="${BACKUP_DIR:-~/CPQ12/backups}"
 DEPLOY_LOG="/tmp/cpq12-deploy-$(date +%Y%m%d_%H%M%S).log"
+SSH_KEY_FILE="${SSH_KEY_FILE:-.ssh/deploy_key}"
 
-# Ensure sshpass is available
-check_sshpass() {
-    if ! command -v sshpass &> /dev/null; then
-        echo -e "${RED}❌ sshpass is not installed${NC}"
-        echo "Install it with:"
-        echo "  Ubuntu/Debian: sudo apt-get install sshpass"
-        echo "  macOS: brew install sshpass"
+# Setup SSH key file
+setup_ssh_key() {
+    if [ -z "$DEPLOY_SSH_KEY" ]; then
+        echo -e "${RED}❌ Error: DEPLOY_SSH_KEY environment variable is required${NC}"
+        echo "Usage: DEPLOY_SSH_KEY=\"\$(cat ~/.ssh/deploy_key)\" bash scripts/deploy-dev.sh"
         exit 1
     fi
+
+    # Create SSH key file from environment variable
+    mkdir -p ~/.ssh
+    echo "$DEPLOY_SSH_KEY" > ~/"$SSH_KEY_FILE"
+    chmod 600 ~/"$SSH_KEY_FILE"
+
+    log "INFO" "${GREEN}✅ SSH key file created${NC}"
 }
 
 # Validate inputs
 validate_inputs() {
-    if [ -z "$DEV_PASSWORD" ]; then
-        echo -e "${RED}❌ Error: DEV_PASSWORD or DEPLOY_PASSWORD environment variable is required${NC}"
-        echo "Usage: DEPLOY_PASSWORD='password' bash scripts/deploy-dev.sh"
+    if [ -z "$DEPLOY_SSH_KEY" ]; then
+        echo -e "${RED}❌ Error: DEPLOY_SSH_KEY environment variable is required${NC}"
+        echo "Usage: DEPLOY_SSH_KEY=\"\$(cat ~/.ssh/deploy_key)\" bash scripts/deploy-dev.sh"
         exit 1
     fi
 
@@ -58,12 +63,13 @@ log() {
     echo -e "${timestamp} [${level}] ${message}" | tee -a "$DEPLOY_LOG"
 }
 
-# Execute remote command with password auth
+# Execute remote command with SSH key
 remote_exec() {
     local cmd="$1"
-    sshpass -p "$DEV_PASSWORD" ssh \
+    ssh -i ~/"$SSH_KEY_FILE" \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=10 \
         -p "$DEV_PORT" \
         "${DEV_USER}@${DEV_SERVER}" \
         "$cmd"
@@ -72,9 +78,10 @@ remote_exec() {
 # Execute multi-line remote script
 remote_exec_script() {
     local script="$1"
-    sshpass -p "$DEV_PASSWORD" ssh \
+    ssh -i ~/"$SSH_KEY_FILE" \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=10 \
         -p "$DEV_PORT" \
         "${DEV_USER}@${DEV_SERVER}" \
         bash -s << 'REMOTESCRIPT'
@@ -86,7 +93,7 @@ REMOTESCRIPT
 test_connection() {
     log "INFO" "${BLUE}🔗 Testing SSH connection to ${DEV_USER}@${DEV_SERVER}:${DEV_PORT}...${NC}"
 
-    if sshpass -p "$DEV_PASSWORD" ssh \
+    if ssh -i ~/"$SSH_KEY_FILE" \
         -o ConnectTimeout=10 \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
@@ -269,14 +276,22 @@ deployment_summary() {
     log "INFO" "${GREEN}========================================${NC}"
 }
 
+# Cleanup SSH key file
+cleanup_ssh_key() {
+    if [ -f ~/"$SSH_KEY_FILE" ]; then
+        rm -f ~/"$SSH_KEY_FILE"
+        log "INFO" "${GREEN}✅ SSH key file cleaned up${NC}"
+    fi
+}
+
 # Main deployment flow
 main() {
     log "INFO" "${BLUE}========================================${NC}"
     log "INFO" "${BLUE}🚀 CPQ12 Development Deployment${NC}"
     log "INFO" "${BLUE}========================================${NC}"
 
-    check_sshpass
     validate_inputs
+    setup_ssh_key
     test_connection || exit 1
     create_backup
     stop_container
@@ -286,12 +301,13 @@ main() {
     wait_for_services
     run_health_checks
     deployment_summary
+    cleanup_ssh_key
 
     log "INFO" "${GREEN}Deployment completed successfully!${NC}"
 }
 
 # Error handler
-trap 'log "ERROR" "${RED}Deployment failed! Check ${DEPLOY_LOG} for details.${NC}"; exit 1' ERR
+trap 'cleanup_ssh_key; log "ERROR" "${RED}Deployment failed! Check ${DEPLOY_LOG} for details.${NC}"; exit 1' ERR
 
 # Run main function
 main "$@"
