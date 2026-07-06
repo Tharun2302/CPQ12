@@ -192,9 +192,18 @@ start_container() {
         set -e
         cd ${APP_DIR}
 
+        # Force remove any orphaned containers before starting (handles docker-compose V1 issues)
+        docker rm -f b15e85440869 2>/dev/null || true
+        docker rm -f b15e85440869_cpq-postgres 2>/dev/null || true
+
         # Check if docker-compose.yml exists, else use default config
         if [ -f docker-compose.yml ]; then
-            docker-compose -f docker-compose.yml up -d --remove-orphans
+            # Try docker compose V2 first (better orphan handling), fall back to V1
+            if command -v docker compose &> /dev/null; then
+                docker compose -f docker-compose.yml up -d --remove-orphans
+            else
+                docker-compose -f docker-compose.yml up -d --remove-orphans
+            fi
         else
             # Fallback to docker run if docker-compose not available
             docker run -d \
