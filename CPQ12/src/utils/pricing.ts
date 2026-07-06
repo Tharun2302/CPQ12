@@ -190,7 +190,7 @@ function calculateManagePricing(config: ConfigurationData, tier: PricingTier): P
   const regionMult = getRegionMultiplier(config);
   const rUser = userCostRaw * regionMult;
   const rData = dataCostRaw * regionMult;
-  let totalCost = rUser + rData;
+  const totalCost = rUser + rData;
 
   const result: PricingCalculation = {
     userCost: rUser,
@@ -346,7 +346,7 @@ function calculateMessagingPricing(config: ConfigurationData, tier: PricingTier)
   const rData = dataCost * regionMult;
   const rMgd  = migrationCost * regionMult;
   const rInst = instanceCost * regionMult;
-  let totalCost = rUser + rData + rMgd + rInst;
+  const totalCost = rUser + rData + rMgd + rInst;
 
   const result = {
     userCost: rUser,
@@ -503,7 +503,7 @@ function calculateContentPricing(config: ConfigurationData, tier: PricingTier): 
   const rData = dataCost * regionMult;
   const rMgd  = migrationCost * regionMult;
   const rInst = instanceCost * regionMult;
-  let totalCost = rUser + rData + rMgd + rInst;
+  const totalCost = rUser + rData + rMgd + rInst;
 
   const contentResult = {
     userCost: rUser,
@@ -647,7 +647,7 @@ function calculateEmailPricing(config: ConfigurationData, tier: PricingTier): Pr
   const rData = dataCost * regionMult;
   const rMgd  = migrationCost * regionMult;
   const rInst = instanceCost * regionMult;
-  let totalCost = rUser + rData + rMgd + rInst;
+  const totalCost = rUser + rData + rMgd + rInst;
 
   // Skip minimum for Multi combination (minimum will be applied to overall total)
   const emailResult = {
@@ -1004,7 +1004,7 @@ export function calculatePricing(config: ConfigurationData, tier: PricingTier): 
   const dataCost = config.dataSizeGB * fallbackPricing.perGBCost;
   const migrationCost = fallbackPricing.migrationCost;
   const instanceCost = getInstanceCost(config.instanceType, config.duration) * config.numberOfInstances;
-  let totalCost = userCost + dataCost + migrationCost + instanceCost;
+  const totalCost = userCost + dataCost + migrationCost + instanceCost;
 
   const fallbackResult = { userCost, dataCost, migrationCost, instanceCost, totalCost, tier };
   assertPricingInvariant(fallbackResult.userCost, fallbackResult.dataCost, fallbackResult.migrationCost, fallbackResult.instanceCost, fallbackResult.totalCost);

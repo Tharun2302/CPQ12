@@ -300,7 +300,7 @@ export class DocxTemplateProcessor {
       normHeaders.length > 0 ? Math.max(...normHeaders.map((h) => h.length)) : 0;
 
     const undersList = sigRows.map((r) => r.unders);
-    let target =
+    const target =
       undersList.length > 0 ? Math.max(MIN_UNDERS, ...undersList) : DEFAULT_UNDERS;
 
     let result = tcXml;
@@ -456,7 +456,7 @@ export class DocxTemplateProcessor {
         return `<w:tc>${fmt.tcPr}<w:p>${fmt.pPr}<w:r>${fmt.rPr}<w:t xml:space="preserve">${t}</w:t></w:r></w:p></w:tc>`;
       };
 
-      let newRows = items
+      const newRows = items
         .map((it) =>
           `<w:tr>${buildCell(cellFormats[0], it.name)}${buildCell(cellFormats[1], it.description)}${buildCell(cellFormats[2], it.price)}</w:tr>`
         )
@@ -959,7 +959,7 @@ export class DocxTemplateProcessor {
 
             // Additionally, remove any table row that is effectively empty (e.g., when cells are only tokens that resolved to empty
             const emptyRowRegex = /<w:tr[\s\S]*?<\/w:tr>/gi;
-            let cleanedXml = newXml.replace(emptyRowRegex, (row) => {
+            const cleanedXml = newXml.replace(emptyRowRegex, (row) => {
               const text = stripTags(row);
               return text.length === 0 ? '' : row;
             });
@@ -1003,7 +1003,7 @@ export class DocxTemplateProcessor {
               xml.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 
             const paraRegex = /<w:p[\s\S]*?<\/w:p>/gi;
-            let updatedXml = originalXml.replace(paraRegex, (para) => {
+            const updatedXml = originalXml.replace(paraRegex, (para) => {
               const textRaw = stripTagsLower(para);
               // Normalize punctuation that often surrounds these lines in templates
               const text = textRaw
@@ -1594,8 +1594,8 @@ export class DocxTemplateProcessor {
       // CRITICAL: Verify that tokens were actually replaced in the final document
       console.log('🔍 VERIFYING TOKEN REPLACEMENT IN FINAL DOCUMENT:');
       try {
-        let finalZip = new PizZip(bufferArrayBuffer);
-        let finalDocumentXml = this.getZipFileText(finalZip, 'word/document.xml');
+        const finalZip = new PizZip(bufferArrayBuffer);
+        const finalDocumentXml = this.getZipFileText(finalZip, 'word/document.xml');
         if (finalDocumentXml) {
           const finalCleanText = this.extractTextFromDocxXml(finalDocumentXml);
           console.log('🔍 Final document text preview:', finalCleanText.substring(0, 500) + '...');
@@ -1781,14 +1781,14 @@ export class DocxTemplateProcessor {
           const quoteValidityLine = processedData['{{quote_validity_line}}'] || '';
           if (quoteValidityLine) {
             try {
-              let vZip = new PizZip(await buffer.arrayBuffer());
-              let vXml = vZip.file('word/document.xml')?.asText() || '';
+              const vZip = new PizZip(await buffer.arrayBuffer());
+              const vXml = vZip.file('word/document.xml')?.asText() || '';
 
               // Step 1: Remove every existing validity paragraph or table row that already
               // carries the validity text (handles re-runs and scenario a).
               const existingValidityParaRe = /<w:p(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:p>/g;
               const existingValidityRowRe  = /<w:tr(?:\s[^>]*)?>[\s\S]*?This quote is valid till[\s\S]*?<\/w:tr>/g;
-              let xmlNoValidity = vXml
+              const xmlNoValidity = vXml
                 .replace(existingValidityRowRe, '')   // rows first (wider match)
                 .replace(existingValidityParaRe, ''); // then bare paragraphs
 
@@ -2046,8 +2046,8 @@ export class DocxTemplateProcessor {
           // POST-PROCESS: Remove borders from the "Total Price" row so it renders
           // as borderless text rather than a boxed table row.
           try {
-            let tpBorderZip = new PizZip(await buffer.arrayBuffer());
-            let tpBorderXml = tpBorderZip.file('word/document.xml')?.asText() || '';
+            const tpBorderZip = new PizZip(await buffer.arrayBuffer());
+            const tpBorderXml = tpBorderZip.file('word/document.xml')?.asText() || '';
             const tpPos = tpBorderXml.lastIndexOf('Total Price');
             if (tpPos !== -1) {
               // Find the actual <w:tr> opener for this row
@@ -2093,7 +2093,7 @@ export class DocxTemplateProcessor {
           // POST-PROCESS: Center the "CloudFuze Purchase Agreement for …" title paragraph.
           // The template stores this as a normal left-aligned paragraph; we force it to center.
           try {
-            let titleZip = new PizZip(await buffer.arrayBuffer());
+            const titleZip = new PizZip(await buffer.arrayBuffer());
             const titleDocXml = titleZip.file('word/document.xml')?.asText() || '';
 
             if (titleDocXml.includes('Purchase Agreement for')) {

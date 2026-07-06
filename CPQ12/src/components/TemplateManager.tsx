@@ -421,7 +421,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
   // Helper function to check localStorage usage
   const getStorageUsage = () => {
     let totalSize = 0;
-    for (let key in localStorage) {
+    for (const key in localStorage) {
       if (localStorage.hasOwnProperty(key)) {
         totalSize += localStorage[key].length;
       }
