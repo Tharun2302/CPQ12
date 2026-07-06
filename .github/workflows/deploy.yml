@@ -18,16 +18,16 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        run: npm install --prefix CPQ12
+        run: bash -c "cd CPQ12 && npm install"
 
       - name: Run linter
-        run: npm run lint --prefix CPQ12 2>/dev/null || echo "Linting skipped"
+        run: bash -c "cd CPQ12 && npm run lint 2>/dev/null || echo 'Linting skipped'"
 
       - name: Run tests
-        run: npm test --prefix CPQ12 -- --coverage 2>/dev/null || echo "Tests skipped"
+        run: bash -c "cd CPQ12 && npm test -- --coverage 2>/dev/null || echo 'Tests skipped'"
 
       - name: Build frontend
-        run: npm run build:frontend --prefix CPQ12 2>/dev/null || echo "Frontend build skipped"
+        run: bash -c "cd CPQ12 && npm run build:frontend 2>/dev/null || echo 'Frontend build skipped'"
 
       - name: Build Docker image
         run: docker build -t cpq12:${{ github.sha }} CPQ12/.
