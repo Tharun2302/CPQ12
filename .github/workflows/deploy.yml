@@ -36,9 +36,42 @@ jobs:
         run: |
           docker run --rm cpq12:${{ github.sha }} node -e "console.log('Container build successful')"
 
+  deploy-dev:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/feature/gstack-implementation'
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Deploy to development server
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEV_SERVER: ${{ secrets.DEPLOY_HOST }}
+          DEV_USER: ${{ secrets.DEPLOY_USER }}
+          DEV_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DEV_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          bash ./scripts/deploy-dev.sh
+
+      - name: Notify deployment success
+        if: success()
+        run: echo "✅ Deployment to dev server successful! Backend: http://${{ secrets.DEPLOY_HOST }}:3000 Frontend: http://${{ secrets.DEPLOY_HOST }}:5173"
+
+      - name: Notify deployment failure
+        if: failure()
+        run: echo "❌ Deployment to dev server failed! Check logs for details."
+
   deploy-staging:
     needs: build-and-test
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/feature/gstack-implementation'
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     environment: staging
 
