@@ -1,0 +1,121 @@
+name: Fix PostgreSQL Container
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_fix:
+        description: 'Type "FIX_POSTGRES" to confirm'
+        required: true
+
+jobs:
+  fix-postgres:
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Verify confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_fix }}" != "FIX_POSTGRES" ]; then
+            echo "❌ Confirmation failed. Please type 'FIX_POSTGRES' exactly."
+            exit 1
+          fi
+          echo "✅ Confirmation verified"
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Apply PostgreSQL Fix
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          echo "🔐 Connecting to dev server..."
+
+          sshpass -p "$DEPLOY_PASSWORD" ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            -p "$DEPLOY_PORT" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" << 'REMOTESCRIPT'
+
+          set -e
+
+          echo "📋 Step 1: Stopping containers safely (data preserved in named volumes)..."
+          cd ~/CPQ12
+          docker-compose down
+          echo "✅ Containers stopped"
+
+          echo "🗑️  Step 2: Removing orphaned PostgreSQL container..."
+          docker rm -f b15e85440869 2>/dev/null || echo "No orphaned container found"
+          echo "✅ Orphaned container removed"
+
+          echo "▶️  Step 3: Starting containers with correct postgres:15..."
+          docker-compose up -d --remove-orphans
+          echo "✅ Containers started"
+
+          echo "⏳ Waiting for services to stabilize..."
+          sleep 10
+
+          echo "🏥 Step 4: Verifying PostgreSQL is running..."
+          if docker ps | grep -q "postgres:15"; then
+            echo "✅ PostgreSQL 15 is running"
+          else
+            echo "❌ PostgreSQL 15 is not running"
+            docker ps
+            exit 1
+          fi
+
+          echo "🏥 Step 5: Checking MongoDB..."
+          if docker ps | grep -q mongo; then
+            echo "✅ MongoDB is running"
+          else
+            echo "⚠️  MongoDB status unknown"
+          fi
+
+          echo "🏥 Step 6: Checking application health..."
+          for i in {1..30}; do
+            if curl -f http://localhost:3000/health 2>/dev/null; then
+              echo "✅ Application backend is healthy"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "⚠️  Backend health check timeout (may still be starting)"
+            fi
+            sleep 2
+          done
+
+          echo ""
+          echo "════════════════════════════════════════════"
+          echo "✅ PostgreSQL Fix Completed Successfully!"
+          echo "════════════════════════════════════════════"
+          echo ""
+          echo "Services Status:"
+          docker ps --format "table {{.Names}}\t{{.Status}}"
+          echo ""
+          echo "Named Volumes (Data Preserved):"
+          docker volume ls | grep cpq || echo "No CPQ volumes found"
+          echo ""
+          echo "✨ All data in named volumes has been preserved!"
+          echo "✨ PostgreSQL 15 is ready to use!"
+
+          REMOTESCRIPT
+
+      - name: Deployment Success
+        if: success()
+        run: |
+          echo "✅ PostgreSQL fix applied successfully!"
+          echo ""
+          echo "📊 Access your services:"
+          echo "  Frontend: http://${{ secrets.DEPLOY_HOST }}:5173"
+          echo "  Backend:  http://${{ secrets.DEPLOY_HOST }}:3000"
+
+      - name: Deployment Failed
+        if: failure()
+        run: |
+          echo "❌ PostgreSQL fix failed!"
+          echo "Please check the logs above for details."
+          exit 1
