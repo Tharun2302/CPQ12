@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongo:27017/cpq12
+      - POSTGRES_URI=postgresql://cpq12:cpq12pass@postgres:5432/cpq12_signatures
+      - JWT_SECRET=your-jwt-secret-key-change-in-production
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
+    depends_on:
+      - mongo
+      - postgres
+    volumes:
+      - ./CPQ12:/app/CPQ12
+      - ./backend-uploads:/app/uploads
+      - ./backend-exhibits:/app/exhibits
+    networks:
+      - cpq-network
+
+  mongo:
+    image: mongo:5
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=cpq12pass
+    networks:
+      - cpq-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=cpq12
+      - POSTGRES_PASSWORD=cpq12pass
+      - POSTGRES_DB=cpq12_signatures
+    networks:
+      - cpq-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpq12"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo-data:
+  postgres-data:
+
+networks:
+  cpq-network:
+    driver: bridge
