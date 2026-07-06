@@ -11853,8 +11853,24 @@ app.put('/api/authorization-requests/:id/status', async (req, res) => {
   }
 });
 
-// Start the server
-startServer();
+// Global error handlers (catch any unhandled errors)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️  Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('⚠️  Uncaught Exception:', error);
+  // Don't exit - let the app continue running
+});
+
+// Start the server with error handling
+try {
+  startServer().catch((error) => {
+    console.error('⚠️  Error in startServer:', error);
+  });
+} catch (error) {
+  console.error('⚠️  Error starting server:', error);
+}
 
 // ─── E-sign Expiry Reminder Scheduler ────────────────────────────────────────
 // Runs hourly and sends one reminder when a pending recipient is within the
