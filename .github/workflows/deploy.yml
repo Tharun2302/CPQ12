@@ -17,6 +17,17 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Debug - List repository structure
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Root directory contents ==="
+          ls -la /home/runner/work/CPQ12/CPQ12/
+          echo "=== Checking for package.json ==="
+          find /home/runner/work/CPQ12/CPQ12 -name "package.json" -type f
+          echo "=== Checking CPQ12 subdirectory ==="
+          ls -la /home/runner/work/CPQ12/CPQ12/CPQ12/ 2>/dev/null || echo "CPQ12 subdirectory not found"
+
       - name: Install dependencies
         run: bash -c "cd CPQ12 && npm install"
 
