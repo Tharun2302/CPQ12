@@ -11501,11 +11501,18 @@ app.get(/^(?!\/api)(?!\/assets)(?!\/[^/]*\.(js|mjs|css|ico|svg|woff2?)(\?.*)?$).
   sendIndexHtml(res);
 });
 
-// Start server after database initialization
+// Start server after database initialization (with graceful fallback)
 async function startServer() {
   try {
     console.log('🔍 Initializing database connection...');
-    databaseAvailable = await initializeDatabase();
+    try {
+      databaseAvailable = await initializeDatabase();
+      console.log('✅ Database connection successful');
+    } catch (dbError) {
+      console.warn('⚠️  Database connection failed:', dbError.message);
+      console.warn('⚠️  Server will start without database (graceful degradation)');
+      databaseAvailable = false;
+    }
 
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
