@@ -140,7 +140,8 @@ stop_container() {
     remote_exec "
         docker stop cpq12-dev 2>/dev/null || true
         docker rm cpq12-dev 2>/dev/null || true
-        echo 'Container stopped'
+        docker compose down --remove-orphans 2>/dev/null || true
+        echo 'Container stopped and orphans removed'
     "
 
     log "INFO" "${GREEN}✅ Container stopped${NC}"
@@ -193,7 +194,7 @@ start_container() {
 
         # Check if docker-compose.yml exists, else use default config
         if [ -f docker-compose.yml ]; then
-            docker-compose -f docker-compose.yml up -d
+            docker-compose -f docker-compose.yml up -d --remove-orphans
         else
             # Fallback to docker run if docker-compose not available
             docker run -d \
