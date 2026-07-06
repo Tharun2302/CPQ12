@@ -32,6 +32,12 @@ setup_ssh_key() {
         exit 1
     fi
 
+    # Verify sshpass is available for password-based SSH
+    if ! command -v sshpass &> /dev/null; then
+        echo -e "${RED}❌ Error: sshpass is not installed${NC}"
+        exit 1
+    fi
+
     log "INFO" "${GREEN}✅ SSH password configured${NC}"
 }
 
@@ -58,10 +64,10 @@ log() {
     echo -e "${timestamp} [${level}] ${message}" | tee -a "$DEPLOY_LOG"
 }
 
-# Execute remote command with SSH key
+# Execute remote command with password authentication
 remote_exec() {
     local cmd="$1"
-    ssh -i ~/"$SSH_KEY_FILE" \
+    sshpass -p "$DEPLOY_PASSWORD" ssh \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=10 \
@@ -73,7 +79,7 @@ remote_exec() {
 # Execute multi-line remote script
 remote_exec_script() {
     local script="$1"
-    ssh -i ~/"$SSH_KEY_FILE" \
+    sshpass -p "$DEPLOY_PASSWORD" ssh \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=10 \
@@ -88,7 +94,7 @@ REMOTESCRIPT
 test_connection() {
     log "INFO" "${BLUE}🔗 Testing SSH connection to ${DEV_USER}@${DEV_SERVER}:${DEV_PORT}...${NC}"
 
-    if ssh -i ~/"$SSH_KEY_FILE" \
+    if sshpass -p "$DEPLOY_PASSWORD" ssh \
         -o ConnectTimeout=10 \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
@@ -271,12 +277,9 @@ deployment_summary() {
     log "INFO" "${GREEN}========================================${NC}"
 }
 
-# Cleanup SSH key file
+# Cleanup (no SSH key file to clean up with password auth)
 cleanup_ssh_key() {
-    if [ -f ~/"$SSH_KEY_FILE" ]; then
-        rm -f ~/"$SSH_KEY_FILE"
-        log "INFO" "${GREEN}✅ SSH key file cleaned up${NC}"
-    fi
+    log "INFO" "${GREEN}✅ Cleanup completed${NC}"
 }
 
 # Main deployment flow
