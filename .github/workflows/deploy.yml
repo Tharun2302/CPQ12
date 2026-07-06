@@ -40,7 +40,7 @@ jobs:
         run: npm run build --prefix CPQ12 2>/dev/null || echo "Frontend build skipped"
 
       - name: Build Docker image
-        run: docker build -t cpq12:${{ github.sha }} .
+        run: docker build -t cpq12:${{ github.sha }} CPQ12/.
 
       - name: Run container tests
         run: |
