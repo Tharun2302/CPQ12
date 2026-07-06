@@ -63,11 +63,11 @@ jobs:
 
       - name: Notify deployment success
         if: success()
-        run: echo "Deployment to dev server successful! Backend: http://${{ secrets.DEPLOY_HOST }}:3000 Frontend: http://${{ secrets.DEPLOY_HOST }}:5173"
+        run: echo 'Deployment to dev server successful! Backend: http://${{ secrets.DEPLOY_HOST }}:3000 Frontend: http://${{ secrets.DEPLOY_HOST }}:5173'
 
       - name: Notify deployment failure
         if: failure()
-        run: echo "Deployment to dev server failed! Check logs for details."
+        run: echo 'Deployment to dev server failed! Check logs for details.'
 
   deploy-staging:
     needs: build-and-test
