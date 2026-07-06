@@ -29,11 +29,11 @@ COPY CPQ12/server.cjs ./
 COPY CPQ12 ./CPQ12
 
 # Expose ports
-EXPOSE 3000 5173
+EXPOSE 3001 5173
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
+  CMD node -e "require('http').get('http://localhost:3001/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
 
 # Start app
 CMD ["node", "server.cjs"]
