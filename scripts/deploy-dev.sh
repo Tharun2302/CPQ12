@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # CPQ12 Development Deployment Script
-# Deploys to development server with SSH key authentication
-# Usage: DEPLOY_SSH_KEY="$(cat ~/.ssh/deploy_key)" bash scripts/deploy-dev.sh
-# Or set environment variables: DEV_SERVER, DEV_USER, DEPLOY_SSH_KEY
+# Deploys to development server with SSH password authentication
+# Usage: DEPLOY_PASSWORD="password" bash scripts/deploy-dev.sh
+# Or set environment variables: DEV_SERVER, DEV_USER, DEPLOY_PASSWORD
 
 set -e
 
@@ -26,25 +26,20 @@ SSH_KEY_FILE="${SSH_KEY_FILE:-.ssh/deploy_key}"
 
 # Setup SSH key file
 setup_ssh_key() {
-    if [ -z "$DEPLOY_SSH_KEY" ]; then
-        echo -e "${RED}❌ Error: DEPLOY_SSH_KEY environment variable is required${NC}"
-        echo "Usage: DEPLOY_SSH_KEY=\"\$(cat ~/.ssh/deploy_key)\" bash scripts/deploy-dev.sh"
+    if [ -z "$DEPLOY_PASSWORD" ]; then
+        echo -e "${RED}❌ Error: DEPLOY_PASSWORD environment variable is required${NC}"
+        echo "Usage: DEPLOY_PASSWORD='password' bash scripts/deploy-dev.sh"
         exit 1
     fi
 
-    # Create SSH key file from environment variable (decode base64)
-    mkdir -p ~/.ssh
-    echo "$DEPLOY_SSH_KEY" | base64 -d > ~/"$SSH_KEY_FILE"
-    chmod 600 ~/"$SSH_KEY_FILE"
-
-    log "INFO" "${GREEN}✅ SSH key file created${NC}"
+    log "INFO" "${GREEN}✅ SSH password configured${NC}"
 }
 
 # Validate inputs
 validate_inputs() {
-    if [ -z "$DEPLOY_SSH_KEY" ]; then
-        echo -e "${RED}❌ Error: DEPLOY_SSH_KEY environment variable is required${NC}"
-        echo "Usage: DEPLOY_SSH_KEY=\"\$(cat ~/.ssh/deploy_key)\" bash scripts/deploy-dev.sh"
+    if [ -z "$DEPLOY_PASSWORD" ]; then
+        echo -e "${RED}❌ Error: DEPLOY_PASSWORD environment variable is required${NC}"
+        echo "Usage: DEPLOY_PASSWORD='password' bash scripts/deploy-dev.sh"
         exit 1
     fi
 
