@@ -11501,51 +11501,36 @@ app.get(/^(?!\/api)(?!\/assets)(?!\/[^/]*\.(js|mjs|css|ico|svg|woff2?)(\?.*)?$).
   sendIndexHtml(res);
 });
 
-// Start server after database initialization (with graceful fallback)
+// Start server immediately, then initialize database in background
 async function startServer() {
   try {
-    console.log('🔍 Initializing database connection...');
-    try {
-      databaseAvailable = await initializeDatabase();
-      console.log('✅ Database connection successful');
-    } catch (dbError) {
-      console.warn('⚠️  Database connection failed:', dbError.message);
-      console.warn('⚠️  Server will start without database (graceful degradation)');
-      databaseAvailable = false;
-    }
+    console.log('🚀 Starting server on port', PORT);
 
-    app.listen(PORT, () => {
+    // Start listening FIRST (don't wait for DB)
+    const server = app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📐 DOCX preprocessor v3 loaded (sorts anchors by horizontal page position before tabling)`);
-      console.log(`📊 Database available: ${databaseAvailable}`);
       console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
       const appBase = process.env.APP_BASE_URL || 'http://localhost:5173';
       console.log(`🔗 Signing links in emails use: ${appBase} (set APP_BASE_URL in .env to change)`);
       console.log(`🔗 HubSpot API key: ${HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'}`);
-      console.log(`🌐 Available endpoints:`);
-      console.log(`   - GET  /`);
-      console.log(`   - GET  /api/health`);
-      console.log(`   - GET  /api/database/health`);
-      console.log(`   - GET  /api/test-mongodb`);
-      console.log(`   - POST /api/auth/register`);
-      console.log(`   - POST /api/auth/login`);
-      console.log(`   - GET  /api/auth/me`);
-      console.log(`   - POST /api/auth/microsoft`);
-      console.log(`   - GET  /api/quotes`);
-      console.log(`   - POST /api/quotes`);
-      console.log(`   - PUT  /api/quotes/:id`);
-      console.log(`   - DELETE /api/quotes/:id`);
-      console.log(`   - GET  /api/pricing-tiers`);
-      console.log(`   - POST /api/pricing-tiers`);
-      console.log(`   - GET  /api/hubspot/contacts`);
-      console.log(`   - GET  /api/hubspot/deals`);
-      console.log(`   - POST /api/hubspot/contacts`);
-      console.log(`   - POST /api/templates`);
-      console.log(`   - GET  /api/templates`);
-      console.log(`   - GET  /api/templates/:id/file`);
-      console.log(`   - PUT  /api/templates/:id`);
-      console.log(`   - DELETE /api/templates/:id`);
+      console.log(`🌐 Health check: GET /api/health`);
+      console.log(`🌐 Database health: GET /api/database/health`);
     });
+
+    // Initialize database in background (don't block startup)
+    setTimeout(async () => {
+      try {
+        console.log('🔍 Initializing database connection...');
+        databaseAvailable = await initializeDatabase();
+        console.log('✅ Database connection successful');
+      } catch (dbError) {
+        console.warn('⚠️  Database connection failed:', dbError.message);
+        console.warn('⚠️  Server running without database (graceful degradation)');
+        databaseAvailable = false;
+      }
+    }, 1000);
+
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
