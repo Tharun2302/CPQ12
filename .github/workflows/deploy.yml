@@ -9,6 +9,9 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CPQ12
 
     steps:
       - uses: actions/checkout@v3
@@ -59,7 +62,7 @@ jobs:
           DEV_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
           DEV_PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
-          bash ./scripts/deploy-dev.sh
+          bash CPQ12/scripts/deploy-dev.sh
 
       - name: Notify deployment success
         if: success()
@@ -90,7 +93,7 @@ jobs:
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H $STAGING_SERVER >> ~/.ssh/known_hosts 2>/dev/null
-          bash ./scripts/deploy-staging.sh
+          bash CPQ12/scripts/deploy-staging.sh
 
   deploy-production:
     needs: build-and-test
@@ -111,7 +114,7 @@ jobs:
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H $PRODUCTION_SERVER >> ~/.ssh/known_hosts 2>/dev/null
-          bash ./scripts/deploy-production.sh
+          bash CPQ12/scripts/deploy-production.sh
 
   notify:
     needs: [build-and-test]
