@@ -67,14 +67,10 @@ jobs:
 
       - name: Deploy to development server
         env:
-          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          DEV_SERVER: ${{ secrets.DEPLOY_HOST }}
-          DEV_USER: ${{ secrets.DEPLOY_USER }}
-          DEV_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
-          DEV_PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
           bash scripts/deploy-dev.sh
 
