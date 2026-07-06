@@ -21,12 +21,15 @@ services:
       context: ../
       dockerfile: Dockerfile
       args:
-        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3000}
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api}
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3001}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001/api}
         VITE_MSAL_CLIENT_ID: ${VITE_MSAL_CLIENT_ID}
         VITE_MSAL_REDIRECT_URI: ${VITE_MSAL_REDIRECT_URI}
         VITE_CLARITY_ID: ${VITE_CLARITY_ID}
     container_name: cpq-application
+    ports:
+      - "3001:3001"
+      - "5173:5173"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3001
