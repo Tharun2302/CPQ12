@@ -23,8 +23,9 @@ WORKDIR /app
 # Copy from builder
 COPY --from=builder /app/dist ./frontend/dist 2>/dev/null || true
 COPY --from=builder /app/node_modules ./node_modules
-COPY package*.json ./
-COPY server.cjs ./
+COPY CPQ12/package.json ./
+COPY CPQ12/package-lock.json ./
+COPY CPQ12/server.cjs ./
 COPY CPQ12 ./CPQ12
 
 # Expose ports
