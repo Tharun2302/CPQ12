@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased] - 2026-07-07
 
+### Added
+- Restored the six-card "Everything you need to succeed" features section on the landing page (Smart Pricing, Template Management, HubSpot Integration, Digital Signatures, Analytics, Fast & Reliable).
+
 ### Changed
 - Refreshed the landing page (`src/pages/LandingPage.tsx`) color theme: background gradient moved from blue/indigo to indigo/white/violet.
 - Hero badge and "Sign In" button now use an indigo-to-violet gradient instead of solid blue.
