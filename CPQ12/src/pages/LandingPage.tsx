@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Calculator, Users, FileText, BarChart3, Shield, Zap } from 'lucide-react';
+import { Calculator, Users, FileText, BarChart3, Shield } from 'lucide-react';
 
 const LandingPage: React.FC = () => {
   return (
@@ -82,16 +82,6 @@ const LandingPage: React.FC = () => {
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Analytics</h3>
               <p className="text-gray-600">
                 Track quote performance, conversion rates, and sales insights.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
-              <span className="inline-block bg-teal-100 rounded-full p-3 mb-4">
-                <Zap className="h-8 w-8 text-teal-600" />
-              </span>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Fast & Reliable</h3>
-              <p className="text-gray-600">
-                Lightning-fast quote generation with 99.9% uptime and enterprise security.
               </p>
             </div>
           </div>
