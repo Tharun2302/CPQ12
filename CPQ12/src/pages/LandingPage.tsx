@@ -67,12 +67,19 @@ const LandingPage: React.FC = () => {
               </p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <BarChart3 className="h-12 w-12 text-yellow-600 mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Analytics</h3>
-              <p className="text-gray-600">
-                Track quote performance, conversion rates, and sales insights.
-              </p>
+            <div className="relative bg-white p-6 rounded-lg shadow-md overflow-hidden">
+              <div className="blur-sm pointer-events-none select-none">
+                <BarChart3 className="h-12 w-12 text-yellow-600 mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Analytics</h3>
+                <p className="text-gray-600">
+                  Track quote performance, conversion rates, and sales insights.
+                </p>
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="bg-gray-900 text-white text-xs font-semibold px-3 py-1 rounded-full">
+                  Coming Soon
+                </span>
+              </div>
             </div>
             
             <div className="bg-white p-6 rounded-lg shadow-md">
