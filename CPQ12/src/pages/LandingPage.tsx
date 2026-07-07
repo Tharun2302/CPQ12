@@ -22,7 +22,7 @@ const LandingPage: React.FC = () => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               to="/signin"
-              className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-semibold border-2 border-blue-600 hover:bg-blue-50 transition-colors"
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Sign In
             </Link>
@@ -85,21 +85,6 @@ const LandingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* CTA Section */}
-        <div className="mt-20 bg-blue-600 rounded-2xl p-12 text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Ready to transform your sales process?
-          </h2>
-          <p className="text-xl text-blue-100 mb-8">
-            Trusted by leading companies worldwide to streamline their quoting process.
-          </p>
-          <Link
-            to="/signup"
-            className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-semibold hover:bg-gray-100 transition-colors"
-          >
-            Start Your Free Trial
-          </Link>
-        </div>
       </main>
 
       {/* Footer */}
