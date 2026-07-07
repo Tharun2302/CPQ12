@@ -13,8 +13,8 @@ RUN npm ci
 # Copy source
 COPY CPQ12 .
 
-# Build frontend
-RUN rm -rf dist && npm run build
+# Build frontend (no sourcemaps + capped heap so the build fits on low-memory hosts)
+RUN rm -rf dist && GENERATE_SOURCEMAP=false NODE_OPTIONS=--max-old-space-size=1536 npm run build
 
 # Runtime stage
 FROM node:22

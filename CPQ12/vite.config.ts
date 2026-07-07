@@ -41,8 +41,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     // Enable minification (esbuild is faster and default in Vite 7)
     minify: 'esbuild',
-    // Enable source maps for production debugging (helps identify issues)
-    sourcemap: true,
+    // Sourcemaps aid production debugging but OOM low-memory build hosts; GENERATE_SOURCEMAP=false opts out
+    sourcemap: process.env.GENERATE_SOURCEMAP !== 'false',
     // CommonJS options for better compatibility
     commonjsOptions: {
       include: [/node_modules/],
