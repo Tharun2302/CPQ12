@@ -1,5 +1,6 @@
 # Build stage
-FROM node:18 AS builder
+# Vite 7 requires Node >= 20.19
+FROM node:22 AS builder
 
 WORKDIR /app
 
@@ -13,10 +14,10 @@ RUN npm ci
 COPY CPQ12 .
 
 # Build frontend
-RUN npm run build 2>/dev/null || echo "Frontend build skipped"
+RUN rm -rf dist && npm run build
 
 # Runtime stage
-FROM node:18
+FROM node:22
 
 WORKDIR /app
 

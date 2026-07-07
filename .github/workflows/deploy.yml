@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '22'
 
       - name: Verify CPQ12 structure
         run: |
@@ -37,7 +37,7 @@ jobs:
         run: npm test --prefix CPQ12 -- --coverage 2>/dev/null || echo "Tests skipped"
 
       - name: Build frontend
-        run: npm run build --prefix CPQ12 2>/dev/null || echo "Frontend build skipped"
+        run: npm run build --prefix CPQ12
 
       - name: Build Docker image
         run: docker build -t cpq12:${{ github.sha }} .
