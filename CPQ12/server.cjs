@@ -141,24 +141,32 @@ function isAllowedOrigin(origin) {
   return prodOrigins.has(origin);
 }
 
+// Same-origin requests also carry an Origin header (crossorigin script/style tags, module scripts),
+// so always allow origins matching the request's own Host — otherwise the app 500s serving its own assets.
+function isSameOrigin(origin, host) {
+  if (!origin || !host) return false;
+  return origin.replace(/^https?:\/\//i, '').toLowerCase() === String(host).toLowerCase();
+}
+
 // Middleware - Configure CORS to allow frontend requests
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || isAllowedOrigin(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS: ' + origin));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
+app.use(cors((req, callback) => {
+  const origin = req.headers.origin;
+  if (!origin || isSameOrigin(origin, req.headers.host) || isAllowedOrigin(origin)) {
+    callback(null, {
+      origin: true,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
+    });
+  } else {
+    callback(new Error('Not allowed by CORS: ' + origin));
+  }
 }));
 
 // Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
+  if (origin && (isSameOrigin(origin, req.headers.host) || isAllowedOrigin(origin))) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Vary', 'Origin');
     res.header('Access-Control-Allow-Credentials', 'true');
