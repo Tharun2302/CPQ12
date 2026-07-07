@@ -3,8 +3,9 @@ version: '3.8'
 services:
   backend:
     build: .
+    container_name: cpq-application
     ports:
-      - "3000:3000"
+      - "3001:3001"
       - "5173:5173"
     environment:
       - NODE_ENV=development

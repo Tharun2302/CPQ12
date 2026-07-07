@@ -76,20 +76,6 @@ remote_exec() {
         "$cmd"
 }
 
-# Execute multi-line remote script
-remote_exec_script() {
-    local script="$1"
-    sshpass -p "$DEPLOY_PASSWORD" ssh \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -o ConnectTimeout=10 \
-        -p "$DEV_PORT" \
-        "${DEV_USER}@${DEV_SERVER}" \
-        bash -s << 'REMOTESCRIPT'
-$script
-REMOTESCRIPT
-}
-
 # Test SSH connection
 test_connection() {
     log "INFO" "${BLUE}🔗 Testing SSH connection to ${DEV_USER}@${DEV_SERVER}:${DEV_PORT}...${NC}"
@@ -119,18 +105,29 @@ create_backup() {
         BACKUP_PATH=\"${BACKUP_DIR}/backup_\${BACKUP_TIME}\"
         mkdir -p \"\$BACKUP_PATH\"
 
-        if docker ps | grep -q cpq12-dev; then
-            echo 'Backing up MongoDB...'
-            docker exec cpq12-dev mongodump --out \"\$BACKUP_PATH/mongo_backup\" 2>/dev/null || true
+        MONGO_CONTAINER=\$(docker ps --filter name=mongo --format '{{.Names}}' | head -n1)
+        if [ -n \"\$MONGO_CONTAINER\" ]; then
+            echo \"Backing up MongoDB from \$MONGO_CONTAINER...\"
+            docker exec \"\$MONGO_CONTAINER\" sh -c 'mongodump -u \"\$MONGO_INITDB_ROOT_USERNAME\" -p \"\$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --out /tmp/mongo_backup' \
+                && docker cp \"\$MONGO_CONTAINER:/tmp/mongo_backup\" \"\$BACKUP_PATH/mongo_backup\" \
+                || echo 'WARNING: MongoDB backup failed'
+        else
+            echo 'WARNING: No MongoDB container running, skipping backup'
+        fi
 
-            echo 'Backing up PostgreSQL...'
-            docker exec cpq12-dev pg_dump cpq12_signatures > \"\$BACKUP_PATH/postgres_backup.sql\" 2>/dev/null || true
+        PG_CONTAINER=\$(docker ps --filter name=postgres --format '{{.Names}}' | head -n1)
+        if [ -n \"\$PG_CONTAINER\" ]; then
+            echo \"Backing up PostgreSQL from \$PG_CONTAINER...\"
+            docker exec \"\$PG_CONTAINER\" pg_dump -U cpq12 cpq12_signatures > \"\$BACKUP_PATH/postgres_backup.sql\" \
+                || echo 'WARNING: PostgreSQL backup failed'
+        else
+            echo 'WARNING: No PostgreSQL container running, skipping backup'
         fi
 
         echo \"Backup created at: \$BACKUP_PATH\"
     "
 
-    log "INFO" "${GREEN}✅ Backup completed${NC}"
+    log "INFO" "${GREEN}✅ Backup step completed${NC}"
 }
 
 # Stop existing container
@@ -138,10 +135,15 @@ stop_container() {
     log "INFO" "${YELLOW}🛑 Stopping existing container...${NC}"
 
     remote_exec "
-        docker stop cpq12-dev 2>/dev/null || true
-        docker rm cpq12-dev 2>/dev/null || true
-        docker compose down --remove-orphans 2>/dev/null || true
-        echo 'Container stopped and orphans removed'
+        cd ${APP_DIR} 2>/dev/null || true
+        if docker compose version >/dev/null 2>&1; then
+            docker compose down --remove-orphans 2>/dev/null || true
+        else
+            docker-compose down --remove-orphans 2>/dev/null || true
+        fi
+        docker rm -f cpq-application 2>/dev/null || true
+        docker rm -f cpq12-dev 2>/dev/null || true
+        echo 'Containers stopped and orphans removed'
     "
 
     log "INFO" "${GREEN}✅ Container stopped${NC}"
@@ -163,7 +165,7 @@ pull_code() {
 
         git fetch origin ${BRANCH}
         git checkout -f ${BRANCH}
-        git pull origin ${BRANCH}
+        git reset --hard origin/${BRANCH}
         echo 'Code pulled successfully'
     "
 
@@ -192,23 +194,19 @@ start_container() {
         set -e
         cd ${APP_DIR}
 
-        # Force remove any orphaned containers before starting (handles docker-compose V1 issues)
-        docker rm -f b15e85440869 2>/dev/null || true
-        docker rm -f b15e85440869_cpq-postgres 2>/dev/null || true
-
         # Check if docker-compose.yml exists, else use default config
         if [ -f docker-compose.yml ]; then
             # Try docker compose V2 first (better orphan handling), fall back to V1
-            if command -v docker compose &> /dev/null; then
-                docker compose -f docker-compose.yml up -d --remove-orphans
+            if docker compose version >/dev/null 2>&1; then
+                docker compose -f docker-compose.yml up -d --build --remove-orphans
             else
-                docker-compose -f docker-compose.yml up -d --remove-orphans
+                docker-compose -f docker-compose.yml up -d --build --remove-orphans
             fi
         else
             # Fallback to docker run if docker-compose not available
             docker run -d \
-                --name cpq12-dev \
-                -p 3000:3000 \
+                --name cpq-application \
+                -p 3001:3001 \
                 -p 5173:5173 \
                 -e NODE_ENV=development \
                 -e MONGODB_URI=mongodb://mongo:27017/cpq12 \
@@ -280,7 +278,7 @@ deployment_summary() {
     log "INFO" "Server: ${DEV_SERVER}"
     log "INFO" "User: ${DEV_USER}"
     log "INFO" "Branch: ${BRANCH}"
-    log "INFO" "Backend: http://${DEV_SERVER}:3000"
+    log "INFO" "Backend: http://${DEV_SERVER}:3001"
     log "INFO" "Frontend: http://${DEV_SERVER}:5173"
     log "INFO" "MongoDB: mongodb://${DEV_SERVER}:27017"
     log "INFO" "PostgreSQL: postgresql://${DEV_SERVER}:5432"
