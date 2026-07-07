@@ -61,17 +61,29 @@ Complete pipeline for implementing a new feature from requirements to deployment
 - User guide
 - Update README and CHANGELOG
 
-### Phase 9: Deployment Preparation
+### Phase 9: Commit & Release Decision (requires user confirmation)
+- Gate 1 — Ask user: commit and push to the working branch? (never auto-commit)
+  - If no: stop, nothing is saved
+  - If yes: stage only the files relevant to this feature, commit with conventional commit message (feat: ...), push to the feature branch
+- Gate 2 — Ask user: deploy this feature now, or stop here (commit only)?
+  - If no deploy: workflow ends after commit — do not ask about environments
+- Gate 3 (only if Gate 2 = yes) — Ask user: target environment?
+  - **dev** = push stays on the feature branch → CI auto-deploys to the dev server
+  - **production** = MERGE the feature branch into `main` and push → CI auto-deploys to production
+- IMPORTANT: in this repo, merging to `main` and deploying to production are the SAME action — any push to `main` triggers the production deploy job. There is no merge-without-deploy path. Never merge to `main` unless the user explicitly chose production at Gate 3
+- Only proceed to Deployment phases after explicit approval
+
+### Phase 10: Deployment Preparation
 - DevOps Engineer prepares deployment
 - Update Docker files
 - Create deployment scripts
 - Prepare CI/CD configuration
 - Test deployment in staging
 
-### Phase 10: Final Review & Deployment
+### Phase 11: Final Review & Deployment
 - All stakeholders review
 - Approve for production deployment
-- DevOps Engineer deploys to production
+- DevOps Engineer deploys to approved target environment
 - Monitor for issues
 - Verify feature works
 
@@ -83,7 +95,8 @@ Complete pipeline for implementing a new feature from requirements to deployment
 - [ ] Code review approved
 - [ ] QA testing passed
 - [ ] Documentation complete
-- [ ] Feature working in production
+- [ ] User approved commit, merge decision, and deploy target
+- [ ] Feature working in approved environment
 
 ## Timeline
 

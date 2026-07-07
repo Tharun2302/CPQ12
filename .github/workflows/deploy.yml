@@ -5,6 +5,13 @@ on:
     branches: [main, master, develop, feature/gstack-implementation]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      commit_ref:
+        type: string
+        required: false
+        default: ''
+        description: "Commit SHA to roll back to on the dev server. Leave blank to roll back exactly one commit (HEAD~1)."
 
 jobs:
   build-and-test:
@@ -87,6 +94,47 @@ jobs:
         if: failure()
         run: |
           echo "Deployment to dev server failed! Check logs for details."
+
+  rollback-dev:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Validate commit_ref input
+        env:
+          COMMIT_REF: ${{ github.event.inputs.commit_ref }}
+        run: |
+          if [[ ! "$COMMIT_REF" =~ ^([a-zA-Z0-9][a-zA-Z0-9._/~^-]*)?$ ]]; then
+            echo "ERROR: commit_ref must be blank, or start with a letter/digit and contain only [a-zA-Z0-9._/~^-]."
+            exit 1
+          fi
+
+      - name: Rollback development server
+        env:
+          COMMIT_REF: ${{ github.event.inputs.commit_ref }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DEV_SERVER: ${{ secrets.DEPLOY_HOST }}
+          DEV_USER: ${{ secrets.DEPLOY_USER }}
+          DEV_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          TARGET="${COMMIT_REF:-HEAD~1}"
+          echo "Rolling back dev server to: ${TARGET}"
+          bash scripts/rollback-dev.sh "$TARGET"
+
+      - name: Notify rollback status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "Rollback of dev server successful! Backend: http://${{ secrets.DEPLOY_HOST }}:3001 Frontend: http://${{ secrets.DEPLOY_HOST }}:5173"
+          else
+            echo "Rollback of dev server failed! Check logs for details."
+          fi
 
   deploy-staging:
     needs: build-and-test

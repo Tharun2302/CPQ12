@@ -110,6 +110,12 @@ list_git_history() {
 # Rollback using git history
 rollback_git() {
     local commit_ref=$1
+
+    if [[ ! "$commit_ref" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/~^-]*$ ]]; then
+        log_error "Invalid commit_ref '${commit_ref}': must start with a letter/digit, and contain only [a-zA-Z0-9._/~^-]"
+        exit 1
+    fi
+
     log_warn "⚠️ ROLLBACK: Reverting to commit ${commit_ref}"
 
     remote_exec "

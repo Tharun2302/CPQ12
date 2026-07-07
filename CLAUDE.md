@@ -416,6 +416,33 @@ All agents follow these standards automatically!
 
 ---
 
+## 🔀 Workflow Selection (GStack vs Direct)
+
+**Default rule:** the size and risk of a task decides which flow Claude uses.
+
+### Use a GStack workflow (`.claude/workflows/`) by default for:
+- New features (any size) → `new-feature` workflow
+- Bug fixes → `bug-fix` workflow
+- Deployments → `deployment` workflow
+- Any change touching pricing logic, API endpoints, database models, auth, or CI/CD
+
+### Direct (normal) flow is allowed by default for:
+- Trivial single-file cosmetic edits (UI text, styling tweaks, removing static elements)
+- Documentation typos and comment fixes
+- Answering questions / investigations with no code change
+
+### User overrides (always win over the defaults):
+- Prefix a request with **"use gstack"** → run the full GStack workflow regardless of size
+- Prefix a request with **"quick fix"** or **"direct"** → skip the workflow and edit directly
+
+### Always (regardless of flow):
+- Borderline case? Ask the user which flow to use before starting
+- Ask for explicit user confirmation before any commit, merge, or deploy. The deploy gate is two steps: first ask WHETHER to deploy at all; only if yes, then ask the target — dev or production. If no deploy, stop after the commit
+- Choosing **production** = merging the working branch into `main`. Any push to `main` auto-triggers the production deploy in CI, so merge-to-main and production-deploy are ONE action — never merge to `main` without an explicit production approval at the target gate
+- State which flow was used when reporting the completed work
+
+---
+
 ## 📞 Communication
 
 ### For Questions:
@@ -468,6 +495,7 @@ All agents follow these standards automatically!
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-07-06 | Initial CLAUDE.md creation | CloudFuze |
+| 2026-07-07 | Added Workflow Selection rule (GStack vs Direct) | CloudFuze |
 
 ---
 
