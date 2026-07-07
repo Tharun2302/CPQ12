@@ -236,15 +236,16 @@ run_health_checks() {
     remote_exec "
         set -e
 
-        # Check if container is running
-        if ! docker ps | grep -q cpq12-dev; then
-            echo 'Error: Container is not running'
+        # Check if backend container is running
+        if ! docker ps | grep -q cpq-application; then
+            echo 'Error: Backend container is not running'
+            docker ps
             exit 1
         fi
 
         # Check backend health
         for i in {1..30}; do
-            if curl -f http://localhost:3000/health 2>/dev/null; then
+            if curl -f http://localhost:3001/api/health 2>/dev/null; then
                 echo 'Backend health check passed'
                 break
             fi
