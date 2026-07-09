@@ -31,11 +31,11 @@
 - **Styling:** TailwindCSS
 - **State Management:** React Context API + Hooks
 - **Form Handling:** React Hook Form
-- **Testing:** Jest + React Testing Library
+- **Testing:** Vitest + React Testing Library (Jest-compatible API; run with `npm test`)
 - **Port:** 5173
 
 ### Backend
-- **Framework:** Node.js 18 + Express.js
+- **Framework:** Node.js 20 LTS + Express.js (Vite 7 requires Node ≥20.19)
 - **Language:** JavaScript
 - **Database:** 
   - MongoDB (primary data)
@@ -438,7 +438,7 @@ All agents follow these standards automatically!
 ### Always (regardless of flow):
 - Borderline case? Ask the user which flow to use before starting
 - Ask for explicit user confirmation before any commit, merge, or deploy. The commit gate is two steps: first ask WHETHER to commit; then ask WHICH BRANCH to commit to — current, another existing, or a new branch (never assume the current one). The deploy gate is three steps: first ask WHETHER to deploy at all; if yes, ask WHICH BRANCH to deploy from; then ask the target — dev or production. If no deploy, stop after the commit
-- Choosing **production** = merging the working branch into `main`. Once a CI/CD pipeline is configured on `main`, any push to `main` auto-triggers the production deploy, so merge-to-main and production-deploy are ONE action — never merge to `main` without an explicit production approval at the target gate. (NOTE: `main` has no CI/CD pipeline yet; adding one is a separate, team-approved change)
+- Choosing **production** = merging the working branch into `main`. Once a CI/CD pipeline is configured on `main`, any push to `main` auto-triggers the production deploy, so merge-to-main and production-deploy are ONE action — never merge to `main` without an explicit production approval at the target gate. (NOTE: `main` has no CI/CD pipeline yet; adding one is a separate, team-approved change. The PR-only quality-gate workflow in `.github/workflows/ci.yml` — tests + build on pull requests, no push trigger, no deploy jobs — is NOT that pipeline and does not change this rule)
 - State which flow was used when reporting the completed work
 
 ---
