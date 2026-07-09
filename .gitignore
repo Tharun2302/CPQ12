@@ -37,6 +37,9 @@ start-*.ps1
 *.tmp
 *.temp
 
+# Test coverage output
+coverage/
+
 # Microsoft Word temp/lock files
 ~$*.docx
 
