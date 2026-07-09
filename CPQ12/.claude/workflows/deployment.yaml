@@ -12,7 +12,7 @@ Pipeline for deploying code to staging and production environments.
 - [ ] No breaking changes documented
 - [ ] Backups created
 - [ ] Team notified
-- [ ] User explicitly confirmed commit/push, THEN whether to deploy at all, THEN (only if deploying) target environment: dev vs production — never assume any of the three
+- [ ] User explicitly confirmed commit (and WHICH BRANCH to commit to — never assume the current one), THEN push, THEN whether to deploy at all, THEN (only if deploying) WHICH BRANCH to deploy from, THEN target environment: dev vs production — never assume any of these
 - [ ] Understand the merge rule: choosing **production** means merging the working branch into `main` — and any push to `main` auto-triggers the production deploy job in CI. Merge-to-main and production-deploy are one and the same action; never merge to `main` without an explicit production approval
 
 ## Phases
