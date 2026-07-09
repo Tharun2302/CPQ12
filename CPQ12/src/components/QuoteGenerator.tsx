@@ -661,7 +661,7 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
   // Helper function to update client info and notify parent
   const updateClientInfo = (updates: Partial<ClientInfo>) => {
     // Apply sanitization and space limitation for clientName field
-    const processedUpdates = { ...updates };
+    let processedUpdates = { ...updates };
     if (updates.clientName) {
       processedUpdates.clientName = sanitizeNameInput(updates.clientName);
       processedUpdates.clientName = limitConsecutiveSpaces(processedUpdates.clientName);
@@ -6216,7 +6216,7 @@ Total Price: {{total price}}`;
               
               // Helper to normalize combination name (same logic as ConfigurationForm extractCombinationName)
               const normalizeCombinationName = (name: string): string => {
-                const normalized = String(name).trim();
+                let normalized = String(name).trim();
 
                 // Remove common suffixes like:
                 // - " Standard Plan - Included Features"
@@ -7895,7 +7895,7 @@ Total Price: {{total price}}`;
             const migrationCost = calculation?.migrationCost ?? safeCalculation.migrationCost;
             // For single migrations, CloudFuze Manage is just the instance cost
             // (Migration cost and user/data costs are shown separately in the agreement table)
-            const cloudfuzeManageTotal = singleInstanceCost;
+            let cloudfuzeManageTotal = singleInstanceCost;
             
             // Do NOT add exhibit prices for single migrations - they already contain all costs
             // and would cause double-counting
@@ -7981,7 +7981,7 @@ Total Price: {{total price}}`;
             const userCost = (calculation || safeCalculation)?.userCost ?? 0;
             const dataCost = (calculation || safeCalculation)?.dataCost ?? 0;
             const usersCost = userCost + dataCost;
-            const calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
+            let calculatedDisplayedTotal = usersCost + (migrationCost || 0) + singleInstanceCost;
 
             const finalUsersCost = usersCost;
 

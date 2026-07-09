@@ -435,7 +435,7 @@ const ExhibitManager: React.FC = () => {
         // If no clean folder name, try to extract from combination
         if (!folderName) {
           // Extract base combination (remove include/notinclude and plan type suffixes)
-          const baseCombination = finalCombination
+          let baseCombination = finalCombination
             .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '')
             .replace(/-(included|include|notincluded|notinclude|not-include|basic|standard|advanced)$/i, '');
           

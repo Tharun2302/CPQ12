@@ -141,32 +141,24 @@ function isAllowedOrigin(origin) {
   return prodOrigins.has(origin);
 }
 
-// Same-origin requests also carry an Origin header (crossorigin script/style tags, module scripts),
-// so always allow origins matching the request's own Host — otherwise the app 500s serving its own assets.
-function isSameOrigin(origin, host) {
-  if (!origin || !host) return false;
-  return origin.replace(/^https?:\/\//i, '').toLowerCase() === String(host).toLowerCase();
-}
-
 // Middleware - Configure CORS to allow frontend requests
-app.use(cors((req, callback) => {
-  const origin = req.headers.origin;
-  if (!origin || isSameOrigin(origin, req.headers.host) || isAllowedOrigin(origin)) {
-    callback(null, {
-      origin: true,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
-    });
-  } else {
-    callback(new Error('Not allowed by CORS: ' + origin));
-  }
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS: ' + origin));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY']
 }));
 
 // Extra CORS guard to overwrite any conflicting headers and satisfy strict preflight checks
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (isSameOrigin(origin, req.headers.host) || isAllowedOrigin(origin))) {
+  if (origin && isAllowedOrigin(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Vary', 'Origin');
     res.header('Access-Control-Allow-Credentials', 'true');
@@ -11509,36 +11501,44 @@ app.get(/^(?!\/api)(?!\/assets)(?!\/[^/]*\.(js|mjs|css|ico|svg|woff2?)(\?.*)?$).
   sendIndexHtml(res);
 });
 
-// Start server immediately, then initialize database in background
+// Start server after database initialization
 async function startServer() {
   try {
-    console.log('🚀 Starting server on port', PORT);
+    console.log('🔍 Initializing database connection...');
+    databaseAvailable = await initializeDatabase();
 
-    // Start listening FIRST (don't wait for DB)
-    const server = app.listen(PORT, () => {
+    app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📐 DOCX preprocessor v3 loaded (sorts anchors by horizontal page position before tabling)`);
+      console.log(`📊 Database available: ${databaseAvailable}`);
       console.log(`📧 Email configured: ${isEmailConfigured ? 'Yes' : 'No'}`);
       const appBase = process.env.APP_BASE_URL || 'http://localhost:5173';
       console.log(`🔗 Signing links in emails use: ${appBase} (set APP_BASE_URL in .env to change)`);
       console.log(`🔗 HubSpot API key: ${HUBSPOT_API_KEY !== 'demo-key' ? 'Configured' : 'Demo mode'}`);
-      console.log(`🌐 Health check: GET /api/health`);
-      console.log(`🌐 Database health: GET /api/database/health`);
+      console.log(`🌐 Available endpoints:`);
+      console.log(`   - GET  /`);
+      console.log(`   - GET  /api/health`);
+      console.log(`   - GET  /api/database/health`);
+      console.log(`   - GET  /api/test-mongodb`);
+      console.log(`   - POST /api/auth/register`);
+      console.log(`   - POST /api/auth/login`);
+      console.log(`   - GET  /api/auth/me`);
+      console.log(`   - POST /api/auth/microsoft`);
+      console.log(`   - GET  /api/quotes`);
+      console.log(`   - POST /api/quotes`);
+      console.log(`   - PUT  /api/quotes/:id`);
+      console.log(`   - DELETE /api/quotes/:id`);
+      console.log(`   - GET  /api/pricing-tiers`);
+      console.log(`   - POST /api/pricing-tiers`);
+      console.log(`   - GET  /api/hubspot/contacts`);
+      console.log(`   - GET  /api/hubspot/deals`);
+      console.log(`   - POST /api/hubspot/contacts`);
+      console.log(`   - POST /api/templates`);
+      console.log(`   - GET  /api/templates`);
+      console.log(`   - GET  /api/templates/:id/file`);
+      console.log(`   - PUT  /api/templates/:id`);
+      console.log(`   - DELETE /api/templates/:id`);
     });
-
-    // Initialize database in background (don't block startup)
-    setTimeout(async () => {
-      try {
-        console.log('🔍 Initializing database connection...');
-        databaseAvailable = await initializeDatabase();
-        console.log('✅ Database connection successful');
-      } catch (dbError) {
-        console.warn('⚠️  Database connection failed:', dbError.message);
-        console.warn('⚠️  Server running without database (graceful degradation)');
-        databaseAvailable = false;
-      }
-    }, 1000);
-
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
@@ -11861,24 +11861,8 @@ app.put('/api/authorization-requests/:id/status', async (req, res) => {
   }
 });
 
-// Global error handlers (catch any unhandled errors)
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('⚠️  Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('⚠️  Uncaught Exception:', error);
-  // Don't exit - let the app continue running
-});
-
-// Start the server with error handling
-try {
-  startServer().catch((error) => {
-    console.error('⚠️  Error in startServer:', error);
-  });
-} catch (error) {
-  console.error('⚠️  Error starting server:', error);
-}
+// Start the server
+startServer();
 
 // ─── E-sign Expiry Reminder Scheduler ────────────────────────────────────────
 // Runs hourly and sends one reminder when a pending recipient is within the
