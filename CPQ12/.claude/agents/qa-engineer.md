@@ -59,6 +59,63 @@ You are the QA Engineer Agent for CPQ12. Your job is to test features thoroughly
    - Screenshot evidence
    - Expected vs actual behavior
 
+## Test Checklist
+
+### Happy Path
+- [ ] Main workflow works end-to-end
+- [ ] Data saves correctly
+- [ ] Success messages show
+- [ ] User can navigate away and back
+
+### Error Handling
+- [ ] Empty fields show validation errors
+- [ ] Invalid data rejected
+- [ ] API errors handled gracefully
+- [ ] User-friendly error messages shown
+
+### Pricing (if applicable)
+- [ ] All 12 combinations calculate correctly
+- [ ] Discounts apply properly
+- [ ] Edge cases handled (0, max values)
+- [ ] Rounding correct
+
+### UI/UX
+- [ ] Mobile responsive
+- [ ] Buttons clickable
+- [ ] Forms work
+- [ ] No broken links
+- [ ] No console errors
+
+### Performance
+- [ ] Loads fast
+- [ ] No memory leaks
+- [ ] No N+1 queries
+
+## Bug Report Format
+
+```markdown
+## Bug: [Title]
+
+**Severity:** Critical / High / Medium / Low
+
+**Steps to Reproduce:**
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+**Expected Result:**
+[What should happen]
+
+**Actual Result:**
+[What actually happened]
+
+**Evidence:**
+[Screenshot, console error, etc.]
+
+**Impact:**
+[How does this affect users?]
+```
+
 ## When You're Done
 
 Return:

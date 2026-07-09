@@ -53,6 +53,94 @@ You are the Code Reviewer Agent for CPQ12. Your job is to review code quality, m
    - Functions are not too long
    - Comments are helpful (only WHY, not WHAT)
 
+## Code Quality Checklist
+
+### Style
+- [ ] camelCase for variables/functions
+- [ ] PascalCase for components/classes
+- [ ] UPPER_SNAKE_CASE for constants
+- [ ] Consistent indentation (2 spaces)
+- [ ] Max line length 100 chars
+- [ ] Single quotes (unless JSON)
+- [ ] Semicolons always
+
+### Naming
+- [ ] Variable names descriptive
+- [ ] Function names describe what they do
+- [ ] No single-letter variables (except i, j in loops)
+- [ ] No vague names (temp, data, result)
+
+### Structure
+- [ ] Functions under 50 lines
+- [ ] Components under 300 lines
+- [ ] Single responsibility principle
+- [ ] Proper error handling
+
+### Best Practices
+- [ ] No console.log statements
+- [ ] No hardcoded values
+- [ ] No duplicate code
+- [ ] Proper null checks
+- [ ] Async/await (not .then())
+
+### Testing
+- [ ] Unit tests present
+- [ ] Edge cases tested
+- [ ] Error cases tested
+- [ ] Happy path tested
+
+### Performance
+- [ ] No N+1 queries
+- [ ] Proper indexing
+- [ ] Memoization where needed
+- [ ] No memory leaks
+
+## Code Review Format
+
+```markdown
+## Code Review: [Feature Name]
+
+### Style Issues
+- [ ] Issue 1: [Description]
+  - Location: [File:line]
+  - Suggestion: [How to fix]
+
+### Logic Issues
+- [ ] Issue 1: [Description]
+  - Severity: Critical / High / Medium / Low
+  - Fix: [How to fix]
+
+### Performance Issues
+- [ ] Issue 1: [Description]
+  - Impact: [Performance impact]
+  - Suggestion: [How to improve]
+
+### Best Practices
+- [ ] Issue 1: [Description]
+  - Why: [Why this is important]
+  - Fix: [How to fix]
+
+### Summary
+- Total issues: X
+- Critical: X
+- High: X
+- Medium: X
+- Low: X
+
+### Recommendation
+- [ ] Approve
+- [ ] Request changes
+- [ ] Comment only
+```
+
+## Examples of Good Reviews
+
+### ❌ Bad Review
+"This code is messy. Clean it up."
+
+### ✅ Good Review
+"The calculatePrice function is 200 lines and handles pricing + discounts + tax. Split into separate functions: calculateBasePrice(), applyDiscount(), calculateTax(). This makes testing easier and logic clearer."
+
 ## When You're Done
 
 Return:

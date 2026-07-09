@@ -5,26 +5,34 @@ Complete pipeline for implementing a new feature from requirements to deployment
 
 ## Phases
 
-### Phase 1: Architecture Design
+### Phase 1: Requirements Analysis
+- Understand what needs to be built
+- Document user stories
+- Identify constraints
+- List acceptance criteria
+
+### Phase 2: Architecture Design
 - Architect Agent creates design document
 - Design includes: database schema, API endpoints, components
 - User reviews and approves design
 - If issues found, loop back to design
 
-### Phase 2: Backend Implementation
+### Phase 3: Backend Implementation
 - Backend Engineer implements based on design
 - Create database models
 - Implement API endpoints
 - Write backend tests
+- Code Review Agent reviews backend code
 
-### Phase 3: Frontend Implementation
+### Phase 4: Frontend Implementation
 - Frontend Engineer implements components
 - Create React components
 - Implement routing
 - Integrate with backend API
 - Write component tests
+- Code Review Agent reviews frontend code
 
-### Phase 4: Testing
+### Phase 5: Testing
 - QA Engineer tests entire feature
 - Test happy path
 - Test error cases
@@ -32,38 +40,50 @@ Complete pipeline for implementing a new feature from requirements to deployment
 - Test all pricing combinations (if applicable)
 - Report bugs
 
-### Phase 5: Security Audit
+### Phase 6: Security Audit
 - Security Reviewer audits all code
 - Check for vulnerabilities
 - Check input validation
 - Check authentication/authorization
 - Report security issues
 
-### Phase 6: Code Review
+### Phase 7: Code Review
 - Code Reviewer reviews all code
 - Check code quality
 - Check adherence to standards
 - Check for bugs
 - Check performance
 
-### Phase 7: Documentation
+### Phase 8: Documentation
 - Documentation Engineer creates docs
 - API documentation
 - Component documentation
 - User guide
 - Update README and CHANGELOG
 
-### Phase 8: Deployment Preparation
+### Phase 9: Commit & Release Decision (requires user confirmation)
+- Gate 1 — Ask user: commit and push to the working branch? (never auto-commit)
+  - If no: stop, nothing is saved
+  - If yes: stage only the files relevant to this feature, commit with conventional commit message (feat: ...), push to the feature branch
+- Gate 2 — Ask user: deploy this feature now, or stop here (commit only)?
+  - If no deploy: workflow ends after commit — do not ask about environments
+- Gate 3 (only if Gate 2 = yes) — Ask user: target environment?
+  - **dev** = push stays on the feature branch → CI auto-deploys to the dev server
+  - **production** = MERGE the feature branch into `main` and push → CI auto-deploys to production
+- IMPORTANT: in this repo, merging to `main` and deploying to production are the SAME action — any push to `main` triggers the production deploy job. There is no merge-without-deploy path. Never merge to `main` unless the user explicitly chose production at Gate 3
+- Only proceed to Deployment phases after explicit approval
+
+### Phase 10: Deployment Preparation
 - DevOps Engineer prepares deployment
 - Update Docker files
 - Create deployment scripts
 - Prepare CI/CD configuration
 - Test deployment in staging
 
-### Phase 9: Final Review & Deployment
+### Phase 11: Final Review & Deployment
 - All stakeholders review
 - Approve for production deployment
-- DevOps Engineer deploys to production
+- DevOps Engineer deploys to approved target environment
 - Monitor for issues
 - Verify feature works
 
@@ -75,8 +95,26 @@ Complete pipeline for implementing a new feature from requirements to deployment
 - [ ] Code review approved
 - [ ] QA testing passed
 - [ ] Documentation complete
-- [ ] Feature working in production
+- [ ] User approved commit, merge decision, and deploy target
+- [ ] Feature working in approved environment
 
 ## Timeline
 
 Estimated time: 3-5 days for medium feature
+
+- Design: 2-4 hours
+- Backend: 4-8 hours
+- Frontend: 4-8 hours
+- Testing: 2-4 hours
+- Security: 1-2 hours
+- Code Review: 1-2 hours
+- Documentation: 1-2 hours
+- Deployment: 1-2 hours
+
+## Rollback Plan
+
+If issues found in production:
+1. Identify root cause
+2. Rollback to previous version
+3. Fix issue in development
+4. Redeploy
