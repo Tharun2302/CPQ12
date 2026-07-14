@@ -15,6 +15,14 @@ The templates in this file are **generic references only**. The real CPQ12 setup
 - **This repo's `docker-compose.yml` is NOT the app deployment.** It only runs support services: Gotenberg (PDF conversion, `cpq-gotenberg`, host port 3004) and an optional OnlyOffice profile (`cpq-onlyoffice` port 3003 + `cpq-postgres`). The Node app itself runs on the host via `node server.cjs` (port 3000) with Vite on 5173 in dev.
 - **Production is a separate Docker stack in the `deploymentgigitaldocker` folder on the production server (not in this repo):** an nginx reverse proxy in front of a `cpq-application` container.
 - **CSP headers are set in `server.cjs`, NOT in the nginx config.** Any CSP change (e.g. allowlisting an origin like OnlyOffice) belongs in `server.cjs`.
+- **Development server: 159.89.175.168** (DigitalOcean, `ubuntu-s-1vcpu-2gb-blr1-01`) — the real target behind the "dev" option at the deploy gate. Mirrors production's layout: `~/CPQ12` git clone with `deploymentgigitaldocker/` inside (Dockerfile + docker-compose.yml + .env). Single `app` service → container `cpq-application` on port 3001, exposed directly (no nginx/TLS on dev). Mongo runs as a separate container `cpq12-mongo-1` from a different compose project. Health: `http://159.89.175.168:3001/api/health`.
+- **Dev deploy procedure** (run on the server as root):
+  ```
+  cd ~/CPQ12 && git fetch && git checkout <branch> && git pull
+  cd deploymentgigitaldocker && docker compose up -d --build
+  curl -s http://localhost:3001/api/health
+  ```
+  Production (zenop.ai = 167.71.227.231) uses the same folder/procedure plus an nginx container for TLS.
 - Before generating any deployment config, inspect the actual production stack rather than emitting the templates below verbatim.
 
 ## 🔴 CI/CD Guard (non-negotiable)

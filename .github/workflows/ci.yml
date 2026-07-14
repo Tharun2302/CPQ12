@@ -1,0 +1,36 @@
+# PR-only CI: lint/test/build quality gates.
+# INTENTIONALLY has no `push` trigger and no deploy jobs — per CLAUDE.md, a pipeline
+# on `main` would make merge-to-main equivalent to a production deploy, and the team
+# has not approved that. Do not add push/deploy triggers without explicit team approval.
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20 required by Vite 7 (CLAUDE.md's Node 18 predates the Vite upgrade)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Lint is NOT gated yet: 1,267 pre-existing errors as of 2026-07-09.
+      # Re-add `npm run lint` here after the lint-cleanup pass.
+      - run: npm run test:coverage
+
+      - run: npm run build

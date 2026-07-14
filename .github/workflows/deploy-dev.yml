@@ -1,0 +1,61 @@
+# Auto-deploy to the DEVELOPMENT server (159.89.175.168) on every push to main.
+# DEV ONLY — production (zenop.ai) is deliberately NOT automated: per CLAUDE.md it
+# requires explicit human approval and stays a manual SSH procedure. Do not add a
+# production deploy job here without formal team approval.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   DEV_HOST    — dev server IP (159.89.175.168)
+#   DEV_SSH_KEY — private half of the dedicated deploy keypair (ed25519)
+name: Deploy to Dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEV_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy main to dev server
+        run: |
+          ssh -i ~/.ssh/deploy_key -o ConnectTimeout=15 root@"${{ secrets.DEV_HOST }}" bash -s <<'EOF'
+          set -euo pipefail
+          cd ~/CPQ12
+          git fetch origin
+          git checkout main
+          git pull origin main
+          cd deploymentgigitaldocker
+          docker compose up -d --build
+          # Old images pile up with every rebuild and once filled the disk to 99%
+          docker image prune -f
+          EOF
+
+      - name: Verify health
+        run: |
+          sleep 20
+          for i in 1 2 3 4 5; do
+            if curl -sf "http://${{ secrets.DEV_HOST }}:3001/api/health"; then
+              echo "" && echo "Dev deploy healthy."
+              exit 0
+            fi
+            echo "Health check attempt $i failed; retrying in 15s..."
+            sleep 15
+          done
+          echo "Dev server failed health check after deploy." >&2
+          exit 1
