@@ -5198,6 +5198,14 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     const document = await db.collection('documents').findOne({ id });
     if (!document) return res.status(404).json({ success: false, error: 'Document not found' });
 
+    // Redlining is allowed even when an active approval workflow exists; the caller is told
+    // about it so the UI can offer a choice (update the live document vs. fork a new one)
+    // when persisting the edit later.
+    const activeWorkflow = await db.collection('approval_workflows').findOne({
+      documentId: id,
+      status: { $in: ['pending', 'in_progress'] }
+    });
+
     const toBuf = (fd) => {
       if (!fd) return null;
       if (Buffer.isBuffer(fd)) return fd;
@@ -5266,7 +5274,7 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
     };
     if (ONLYOFFICE_JWT_SECRET) config.token = jwt.sign(config, ONLYOFFICE_JWT_SECRET, { expiresIn: '5h' });
 
-    res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config });
+    res.json({ success: true, sessionId, editorUrl: ONLYOFFICE_PUBLIC_URL, config, hasActiveApprovalWorkflow: !!activeWorkflow });
   } catch (e) {
     console.error('❌ onlyoffice start-session-from-document error:', e);
     res.status(500).json({ success: false, error: e.message });
@@ -5281,16 +5289,89 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
     const s = onlyofficeSessions.get(req.params.sessionId);
     if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
     if (!s.documentId) return res.status(400).json({ success: false, error: 'Session is not bound to a document' });
+
     if (s.status !== 'ready' || !s.editedPdf || !s.editedDocx) {
       return res.status(409).json({ success: false, error: 'Edited document not ready yet', status: s.status });
     }
-    const result = await db.collection('documents').updateOne(
-      { id: s.documentId },
-      { $set: { fileData: s.editedPdf, docxFileData: s.editedDocx, fileSize: s.editedPdf.length, updatedAt: new Date() } }
-    );
-    if (result.matchedCount === 0) return res.status(404).json({ success: false, error: 'Document not found' });
-    console.log(`✅ onlyoffice redline persisted to document ${s.documentId} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
-    res.json({ success: true, documentId: s.documentId });
+
+    // Re-check live: an approval workflow may have started/ended since the edit session began.
+    const activeWorkflow = await db.collection('approval_workflows').findOne({
+      documentId: s.documentId,
+      status: { $in: ['pending', 'in_progress'] }
+    });
+
+    // No active workflow: always safe to overwrite in place. The client's forkAsNewDocument
+    // choice is irrelevant here since there's nothing to protect.
+    if (!activeWorkflow) {
+      const result = await db.collection('documents').updateOne(
+        { id: s.documentId },
+        { $set: { fileData: s.editedPdf, docxFileData: s.editedDocx, fileSize: s.editedPdf.length, updatedAt: new Date() } }
+      );
+      if (result.matchedCount === 0) return res.status(404).json({ success: false, error: 'Document not found' });
+      console.log(`✅ onlyoffice redline persisted to document ${s.documentId} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
+      return res.json({ success: true, forked: false, documentId: s.documentId });
+    }
+
+    // Active workflow: in-place overwrite is no longer offered at all (Critical auth gap —
+    // a client-supplied boolean must never be trusted to authorize overwriting a document
+    // under active approval). Only forking to a new, unlinked document is permitted here.
+    // Fork: leave the document under approval untouched, save the redline as a new document.
+    const original = await db.collection('documents').findOne({ id: s.documentId });
+    if (!original) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    const sanitizeForId = (str) => {
+      if (!str) return 'Unknown';
+      return str
+        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
+        .substring(0, 20) // Limit length
+        .replace(/^[0-9]/, 'C$&'); // Ensure doesn't start with number
+    };
+    const sanitizedCompany = sanitizeForId(original.company);
+    const sanitizedClient = sanitizeForId(original.clientName);
+    // Full millisecond timestamp plus a random suffix avoids id collisions on rapid
+    // double-forks (e.g. a double-clicked "Done") that a truncated timestamp allowed.
+    const newId = `${sanitizedCompany}_${sanitizedClient}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}-redline`;
+
+    const dotIndex = (original.fileName || '').lastIndexOf('.');
+    const forkedFileName = dotIndex > -1
+      ? `${original.fileName.slice(0, dotIndex)} (Redline copy)${original.fileName.slice(dotIndex)}`
+      : `${original.fileName || 'document'} (Redline copy)`;
+
+    const newDoc = {
+      id: newId,
+      fileName: forkedFileName,
+      fileData: s.editedPdf,
+      docxFileData: s.editedDocx,
+      fileSize: s.editedPdf.length,
+      clientName: original.clientName,
+      clientEmail: original.clientEmail,
+      company: original.company,
+      templateName: original.templateName,
+      quoteId: original.quoteId,
+      metadata: original.metadata,
+      dates: original.dates,
+      templateData: original.templateData,
+      templateId: original.templateId,
+      customLineItems: original.customLineItems,
+      generatedDate: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'active',
+      dateHistory: [],
+      forkedFromDocumentId: s.documentId,
+    };
+    if (original.docxFileName) newDoc.docxFileName = original.docxFileName;
+
+    try {
+      await db.collection('documents').insertOne(newDoc);
+    } catch (insertErr) {
+      const isDuplicateKey = insertErr && (insertErr.code === 11000 || /E11000/.test(insertErr.message || ''));
+      if (!isDuplicateKey) throw insertErr;
+      console.error('❌ onlyoffice persist-to-document duplicate id on fork insert:', insertErr);
+      return res.status(409).json({ success: false, error: 'Could not save the forked document due to an id conflict — please try again.' });
+    }
+    console.log(`✅ onlyoffice redline forked from ${s.documentId} into new document ${newDoc.id} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
+    res.json({ success: true, forked: true, documentId: newDoc.id, originalDocumentId: s.documentId });
   } catch (e) {
     console.error('❌ onlyoffice persist-to-document error:', e);
     res.status(500).json({ success: false, error: e.message });

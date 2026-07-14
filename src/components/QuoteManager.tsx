@@ -20,8 +20,7 @@ import {
   Palette,
   FileDown,
   Search,
-  Edit,
-  MoreVertical
+  Edit
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -106,7 +105,6 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
   const [redlineConfig, setRedlineConfig] = useState<any>(null);
   const [isStartingRedline, setIsStartingRedline] = useState<string | null>(null);
   const [isFinalizingRedline, setIsFinalizingRedline] = useState(false);
-  const [openMenuDocId, setOpenMenuDocId] = useState<string | null>(null);
 
   const loadSavedDocuments = useCallback(async () => {
     setLoadingDocuments(true);
@@ -208,7 +206,7 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
         { method: 'POST' }
       );
       const data = await resp.json();
-      if (!resp.ok || !data?.success) throw new Error(data?.error || 'Failed to open the editor');
+      if (!resp.ok || !data?.success) throw new Error(data?.message || data?.error || 'Failed to open the editor');
       setRedlineDocId(doc.id);
       setRedlineSessionId(data.sessionId);
       setRedlineEditorUrl(data.editorUrl);
@@ -260,8 +258,14 @@ const QuoteManager: React.FC<QuoteManagerProps> = ({
           { method: 'POST' }
         );
         const pdata = await persist.json();
-        if (!persist.ok || !pdata?.success) throw new Error(pdata?.error || 'Failed to save the edited document');
-        alert('✅ Redline saved — document updated with your changes');
+        if (!persist.ok || !pdata?.success) throw new Error(pdata?.error || pdata?.message || 'Failed to save the edited document');
+
+        if (pdata.forked === true) {
+          alert('✅ This document has an active approval workflow, so your redline was saved as a new document — it now appears separately in Documents Manager. The original is still in its approval workflow, untouched.');
+        } else {
+          alert('✅ Redline saved — document updated with your changes');
+        }
+        await loadSavedDocuments();
         closeRedline();
       } else if (data?.status === 'no-changes') {
         alert('No changes to save');
@@ -1627,6 +1631,19 @@ ZENOP Pro Solutions Team`;
                       <span>Word</span>
                     </button>
                   )}
+                  <button
+                    onClick={() => handleDownloadForRedline(doc)}
+                    disabled={(isStartingRedline === doc.id) || (!!isStartingRedline && isStartingRedline !== doc.id) || (!!redlineSessionId && redlineDocId !== doc.id)}
+                    className="flex-1 min-w-[80px] px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    title="Open in redline editor"
+                  >
+                    {isStartingRedline === doc.id ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                    ) : (
+                      <Edit className="w-4 h-4 flex-shrink-0" />
+                    )}
+                    <span>Redline</span>
+                  </button>
                 </div>
               </div>
             ))}
@@ -2085,8 +2102,7 @@ ZENOP Pro Solutions Team`;
 
       {/* OnlyOffice Redline Editor Modal */}
       {redlineDocId && redlineSessionId && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[95vh]">
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-red-50">
               <div className="flex items-center gap-3">
@@ -2159,7 +2175,6 @@ ZENOP Pro Solutions Team`;
                 </button>
               </div>
             </div>
-          </div>
         </div>
       )}
     </div>
