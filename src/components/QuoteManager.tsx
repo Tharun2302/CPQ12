@@ -1605,17 +1605,17 @@ ZENOP Pro Solutions Team`;
                   )}
                 </div>
                 
-                <div className="flex flex-wrap gap-2 items-stretch">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleViewDocument(doc)}
-                    className="flex-1 min-w-[80px] px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                   >
                     <Eye className="w-4 h-4 flex-shrink-0" />
                     <span>View</span>
                   </button>
                   <button
                     onClick={() => handleDownloadDocument(doc)}
-                    className="flex-1 min-w-[80px] px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                   >
                     <Download className="w-4 h-4 flex-shrink-0" />
                     <span>PDF</span>
@@ -1624,7 +1624,7 @@ ZENOP Pro Solutions Team`;
                   {(doc.docxFileData || doc.docxFileName) && (
                     <button
                       onClick={() => handleDownloadWordDocument(doc)}
-                      className="flex-1 min-w-[80px] px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                      className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                       title="Download as Word document (.docx)"
                     >
                       <FileDown className="w-4 h-4 flex-shrink-0" />
@@ -1634,7 +1634,7 @@ ZENOP Pro Solutions Team`;
                   <button
                     onClick={() => handleDownloadForRedline(doc)}
                     disabled={(isStartingRedline === doc.id) || (!!isStartingRedline && isStartingRedline !== doc.id) || (!!redlineSessionId && redlineDocId !== doc.id)}
-                    className="flex-1 min-w-[80px] px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                    className="px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm font-medium flex items-center justify-center gap-2"
                     title="Open in redline editor"
                   >
                     {isStartingRedline === doc.id ? (
