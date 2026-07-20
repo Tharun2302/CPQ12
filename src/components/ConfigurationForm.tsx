@@ -1293,15 +1293,36 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
       const options = manageCombinations.length > 0 ? manageCombinations : fallback;
       const selectedOption = options.find(o => o.value === config.migrationType);
       const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
-      if (showUsersField) {
+      // Data Sprawl mode (E101) changes the required basis: Message/Email are priced
+      // per user (E99), Content is priced per GB (E100). Fall back to the agreement's
+      // requiresUsers rule when no sprawl type is selected.
+      const sprawlType = config.manageSprawlType;
+      if (sprawlType === 'Message' || sprawlType === 'Email') {
+        const mu = config.manageUsers;
+        if (mu === undefined || mu === null || mu <= 0) {
+          alert('Please enter the number of users for the Data Sprawl plan');
+          return;
+        }
+      } else if (sprawlType === 'Content') {
+        // Content sprawl carries a per-user license (E99) AND a per-GB sprawl basis (E100).
+        const mu = config.manageUsers;
+        if (mu === undefined || mu === null || mu <= 0) {
+          alert('Please enter the number of users for the Data Sprawl plan');
+          return;
+        }
+        const gb = config.manageDataGB;
+        if (gb === undefined || gb === null || gb <= 0) {
+          alert('Please enter the data size in GB for the Data Sprawl plan');
+          return;
+        }
+      } else if (showUsersField) {
         const mu = config.manageUsers;
         if (mu === undefined || mu === null || mu <= 0) {
           alert('Please enter the number of users for the Manage plan');
           return;
         }
       }
-      // manageDataGB = 0 is valid (no data cost). No further checks needed.
-      console.log('✅ Manage validation passed, submitting configuration');
+      // manageDataGB = 0 is valid (no data cost) for non-sprawl Manage. No further checks needed.
       onSubmit();
       setTimeout(() => {
         const pricingSection = document.getElementById('pricing-comparison');
@@ -1932,6 +1953,19 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                 const options = manageCombinations.length > 0 ? manageCombinations : fallback;
                 const selectedOption = options.find(o => o.value === config.migrationType);
                 const showUsersField = selectedOption ? selectedOption.requiresUsers !== false : true;
+                // Data Sprawl (E101) drives which basis input is collected:
+                // Message/Email → Number of Users (E99); Content → Data Size GB (E100).
+                // No sprawl type → keep the agreement's default behavior (manageRequiresUsers).
+                const sprawlType = config.manageSprawlType;
+                // Every sprawl type carries a per-user Manage license, so Users always shows
+                // when a sprawl type is selected. GB shows only for Content (the sprawl basis).
+                const showUsersInput = sprawlType ? true : showUsersField;
+                const showDataInput =
+                  sprawlType === 'Content'
+                    ? true
+                    : sprawlType === 'Message' || sprawlType === 'Email'
+                    ? false
+                    : true;
                 return (
                   <>
                     <select
@@ -1970,8 +2004,41 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                     </select>
                     <div className="rounded-xl border-2 border-slate-200 bg-white px-6 py-6 mt-4">
                       <p className="text-sm font-semibold text-slate-800 mb-4">Manage plan inputs</p>
-                      <div className={`grid grid-cols-1 ${showUsersField ? 'md:grid-cols-2' : ''} gap-4`}>
-                        {showUsersField && (
+                      <div className="mb-4">
+                        <label className="block text-xs font-semibold text-gray-700 mb-2">
+                          Data Sprawl Type
+                        </label>
+                        <select
+                          aria-label="Data Sprawl Type"
+                          value={config.manageSprawlType ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const next = v === '' ? undefined : (v as 'Content' | 'Message' | 'Email');
+                            const newConfig = { ...config, manageSprawlType: next };
+                            // Message/Email hide the GB input — clear any stale leftover value.
+                            if (next === 'Message' || next === 'Email') {
+                              newConfig.manageDataGB = 0;
+                            }
+                            setConfig(newConfig);
+                            onConfigurationChange(newConfig);
+                            try {
+                              sessionStorage.setItem('cpq_configuration_session', JSON.stringify(newConfig));
+                              const navState = JSON.parse(sessionStorage.getItem('cpq_navigation_state') || '{}');
+                              if (!navState.sessionState) navState.sessionState = {};
+                              navState.sessionState.configuration = newConfig;
+                              sessionStorage.setItem('cpq_navigation_state', JSON.stringify(navState));
+                            } catch (err) { console.warn('Could not save to sessionStorage:', err); }
+                          }}
+                          className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
+                        >
+                          <option value="">None</option>
+                          <option value="Content">Content</option>
+                          <option value="Message">Message</option>
+                          <option value="Email">Email</option>
+                        </select>
+                      </div>
+                      <div className={`grid grid-cols-1 ${showUsersInput && showDataInput ? 'md:grid-cols-2' : ''} gap-4`}>
+                        {showUsersInput && (
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-2">
                               Number of Users
@@ -1991,24 +2058,26 @@ const ConfigurationForm: React.FC<ConfigurationFormProps> = ({
                             />
                           </div>
                         )}
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-2">
-                            Content data size in GB
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={config.manageDataGB || ''}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              handleChange('manageDataGB', v === '' ? 0 : (parseInt(v) || 0));
-                            }}
-                            className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
-                            placeholder="0 is valid (no data cost)"
-                            autoComplete="off"
-                          />
-                        </div>
+                        {showDataInput && (
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-2">
+                              Content data size in GB
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={config.manageDataGB || ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                handleChange('manageDataGB', v === '' ? 0 : (parseInt(v) || 0));
+                              }}
+                              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 bg-white text-base"
+                              placeholder={config.manageSprawlType === 'Content' ? 'Enter data size in GB' : '0 is valid (no data cost)'}
+                              autoComplete="off"
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>

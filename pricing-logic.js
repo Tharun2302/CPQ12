@@ -130,6 +130,66 @@ function lookupBundleDataAddon(gb) {
   return BUNDLE_DATA_ADDON[BUNDLE_DATA_ADDON.length - 1].addon;
 }
 
+/* ---------------------------------------------------------
+   DATA SPRAWL (Manage mode) — mirrors src/utils/pricing.ts.
+   Message/Email → rate per USER (E99); Content → rate per GB (E100).
+   Full precision; Manage/Sprawl is flat (no region multiplier).
+   --------------------------------------------------------- */
+const MESSAGE_SPRAWL = [
+  { max: 25,    rate: 5.0  },
+  { max: 50,    rate: 4.0  },
+  { max: 100,   rate: 3.6  },
+  { max: 250,   rate: 3.2  },
+  { max: 500,   rate: 2.8  },
+  { max: 1000,  rate: 2.5  },
+  { max: 1500,  rate: 2.2  },
+  { max: 2000,  rate: 1.8  },
+  { max: 5000,  rate: 1.6  },
+  { max: 10000, rate: 1.5  },
+  { max: 30000, rate: 1.4  }
+];
+
+// Numerically identical to BUNDLE_DATA_ADDON; kept dedicated for feature clarity.
+const CONTENT_SPRAWL = [
+  { max: 500,     rate: 0.16    },
+  { max: 2500,    rate: 0.13    },
+  { max: 5000,    rate: 0.11667 },
+  { max: 10000,   rate: 0.1     },
+  { max: 20000,   rate: 0.08333 },
+  { max: 50000,   rate: 0.075   },
+  { max: 100000,  rate: 0.06667 },
+  { max: 500000,  rate: 0.05833 },
+  { max: 1000000, rate: 0.05333 },
+  { max: 2000000, rate: 0.04667 },
+  { max: 3000001, rate: 0.04167 }
+];
+
+function lookupMessageSprawlRate(users) {
+  if (!Number.isFinite(users) || users <= 0) return 0;
+  for (let i = 0; i < MESSAGE_SPRAWL.length; i++) {
+    if (users <= MESSAGE_SPRAWL[i].max) return MESSAGE_SPRAWL[i].rate;
+  }
+  return MESSAGE_SPRAWL[MESSAGE_SPRAWL.length - 1].rate;
+}
+
+function lookupContentSprawlRate(gb) {
+  if (!Number.isFinite(gb) || gb <= 0) return 0;
+  for (let i = 0; i < CONTENT_SPRAWL.length; i++) {
+    if (gb <= CONTENT_SPRAWL[i].max) return CONTENT_SPRAWL[i].rate;
+  }
+  return CONTENT_SPRAWL[CONTENT_SPRAWL.length - 1].rate;
+}
+
+// Email uses the Message table. Full precision (round for display only).
+// Guards negative/non-finite inputs to 0 so quotes can never go negative.
+function calcSprawlCost(sprawlType, users, gb) {
+  const u = Number.isFinite(users) && users > 0 ? users : 0;
+  const g = Number.isFinite(gb) && gb > 0 ? gb : 0;
+  return sprawlType === 'Content'
+    ? lookupContentSprawlRate(g) * g
+    : lookupMessageSprawlRate(u) * u;
+}
+
 function manageUserCost(u) {
   if (u <= 0)    return 0;
   if (u <= 50)   return 2499;
@@ -291,15 +351,44 @@ function calcMigrateBundle({
  * @param {number} params.e100GB  — E100 (managed content data volume)
  * @returns {Object} manage structured pricing
  */
-function calcManage({ users, b56GB, e100GB }) {
-  const B102 = manageUserCost(users);                    // user cost (or 'CUSTOM')
+function calcManage({ users, b56GB, e100GB, sprawlType }) {
+  // Guard inputs (mirror src/utils/pricing.ts): non-negative finite; enum-guard sprawl type.
+  const u = Number.isFinite(Number(users)) && Number(users) > 0 ? Number(users) : 0;
+  const gb = Number.isFinite(Number(e100GB)) && Number(e100GB) > 0 ? Number(e100GB) : 0;
+  const type = (sprawlType === 'Content' || sprawlType === 'Message' || sprawlType === 'Email') ? sprawlType : undefined;
+
+  const B102 = manageUserCost(u);                        // license (K12) or 'CUSTOM'
   const isCustom = (B102 === 'CUSTOM');
+  const license = isCustom ? 0 : B102;
+  const B99 = isCustom || u === 0 ? null : B102 / u;
 
-  const B99  = isCustom ? null : B102 / users;
-  const B100 = e100GB > 0 ? lookupBundleDataAddon(b56GB) : 0;   // K13 rate
-  const B103 = isCustom ? null : B100 * e100GB;
+  // Data Sprawl mode: the data line IS the sprawl cost (Content → rate×GB, Message/Email → rate×users).
+  // The standalone omits the license, so it stays quotable even when the license band is exceeded.
+  if (type) {
+    const sprawlCost = calcSprawlCost(type, u, gb);     // B103
+    const rate = type === 'Content' ? lookupContentSprawlRate(gb) : lookupMessageSprawlRate(u);
+    return {
+      total: isCustom ? 'CUSTOM' : license + sprawlCost, // MANAGE + Sprawl (B104)
+      breakdown: {
+        user: isCustom ? 'CUSTOM' : license,
+        data: sprawlCost
+      },
+      // Standalone omits the license line — sprawl cost only.
+      sprawl: { type, standalone: { dataCost: sprawlCost, totalCost: sprawlCost } },
+      meta: {
+        perUserPerYear: B99,
+        sprawlRate: rate,
+        sprawlBasis: type === 'Content' ? 'gb' : 'user',
+        sprawlType: type,
+        isCustom
+      }
+    };
+  }
+
+  // Legacy Manage: K13 rate × GB.
+  const B100 = gb > 0 ? lookupBundleDataAddon(b56GB) : 0;
+  const B103 = isCustom ? null : B100 * gb;
   const B104 = isCustom ? 'CUSTOM' : B102 + B103;
-
   return {
     total: B104,
     breakdown: {
@@ -347,7 +436,8 @@ function calculatePricing(params) {
   const mg = calcManage({
     users:   params.users,
     b56GB:   params.manageB56GB  != null ? params.manageB56GB  : params.dataGB,
-    e100GB:  params.manageE100GB != null ? params.manageE100GB : 0
+    e100GB:  params.manageE100GB != null ? params.manageE100GB : 0,
+    sprawlType: params.manageSprawlType
   });
 
   return {
@@ -370,12 +460,17 @@ module.exports = {
   BUNDLE_USER_ADDON,
   BUNDLE_DATA_ADDON,
   MANAGE_DATA_RATE,
+  MESSAGE_SPRAWL,
+  CONTENT_SPRAWL,
   // lookups
   lookupUser,
   lookupData,
   lookupMsg,
   lookupBundleUserAddon,
   lookupBundleDataAddon,
+  lookupMessageSprawlRate,
+  lookupContentSprawlRate,
+  calcSprawlCost,
   manageUserCost,
   // calculations
   calcMigrateBundle,

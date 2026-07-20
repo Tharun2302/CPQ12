@@ -98,6 +98,10 @@ export interface ConfigurationData {
   // Driven by the selected agreement's requiresUsers flag (set in CombinationManager).
   // false = hide Number of Users field and user cost rows in pricing display.
   manageRequiresUsers?: boolean;
+  // Data Sprawl mode inside Manage (COST ESTIMATOR E101). When set, the Manage
+  // "data" line is the Data Sprawl cost: Content → rate × manageDataGB (E100),
+  // Message/Email → rate × manageUsers (E99). undefined = legacy $0.13/GB Manage.
+  manageSprawlType?: 'Content' | 'Message' | 'Email';
 }
 
 export interface PricingCalculation {
@@ -157,6 +161,12 @@ export interface PricingCalculation {
     instanceCost: number;
     totalCost: number;
   }>;
+  // Data Sprawl (Manage mode) — present only when config.manageSprawlType is set.
+  // Top-level userCost/dataCost/totalCost carry "MANAGE + Sprawl" (dataCost === sprawlCost;
+  // userCost is the Manage license). sprawlStandalone is the sprawl-only figure (no license).
+  sprawlType?: 'Content' | 'Message' | 'Email';
+  sprawlCost?: number;
+  sprawlStandalone?: { dataCost: number; totalCost: number };
   // Manage Standalone — set to 'custom' when users > 5000 (slab returns CUSTOM).
   // UI should surface as a "Contact sales" CTA rather than a numeric quote.
   status?: 'custom';

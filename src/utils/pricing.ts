@@ -98,7 +98,7 @@ const BUNDLE_USER_ADDON: { max: number; addon: number }[] = [
   { max: 5000, addon: 6.5  }
 ];
 
-const BUNDLE_DATA_ADDON: { max: number; addon: number }[] = [
+export const BUNDLE_DATA_ADDON: { max: number; addon: number }[] = [
   { max: 500,     addon: 0.16    },
   { max: 2500,    addon: 0.13    },
   { max: 5000,    addon: 0.11667 },
@@ -111,6 +111,70 @@ const BUNDLE_DATA_ADDON: { max: number; addon: number }[] = [
   { max: 2000000, addon: 0.04667 },
   { max: 3000001, addon: 0.04167 }
 ];
+
+/* =========================================================
+   DATA SPRAWL (Manage mode) — two rate tables by sprawl type.
+   Message/Email → rate per USER by user count (E99 basis).
+   Content       → rate per GB   by data size  (E100 basis).
+   Full precision; no region multiplier (Manage/Sprawl is flat).
+   ========================================================= */
+const MESSAGE_SPRAWL: { max: number; rate: number }[] = [
+  { max: 25,    rate: 5.0  },
+  { max: 50,    rate: 4.0  },
+  { max: 100,   rate: 3.6  },
+  { max: 250,   rate: 3.2  },
+  { max: 500,   rate: 2.8  },
+  { max: 1000,  rate: 2.5  },
+  { max: 1500,  rate: 2.2  },
+  { max: 2000,  rate: 1.8  },
+  { max: 5000,  rate: 1.6  },
+  { max: 10000, rate: 1.5  },
+  { max: 30000, rate: 1.4  }
+];
+
+// Numerically identical to BUNDLE_DATA_ADDON; kept dedicated for single-source
+// clarity of the Sprawl feature (a unit test asserts the two stay equal).
+const CONTENT_SPRAWL: { max: number; rate: number }[] = [
+  { max: 500,     rate: 0.16    },
+  { max: 2500,    rate: 0.13    },
+  { max: 5000,    rate: 0.11667 },
+  { max: 10000,   rate: 0.1     },
+  { max: 20000,   rate: 0.08333 },
+  { max: 50000,   rate: 0.075   },
+  { max: 100000,  rate: 0.06667 },
+  { max: 500000,  rate: 0.05833 },
+  { max: 1000000, rate: 0.05333 },
+  { max: 2000000, rate: 0.04667 },
+  { max: 3000001, rate: 0.04167 }
+];
+
+export const DATA_SPRAWL_TABLES = { MESSAGE_SPRAWL, CONTENT_SPRAWL };
+
+export function lookupMessageSprawlRate(users: number): number {
+  if (!Number.isFinite(users) || users <= 0) return 0;
+  for (let i = 0; i < MESSAGE_SPRAWL.length; i++) {
+    if (users <= MESSAGE_SPRAWL[i].max) return MESSAGE_SPRAWL[i].rate;
+  }
+  return MESSAGE_SPRAWL[MESSAGE_SPRAWL.length - 1].rate;
+}
+
+export function lookupContentSprawlRate(gb: number): number {
+  if (!Number.isFinite(gb) || gb <= 0) return 0;
+  for (let i = 0; i < CONTENT_SPRAWL.length; i++) {
+    if (gb <= CONTENT_SPRAWL[i].max) return CONTENT_SPRAWL[i].rate;
+  }
+  return CONTENT_SPRAWL[CONTENT_SPRAWL.length - 1].rate;
+}
+
+// Full-precision sprawl cost (round for display only). Email uses the Message table.
+// Guards negative/non-finite inputs to 0 so quotes can never go negative.
+export function calcSprawlCost(type: 'Content' | 'Message' | 'Email', users: number, gb: number): number {
+  const u = Number.isFinite(users) && users > 0 ? users : 0;
+  const g = Number.isFinite(gb) && gb > 0 ? gb : 0;
+  return type === 'Content'
+    ? lookupContentSprawlRate(g) * g
+    : lookupMessageSprawlRate(u) * u;
+}
 
 function lookupBundleUserAddon(users: number): number {
   for (let i = 0; i < BUNDLE_USER_ADDON.length; i++) {
@@ -167,12 +231,51 @@ export function getManageDataRatePerGB(_dataGB: number): number {
 }
 
 function calculateManagePricing(config: ConfigurationData, tier: PricingTier): PricingCalculation {
-  const users = config.manageUsers ?? 0;
-  const dataGB = config.manageDataGB ?? 0;
+  // Guard inputs: coerce to non-negative finite numbers (TS types erase at runtime,
+  // and quotes can be reloaded from stored data — defend the money math directly).
+  const rawUsers = Number(config.manageUsers ?? 0);
+  const rawGB = Number(config.manageDataGB ?? 0);
+  const users = Number.isFinite(rawUsers) && rawUsers > 0 ? rawUsers : 0;
+  const dataGB = Number.isFinite(rawGB) && rawGB > 0 ? rawGB : 0;
+  // Enum-guard the sprawl type; anything outside the allow-list is treated as no sprawl.
+  const sprawlType: 'Content' | 'Message' | 'Email' | undefined =
+    config.manageSprawlType === 'Content' || config.manageSprawlType === 'Message' || config.manageSprawlType === 'Email'
+      ? config.manageSprawlType
+      : undefined;
 
   const userCostRaw = manageUserCost(users);
+  const isCustom = userCostRaw === 'CUSTOM';
 
-  if (userCostRaw === 'CUSTOM') {
+  // Data Sprawl mode: the "data" line IS the sprawl cost (Content → rate×GB,
+  // Message/Email → rate×users). Manage/Sprawl is FLAT — region multiplier does NOT
+  // apply. Full precision; round for display. The standalone figure omits the license,
+  // so it stays quotable even when the license band is exceeded (>5000 users → combined CUSTOM).
+  if (sprawlType) {
+    const sprawlCost = calcSprawlCost(sprawlType, users, dataGB);   // B103, flat
+    const license = isCustom ? 0 : (userCostRaw as number);         // K12 license (0 when CUSTOM)
+
+    const sprawlResult: PricingCalculation = {
+      userCost: license,
+      dataCost: sprawlCost,
+      migrationCost: 0,
+      instanceCost: 0,
+      totalCost: license + sprawlCost,                             // MANAGE + Sprawl (B104)
+      tier,
+      sprawlType,
+      sprawlCost,
+      // Standalone omits the license line — sprawl cost only (rows 106–110).
+      sprawlStandalone: { dataCost: sprawlCost, totalCost: sprawlCost }
+    };
+    if (isCustom) {
+      // Combined license is "Contact sales"; the standalone sprawl figure still applies.
+      sprawlResult.status = 'custom';
+      sprawlResult.message = 'Contact sales for >5000 users (license)';
+    }
+    assertPricingInvariant(sprawlResult.userCost, sprawlResult.dataCost, sprawlResult.migrationCost, sprawlResult.instanceCost, sprawlResult.totalCost);
+    return sprawlResult;
+  }
+
+  if (isCustom) {
     return {
       userCost: 0,
       dataCost: 0,
@@ -188,7 +291,7 @@ function calculateManagePricing(config: ConfigurationData, tier: PricingTier): P
   const dataCostRaw = dataGB > 0 ? getManageDataRatePerGB(dataGB) * dataGB : 0;
 
   const regionMult = getRegionMultiplier(config);
-  const rUser = userCostRaw * regionMult;
+  const rUser = (userCostRaw as number) * regionMult;
   const rData = dataCostRaw * regionMult;
   let totalCost = rUser + rData;
 

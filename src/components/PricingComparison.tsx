@@ -439,7 +439,7 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                   </h3>
                 ) : configuration?.servicePlan === 'Manage' ? (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
-                    Manage
+                    {calc.sprawlType ? 'MANAGE + Sprawl' : 'Manage'}
                   </h3>
                 ) : (
                   <h3 className={`text-2xl font-bold mb-3 ${isSelected ? 'text-blue-900' : 'text-gray-800'}`}>
@@ -788,6 +788,56 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
                       <span className="font-bold text-2xl text-purple-700">{formatCurrency(calc.instanceCost)}</span>
                     </div>
                   </>
+                ) : calc.sprawlType ? (
+                  <>
+                    {/* MANAGE + Sprawl: license (user cost) + Data Sprawl cost.
+                        dataCost carries the flat sprawl cost; the effective per-unit rate is
+                        per user for Message/Email and per GB for Content. The license applies
+                        to every sprawl type (including Content). When users exceed the license
+                        band the combined license is "Contact sales" (status === 'custom'). */}
+                    {calc.status === 'custom' ? (
+                      <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                        <span className="text-gray-700 font-medium">License (user cost):</span>
+                        <span className="font-bold text-amber-700">Contact sales</span>
+                      </div>
+                    ) : (
+                      <>
+                        {(configuration?.manageUsers ?? 0) > 0 && (
+                          <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                            <span className="text-gray-700 font-medium">Per user cost:</span>
+                            <span className="font-bold text-gray-900">
+                              {`${formatCurrency(calc.userCost / (configuration?.manageUsers ?? 1))}/user`}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                          <span className="text-gray-700 font-medium">User costs:</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(calc.userCost)}</span>
+                        </div>
+                      </>
+                    )}
+                    {calc.sprawlType === 'Content'
+                      ? (configuration?.manageDataGB ?? 0) > 0 && (
+                          <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                            <span className="text-gray-700 font-medium">Per GB cost:</span>
+                            <span className="font-bold text-gray-900">
+                              {`${formatCurrency(calc.dataCost / (configuration?.manageDataGB ?? 1))}/GB`}
+                            </span>
+                          </div>
+                        )
+                      : (configuration?.manageUsers ?? 0) > 0 && (
+                          <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                            <span className="text-gray-700 font-medium">Sprawl per user cost:</span>
+                            <span className="font-bold text-gray-900">
+                              {`${formatCurrency(calc.dataCost / (configuration?.manageUsers ?? 1))}/user`}
+                            </span>
+                          </div>
+                        )}
+                    <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+                      <span className="text-gray-700 font-medium">{`Data Sprawl (${calc.sprawlType})`}:</span>
+                      <span className="font-bold text-gray-900">{formatCurrency(calc.dataCost)}</span>
+                    </div>
+                  </>
                 ) : (
                   <>
                     {/* Per-user cost and User costs — hidden for Manage agreements without a users field */}
@@ -870,6 +920,27 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
           );
         })}
       </div>
+
+      {/* Data Sprawl (Standalone) — sprawl cost only, no license/user line. */}
+      {configuration?.servicePlan === 'Manage' && filteredCalculations[0]?.sprawlType && filteredCalculations[0]?.sprawlStandalone && (
+        <div className="flex justify-center mt-8">
+          <div className="w-full max-w-sm rounded-2xl border-2 border-gray-200 bg-white p-8">
+            <div className="text-center mb-6">
+              <h3 className="text-2xl font-bold mb-3 text-gray-800">Data Sprawl (Standalone)</h3>
+              <div className="text-4xl font-bold mb-2 text-gray-900">
+                {formatCurrency(filteredCalculations[0].sprawlStandalone!.totalCost)}
+              </div>
+              <div className="text-sm text-gray-600 font-medium">Standalone sprawl cost</div>
+            </div>
+            <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
+              <span className="text-gray-700 font-medium">{`Data Sprawl (${filteredCalculations[0].sprawlType})`}:</span>
+              <span className="font-bold text-gray-900">
+                {formatCurrency(filteredCalculations[0].sprawlStandalone!.dataCost)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Custom Plan Selection Section - Only for Multi combination (Original) */}
       {configuration?.migrationType === 'Multi combination' && (

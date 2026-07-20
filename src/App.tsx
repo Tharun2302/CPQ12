@@ -1236,12 +1236,17 @@ function App() {
       // Bundle reuses the Migrate flow (migrationType is required), so the standard
       // numberOfUsers / overage / multi-combination check applies.
       const isManage = configuration.servicePlan === 'Manage';
+      const manageSprawlType = configuration.manageSprawlType;
       const hasCoreConfig = isManage
-        // For no-users agreements (e.g. Data Sprawl), manageDataGB > 0 is sufficient.
-        // For user-based agreements, manageUsers > 0 is required.
-        ? (configuration.manageRequiresUsers === false
-            ? (configuration.manageDataGB ?? 0) > 0
-            : (configuration.manageUsers ?? 0) > 0)
+        ? (manageSprawlType
+            // Data Sprawl: Message/Email priced per user (E99), Content per GB (E100).
+            ? (manageSprawlType === 'Content'
+                ? (configuration.manageDataGB ?? 0) > 0
+                : (configuration.manageUsers ?? 0) > 0)
+            // Legacy Manage: no-users agreements need GB; user-based need users.
+            : (configuration.manageRequiresUsers === false
+                ? (configuration.manageDataGB ?? 0) > 0
+                : (configuration.manageUsers ?? 0) > 0))
         : configuration.migrationType && (
             configuration.numberOfUsers > 0 ||
             configuration.combination === 'overage-agreement' ||
