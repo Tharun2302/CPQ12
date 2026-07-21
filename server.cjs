@@ -9310,6 +9310,16 @@ function getEsignSharp() {
   return esignSharpModule;
 }
 
+const MAX_SIGNATURE_IMAGE_PIXELS = 4096 * 4096; // ~16.7MP cap, independent of encoded byte size
+
+/** Reads width/height straight from the PNG IHDR chunk (offset 16/20) — no decompression, safe on hostile input. */
+function esignPngDimensionsFromHeader(imgBytes) {
+  if (!imgBytes || imgBytes.length < 24) return null;
+  const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50 && imgBytes[2] === 0x4e && imgBytes[3] === 0x47;
+  if (!isPng) return null;
+  return { width: imgBytes.readUInt32BE(16), height: imgBytes.readUInt32BE(20) };
+}
+
 /**
  * Signatures may be PNG, JPEG, WebP, GIF, etc. pdf-lib only embeds PNG/JPEG; other formats → 500 without conversion.
  */
@@ -9677,6 +9687,21 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
         if (!imgBytes || imgBytes.length === 0) {
           return res.status(400).json({ success: false, error: 'Invalid signature image data.' });
         }
+        // Defense-in-depth: never trust client-side type checks for uploaded signature images
+        const isAllowedSignatureFormat = /^data:image\/(png|jpe?g);base64,/i.test(val);
+        if (!isAllowedSignatureFormat) {
+          return res.status(400).json({ success: false, error: 'Signature image must be a PNG or JPG file.' });
+        }
+        const MAX_SIGNATURE_IMAGE_BYTES = 2 * 1024 * 1024; // caps memory/PDF bloat from oversized uploads
+        if (imgBytes.length > MAX_SIGNATURE_IMAGE_BYTES) {
+          return res.status(400).json({ success: false, error: 'Signature image is too large (max 2MB).' });
+        }
+        // A small PNG can still declare huge dimensions and force a multi-GB decode (pixel-flood bomb);
+        // read width/height straight from the IHDR chunk header, which needs no decompression.
+        const pngDims = esignPngDimensionsFromHeader(imgBytes);
+        if (pngDims && pngDims.width * pngDims.height > MAX_SIGNATURE_IMAGE_PIXELS) {
+          return res.status(400).json({ success: false, error: 'Signature image dimensions are too large.' });
+        }
         let embedded;
         try {
           embedded = await embedEsignSignatureImage(pdfDoc, imgBytes, val);
@@ -9688,7 +9713,15 @@ app.post('/api/esign/documents/generate-signed', async (req, res) => {
               'Could not place the signature image on the PDF. Try uploading a PNG or JPG, or draw/type your signature again.',
           });
         }
-        page.drawImage(embedded, { x, y, width, height });
+        // Preserve aspect ratio (contain/letterbox fit) so scans/photos don't render squashed
+        const naturalW = embedded.width || width;
+        const naturalH = embedded.height || height;
+        const fitScale = Math.min(width / naturalW, height / naturalH);
+        const drawWidth = naturalW * fitScale;
+        const drawHeight = naturalH * fitScale;
+        const drawX = x + (width - drawWidth) / 2;
+        const drawY = y + (height - drawHeight) / 2;
+        page.drawImage(embedded, { x: drawX, y: drawY, width: drawWidth, height: drawHeight });
       } else if (fType === 'text') {
         const raw = typeof val === 'string' ? val : String(val);
         const fontSize = Math.min(11, Math.max(7, height * 0.11));

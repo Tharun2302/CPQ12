@@ -127,6 +127,10 @@ function validateNameTitleDateFieldsComplete(
 function friendlyGenerateSignedError(res: Response, apiError: string | undefined): string {
   const raw = (apiError || '').trim();
   const lower = raw.toLowerCase();
+  const tooLarge = /too large/.test(lower);
+  if (tooLarge) {
+    return raw || 'Your signature image is too large. Please upload a smaller file (max 2MB).';
+  }
   const imageLikely =
     /signature image|image (encoding|data)|png or jpg|place the signature|invalid.*image|could not.*image|embed|webp/i.test(
       lower
@@ -504,7 +508,20 @@ const EsignSignPage: React.FC = () => {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    // Downstream PDF rendering distorts anything outside PNG/JPEG, so reject at the source
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg' && file.type !== 'image/jpg') {
+      setError('Signature image must be a PNG or JPG file.');
+      e.target.value = '';
+      return;
+    }
+    const MAX_SIGNATURE_IMAGE_BYTES = 2 * 1024 * 1024;
+    if (file.size > MAX_SIGNATURE_IMAGE_BYTES) {
+      setError('Signature image is too large. Max size is 2MB.');
+      e.target.value = '';
+      return;
+    }
+    setError(null);
     const reader = new FileReader();
     reader.onload = () => setSignatureImage(reader.result as string);
     reader.readAsDataURL(file);
@@ -2159,7 +2176,7 @@ const EsignSignPage: React.FC = () => {
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept="image/*"
+                        accept="image/png,image/jpeg"
                         onChange={(e) => {
                           handleImageUpload(e);
                           setActiveTab('upload');
