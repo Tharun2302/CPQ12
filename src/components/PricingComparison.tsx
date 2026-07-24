@@ -932,12 +932,41 @@ const PricingComparison: React.FC<PricingComparisonProps> = ({
               </div>
               <div className="text-sm text-gray-600 font-medium">Standalone sprawl cost</div>
             </div>
+            {(configuration?.manageDataGB ?? 0) > 0 && (
+              <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3 mb-3">
+                <span className="text-gray-700 font-medium">Per GB cost:</span>
+                <span className="font-bold text-gray-900">
+                  {`${formatCurrency(filteredCalculations[0].sprawlStandalone!.dataCost / (configuration?.manageDataGB ?? 1))}/GB`}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between items-center text-sm bg-white/60 rounded-lg p-3">
               <span className="text-gray-700 font-medium">{`Data Sprawl (${filteredCalculations[0].sprawlType})`}:</span>
               <span className="font-bold text-gray-900">
                 {formatCurrency(filteredCalculations[0].sprawlStandalone!.dataCost)}
               </span>
             </div>
+
+            <button
+              onClick={() => {
+                const base = filteredCalculations[0];
+                // Standalone omits the license line — sprawl cost only, always quotable.
+                onSelectTier({
+                  ...base,
+                  userCost: 0,
+                  dataCost: base.sprawlStandalone!.dataCost,
+                  migrationCost: 0,
+                  instanceCost: 0,
+                  totalCost: base.sprawlStandalone!.totalCost,
+                  status: undefined,
+                  message: undefined,
+                });
+              }}
+              className="w-full mt-6 py-4 px-6 rounded-xl font-bold text-lg text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl relative overflow-hidden group bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-white\0 via-white\20 to-white\0 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              <span className="relative flex items-center justify-center gap-2">Select Data Sprawl</span>
+            </button>
           </div>
         </div>
       )}

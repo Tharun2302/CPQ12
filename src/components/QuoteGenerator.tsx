@@ -463,6 +463,15 @@ const QuoteGenerator: React.FC<QuoteGeneratorProps> = ({
       return 'Combination';
     }
 
+    // MANAGE + Sprawl and Data Sprawl (Standalone) share one base template
+    // ("Data Sprawl template"), so label by the plan the user actually selected
+    // instead of the raw template name. The standalone plan omits the per-user
+    // license (userCost zeroed); MANAGE + Sprawl carries it (or a CUSTOM license).
+    if (configuration?.servicePlan === 'Manage' && calculation?.sprawlType) {
+      const licenseIncluded = (calculation.userCost || 0) > 0 || calculation.status === 'custom';
+      return licenseIncluded ? 'MANAGE + Sprawl' : 'Data Sprawl (Standalone)';
+    }
+
     return rawName || 'Selected Template';
   };
 
