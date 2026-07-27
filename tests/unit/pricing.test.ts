@@ -15,6 +15,8 @@ import {
   calcSprawlCost,
   DATA_SPRAWL_TABLES,
   BUNDLE_DATA_ADDON,
+  getRegionMultiplier,
+  overagePerServerPerMonth,
 } from '../../src/utils/pricing';
 import type { ConfigurationData, PricingCalculation } from '../../src/types/pricing';
 // Backend pricing engine (CommonJS) — must stay in lock-step with src/utils/pricing.ts.
@@ -1065,5 +1067,75 @@ describe('calculatePricing — fallback migration type', () => {
     expect(calc.userCost).toBeCloseTo(350, 6);
     expect(calc.dataCost).toBeCloseTo(7.5, 6);
     expect(calc.totalCost).toBeCloseTo(1157.5, 6);
+  });
+});
+
+describe('overagePerServerPerMonth — region multiplier in Overage Charges', () => {
+  // Region multipliers: R1 = ×1, R2 (AUS/NZ/EU) = ×0.8, R3 (Rest of World) = ×0.65
+  const REGIONS: Array<{ label: string; customerLocation: string; mult: number }> = [
+    { label: 'Region 1 — US/Canada', customerLocation: '1', mult: 1 },
+    { label: 'Region 2 — AUS, NZ, EU', customerLocation: '0.8', mult: 0.8 },
+    { label: 'Region 3 — Rest of World', customerLocation: '0.65', mult: 0.65 },
+  ];
+
+  it('getRegionMultiplier maps each region correctly', () => {
+    expect(getRegionMultiplier(makeConfig({ customerLocation: '1' }))).toBe(1);
+    expect(getRegionMultiplier(makeConfig({ customerLocation: '0.8' }))).toBe(0.8);
+    expect(getRegionMultiplier(makeConfig({ customerLocation: '0.65' }))).toBe(0.65);
+    // Unknown / missing values must not silently discount
+    expect(getRegionMultiplier(makeConfig({ customerLocation: undefined }))).toBe(1);
+    expect(getRegionMultiplier(makeConfig({ customerLocation: 'bogus' }))).toBe(1);
+  });
+
+  // Regression: the overage line used the flat base rate, so a Region 2 quote whose
+  // instance line billed $800 still advertised "$1,000.00 per server per month".
+  REGIONS.forEach(({ label, customerLocation, mult }) => {
+    it(`${label}: falls back to base rate × ${mult} when no breakdown exists`, () => {
+      const config = makeConfig({ customerLocation });
+      // Standard instance base = $1,000
+      expect(overagePerServerPerMonth(config, 'Standard', null)).toBeCloseTo(1000 * mult, 6);
+      // Small = $500, Large = $2,000
+      expect(overagePerServerPerMonth(config, 'Small', null)).toBeCloseTo(500 * mult, 6);
+      expect(overagePerServerPerMonth(config, 'Large', null)).toBeCloseTo(2000 * mult, 6);
+    });
+
+    it(`${label}: derives the rate from the billed breakdown`, () => {
+      const config = makeConfig({ customerLocation });
+      // What the engine actually bills: base × duration × instances × regionMult
+      const billed = 1000 * 1 * 1 * mult;
+      expect(overagePerServerPerMonth(config, 'Standard', { instanceCost: billed }, 1, 1))
+        .toBeCloseTo(1000 * mult, 6);
+    });
+  });
+
+  it('matches the engine: overage rate never exceeds the billed per-server cost', () => {
+    REGIONS.forEach(({ customerLocation }) => {
+      const config = makeConfig({
+        migrationType: 'Messaging',
+        numberOfUsers: 1,
+        instanceType: 'Standard',
+        numberOfInstances: 1,
+        duration: 1,
+        customerLocation,
+      });
+      const calc = calculatePricing(config, STANDARD);
+      const rate = overagePerServerPerMonth(config, 'Standard', calc, 1, 1);
+      // One instance for one month → the quoted rate IS the billed instance cost
+      expect(rate).toBeCloseTo(calc.instanceCost, 6);
+    });
+  });
+
+  it('divides multi-month / multi-instance breakdowns back to a monthly per-server rate', () => {
+    const config = makeConfig({ customerLocation: '0.8' });
+    // 3 instances × 4 months at Region 2: 1000 × 4 × 3 × 0.8 = 9,600 billed
+    expect(overagePerServerPerMonth(config, 'Standard', { instanceCost: 9600 }, 4, 3))
+      .toBeCloseTo(800, 6);
+  });
+
+  it('guards zero / missing duration and instance counts', () => {
+    const config = makeConfig({ customerLocation: '0.8' });
+    expect(overagePerServerPerMonth(config, 'Standard', { instanceCost: 800 }, 0, 0)).toBeCloseTo(800, 6);
+    expect(overagePerServerPerMonth(config, 'Standard', { instanceCost: 0 }, 1, 1)).toBeCloseTo(800, 6);
+    expect(overagePerServerPerMonth(config, 'Standard', undefined, 1, 1)).toBeCloseTo(800, 6);
   });
 });

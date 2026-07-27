@@ -315,7 +315,7 @@ function calculateManagePricing(config: ConfigurationData, tier: PricingTier): P
    Applied to user, data, managed-migration, and instance
    costs (matches COST ESTIMATOR REGION 2/3 columns).
    ========================================================= */
-function getRegionMultiplier(config: ConfigurationData): number {
+export function getRegionMultiplier(config: ConfigurationData): number {
   const v = config.customerLocation;
   if (v === '0.8') return 0.8;
   if (v === '0.65') return 0.65;
@@ -1282,4 +1282,30 @@ export function getInstanceTypeCost(instanceType: string): number {
     default:
       return 500;
   }
+}
+
+// Per-server-per-month rate quoted in the Overage Charges line.
+//
+// This must be the REGION-ADJUSTED rate, not the flat base rate. The engine bills
+// instances at base × duration × instances × regionMultiplier (rInst), so quoting the
+// base rate in Region 2/3 advertises an overage higher than the price actually charged
+// — e.g. $1,000/server in a Region 2 quote whose instance line billed $800.
+//
+// Prefer deriving from the computed breakdown (same approach as the neighbouring
+// per-user and per-GB overage figures) so this can never drift from what was billed;
+// fall back to base × multiplier when no breakdown is available.
+export function overagePerServerPerMonth(
+  config: ConfigurationData,
+  instanceType: string,
+  breakdown?: { instanceCost?: number } | null,
+  durationMonths: number = 1,
+  numberOfInstances: number = 1
+): number {
+  const months = Number.isFinite(durationMonths) && durationMonths > 0 ? durationMonths : 1;
+  const instances = Number.isFinite(numberOfInstances) && numberOfInstances > 0 ? numberOfInstances : 1;
+  const billed = Number(breakdown?.instanceCost ?? 0);
+  if (Number.isFinite(billed) && billed > 0) {
+    return billed / (months * instances);
+  }
+  return getInstanceTypeCost(instanceType) * getRegionMultiplier(config);
 }

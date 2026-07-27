@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PricingCalculation, ConfigurationData, Quote } from '../types/pricing';
-import { formatCurrency, getInstanceTypeCost, manageUserCost, MANAGE_STANDALONE_DATA_RATE } from '../utils/pricing';
+import { formatCurrency, getInstanceTypeCost, manageUserCost, MANAGE_STANDALONE_DATA_RATE, overagePerServerPerMonth } from '../utils/pricing';
 import {
   FileText,
   Download,
@@ -6968,8 +6968,15 @@ Total Price: {{total price}}`;
                     exhibitPerUserCost = formatCurrency(perUserCost);
                   }
 
-                  // Calculate per-server per month cost (instance type cost)
-                  const perServerPerMonthCost = getInstanceTypeCost(instanceType);
+                  // Per-server per month cost — region-adjusted, so Region 2/3 quotes
+                  // don't advertise an overage rate above what the instance line billed.
+                  const perServerPerMonthCost = overagePerServerPerMonth(
+                    (finalConfiguration || configuration) as any,
+                    instanceType,
+                    breakdown,
+                    Number(exhibitConfig.duration || 1),
+                    Number(exhibitConfig.numberOfInstances || 1)
+                  );
 
                   // Calculate per-GB cost (only for content migrations)
                   let perGBCost = 0;
