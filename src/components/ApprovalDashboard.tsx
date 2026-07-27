@@ -17,6 +17,7 @@ import {
   Lock,
   Download,
   Upload,
+  Trash2,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -177,6 +178,7 @@ const ApprovalDashboard: React.FC = () => {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [cancelingApprovalId, setCancelingApprovalId] = useState<string | null>(null);
+  const [deletingApprovalId, setDeletingApprovalId] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   // "Edit for RedLine" — OnlyOffice Word-style editor opened from an approval card.
@@ -195,6 +197,7 @@ const ApprovalDashboard: React.FC = () => {
     workflows,
     refreshWorkflows,
     updateWorkflow,
+    deleteWorkflow,
   } = useApprovalWorkflows();
 
   const flashToast = (msg: string) => {
@@ -300,6 +303,28 @@ const ApprovalDashboard: React.FC = () => {
     }
   };
 
+  // Permanently remove an approval request. Creator-only and irreversible, so the confirm
+  // names the record explicitly; the backend re-checks the caller against creatorEmail.
+  const handleDeleteApproval = async (workflow: any) => {
+    const label = workflow.dealName || workflow.clientName || workflow.documentId || 'this approval';
+    if (!window.confirm(`Delete "${label}" permanently?\n\nThis removes the approval request and its progress. This cannot be undone.`)) {
+      return;
+    }
+    setDeletingApprovalId(workflow.id);
+    try {
+      // deleteWorkflow prunes the local list itself, so no refetch is needed here.
+      await deleteWorkflow(workflow.id);
+      flashToast('Approval deleted');
+      // The card is gone — close the menu and drop any modal bound to it.
+      setOpenMenuId(null);
+      setSelectedWorkflow((cur: any) => (cur?.id === workflow.id ? null : cur));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not delete the approval. Please try again.');
+    } finally {
+      setDeletingApprovalId(null);
+    }
+  };
+
   // Open the OnlyOffice "Edit for RedLine" editor for an approval's document.
   const handleOpenRedline = async (documentId: string) => {
     if (!documentId) return;
@@ -363,8 +388,13 @@ const ApprovalDashboard: React.FC = () => {
         );
         const pdata = await persist.json();
         if (!persist.ok || !pdata?.success) throw new Error(pdata?.error || 'Failed to save the edited document');
-        flashToast('Redline saved — document updated');
+        flashToast(pdata.forked
+          ? 'Redline saved as a separate copy — the agreement under approval is unchanged'
+          : 'Redline saved — document updated');
         closeRedline();
+        // The backend just set hasRedlineEdit on the linked workflows; refetch so the
+        // "Redline Agreement" badge appears without a page reload.
+        await refreshWorkflows();
       } else if (data?.status === 'no-changes') {
         flashToast('No changes to save');
         closeRedline();
@@ -834,7 +864,7 @@ const ApprovalDashboard: React.FC = () => {
                 </div>
               )}
               <div
-                className={`grid min-w-0 w-full max-w-full grid-cols-1 gap-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-stretch lg:gap-4 ${
+                className={`grid min-w-0 w-full max-w-full grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,14rem)_auto] lg:items-stretch lg:gap-4 ${
                   activeView === 'dashboard' ? '' : 'lg:flex-1 lg:min-w-0'
                 }`}
               >
@@ -916,6 +946,18 @@ const ApprovalDashboard: React.FC = () => {
                               >
                                 <Upload className="w-3 h-3 shrink-0" />
                                 Uploaded Agreement
+                              </span>
+                            )}
+                            {workflow.hasRedlineEdit && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700 whitespace-nowrap"
+                                title={workflow.redlineForked
+                                  ? 'A redline copy was saved from this agreement. The document under approval is unchanged.'
+                                  : 'This agreement was edited using Edit for RedLine'}
+                                aria-label="Redline agreement"
+                              >
+                                <PenLine className="w-3 h-3 shrink-0" />
+                                Redline Agreement
                               </span>
                             )}
                           </div>
@@ -1103,6 +1145,24 @@ const ApprovalDashboard: React.FC = () => {
                                       {lock}
                                     </button>
                                   )}
+                                  {/* Delete — creator only, any status. Separated and red-tinted
+                                      because it is the only irreversible action in this menu. */}
+                                  <div className="my-1 border-t border-gray-100" />
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenuId(null); if (!canManage) { alert('Only the requester who created this approval can delete it.'); return; } handleDeleteApproval(workflow); }}
+                                    disabled={canManage && deletingApprovalId === workflow.id}
+                                    className={canManage
+                                      ? 'flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50'
+                                      : itemCls}
+                                    title={canManage ? 'Permanently delete this approval request' : 'Only the requester who created this approval can delete it'}
+                                  >
+                                    {canManage && deletingApprovalId === workflow.id
+                                      ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                                      : <Trash2 className="h-4 w-4 shrink-0" />}
+                                    Delete
+                                    {lock}
+                                  </button>
                                 </div>
                               </>
                             );

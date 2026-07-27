@@ -139,8 +139,13 @@ class ApprovalWorkflowServiceMongoDB {
     try {
       console.log('🗑️ Deleting workflow from MongoDB:', workflowId);
 
+      // The backend authorizes this against the token's identity (creator only), so the
+      // Bearer token is required — without it the request is rejected as unauthenticated.
+      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cpq_token') : null;
+
       const response = await fetch(`${this.baseUrl}/approval-workflows/${workflowId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
 
       if (!response.ok) {

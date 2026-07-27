@@ -17,6 +17,16 @@ export interface ApprovalWorkflow {
   // True when the workflow was created from a manually uploaded agreement (Approval Workflow form)
   // rather than a quote generated in the app. Used to show an "Uploaded Agreement" badge in the dashboard.
   isManualApproval?: boolean;
+  // True once "Edit for RedLine" has saved an edit from this workflow's document. Used to show a
+  // "Redline Agreement" badge in the dashboard, alongside the "Uploaded Agreement" badge above.
+  hasRedlineEdit?: boolean;
+  // ISO timestamp of the most recent redline save
+  redlineEditedAt?: string;
+  // Document holding the redline. Equals documentId when the agreement was overwritten in place;
+  // a different id when the approval was active and the redline was forked to a separate copy.
+  redlineDocumentId?: string;
+  // True when the redline went to a forked copy and the agreement under approval is unchanged
+  redlineForked?: boolean;
   // E-sign document id when agreement was sent via "Add e-sign fields first" flow
   esignDocumentId?: string;
   // Auto-reminder: number of days between reminder emails (0 or undefined = disabled)

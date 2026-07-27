@@ -2886,6 +2886,34 @@ async function hasApprovalAdminAccess(user) {
   return dbEmails.some((e) => String(e).trim().toLowerCase() === normalized);
 }
 
+// Resolves the caller from their Bearer token with no role requirement. Use this when an
+// endpoint authorizes on identity (e.g. "creator only") rather than on a role — the caller's
+// email must come from the verified token, never from the request body, which is spoofable.
+// Responds 401 and returns null when the token is missing or invalid.
+async function getAuthenticatedUser(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return null;
+  }
+  if (token.split('.').length !== 3) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await db.collection('users').findOne({ id: decoded.userId });
+    if (!user) {
+      res.status(401).json({ success: false, error: 'User not found' });
+      return null;
+    }
+    return user;
+  } catch (e) {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+    return null;
+  }
+}
+
 async function getApprovalAdminUser(req, res) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
@@ -5283,6 +5311,33 @@ app.post('/api/onlyoffice/start-session-from-document/:id', async (req, res) => 
 
 // Persist the edited (redlined) document from an OnlyOffice session back into the documents
 // collection, overwriting both the PDF (fileData) and the Word copy (docxFileData).
+/** Records that a redline edit was produced from a document, so the Approval dashboard can
+ *  show a "Redline Agreement" badge (mirrors the isManualApproval → "Uploaded Agreement" badge).
+ *  Flags every workflow linked to the source document regardless of status, because a redline is
+ *  worth surfacing on finished approvals too. `forked` distinguishes the two persist outcomes:
+ *  false = the approval's own document was overwritten; true = the document under approval was
+ *  left untouched and the redline went to a separate copy (resultDocumentId). */
+async function markWorkflowsRedlined(sourceDocumentId, resultDocumentId, forked) {
+  if (!db || !sourceDocumentId) return;
+  try {
+    await db.collection('approval_workflows').updateMany(
+      { documentId: sourceDocumentId },
+      {
+        $set: {
+          hasRedlineEdit: true,
+          redlineEditedAt: new Date().toISOString(),
+          redlineDocumentId: resultDocumentId || sourceDocumentId,
+          redlineForked: !!forked,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+  } catch (e) {
+    // Never fail the save because the badge metadata couldn't be written.
+    console.warn('⚠️ Could not flag workflows as redlined for', sourceDocumentId, e?.message || e);
+  }
+}
+
 app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'Database not available' });
@@ -5309,6 +5364,7 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
       );
       if (result.matchedCount === 0) return res.status(404).json({ success: false, error: 'Document not found' });
       console.log(`✅ onlyoffice redline persisted to document ${s.documentId} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
+      await markWorkflowsRedlined(s.documentId, s.documentId, false);
       return res.json({ success: true, forked: false, documentId: s.documentId });
     }
 
@@ -5371,6 +5427,7 @@ app.post('/api/onlyoffice/persist-to-document/:sessionId', async (req, res) => {
       return res.status(409).json({ success: false, error: 'Could not save the forked document due to an id conflict — please try again.' });
     }
     console.log(`✅ onlyoffice redline forked from ${s.documentId} into new document ${newDoc.id} (pdf ${s.editedPdf.length}b, docx ${s.editedDocx.length}b)`);
+    await markWorkflowsRedlined(s.documentId, newDoc.id, true);
     res.json({ success: true, forked: true, documentId: newDoc.id, originalDocumentId: s.documentId });
   } catch (e) {
     console.error('❌ onlyoffice persist-to-document error:', e);
@@ -11143,17 +11200,42 @@ app.delete('/api/approval-workflows/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    console.log('🗑️ Deleting approval workflow:', id);
-    
+
+    // Authorization: deleting an approval is destructive and irreversible, so the caller
+    // must be the requester who created it. Identity comes from the verified JWT, never
+    // from the body — a client-supplied email could name anyone.
+    const actor = await getAuthenticatedUser(req, res);
+    if (!actor) return; // 401 already sent
+
+    const workflow = await db.collection('approval_workflows').findOne({ id: id });
+    if (!workflow) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workflow not found'
+      });
+    }
+
+    const actorEmail = String(actor.email || '').trim().toLowerCase();
+    const creatorEmail = String(workflow.creatorEmail || workflow.createdBy || '').trim().toLowerCase();
+    if (!actorEmail || !creatorEmail || actorEmail !== creatorEmail) {
+      console.warn('⛔ Delete denied — actor is not the approval creator:', { id, actorEmail });
+      return res.status(403).json({
+        success: false,
+        error: 'Only the requester who created this approval can delete it'
+      });
+    }
+
+    console.log('🗑️ Deleting approval workflow:', id, 'by', actorEmail);
+
     const result = await db.collection('approval_workflows').deleteOne({ id: id });
-    
+
     if (result.deletedCount === 0) {
       return res.status(404).json({
         success: false,
         error: 'Workflow not found'
       });
     }
-    
+
     console.log('✅ Approval workflow deleted');
     res.json({
       success: true,
