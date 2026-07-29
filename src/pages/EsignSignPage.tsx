@@ -160,10 +160,18 @@ const EsignSignPage: React.FC = () => {
   const [fieldValues, setFieldValues] = useState<Record<number, string>>({});
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const [signatureDrawnData, setSignatureDrawnData] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'draw' | 'type' | 'upload'>('draw');
+  const [activeTab, setActiveTab] = useState<'draw' | 'type' | 'upload'>('type');
   const [typedSignature, setTypedSignature] = useState('');
   const [typedSignatureFontIndex, setTypedSignatureFontIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+
+  // Type is the default active tab, so prefill it as soon as the recipient name loads
+  // (previously this only happened when the user clicked the Type tab manually).
+  useEffect(() => {
+    if (recipientName?.trim() && !typedSignature.trim()) {
+      setTypedSignature(recipientName.trim());
+    }
+  }, [recipientName]);
   const [downloading, setDownloading] = useState(false);
   const [finishMenuOpen, setFinishMenuOpen] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -2155,7 +2163,7 @@ const EsignSignPage: React.FC = () => {
                   {/* Content - scrollable area only for signature styles list */}
                   <div className="flex-1 min-h-0 flex flex-col p-4 sm:p-6 overflow-hidden">
                     <div className="flex-shrink-0 flex flex-wrap gap-2 mb-4">
-                      {(['draw', 'type', 'upload'] as const).map((tab) => (
+                      {(['type', 'upload', 'draw'] as const).map((tab) => (
                         <button
                           key={tab}
                           onClick={() => {
