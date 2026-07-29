@@ -6451,7 +6451,35 @@ Total Price: {{total price}}`;
                 const expandedIds = new Set<string>();
                 const matchedExhibits: Array<{ id: string; name: string; plan: string; combo: string }> = [];
                 const skippedExhibits: Array<{ name: string; reason: string }> = [];
-                
+
+                // Only Basic and Standard exist today, so each falls back to the other when a
+                // combination/include-type has no exhibit of its own plan. Advanced/Premium/
+                // Enterprise are left as-is (no defined sibling to fall back to).
+                const FALLBACK_PLAN: Record<string, string> = { basic: 'standard', standard: 'basic' };
+                const getIncludeTypeLower = (ex: any): string =>
+                  (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+
+                // Precompute which plans actually exist per (category|baseCombo|includeType) group,
+                // so a combination missing the desired plan can fall back to its sibling plan
+                // instead of silently dropping that combination from the agreement.
+                const planAvailabilityByGroup = new Map<string, Set<string>>();
+                for (const ex of allExhibits) {
+                  const category = (ex.category || 'content').toLowerCase();
+                  const baseCombo = getBaseCombination(ex);
+                  if (!baseCombo) continue;
+                  const plan = getPlanFromExhibit(ex).toLowerCase();
+                  if (!plan) continue; // generic exhibits don't count toward plan availability
+                  const groupKey = `${category}|${baseCombo}|${getIncludeTypeLower(ex)}`;
+                  if (!planAvailabilityByGroup.has(groupKey)) planAvailabilityByGroup.set(groupKey, new Set());
+                  planAvailabilityByGroup.get(groupKey)!.add(plan);
+                }
+                const resolveEffectivePlan = (category: string, baseCombo: string, includeType: string, desiredPlan: string): string => {
+                  const available = planAvailabilityByGroup.get(`${category}|${baseCombo}|${includeType}`);
+                  if (!available || available.has(desiredPlan)) return desiredPlan;
+                  const fallback = FALLBACK_PLAN[desiredPlan];
+                  return (fallback && available.has(fallback)) ? fallback : desiredPlan;
+                };
+
                 for (const ex of allExhibits) {
                   const category = (ex.category || 'content').toLowerCase();
                   const baseCombo = getBaseCombination(ex);
@@ -6497,8 +6525,13 @@ Total Price: {{total price}}`;
                   // These are combination-specific but not plan-specific (e.g., "Google Chat to Google Chat")
                   const isGenericExhibit = !exhibitPlan || exhibitPlan === '';
                   // Honor a per-combination plan override for this exhibit's combination;
-                  // otherwise fall back to the single global plan.
-                  const effectivePlanLower = perCombinationPlanByKey.get(`${category}|${baseCombo}`) || selectedPlanLower;
+                  // otherwise fall back to the single global plan. Then resolve to the
+                  // sibling plan (Basic <-> Standard) if this combo/include-type has none
+                  // of the desired plan at all.
+                  const desiredPlanLower = perCombinationPlanByKey.get(`${category}|${baseCombo}`) || selectedPlanLower;
+                  const effectivePlanLower = isGenericExhibit
+                    ? desiredPlanLower
+                    : resolveEffectivePlan(category, baseCombo, getIncludeTypeLower(ex), desiredPlanLower);
                   if (!isGenericExhibit && exhibitPlan.toLowerCase() !== effectivePlanLower) {
                     skippedExhibits.push({ name: ex.name || 'unknown', reason: `plan mismatch: ${exhibitPlan} !== ${effectivePlanLower}` });
                     continue; // Skip if plan doesn't match (only for plan-specific exhibits)
@@ -8880,6 +8913,29 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
               //   B. COMBINATIONS-BASED (fallback if name-based finds nothing) — strict
               //      combination check (no distinct siblings).
               try {
+                // Only Basic and Standard exist today, so each falls back to the other when a
+                // combination/include-type has no exhibit of its own plan in this override pass.
+                const FALLBACK_PLAN_HERE: Record<string, string> = { basic: 'standard', standard: 'basic' };
+                const getIncludeTypeLowerHere = (ex: any): string =>
+                  (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
+                const planAvailabilityByGroupHere = new Map<string, Set<string>>();
+                for (const ex of allExhibits) {
+                  const category = (ex?.category || 'content').toString().toLowerCase();
+                  const baseCombo = getNormalizedBaseCombination(ex);
+                  if (!baseCombo) continue;
+                  const plan = getPlanLowerFromExhibit(ex);
+                  if (!plan) continue;
+                  const groupKey = `${category}|${baseCombo}|${getIncludeTypeLowerHere(ex)}`;
+                  if (!planAvailabilityByGroupHere.has(groupKey)) planAvailabilityByGroupHere.set(groupKey, new Set());
+                  planAvailabilityByGroupHere.get(groupKey)!.add(plan);
+                }
+                const resolveEffectivePlanHere = (category: string, baseCombo: string, includeType: string, desiredPlan: string): string => {
+                  const available = planAvailabilityByGroupHere.get(`${category}|${baseCombo}|${includeType}`);
+                  if (!available || available.has(desiredPlan)) return desiredPlan;
+                  const fallback = FALLBACK_PLAN_HERE[desiredPlan];
+                  return (fallback && available.has(fallback)) ? fallback : desiredPlan;
+                };
+
                 // Extract a normalized name base (strip plan/include suffix, collapse drive
                 // variants so "MyDrive" / "My Drive" / "Mydrive" compare equal).
                 const extractNameBase = (rawName: string): string => {
@@ -8931,7 +8987,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     const exPlan = getPlanLowerFromExhibit(ex);
                     if (selectedPlanLowerForFilter) {
                       const isGenericPlan = !exPlan;
-                      if (!isGenericPlan && exPlan !== selectedPlanLowerForFilter) continue;
+                      const exBaseCombo = getNormalizedBaseCombination(ex);
+                      const exCategory = (ex?.category || 'content').toString().toLowerCase();
+                      const effectivePlanForEx = exBaseCombo
+                        ? resolveEffectivePlanHere(exCategory, exBaseCombo, getIncludeTypeLowerHere(ex), selectedPlanLowerForFilter)
+                        : selectedPlanLowerForFilter;
+                      if (!isGenericPlan && exPlan !== effectivePlanForEx) continue;
                     }
                     const inferredInclude = (ex?.includeType || (String(ex?.name || '').toLowerCase().includes('not') ? 'notincluded' : 'included')).toString().toLowerCase();
                     candidates.push({ id: (ex?._id ?? '').toString(), ex, ts: tsOf(ex), includeType: inferredInclude, plan: exPlan });
@@ -9022,7 +9083,12 @@ ${diagnostic.recommendations.map(rec => `• ${rec}`).join('\n')}
                     if (selectedPlanLowerForFilter) {
                       const exPlan = (ex?.planType || '').toString().toLowerCase();
                       const isGenericPlan = !exPlan;
-                      if (!isGenericPlan && exPlan !== selectedPlanLowerForFilter) continue;
+                      const exBaseCombo = getNormalizedBaseCombination(ex);
+                      const exCategory = (ex?.category || 'content').toString().toLowerCase();
+                      const effectivePlanForEx = exBaseCombo
+                        ? resolveEffectivePlanHere(exCategory, exBaseCombo, getIncludeTypeLowerHere(ex), selectedPlanLowerForFilter)
+                        : selectedPlanLowerForFilter;
+                      if (!isGenericPlan && exPlan !== effectivePlanForEx) continue;
                     }
                     strictIds.push((ex?._id ?? '').toString());
                   }

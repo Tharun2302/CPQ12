@@ -186,6 +186,63 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
   };
 
+  // Only Basic and Standard exist today, so each falls back to the other when a
+  // combination has no exhibit of its own tier. Advanced/Premium/Enterprise are left
+  // as-is (no sibling tier to fall back to) in case they're introduced later.
+  const FALLBACK_TIER: Record<string, string> = { basic: 'standard', standard: 'basic' };
+
+  // Resolve an exhibit's tier from its planType field, falling back to name-based
+  // detection (legacy exhibits that predate the planType field).
+  const getExhibitTier = (ex: Exhibit): string | null => {
+    if (ex.planType) return ex.planType.toLowerCase();
+
+    const name = ex.name.toLowerCase();
+    const hasStandard = name.includes('standard') || name.includes('-std') || name.includes('_std') || name.endsWith('std');
+    const hasAdvanced = name.includes('advanced');
+    const hasBasic = name.includes('basic');
+    const hasPremium = name.includes('premium');
+    const hasEnterprise = name.includes('enterprise');
+
+    if (!hasStandard && !hasAdvanced && !hasBasic && !hasPremium && !hasEnterprise) {
+      return null; // Fully generic exhibit, no plan tier in its name
+    }
+    if (hasBasic && !hasStandard && !hasAdvanced) return 'basic';
+    if (hasStandard && !hasAdvanced && !hasBasic) return 'standard';
+    if (hasAdvanced && !hasStandard && !hasBasic) return 'advanced';
+    if (hasPremium) return 'premium';
+    if (hasEnterprise) return 'enterprise';
+    return 'ambiguous'; // Multiple tier keywords in the name - don't guess
+  };
+
+  // For the selected tier, resolve which exhibit IDs count as "belonging" to it, per
+  // combination + include-type (Included/Not Included) pair. A combination only falls
+  // back to the sibling tier (Basic <-> Standard) for the specific include-type variant
+  // that's missing - it never overrides a variant the selected tier already has.
+  const resolveTierExhibitIds = (allExhibits: Exhibit[], tierName: string): Set<string> => {
+    const fallbackTier = FALLBACK_TIER[tierName];
+    const byGroup = new Map<string, Exhibit[]>();
+
+    allExhibits.forEach(ex => {
+      const tier = getExhibitTier(ex);
+      if (tier !== tierName && (!fallbackTier || tier !== fallbackTier)) return;
+      const comboKey = (ex.combinations && ex.combinations.length > 0) ? ex.combinations[0] : 'all';
+      const groupKey = `${comboKey}|${ex.includeType || 'generic'}`;
+      if (!byGroup.has(groupKey)) byGroup.set(groupKey, []);
+      byGroup.get(groupKey)!.push(ex);
+    });
+
+    const ids = new Set<string>();
+    byGroup.forEach(groupExhibits => {
+      const own = groupExhibits.filter(ex => getExhibitTier(ex) === tierName);
+      const chosen = own.length > 0
+        ? own
+        : (fallbackTier ? groupExhibits.filter(ex => getExhibitTier(ex) === fallbackTier) : []);
+      chosen.forEach(ex => ids.add(ex._id));
+    });
+
+    return ids;
+  };
+
   // Filter exhibits based on selected tier (Basic/Standard/Advanced)
   const filteredExhibits = useMemo(() => {
     if (!selectedTier?.tier?.name) {
@@ -194,42 +251,14 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
     }
 
     const tierName = selectedTier.tier.name.toLowerCase();
-    
-    // Filter exhibits to only show those matching the selected tier
+    const tierExhibitIds = resolveTierExhibitIds(exhibits, tierName);
+
+    // Show exhibits matching the selected tier (including any sibling-tier fallback for
+    // combinations missing that specific tier/include-type), plus fully generic exhibits.
     return exhibits.filter(exhibit => {
-      // First check if exhibit has planType field (new way - more reliable)
-      if (exhibit.planType) {
-        return exhibit.planType.toLowerCase() === tierName;
-      }
-      
-      // Fallback: Check if exhibit name contains a plan type (legacy support)
-      const exhibitName = exhibit.name.toLowerCase();
-      // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
-      const hasStandard = exhibitName.includes('standard') || (exhibitName.includes('-std') || exhibitName.includes('_std') || exhibitName.endsWith('std'));
-      const hasAdvanced = exhibitName.includes('advanced');
-      const hasBasic = exhibitName.includes('basic');
-      const hasPremium = exhibitName.includes('premium');
-      const hasEnterprise = exhibitName.includes('enterprise');
-      
-      // If exhibit has a plan type in name, filter by matching tier
-      if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
-        if (tierName === 'basic') {
-          return hasBasic && !hasStandard && !hasAdvanced;
-        } else if (tierName === 'standard') {
-          return hasStandard && !hasAdvanced && !hasBasic;
-        } else if (tierName === 'advanced') {
-          return hasAdvanced && !hasStandard && !hasBasic;
-        } else if (tierName === 'premium') {
-          return hasPremium;
-        } else if (tierName === 'enterprise') {
-          return hasEnterprise;
-        }
-        // If tier doesn't match any plan type, don't show this exhibit
-        return false;
-      }
-      
-      // For exhibits without explicit plan type, show them (they're generic)
-      return true;
+      const tier = getExhibitTier(exhibit);
+      if (tier === null) return true;
+      return tierExhibitIds.has(exhibit._id);
     });
   }, [exhibits, selectedTier]);
 
@@ -243,49 +272,10 @@ const ExhibitSelector: React.FC<ExhibitSelectorProps> = ({
 
     const tierName = selectedTier.tier.name.toLowerCase();
 
-    // Find ALL exhibits that match the selected tier (both Include and Not Include variants separately)
-    const matchingExhibitIds = exhibits
-      .filter(ex => {
-        // First check planType field (most reliable)
-        if (ex.planType) {
-          const matchesTier = ex.planType.toLowerCase() === tierName;
-          if (!matchesTier) return false;
-          // Include this exhibit ONLY if:
-          // 1. It has an explicit includeType (separate Include/Not Include variants), OR
-          // 2. It doesn't have a plan type in its name (it's a generic exhibit for this tier)
-          return true;
-        }
-
-        // Fallback: Check exhibit name for plan type
-        const exhibitName = ex.name.toLowerCase();
-        // Check for "std" as abbreviation for "standard" (e.g., "slack-to-google-chat-std")
-        const hasStandard = exhibitName.includes('standard') || (exhibitName.includes('-std') || exhibitName.includes('_std') || exhibitName.endsWith('std'));
-        const hasAdvanced = exhibitName.includes('advanced');
-        const hasBasic = exhibitName.includes('basic');
-        const hasPremium = exhibitName.includes('premium');
-        const hasEnterprise = exhibitName.includes('enterprise');
-
-        // If exhibit has a plan type in name, check if it matches selected tier
-        if (hasStandard || hasAdvanced || hasBasic || hasPremium || hasEnterprise) {
-          if (tierName === 'basic') {
-            return hasBasic && !hasStandard && !hasAdvanced;
-          } else if (tierName === 'standard') {
-            return hasStandard && !hasAdvanced && !hasBasic;
-          } else if (tierName === 'advanced') {
-            return hasAdvanced && !hasStandard && !hasBasic;
-          } else if (tierName === 'premium') {
-            return hasPremium;
-          } else if (tierName === 'enterprise') {
-            return hasEnterprise;
-          }
-          return false;
-        }
-
-        // Don't auto-select exhibits without explicit plan type (generic exhibits)
-        // User must manually select these
-        return false;
-      })
-      .map(ex => ex._id);
+    // Find ALL exhibits that match the selected tier (both Include and Not Include variants),
+    // falling back to the sibling tier (Basic <-> Standard) for any combination/include-type
+    // pair that has no exhibit of its own tier.
+    const matchingExhibitIds = Array.from(resolveTierExhibitIds(exhibits, tierName));
 
     // Always include required exhibits (they should always be selected)
     const requiredExhibitIds = exhibits
