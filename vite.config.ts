@@ -2,8 +2,18 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
+  // .env sets NODE_ENV=development (needed for local `npm run dev`), but Vite's dotenv
+  // loader copies that into process.env.NODE_ENV even during `vite build`, which flips
+  // import.meta.env.DEV back to true and dead-code-eliminates every DEV-gated branch in
+  // the production bundle (e.g. api.ts's same-origin BACKEND_URL fallback). Force these
+  // from the actual build mode ('production' for `vite build`) instead of trusting
+  // whatever NODE_ENV happens to be in the environment.
+  define: {
+    'import.meta.env.DEV': JSON.stringify(mode !== 'production'),
+    'import.meta.env.PROD': JSON.stringify(mode === 'production'),
+  },
   server: {
     // Dev-only: browser calls same origin (/api → backend) so PDF fetches avoid CORS (5173 vs 3001)
     proxy: {
@@ -49,4 +59,4 @@ export default defineConfig({
       transformMixedEsModules: true,
     },
   },
-});
+}));
