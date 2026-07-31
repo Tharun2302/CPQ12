@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
-import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle, ArrowRight, ArrowLeft, CheckCircle2, ChevronDown } from 'lucide-react';
+import { PenLine, Loader2, Check, Type, ImagePlus, Pencil, Download, XCircle, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import EsignPdfPageView from '../components/EsignPdfPageView';
 import { cssStackForEsignTextFont, normalizeEsignTextColor } from '../utils/esignTextFieldStyle';
@@ -173,7 +173,6 @@ const EsignSignPage: React.FC = () => {
     }
   }, [recipientName]);
   const [downloading, setDownloading] = useState(false);
-  const [finishMenuOpen, setFinishMenuOpen] = useState(false);
   const [success, setSuccess] = useState(false);
   const [alreadySigned, setAlreadySigned] = useState(false);
   const [alreadyReviewed, setAlreadyReviewed] = useState(false);
@@ -1796,12 +1795,31 @@ const EsignSignPage: React.FC = () => {
               <h1 className="text-base sm:text-lg font-semibold text-white">Review and complete</h1>
               <p className="text-slate-300 text-[11px] sm:text-xs mt-0.5 break-words truncate">{doc.file_name}</p>
             </div>
-            <div className="relative flex items-stretch shrink-0">
+            <div className="flex items-stretch gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleEditAtRoot}
+                title="Edit"
+                aria-label="Edit"
+                className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 p-2 rounded-md inline-flex items-center justify-center"
+              >
+                <Pencil className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownload(doc?.file_name)}
+                disabled={downloading}
+                title="Download"
+                aria-label="Download"
+                className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 p-2 rounded-md inline-flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+              </button>
               <button
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting || fields.length === 0 || (recipientRole === 'signer' && remainingCount > 0)}
-                className="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 text-sm font-semibold rounded-l-md disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                className="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 text-sm font-semibold rounded-md disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
               >
                 {submitting ? (
                   <>
@@ -1812,37 +1830,6 @@ const EsignSignPage: React.FC = () => {
                   'Finish'
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => setFinishMenuOpen((v) => !v)}
-                className="bg-violet-600 hover:bg-violet-700 text-white px-2 py-2 rounded-r-md border-l border-violet-700 inline-flex items-center"
-                aria-label="More options"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-              {finishMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setFinishMenuOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-200 z-50 py-1">
-                    <button
-                      type="button"
-                      onClick={() => { handleEditAtRoot(); setFinishMenuOpen(false); }}
-                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                    >
-                      <Pencil className="h-4 w-4" /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { handleDownload(doc?.file_name); setFinishMenuOpen(false); }}
-                      disabled={downloading}
-                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50"
-                    >
-                      {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                      Download
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           </div>
 
@@ -2048,6 +2035,7 @@ const EsignSignPage: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => {
+                                        setActiveFieldIdx(globalIdx);
                                         setSelectedSignatureFieldIndex(globalIdx);
                                         clearSignature();
                                       }}
@@ -2070,6 +2058,7 @@ const EsignSignPage: React.FC = () => {
                                   ) : (
                                     <textarea
                                       value={fieldValues[globalIdx] ?? ''}
+                                      onFocus={() => setActiveFieldIdx(globalIdx)}
                                       onChange={(e) =>
                                         setFieldValues((prev) => ({
                                           ...prev,
@@ -2089,6 +2078,7 @@ const EsignSignPage: React.FC = () => {
                                   <input
                                     type={f.type === 'date' ? 'date' : 'text'}
                                     value={fieldValues[globalIdx] ?? ''}
+                                    onFocus={() => setActiveFieldIdx(globalIdx)}
                                     onChange={(e) =>
                                       setFieldValues((prev) => ({ ...prev, [globalIdx]: e.target.value }))
                                     }
