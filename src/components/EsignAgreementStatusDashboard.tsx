@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { FileText, Loader2, Check, Clock, XCircle, Eye, PenLine, Download, MoreVertical, ThumbsUp, Calendar, Bell, CalendarClock, Send, MailCheck, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Forward, ChevronRight, ChevronDown, Lock, Search, Upload, Copy } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
+import DocusignConnectionBanner from './DocusignConnectionBanner';
 import Navigation from './Navigation';
 import EditDatesModal from './EditDatesModal';
 
@@ -302,9 +303,29 @@ const EsignAgreementStatusDashboard: React.FC = () => {
     }
   }, []);
 
+  const [syncingDocusign, setSyncingDocusign] = useState(false);
+  // Pull latest status from DocuSign for pending envelopes, then refresh the list.
+  // (Real-time updates come from the DocuSign Connect webhook in prod; this is the local/dev fallback.)
+  const syncDocusign = useCallback(async (silent = false) => {
+    if (!silent) setSyncingDocusign(true);
+    try {
+      await fetch(`${BACKEND_URL}/api/esign/docusign/sync-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 50 }),
+      });
+    } catch {
+      /* ignore — fetchStatus still shows whatever the DB / webhook already has */
+    }
+    await fetchStatus(silent);
+    if (!silent) setSyncingDocusign(false);
+  }, [fetchStatus]);
+
   useEffect(() => {
     fetchStatus();
-  }, [fetchStatus]);
+    // Background-sync DocuSign statuses once on open so the list reflects signed/declined envelopes.
+    syncDocusign(true);
+  }, [fetchStatus, syncDocusign]);
 
   // Live dashboard: silently refresh the list every 12s so statuses stay current without a popup.
   useEffect(() => {
@@ -640,6 +661,19 @@ const EsignAgreementStatusDashboard: React.FC = () => {
 
       <div className="lg:pl-64">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <DocusignConnectionBanner />
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => syncDocusign(false)}
+              disabled={syncingDocusign}
+              title="Pull the latest status from DocuSign for pending agreements"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {syncingDocusign ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Sync DocuSign
+            </button>
+          </div>
           {!loading && !error && agreementsSentOrBeyond.length > 0 && (
             <div className="flex flex-wrap items-center gap-4 mb-6 p-4 rounded-xl border border-slate-200 bg-white/80">
               <div className="flex items-center gap-2 text-slate-600">

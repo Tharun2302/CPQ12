@@ -26,6 +26,7 @@ const EsignSendPage = lazy(() => import('./pages/EsignSendPage'));
 const EsignTrackingPage = lazy(() => import('./pages/EsignTrackingPage'));
 const EsignSignPage = lazy(() => import('./pages/EsignSignPage'));
 const EsignInboxByToken = lazy(() => import('./pages/EsignInboxByToken'));
+const DocusignCallback = lazy(() => import('./pages/DocusignCallback'));
 const EsignTeamLeadDashboard = lazy(() => import('./components/EsignTeamLeadDashboard'));
 const EsignTechnicalDashboard = lazy(() => import('./components/EsignTechnicalDashboard'));
 const EsignLegalDashboard = lazy(() => import('./components/EsignLegalDashboard'));
@@ -2028,6 +2029,7 @@ function App() {
               <Route path="/signup" element={<SignUpPage />} />
               <Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
               <Route path="/auth/microsoft/callback/" element={<MicrosoftCallback />} />
+              <Route path="/auth/docusign/callback" element={<DocusignCallback />} />
 
               {/* E-Signature routes (with left sidebar) */}
               <Route path="/esign" element={<EsignLayout />}>

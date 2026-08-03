@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+const docusign = require('./services/docusignService.cjs');
 
 // --- simple in-memory cache (no external deps) ---
 const _cache = {
@@ -171,7 +172,8 @@ app.use((req, res, next) => {
   next();
 });
 // Large enough for generate-signed JSON bodies with base64 signature images (multiple fields).
-app.use(express.json({ limit: '50mb' }));
+// `verify` stashes the raw body so the DocuSign Connect webhook can validate its HMAC signature.
+app.use(express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static files from the React app build
@@ -347,6 +349,10 @@ async function initializeDatabase() {
     await esignDocumentsCollection.createIndex({ created_at: -1 });
     await esignDocumentsCollection.createIndex({ status: 1 });
     await esignDocumentsCollection.createIndex({ uploaded_by: 1 });
+    // DocuSign: look up the local envelope by its DocuSign id (webhook + status sync).
+    await esignDocumentsCollection.createIndex({ docusign_envelope_id: 1 }, { sparse: true });
+    // DocuSign PKCE verifiers are short-lived; auto-expire stragglers after 15 minutes.
+    try { await db.collection('docusign_pkce').createIndex({ created_at: 1 }, { expireAfterSeconds: 900 }); } catch (_) { /* ignore */ }
     const signatureFieldsCollection = db.collection('signature_fields');
     await signatureFieldsCollection.createIndex({ document_id: 1 });
     const esignRecipientsCollection = db.collection('esign_recipients');
@@ -7546,6 +7552,17 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
     if (!voidReason) {
       return res.status(400).json({ success: false, error: 'A reason is required when voiding a document' });
     }
+    // If this agreement was sent via DocuSign, void the envelope there too so the
+    // recipient can no longer sign it. Best-effort: a DocuSign failure must not block
+    // the local void (the local record is the source of truth for the UI).
+    if (doc.docusign_envelope_id) {
+      try {
+        await docusign.voidEnvelope(db, doc.docusign_envelope_id, voidReason);
+        console.log('✅ DocuSign envelope voided', doc.docusign_envelope_id);
+      } catch (dsErr) {
+        console.warn('⚠️ Could not void DocuSign envelope', doc.docusign_envelope_id, '—', dsErr?.response?.data?.message || dsErr?.message);
+      }
+    }
     await db.collection('esign_recipients').updateMany(
       { document_id: docId },
       { $unset: { signing_token: '' } }
@@ -7558,6 +7575,7 @@ app.post('/api/esign/documents/:id/void', async (req, res) => {
           voided_at: new Date(),
           voided_by: actorEmail || null,
           void_reason: voidReason,
+          ...(doc.docusign_envelope_id ? { docusign_status: 'voided' } : {}),
         },
       }
     );
@@ -7890,6 +7908,185 @@ app.post('/api/esign/documents/:id/recipients', async (req, res) => {
 });
 
 // Shared helper: send e-sign document to signers (used by POST route and by approval-completion auto-send)
+/** Read the working PDF bytes for an esign document (disk → Mongo base64 → approval source). */
+async function loadEsignPdfBuffer(doc) {
+  if (doc.file_path && fs.existsSync(doc.file_path)) return fs.readFileSync(doc.file_path);
+  if (doc.file_data) return Buffer.from(doc.file_data, 'base64');
+  if (doc.source_document_id) {
+    const sd = await db.collection('documents').findOne({ id: doc.source_document_id });
+    if (sd && sd.fileData) {
+      if (typeof sd.fileData === 'string') return Buffer.from(sd.fileData, 'base64');
+      if (Buffer.isBuffer(sd.fileData)) return sd.fileData;
+      if (sd.fileData.buffer) return Buffer.from(sd.fileData.buffer);
+    }
+  }
+  throw new Error('No PDF file data available for this agreement');
+}
+
+/**
+ * DocuSign send path (replaces token+SendGrid). Signers only — reviewers stay in the
+ * approval workflow. Maps placed signature_fields to DocuSign tabs, creates+sends an
+ * envelope, and records the envelope id/status on the esign document.
+ */
+async function sendDocumentViaDocusign(doc, recipients, docId, { uploadedBy = 'system' } = {}) {
+  const signers = recipients.filter((r) => !recipientIsEsignReviewer(r));
+  if (!signers.length) {
+    return { success: false, error: 'No signer recipients found. Add at least one signer (reviewers are handled in the approval workflow, not the DocuSign envelope).' };
+  }
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  for (const s of signers) {
+    if (!s.email || !emailRe.test(String(s.email).trim())) {
+      return { success: false, error: `Recipient "${s.name || s.email || 'unknown'}" has a missing or invalid email address.` };
+    }
+    if (!s.name || !String(s.name).trim()) {
+      return { success: false, error: `Recipient ${s.email} is missing a name.` };
+    }
+  }
+  // Duplicate-send protection: one active envelope per agreement.
+  if (doc.docusign_envelope_id) {
+    return { success: false, error: 'This agreement already has a DocuSign envelope. Void it before sending again.', already_sent: true };
+  }
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await loadEsignPdfBuffer(doc);
+  } catch (e) {
+    return { success: false, error: `Could not load the agreement PDF: ${e.message}` };
+  }
+
+  const allFields = await db.collection('signature_fields').find(signatureFieldsDocumentFilter(docId)).sort({ _id: 1 }).toArray();
+  const hasAssignment = allFields.some((f) => f.recipient_id);
+  const dsSigners = signers.map((s, i) => {
+    const recFields = hasAssignment
+      ? allFields.filter((f) => !f.recipient_id || String(f.recipient_id) === String(s._id))
+      : allFields;
+    return {
+      email: String(s.email).trim(),
+      name: String(s.name).trim(),
+      recipientId: String(i + 1),
+      routingOrder: String(Number.isFinite(s.order) ? s.order + 1 : i + 1),
+      fields: recFields,
+    };
+  });
+
+  let result;
+  try {
+    result = await docusign.createAndSendEnvelope({
+      db,
+      pdfBuffer,
+      fileName: doc.file_name || 'Agreement.pdf',
+      emailSubject: `Please sign: ${doc.file_name || 'Agreement'}`,
+      signers: dsSigners,
+    });
+  } catch (e) {
+    const apiMsg = e?.response?.data?.message || e?.message || 'DocuSign envelope creation failed';
+    console.error('❌ DocuSign envelope creation failed:', apiMsg);
+    return { success: false, error: `DocuSign: ${apiMsg}` };
+  }
+
+  const now = new Date();
+  await db.collection('esign_documents').updateOne(
+    { _id: docId },
+    { $set: {
+      status: docusign.mapEnvelopeStatusToDoc(result.status) || 'sent',
+      sent_at: now,
+      docusign_envelope_id: result.envelopeId,
+      docusign_status: result.status || 'sent',
+      docusign_sent_at: now,
+    } }
+  );
+  for (const s of signers) {
+    await db.collection('esign_recipients').updateOne(
+      { _id: s._id },
+      { $set: { status: 'pending', sent_at: now, docusign_recipient_email: String(s.email).trim(), docusign_recipient_name: String(s.name).trim() } }
+    );
+  }
+  // Cross-reference the envelope on the workflow (best effort).
+  try {
+    await db.collection('approval_workflows').updateOne(
+      { esignDocumentId: docId.toString() },
+      { $set: { docusignEnvelopeId: result.envelopeId, updatedAt: new Date().toISOString() } }
+    );
+  } catch (_) { /* ignore */ }
+  await logAudit(docId, 'sent', uploadedBy, null, { provider: 'docusign', envelope_id: result.envelopeId });
+  console.log(`✅ DocuSign envelope ${result.envelopeId} sent to ${signers.length} signer(s)`);
+  return { success: true, emails_sent: signers.length, emails_sent_to: signers.map((s) => String(s.email).trim()), envelope_id: result.envelopeId, provider: 'docusign' };
+}
+
+/**
+ * Apply a DocuSign envelope status to the local esign document (shared by webhook + polling sync).
+ * On completion, downloads the signed PDF and stores it so the existing file endpoint serves it.
+ */
+async function applyDocusignEnvelopeStatus(esignDocId, envelopeStatus) {
+  const doc = await db.collection('esign_documents').findOne({ _id: esignDocId });
+  if (!doc) return { success: false, error: 'esign document not found' };
+  const raw = String(envelopeStatus || '').toLowerCase();
+  const set = { docusign_status: envelopeStatus };
+
+  if (raw === 'completed' && doc.status !== 'completed') {
+    try {
+      const pdf = await docusign.downloadCombinedDocument(db, doc.docusign_envelope_id);
+      const outName = `signed-${doc._id}-${Date.now()}.pdf`;
+      const outPath = path.join(signedDir, outName);
+      fs.mkdirSync(signedDir, { recursive: true });
+      fs.writeFileSync(outPath, pdf);
+      set.signed_file_path = outPath;
+      set.signed_file_data = pdf.toString('base64');
+      set.signed_document_reference = doc.docusign_envelope_id;
+    } catch (dlErr) {
+      console.warn('⚠️ DocuSign: could not download completed document:', dlErr?.response?.status || dlErr?.message);
+    }
+    set.status = 'completed';
+    set.signed_at = new Date();
+    set.docusign_completed_at = new Date();
+  } else if (raw === 'declined') {
+    set.status = 'denied';
+  } else if (raw === 'voided') {
+    set.status = 'voided';
+    set.voided_at = new Date();
+  } else if (doc.status !== 'completed') {
+    set.status = docusign.mapEnvelopeStatusToDoc(envelopeStatus);
+  }
+
+  await db.collection('esign_documents').updateOne({ _id: esignDocId }, { $set: set });
+
+  // Sync EACH recipient's status from DocuSign (so "X of N signed" is accurate even before the
+  // whole envelope completes). Matches local recipients by email; only touches envelope signers,
+  // leaving approval-workflow reviewers untouched.
+  try {
+    const dsRecipients = await docusign.getEnvelopeRecipients(db, doc.docusign_envelope_id);
+    const signers = (dsRecipients && dsRecipients.signers) || [];
+    const docFilter = esignRecipientsDocumentFilter(esignDocId);
+    for (const s of signers) {
+      const email = String(s.email || '').trim().toLowerCase();
+      if (!email) continue;
+      const localStatus = docusign.mapRecipientStatusToLocal(s.status);
+      const upd = { status: localStatus };
+      if (localStatus === 'signed' && s.signedDateTime) upd.signed_at = new Date(s.signedDateTime);
+      if (localStatus === 'viewed' && s.deliveredDateTime) upd.viewed_at = new Date(s.deliveredDateTime);
+      await db.collection('esign_recipients').updateMany(
+        { $and: [docFilter, { $or: [{ email }, { docusign_recipient_email: email }] }] },
+        { $set: upd }
+      );
+    }
+  } catch (recErr) {
+    console.warn('⚠️ DocuSign recipient status sync failed:', recErr?.response?.data?.message || recErr?.message);
+  }
+
+  if (raw === 'completed') {
+    await logAudit(esignDocId, 'signed', 'docusign', null, { provider: 'docusign' });
+    try {
+      const fresh = await db.collection('esign_documents').findOne({ _id: esignDocId });
+      await sendEsignCompletedNotificationToAllRecipients(fresh || doc);
+    } catch (_) { /* notification best-effort */ }
+  } else if (raw === 'declined') {
+    await logAudit(esignDocId, 'sign_denied', 'docusign', null, { provider: 'docusign' });
+  } else if (raw === 'voided') {
+    await logAudit(esignDocId, 'voided', 'docusign', null, { provider: 'docusign' });
+  }
+  return { success: true, status: set.status || doc.status, docusign_status: envelopeStatus };
+}
+
 async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}) {
   const { uploadedBy = 'system', signingOrderEnforced = false } = options;
   if (!db) return { success: false, error: 'Database not available' };
@@ -7931,6 +8128,13 @@ async function sendDocumentForSignatureInternal(esignDocumentIdStr, options = {}
       }
     }
   }
+
+  // DocuSign provider: create + send an envelope instead of minting local tokens and
+  // emailing signing links. Single choke-point covers manual send AND approval auto-send.
+  if (docusign.isProviderDocusign() && docusign.isConfigured()) {
+    return await sendDocumentViaDocusign(doc, recipients, docId, { uploadedBy });
+  }
+
   let emailsSent = 0;
   const emailsSentTo = [];
   for (let recIdx = 0; recIdx < recipients.length; recIdx++) {
@@ -8025,6 +8229,154 @@ app.post('/api/esign/documents/:id/send-for-signature', async (req, res) => {
   } catch (error) {
     console.error('❌ E-sign send-for-signature error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ===========================================================================
+// DocuSign integration routes (Authorization Code Grant + Connect webhook)
+// ===========================================================================
+
+// GET /api/docusign/connection - Is DocuSign configured/connected? (for the admin banner)
+app.get('/api/docusign/connection', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const conn = await docusign.getConnection(db);
+    res.json({ success: true, configured: docusign.isConfigured(), provider_active: docusign.isProviderDocusign(), ...conn });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/docusign/consent-url - One-time admin consent URL to connect DocuSign (PKCE)
+app.get('/api/docusign/consent-url', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!docusign.isConfigured()) {
+      return res.status(400).json({ success: false, error: 'DocuSign is not configured. Set DOCUSIGN_CLIENT_ID, DOCUSIGN_CLIENT_SECRET and DOCUSIGN_ACCOUNT_ID.' });
+    }
+    const { url } = await docusign.beginConsent(db);
+    res.json({ success: true, url });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/docusign/callback - Exchange the consent code for tokens (secret + PKCE verifier stay server-side)
+app.post('/api/docusign/callback', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    const code = req.body && req.body.code;
+    if (!code) return res.status(400).json({ success: false, error: 'Missing authorization code' });
+    const state = (req.body && req.body.state) || null;
+    const connectedBy = (req.body && req.body.connected_by) || null;
+    const result = await docusign.connectFromCode(db, code, state, connectedBy);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    const msg = error?.response?.data?.error_description || error?.response?.data?.message || error.message;
+    console.error('❌ DocuSign callback error:', msg);
+    res.status(400).json({ success: false, error: msg });
+  }
+});
+
+// POST /api/esign/documents/:id/sync-docusign - Pull live envelope status (webhook fallback / manual refresh)
+app.post('/api/esign/documents/:id/sync-docusign', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    let docId;
+    try { docId = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: 'Invalid document id' }); }
+    const doc = await db.collection('esign_documents').findOne({ _id: docId });
+    if (!doc) return res.status(404).json({ success: false, error: 'Document not found' });
+    if (!doc.docusign_envelope_id) {
+      return res.json({ success: true, synced: false, status: doc.status, message: 'This agreement was not sent via DocuSign.' });
+    }
+    let envelope;
+    try {
+      envelope = await docusign.getEnvelope(db, doc.docusign_envelope_id);
+    } catch (e) {
+      const msg = e?.response?.data?.message || e.message;
+      return res.status(502).json({ success: false, error: `DocuSign status fetch failed: ${msg}` });
+    }
+    const result = await applyDocusignEnvelopeStatus(docId, envelope.status);
+    res.json({ success: true, synced: true, status: result.status, docusign_status: envelope.status });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/docusign/sync-all - Refresh all pending DocuSign envelopes (webhook fallback for the list dashboard)
+app.post('/api/esign/docusign/sync-all', async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ success: false, error: 'Database not available' });
+    if (!(docusign.isProviderDocusign() && docusign.isConfigured())) {
+      return res.json({ success: true, synced: 0, checked: 0, message: 'DocuSign provider not active' });
+    }
+    const limit = Math.min(Number(req.body?.limit) || 50, 100);
+    const pending = await db.collection('esign_documents')
+      .find({ docusign_envelope_id: { $exists: true, $ne: null }, status: { $nin: ['completed', 'voided', 'denied'] } })
+      .sort({ sent_at: -1 })
+      .limit(limit)
+      .toArray();
+    let synced = 0;
+    const errors = [];
+    for (const doc of pending) {
+      try {
+        const env = await docusign.getEnvelope(db, doc.docusign_envelope_id);
+        await applyDocusignEnvelopeStatus(doc._id, env.status);
+        synced++;
+      } catch (e) {
+        errors.push({ id: doc._id.toString(), error: e?.response?.data?.message || e.message });
+      }
+    }
+    // capped=true means more pending envelopes exist than we checked this pass (not a silent full sync).
+    const capped = pending.length >= limit;
+    if (capped) console.warn(`⚠️ DocuSign sync-all capped at ${limit}; more pending envelopes were not checked this pass.`);
+    res.json({ success: true, synced, checked: pending.length, capped, errors });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/esign/docusign/webhook - DocuSign Connect events. HMAC-validated; authoritative for status.
+app.post('/api/esign/docusign/webhook', async (req, res) => {
+  try {
+    if (!db) return res.status(200).send('db-unavailable');
+    const sig = req.get('X-DocuSign-Signature-1') || req.get('x-docusign-signature-1');
+    if (docusign.cfg().connectHmacKey) {
+      const raw = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+      const verdict = docusign.verifyConnectHmac(raw, sig);
+      if (!verdict.ok) {
+        console.warn('⚠️ DocuSign webhook rejected — HMAC', verdict.reason);
+        return res.status(401).send('invalid signature');
+      }
+    }
+    // Extract envelopeId + status from the JSON payload, falling back to classic XML.
+    let envelopeId = null;
+    let status = null;
+    const b = req.body;
+    if (b && typeof b === 'object') {
+      envelopeId = b?.data?.envelopeId || b?.data?.envelopeSummary?.envelopeId || b?.envelopeId || null;
+      status = b?.data?.envelopeSummary?.status || b?.status || null;
+      if (!status && typeof b.event === 'string' && b.event.startsWith('envelope-')) status = b.event.replace('envelope-', '');
+    }
+    if ((!envelopeId || !status) && req.rawBody) {
+      const xml = req.rawBody.toString('utf8');
+      const idM = xml.match(/<EnvelopeID>([^<]+)<\/EnvelopeID>/i);
+      const stM = xml.match(/<Status>([^<]+)<\/Status>/i);
+      if (idM) envelopeId = envelopeId || idM[1];
+      if (stM) status = status || stM[1];
+    }
+    if (!envelopeId || !status) return res.status(200).send('ignored');
+
+    const doc = await db.collection('esign_documents').findOne({ docusign_envelope_id: envelopeId });
+    if (!doc) {
+      console.warn('DocuSign webhook: no local document for envelope', envelopeId);
+      return res.status(200).send('no-match');
+    }
+    await applyDocusignEnvelopeStatus(doc._id, status);
+    return res.status(200).send('ok');
+  } catch (error) {
+    console.error('❌ DocuSign webhook error:', error?.message || error);
+    return res.status(200).send('error-logged'); // 200 avoids DocuSign retry storms; error is logged
   }
 });
 

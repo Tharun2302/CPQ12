@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Upload, FileText, Loader2, PenLine, Download, Trash2, Check, Clock, XCircle, Eye, MoreVertical, BookOpen, Copy, Bell, X, Users } from 'lucide-react';
 import { BACKEND_URL } from '../config/api';
 import { useAuth } from '../hooks/useAuth';
+import DocusignConnectionBanner from '../components/DocusignConnectionBanner';
 import { shouldAutoStartLandingTour, startEsignLandingTour } from '../utils/esignTour';
 
 interface RecipientRow {
@@ -682,6 +683,7 @@ const [documents, setDocuments] = useState<EsignDocument[]>([]);
         </div>
       )}
       <div className="w-full">
+        <DocusignConnectionBanner />
         <div className="mb-4 sm:mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link to="/deal" className="text-sm text-slate-500 hover:text-slate-800 mb-1.5 inline-block">

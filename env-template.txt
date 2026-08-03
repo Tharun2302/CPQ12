@@ -89,6 +89,27 @@ VITE_APPROVAL_TECH_EMAIL=
 VITE_APPROVAL_LEGAL_EMAIL=
 VITE_APPROVAL_DEALDESK_EMAIL=
 
+# ===========================================
+# DOCUSIGN E-SIGNATURE (Authorization Code Grant)
+# ===========================================
+# Active provider: 'docusign' (default) or 'legacy' (built-in token/SendGrid signer)
+ESIGN_PROVIDER=docusign
+# From DocuSign Apps & Keys (integration key + generated secret)
+DOCUSIGN_CLIENT_ID=your-integration-key-guid
+DOCUSIGN_CLIENT_SECRET=your-secret-key
+DOCUSIGN_ACCOUNT_ID=your-api-account-id-guid
+# demo -> https://demo.docusign.net/restapi ; prod -> https://<region>.docusign.net/restapi
+DOCUSIGN_BASE_PATH=https://demo.docusign.net/restapi
+# demo -> account-d.docusign.com ; prod -> account.docusign.com
+DOCUSIGN_OAUTH_BASE_PATH=account-d.docusign.com
+# Must EXACTLY match a Redirect URI registered on the integration key
+DOCUSIGN_REDIRECT_URI=http://localhost:5173/auth/docusign/callback
+DOCUSIGN_SCOPES=signature
+# DocuSign Connect HMAC key (webhook signature validation). Leave blank to skip in dev.
+DOCUSIGN_CONNECT_HMAC_KEY=
+# Optional: dedicated key for encrypting the stored refresh token (falls back to ESIGN_SIGNATURE_ENCRYPTION_KEY)
+DOCUSIGN_TOKEN_ENCRYPTION_KEY=
+
 # Backend defaults (fallbacks if frontend doesn't provide addresses)
 TECHNICAL_TEAM_EMAIL=
 LEGAL_TEAM_EMAIL=

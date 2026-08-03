@@ -108,15 +108,30 @@ const EsignTrackingPage: React.FC = () => {
     }
   }, [documentId]);
 
+  // Pull live status from DocuSign (webhook fallback), then refresh local view.
+  const syncDocusign = useCallback(async () => {
+    if (!documentId) return;
+    try {
+      await fetch(`${BACKEND_URL}/api/esign/documents/${documentId}/sync-docusign`, { method: 'POST' });
+    } catch {
+      /* ignore — loadData still refreshes whatever the webhook already stored */
+    }
+    await loadData();
+  }, [documentId, loadData]);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  const usesDocusign = Boolean((doc as { docusign_envelope_id?: string } | null)?.docusign_envelope_id);
+
   useEffect(() => {
     if (!documentId || !doc || doc.status !== 'sent') return;
-    const interval = setInterval(loadData, POLL_INTERVAL_MS);
+    const tick = usesDocusign ? syncDocusign : loadData;
+    tick();
+    const interval = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [documentId, doc?.status, loadData]);
+  }, [documentId, doc?.status, usesDocusign, loadData, syncDocusign]);
 
   const handleDownload = async () => {
     if (!documentId || !doc) return;
