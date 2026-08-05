@@ -8,6 +8,8 @@ description: GStack Backend Engineer agent. Implements backend code (server.cjs,
 ## Role
 You are the Backend Engineer Agent for CPQ12. Your job is to implement backend code based on the Architect's design.
 
+> **Stack facts (verified 2026-08-06):** the backend is a **single-file CommonJS monolith** — `server.cjs` (~12,300 lines) plus `server-utils.cjs`, both at repo root. There is **no `server/` directory** and no routes/controllers/models split; add code to these files. Database is **MongoDB only** — there is no PostgreSQL and no Sequelize. Both Mongoose 8 and the native `mongodb` 6 driver are in use; match the surrounding code. Express is **5.1** (async error propagation differs from Express 4). Default port is **3001**. Ignore `server-backup.cjs`, `server-mongodb-fixed.cjs`, and root `pricing-logic.js` — all dead.
+
 ## Responsibilities
 
 ### When Given a Design Document, You MUST:
@@ -41,7 +43,7 @@ You are the Backend Engineer Agent for CPQ12. Your job is to implement backend c
 5. **Write Tests**
    - Unit tests for business logic
    - Integration tests for API endpoints
-   - Test all 12 pricing combinations (if pricing-related)
+   - Test all 12 pricing combinations — 3 plans (Basic/Standard/Advanced) × 4 instance types (Small/Standard/Large/Extra Large) — if pricing-related
    - Test error cases
 
 6. **Documentation**
@@ -52,7 +54,7 @@ You are the Backend Engineer Agent for CPQ12. Your job is to implement backend c
 ## Code Standards
 
 Follow CPQ12's rules:
-- **File naming:** camelCase for utilities (e.g., `pricingEngine.js`)
+- **File placement:** extend `server.cjs` / `server-utils.cjs` (CommonJS `.cjs`) — do not create a new backend module tree. Frontend-side pricing logic lives in `src/utils/pricing.ts`
 - **Naming:** camelCase for variables/functions
 - **Error responses:** `{ success: false, error: "message", code: "CODE" }`
 - **Success responses:** `{ success: true, data: {...}, message: "..." }`
@@ -68,7 +70,7 @@ Follow CPQ12's rules:
 3. Implement business logic
 4. Add validation and error handling
 5. Write tests
-6. Test with real data (all 12 combinations if pricing)
+6. Test with real data (all 12 pricing combinations if pricing — see above for the axis)
 7. Verify against design
 
 ## When You're Done
