@@ -1,0 +1,98 @@
+# Investigation Mode
+
+## Description
+
+Diagnosis only. Use when the **symptom** is known but the **cause** is not.
+
+Investigation produces a **proposal, not a fix.** It ends at a human decision.
+
+## When the Router selects Investigation
+
+- The user reports a symptom with no cause ("login isn't working", "the total is wrong
+  for Advanced plans", "the PDF is blank")
+- Or a previous fix did not hold — repeat failures in the same area mean the cause was
+  never actually found
+
+If the user already stated the fix → this is Direct, not Investigation.
+
+## Agents
+
+**None.** Investigation is performed by the main session reading code, logs, and data.
+Do not spawn GStack agents to diagnose — no agent owns this job, and fanning out before
+the cause is known produces confident guesses.
+
+## Phases
+
+### Phase 1: Reproduce
+
+- Establish the failing behaviour first-hand where possible
+- Record exact steps, inputs, and environment (local / dev `159.89.175.168:3001` /
+  production `zenop.ai`)
+- If it cannot be reproduced, **say so and stop.** Do not guess at a fix
+
+### Phase 2: Isolate
+
+- Narrow to the responsible file(s) and code path
+- Check recent commits touching that path: `git log --oneline -- <path>`
+- Rule out the obvious alternatives explicitly, and say which you ruled out
+
+### Phase 3: Root cause
+
+- State the cause with evidence — line references, log output, actual data
+- Distinguish cause from symptom:
+  - *"the value is null"* → symptom
+  - *"the API omits the field when planType is Basic"* → cause
+- If you cannot get past symptom level, report that honestly rather than dressing a
+  symptom up as a cause
+
+### Phase 4: Assess
+
+- Severity (table below)
+- Affected surfaces and blast radius
+- Whether the touched paths hit the **High Risk** list in `CLAUDE.md` — an auth or
+  pricing root cause sets the flag even if the original report looked routine
+
+### Phase 5: Propose — **STOP HERE**
+
+Return to the user:
+
+1. Root cause, with evidence
+2. Proposed fix
+3. Alternatives considered, and why rejected
+4. Severity and High Risk flag status
+5. **Recommended next mode** — Direct (local, known fix) or Feature (needs design)
+
+**Do not implement the fix in Investigation mode.** Wait for the user to approve the
+proposal; the Router then re-classifies into Direct or Feature.
+
+## Rollback as an alternative to fixing forward
+
+If the bug is live, was introduced by a recent deploy, and a known-good commit exists,
+rolling back may stop user impact faster than fixing forward. See the **Rollback Play**
+in `deployment.yaml`.
+
+Rollback buys time — it does not close the bug. Return here afterwards for the permanent
+fix.
+
+## Bug Severity
+
+| Severity | Timeline | Process |
+|---|---|---|
+| **Critical** | Immediate | Fix → Deploy → Review |
+| **High** | Same day | Standard process |
+| **Medium** | Within 2 days | Standard process |
+| **Low** | Next sprint | Batch with other fixes |
+
+## Success Criteria
+
+- [ ] Behaviour reproduced, or documented as not reproducible
+- [ ] Root cause identified with evidence — not a guess
+- [ ] Severity assigned and High Risk status determined
+- [ ] Proposal presented to the user with alternatives
+- [ ] Next mode recommended
+- [ ] **No code changes made**
+
+## Timeline
+
+15 minutes to a few hours. If the cause is not converging, report what you have ruled
+out rather than continuing to dig silently.

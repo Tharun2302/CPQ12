@@ -1,0 +1,80 @@
+# Direct Mode
+
+## Description
+
+The shortest legal path through the AI SDLC. Use when the change is already known — the
+user stated *what to do*, not just a symptom.
+
+Direct is **not** a bypass of the AI SDLC. It is the minimum plan. The commit and deploy
+gates still apply in full.
+
+## When the Router selects Direct
+
+- The user states the fix ("add a null check in `src/utils/pricing.ts`", "change the
+  button label to X")
+- Or Investigation has completed and its approved proposal is a known, local fix
+- Or the user prefixed the request with **"quick fix"** or **"direct"**
+
+If the cause is **not** known → this is Investigation, not Direct.
+If the thing does not exist yet → this is Feature, not Direct.
+
+## Phases
+
+### Phase 1: Implement
+
+- Backend Engineer and/or Frontend Engineer makes the change:
+  - Backend (`server.cjs`, `server-utils.cjs`) → Backend Engineer
+  - Frontend (`src/**`) → Frontend Engineer
+  - Both surfaces → both agents, in parallel
+- Write or update tests for the changed logic
+- Remove `console.log` from lines you touched — do **not** sweep the rest of the file
+
+### Phase 2: Verify (functional)
+
+- QA Engineer confirms the change does what was asked and nothing adjacent broke
+- Run `npm test`
+- If the change is user-visible, run `node scripts/qa-smoke.cjs`
+- Scope: the change and its immediate blast radius. **Not** a full regression pass
+
+### Phase 3: Review
+
+- Code Reviewer reviews **the diff only**
+- Pre-existing debt is not a finding here — see the pre-existing violations table in
+  `CLAUDE.md`
+
+### Phase 4: Security — HIGH RISK ONLY
+
+- Runs only when the High Risk flag is set (see the Router in `CLAUDE.md`)
+- Security Reviewer audits the diff
+- Critical / High findings block the commit gate
+
+### Phase 5: Gates
+
+- Commit gate (2 steps) and deploy gate (3 steps) exactly as defined in `CLAUDE.md`
+- **No mode skips the gates**
+
+## Not in Direct mode
+
+- **No Architect, no design document.** If you discover you need one, the Router
+  mis-classified — stop and re-route to Feature rather than designing inline
+- No Requirements phase
+- No Documentation Engineer, unless the change alters externally-visible behaviour
+
+## Escalation
+
+Re-route to Feature (and say so) if, during implementation, the change turns out to need:
+- a new API contract, MongoDB schema shape, or component
+- edits across more than a couple of unrelated areas
+- a decision the user has not made yet
+
+## Success Criteria
+
+- [ ] Change does what was asked
+- [ ] `npm test` passes
+- [ ] Code Reviewer approved
+- [ ] Security Reviewer approved (High Risk only)
+- [ ] User approved the commit gate
+
+## Timeline
+
+Minutes to ~2 hours. If it is heading past that, it was probably not a Direct change.

@@ -1,4 +1,12 @@
-# New Feature Workflow
+# New Feature Workflow — **Feature Mode**
+
+This is the workflow for **Feature mode**, selected by the AI SDLC Router in `CLAUDE.md`
+when the thing being asked for does not exist yet. The Router picks the mode; this file
+defines the phases and which GStack agents run them.
+
+Sibling modes: `direct.yaml` (the fix is already known), `investigation.yaml` (symptom
+known, cause unknown). If the **High Risk flag** is set, Security review is mandatory
+rather than optional — the flag adds verification but does not change the mode.
 
 ## Description
 Complete pipeline for implementing a new feature from requirements to deployment.
