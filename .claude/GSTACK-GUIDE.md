@@ -197,7 +197,7 @@ Pipeline for deploying to staging and production:
 You: "Implement bulk discount tier.
      50+ items = 25% discount.
      Should work with existing 3-tier system.
-     Update pricing-logic.js and test all 12 combinations."
+     Update src/utils/pricing.ts and test all 12 pricing combinations."
 ```
 
 **Step 2: Architect Designs**
@@ -232,7 +232,7 @@ You: "Perfect, proceed."
 **Step 4: Backend Engineer Implements**
 ```
 Backend Engineer:
-  - Updates pricing-logic.js
+  - Updates src/utils/pricing.ts   (NOT root pricing-logic.js — that file is dead code)
   - Adds bulk discount calculation
   - Tests all 12 combinations
   - Ensures bulk + 3-tier logic works
@@ -371,16 +371,23 @@ TOTAL: ~16 hours over 2-3 days
 
 ### Via Agent Tool
 
+The registered agent names are prefixed `gstack-` — these are the names the Agent tool
+resolves. `@architect` etc. will NOT resolve.
+
 ```
-@architect "Design a new discount tier feature. 
-           Bulk discount: 50+ items = 25% off"
+gstack-architect            "Design a new discount tier feature.
+                             Bulk discount: 50+ items = 25% off"
 
-@backend-engineer "Implement based on Architect's design"
+gstack-backend-engineer     "Implement based on Architect's design"
 
-@qa-engineer "Test the bulk discount feature"
+gstack-qa-engineer          "Test the bulk discount feature"
 
-@security-reviewer "Audit the discount logic for vulnerabilities"
+gstack-security-reviewer    "Audit the discount logic for vulnerabilities"
 ```
+
+Full roster: `gstack-architect`, `gstack-backend-engineer`, `gstack-frontend-engineer`,
+`gstack-qa-engineer`, `gstack-security-reviewer`, `gstack-code-reviewer`,
+`gstack-documentation-engineer`, `gstack-devops-engineer`.
 
 ### Via Workflow Files
 

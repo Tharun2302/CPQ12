@@ -68,9 +68,11 @@ Before starting implementation, decide whether to **fix forward** (Phase 2 onwar
 - Gate 2 — Ask user: deploy this fix now, or stop here (commit only)?
   - If no deploy: workflow ends after commit — do not ask about environments
 - Gate 3 (only if Gate 2 = yes) — Ask user: target environment?
-  - **dev** = push stays on the working branch → CI auto-deploys to the dev server
-  - **production** = MERGE the working branch into `main` and push → CI auto-deploys to production
-- IMPORTANT: in this repo, merging to `main` and deploying to production are the SAME action — any push to `main` triggers the production deploy job. There is no merge-without-deploy path. Never merge to `main` unless the user explicitly chose production at Gate 3
+  - **dev** = MERGE the working branch into `main` and push → `deploy-dev.yml` auto-deploys `main` to the DEV server (159.89.175.168:3001)
+  - **production** = a deliberate MANUAL SSH deploy to `zenop.ai`. No branch operation triggers it
+- IMPORTANT: in this repo, merging to `main` and deploying to **dev** are the SAME action — any push to `main` triggers `deploy-dev.yml`. There is no merge-without-deploy path. Never merge to `main` unless the user approved a dev deploy at Gate 3
+- Pushing the working branch alone deploys NOTHING. `deploy-dev.yml` only fires on `main` (or manual `workflow_dispatch`)
+- Production has NO pipeline and is never a side effect of a merge. It requires its own explicit approval and the manual procedure in `devops-engineer.md`
 - Only proceed to Deployment phase after explicit approval
 
 ### Phase 8: Deployment

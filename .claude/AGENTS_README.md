@@ -2,6 +2,13 @@
 
 CPQ12 now uses GStack - a specialized AI agent team where each agent has one focused job.
 
+> **Invocation:** the registered agent names are prefixed `gstack-` (e.g. `gstack-architect`).
+> These are the names the Agent tool resolves; a bare `@architect` will not.
+>
+> **Stack facts (verified 2026-08-06):** frontend is TypeScript `.tsx`/`.ts`; backend is the
+> single `server.cjs` CommonJS monolith at repo root (no `server/` directory); database is
+> MongoDB only. See `CLAUDE.md` for the authoritative repo map.
+
 ## Directory Structure
 
 ```
@@ -196,7 +203,7 @@ Pipeline for deploying to production:
 ### Step 2: Invoke the First Agent
 For new feature:
 ```
-@architect "Design [feature name]. 
+gstack-architect "Design [feature name]. 
            Context: [requirements]"
 ```
 
@@ -205,7 +212,7 @@ For bug fix:
 You: "Bug: [description]. 
       Fix: [solution approach]"
 
-@backend-engineer "Implement the fix"
+gstack-backend-engineer "Implement the fix"
 ```
 
 ### Step 3: Review Each Output
@@ -250,37 +257,37 @@ You: "Implement bulk discount tier.
      50+ items = 25% discount."
      
 ↓ ARCHITECT PHASE
-@architect "Design bulk discount tier"
+gstack-architect "Design bulk discount tier"
 Architect: [Design document] 
 You: "Looks good, proceed"
 
 ↓ BACKEND PHASE  
-@backend-engineer "Implement bulk discount based on design"
+gstack-backend-engineer "Implement bulk discount based on design"
 Backend: [Code + tests]
 You: "Tests pass, looks good"
 
 ↓ QA PHASE
-@qa-engineer "Test bulk discount feature"
+gstack-qa-engineer "Test bulk discount feature"
 QA: [Test report - all pass]
 You: "Great, no bugs"
 
 ↓ SECURITY PHASE
-@security-reviewer "Audit bulk discount logic"
+gstack-security-reviewer "Audit bulk discount logic"
 Security: [Audit report - clear]
 You: "No vulnerabilities, good"
 
 ↓ CODE REVIEW PHASE
-@code-reviewer "Review bulk discount code"
+gstack-code-reviewer "Review bulk discount code"
 CodeReview: [Review - approved]
 You: "Code quality good"
 
 ↓ DOCUMENTATION PHASE
-@documentation-engineer "Document bulk discount feature"
+gstack-documentation-engineer "Document bulk discount feature"
 Documentation: [Updated docs]
 You: "Documentation complete"
 
 ↓ DEPLOYMENT PHASE
-@devops-engineer "Deploy to production"
+gstack-devops-engineer "Deploy to production"
 DevOps: [Deployed ✓]
 You: "Monitoring... all good!"
 

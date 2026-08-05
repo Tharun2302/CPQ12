@@ -13,7 +13,7 @@ Pipeline for deploying code to staging and production environments.
 - [ ] Backups created
 - [ ] Team notified
 - [ ] User explicitly confirmed commit (and WHICH BRANCH to commit to — never assume the current one), THEN push, THEN whether to deploy at all, THEN (only if deploying) WHICH BRANCH to deploy from, THEN target environment: dev vs production — never assume any of these
-- [ ] Understand the merge rule: choosing **production** means merging the working branch into `main` — and any push to `main` auto-triggers the production deploy job in CI. Merge-to-main and production-deploy are one and the same action; never merge to `main` without an explicit production approval
+- [ ] Understand the merge rule: choosing **dev** means merging the working branch into `main` — and any push to `main` auto-triggers `deploy-dev.yml`, which deploys to the DEV server. Merge-to-main and dev-deploy are one and the same action; never merge to `main` without explicit dev-deploy approval. **production** (`zenop.ai`) has NO pipeline — it is a separate manual SSH procedure that no branch operation triggers
 
 ## Phases
 
